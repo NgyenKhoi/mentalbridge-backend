@@ -38,6 +38,142 @@ tags:
   - name: Anonymous assessment
   - name: Safety directory
 paths:
+  "/api/v1/ai-voice-processing-disclosure":
+    "x-mentalbridge-status": "implemented"
+    "x-mentalbridge-owner": "care-service"
+    "get":
+      "operationId": "getVoiceDisclosure"
+      "summary": "getVoiceDisclosure"
+      "description": "Care publishes the exact immutable Vietnamese ai-voice-processing-capstone-v1 title and content. Requires authenticated USER; no microphone or provider call."
+      "security":
+        -
+          "bearerAuth": []
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceDisclosure"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
+  "/api/v1/consents/ai-voice-processing":
+    "x-mentalbridge-status": "implemented"
+    "x-mentalbridge-owner": "care-service"
+    "get":
+      "operationId": "getCurrentVoiceConsent"
+      "summary": "getCurrentVoiceConsent"
+      "description": "Read only the authenticated owner current voice decision. Missing/outdated decision returns current=false and granted=false. current indicates policy-version freshness; an old POST replay never restores authority."
+      "security":
+        -
+          "bearerAuth": []
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceConsent"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
+    "post":
+      "operationId": "recordVoiceConsentDecision"
+      "summary": "recordVoiceConsentDecision"
+      "description": "Append a separate AI_VOICE_PROCESSING decision for the authenticated owner with an existing Care profile; no paid plan or text grant is required. Exact UUID idempotency replay returns the immutable original decision without restoring a revoked grant. Store only purpose/owner-scoped HMAC of the key and safe intent digest. Withdrawal preserves historical decisions. Unknown/invalid fields return INVALID_REQUEST (422)."
+      "security":
+        -
+          "bearerAuth": []
+      "parameters":
+        -
+          "in": "header"
+          "name": "Idempotency-Key"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+          "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/VoiceConsentCommand"
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceConsent"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "409":
+          "$ref": "#/components/responses/VoiceProblem409"
+        "422":
+          "$ref": "#/components/responses/VoiceProblem422"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
+  "/internal/v1/ai-companion/voice-consent-authorizations":
+    "x-mentalbridge-status": "implemented"
+    "x-mentalbridge-owner": "care-service"
+    "post":
+      "operationId": "checkCurrentVoiceConsents"
+      "summary": "checkCurrentVoiceConsents"
+      "description": "Dedicated Journal-only service credential and exact session-owned owner assertion with constant purpose. Care resolves both latest current grants in one repeatable-read transaction; no user JWT, cache, shadow grant or remote call. Journal validates echoed binding and applies a two-second request deadline. Worker and user credentials cannot authorize this read."
+      "security":
+        -
+          "JournalVoiceCareToken": []
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/VoiceOwnerCheck"
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceDualConsentDecision"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "422":
+          "$ref": "#/components/responses/VoiceProblem422"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
   /api/v1/admin/product-journey-metrics:
     x-mentalbridge-status: implemented
     get:
@@ -3282,6 +3418,11 @@ components:
         disclaimerCode: SCREENING_NOT_DIAGNOSIS
         disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
   securitySchemes:
+    "JournalVoiceCareToken":
+      "type": "apiKey"
+      "in": "header"
+      "name": "X-MentalBridge-Voice-Care-Token"
+      "description": "Unique Journal-to-Care current voice authorization credential; allowlist exact caller/purpose. Different from worker and Consultation credentials."
     bearerAuth:
       type: http
       scheme: bearer
@@ -3395,6 +3536,425 @@ components:
       required: false
       schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
   schemas:
+    "VoiceDisclosure":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "consentType"
+        - "consentVersion"
+        - "language"
+        - "disclosureText"
+        - "publishedAt"
+      "properties":
+        "consentType":
+          "const": "AI_VOICE_PROCESSING"
+        "consentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "language":
+          "const": "vi-VN"
+        "disclosureText":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 12000
+        "publishedAt":
+          "type": "string"
+          "format": "date-time"
+    "VoiceProblem":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "type"
+        - "title"
+        - "status"
+        - "code"
+        - "correlationId"
+      "properties":
+        "type":
+          "type": "string"
+          "format": "uri"
+        "title":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 120
+        "status":
+          "type": "integer"
+          "minimum": 400
+          "maximum": 599
+        "code":
+          "type": "string"
+          "enum":
+            - "UNAUTHENTICATED"
+            - "FORBIDDEN"
+            - "FREE_LOCKED"
+            - "CONSENT_REQUIRED"
+            - "VOICE_CONSENT_REQUIRED"
+            - "SESSION_NOT_FOUND"
+            - "SESSION_LIMIT"
+            - "IDEMPOTENCY_CONFLICT"
+            - "STALE_ATTEMPT"
+            - "INVALID_SESSION_STATE"
+            - "SESSION_EXPIRED"
+            - "INVALID_REQUEST"
+            - "INVALID_FINAL_TRANSCRIPT"
+            - "GLOBAL_CAPACITY_FULL"
+            - "QUOTA_EXHAUSTED"
+            - "RATE_LIMITED"
+            - "ENTITLEMENT_UNAVAILABLE"
+            - "CONSENT_UNAVAILABLE"
+            - "PROVIDER_UNAVAILABLE"
+            - "PROVIDER_TIMEOUT"
+        "correlationId":
+          "type": "string"
+          "format": "uuid"
+      "allOf":
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "UNAUTHENTICATED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 401
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "FORBIDDEN"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "FREE_LOCKED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "CONSENT_REQUIRED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "VOICE_CONSENT_REQUIRED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "SESSION_NOT_FOUND"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 404
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "SESSION_LIMIT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "IDEMPOTENCY_CONFLICT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "STALE_ATTEMPT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "INVALID_SESSION_STATE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "SESSION_EXPIRED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 410
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "INVALID_REQUEST"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 422
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "INVALID_FINAL_TRANSCRIPT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 422
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "GLOBAL_CAPACITY_FULL"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 429
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "QUOTA_EXHAUSTED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 429
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "RATE_LIMITED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 429
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "ENTITLEMENT_UNAVAILABLE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 503
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "CONSENT_UNAVAILABLE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 503
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "PROVIDER_UNAVAILABLE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 503
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "PROVIDER_TIMEOUT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 504
+    "VoiceConsent":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "consentType"
+        - "consentVersion"
+        - "current"
+        - "granted"
+      "properties":
+        "consentType":
+          "const": "AI_VOICE_PROCESSING"
+        "consentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "current":
+          "type": "boolean"
+        "granted":
+          "type": "boolean"
+        "acceptedAt":
+          "type": "string"
+          "format": "date-time"
+        "revokedAt":
+          "type": "string"
+          "format": "date-time"
+      "allOf":
+        -
+          "if":
+            "properties":
+              "granted":
+                "const": true
+            "required":
+              - "granted"
+          "then":
+            "properties":
+              "acceptedAt":
+                "type": "string"
+                "format": "date-time"
+            "required":
+              - "acceptedAt"
+        -
+          "if":
+            "properties":
+              "current":
+                "const": true
+              "granted":
+                "const": false
+            "required":
+              - "current"
+              - "granted"
+          "then":
+            "properties":
+              "revokedAt":
+                "type": "string"
+                "format": "date-time"
+            "required":
+              - "revokedAt"
+    "VoiceConsentCommand":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "consentVersion"
+        - "granted"
+      "properties":
+        "consentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "granted":
+          "type": "boolean"
+    "VoiceOwnerCheck":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "ownerId"
+        - "voiceSessionId"
+        - "purpose"
+      "properties":
+        "ownerId":
+          "type": "string"
+          "format": "uuid"
+        "voiceSessionId":
+          "type": "string"
+          "format": "uuid"
+        "purpose":
+          "const": "AI_COMPANION_VOICE"
+    "VoiceDualConsentDecision":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "ownerId"
+        - "voiceSessionId"
+        - "purpose"
+        - "aiProcessingGranted"
+        - "voiceProcessingGranted"
+        - "voiceConsentVersion"
+        - "authorized"
+        - "checkedAt"
+      "properties":
+        "ownerId":
+          "type": "string"
+          "format": "uuid"
+        "voiceSessionId":
+          "type": "string"
+          "format": "uuid"
+        "purpose":
+          "const": "AI_COMPANION_VOICE"
+        "aiProcessingGranted":
+          "type": "boolean"
+        "voiceProcessingGranted":
+          "type": "boolean"
+        "voiceConsentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "authorized":
+          "type": "boolean"
+        "checkedAt":
+          "type": "string"
+          "format": "date-time"
+      "allOf":
+        -
+          "if":
+            "properties":
+              "authorized":
+                "const": true
+            "required":
+              - "authorized"
+          "then":
+            "properties":
+              "aiProcessingGranted":
+                "const": true
+              "voiceProcessingGranted":
+                "const": true
     CareProductJourneyMetrics:
       type: object
       additionalProperties: false
@@ -6380,6 +6940,61 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    "VoiceProblem401":
+      "description": "Stable sanitized errors: UNAUTHENTICATED. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem403":
+      "description": "Stable sanitized errors: FORBIDDEN, FREE_LOCKED, CONSENT_REQUIRED, VOICE_CONSENT_REQUIRED. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem503":
+      "description": "Stable sanitized errors: ENTITLEMENT_UNAVAILABLE, CONSENT_UNAVAILABLE, PROVIDER_UNAVAILABLE. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem409":
+      "description": "Stable sanitized errors: SESSION_LIMIT, IDEMPOTENCY_CONFLICT, STALE_ATTEMPT, INVALID_SESSION_STATE. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem422":
+      "description": "Stable sanitized errors: INVALID_REQUEST, INVALID_FINAL_TRANSCRIPT. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
     ValidationProblem:
       description: Request validation failed with VALIDATION_FAILED or a field violation such as INCOMPLETE_QUESTIONNAIRE or INVALID_ANSWER; no result was persisted
       content:

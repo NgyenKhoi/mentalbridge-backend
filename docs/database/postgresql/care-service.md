@@ -37,13 +37,13 @@ Append-only evidence of a user grant or refusal for a versioned platform consent
 | --- | --- |
 | `id` | Immutable UUID used to cite this exact consent decision in audit and REST results. |
 | `user_id` | Care-owned user profile that made the consent decision. |
-| `consent_type` | Stable independent platform-consent category. Runtime accepts `PRIVACY_POLICY` and `AI_PROCESSING` as separate decision streams; research/marketing remain unavailable, and specialist access uses a separate scoped grant. |
+| `consent_type` | Stable independent platform-consent category. Runtime accepts `PRIVACY_POLICY` and `AI_PROCESSING` through the unchanged generic API; `AI_VOICE_PROCESSING` has a separate voice API and immutable disclosure version. Voice authorization requires both current AI streams. Research/marketing remain unavailable, and specialist access uses a separate scoped grant. |
 | `policy_version` | Exact approved policy text/version accepted or refused so the decision remains reproducible. |
 | `granted` | Authoritative decision value; false records an explicit refusal or withdrawal. |
 | `evidence` | Minimized JSON object such as approved channel or document hash; never raw health content. |
-| `idempotency_key` | Required retry key unique for one user and consent type so an uncertain retry returns the original decision. |
+| `idempotency_key` | Required retry fingerprint unique for one user and consent type so an uncertain retry returns the original decision. Voice stores a purpose- and owner-bound HMAC-SHA256 hex digest of the caller UUID using `CARE_IDEMPOTENCY_HMAC_KEY`; existing generic consent rows retain their original key semantics without backfill. |
 | `request_hash` | Lowercase SHA-256 digest used to reject reuse of the key with different consent content; request plaintext is not recoverable from it. |
-| `decided_at` | UTC instant at which the user made the decision. |
+| `decided_at` | Server-issued UTC decision instant. Voice writes hold the profile row lock and advance at least one PostgreSQL microsecond beyond the previous voice decision when the clock ties or moves backward, so the latest withdrawal cannot lose to a random UUID tie-break. |
 | `created_at` | Immutable UTC insertion instant for storage and audit ordering. |
 
 ### `public.anonymous_assessment_session`
