@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.8.0
+  version: 1.10.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -28,6 +28,54 @@ tags:
     description: Owner-scoped durable in-app notification history and read lifecycle
 
 paths:
+  /api/v1/reminder-overview:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Notification preferences]
+      operationId: getReminderOverview
+      summary: Read the USER's current reminder facts and bounded eligibility estimates
+      description: >
+        Owner is derived only from the authenticated USER. No actor, date or timezone
+        override is accepted. Reuses persisted notification preferences and the
+        note-free Journal/Emotion projection. Today contains only enabled Journal/
+        Emotion categories with factual DUE/COMPLETED states; notification read
+        status is never activity completion. Previews are estimates for the current
+        local day, not scheduled jobs or guaranteed sends. Appointment email keeps
+        its separate delivery ledger and requires owner revalidation before sending;
+        no eligibility time is inferred from that ledger. Unsupported categories
+        are explicit. No producer, claim, provider call or domain mutation runs on
+        this read. Existing GET/PATCH notification-preferences remains the sole
+        settings boundary, with its existing validation and strong If-Match.
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Current owner facts and at most five reminder previews
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderOverview"
+        "401":
+          description: Authentication required
+        "403":
+          description: USER role required
+        "409":
+          description: Preferences changed while composing the overview; retry the read
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422":
+          description: Query parameters are unsupported
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Preferences, delivery storage or current activity authority unavailable
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /health/live:
     x-mentalbridge-status: implemented
     get:
@@ -360,6 +408,10 @@ paths:
     put:
       tags: [Resource progress]
       summary: Replace one daily progress item for the authenticated owner
+      description: >-
+        resourceVersion pins the listed publication snapshot actually used. An
+        omitted version selects the current resource version. Completion stores
+        that exact version; a newer resource version never substitutes as evidence.
       operationId: saveResourceProgress
       security:
         - BearerAuth: []
@@ -391,6 +443,96 @@ paths:
                 $ref: "#/components/schemas/ResourceProgressItem"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: RESOURCE_VERSION_UNAVAILABLE; supplied version is not a listed publication snapshot
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_VERSION_UNAVAILABLE
+                title: Resource version unavailable
+                status: 409
+                code: RESOURCE_VERSION_UNAVAILABLE
+                correlationId: 78000000-0000-4000-8000-000000000001
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/v1/resource-completion-evidence:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Resource progress]
+      summary: Read the newest qualifying exact-version Content fact for the owner
+      operationId: getResourceCompletionEvidence
+      description: |
+        Owner comes from the verified USER bearer. Matches the exact resource
+        version and the server occurredAt converted to the requested IANA timeZone
+        on localDate, never a client-selected date alone. Qualifying facts are a
+        measured 60-7200 second practice session (occurredAt = server completed_at
+        minus duration_seconds, including legacy sessions), or a
+        completed resource_daily_progress row (occurredAt = completed_at).
+        Practice factId is the session UUID; completion factId is the deterministic
+        resourceId:localDate of its stored daily-progress row. resourceVersion is
+        the fact revision. Learning completion and Bingo self-confirmation are
+        excluded. Candidates are ordered by recorded completed_at, newest first.
+        Callers can exclude fact IDs already accepted as occurrence evidence.
+        No remaining fact returns 404; dependency uncertainty returns 503.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: resourceId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: resourceVersion
+          in: query
+          required: true
+          schema: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
+        - name: localDate
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: timeZone
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - name: excludedFactIds
+          in: query
+          required: false
+          style: form
+          explode: true
+          description: Fact IDs already used for this owner, resource and exact revision; omitted considers every candidate.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 255 }
+        - name: X-Correlation-Id
+          in: header
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Newest qualifying minimized owner fact
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceCompletionEvidence" }
+              example:
+                factKind: RESOURCE_PRACTICE_SESSION
+                factId: 77000000-0000-4000-8000-000000000001
+                resourceVersion: '2'
+                occurredAt: '2026-10-21T12:00:00Z'
+                verifiedAt: '2026-10-21T12:02:00Z'
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: RESOURCE_EVIDENCE_NOT_FOUND; no qualifying exact-version owner fact for this local date
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_EVIDENCE_NOT_FOUND
+                title: Resource evidence not found
+                status: 404
+                code: RESOURCE_EVIDENCE_NOT_FOUND
+                correlationId: 78000000-0000-4000-8000-000000000001
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
@@ -456,7 +598,9 @@ paths:
       description: >-
         Self-confirmed marks are owner statements and remain distinct from Content-verified
         resource completion or eligible plan-bound practice evidence. Historical boards are
-        retained by their local Monday and original IANA time zone.
+        retained by their local Monday and original IANA time zone. Returns the
+        most recently synced board when multiple SupportPlans have boards in the
+        same week. This read never resyncs current or historical boards.
       operationId: getResourceBingo
       security:
         - BearerAuth: []
@@ -480,11 +624,106 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/resource-bingo/{weekStart}/plan-sync:
+    x-mentalbridge-status: implemented
+    put:
+      tags: [Resource progress]
+      summary: Synchronize current-week Bingo with the owner's current Care resource actions
+      operationId: syncResourceBingoPlan
+      description: |
+        Reads Care with the owner's Authorization and X-Correlation-Id, then
+        synchronizes under Content's owner/week advisory lock. Only the current
+        local week may be synced. Boards are scoped to owner, week and SupportPlan;
+        a plan switch creates a different board and preserves the former board.
+        Uses plan order with at most nine items and no catalogue padding. Existing
+        items remain in their ordinal and are retired when absent, preserving
+        evidence and counting toward the nine-item limit. Resource version changes
+        rebind in place and clear self-confirmation; a returning resource is
+        unretired. Multiple actions on one resource share one tile. actionVersion
+        changes alone do not churn tiles. Identical projections do not bump the
+        board version. Unlisted exact resource versions and actions beyond board
+        capacity are reported in unavailableActions. A definite Care NONE retires
+        the latest board; with no board it returns an empty nonpersisted board
+        shape with version "0". Care failure leaves all persisted state unchanged.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: weekStart
+          in: path
+          required: true
+          schema: { type: string, format: date }
+        - name: X-Correlation-Id
+          in: header
+          required: false
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timeZone]
+              properties:
+                timeZone: { type: string, minLength: 1, maxLength: 64 }
+      responses:
+        "200":
+          description: Current plan board and skipped actions; strong ETag matches version
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceBingoPlanSync" }
+              example:
+                weekStart: '2026-10-19'
+                timeZone: Asia/Ho_Chi_Minh
+                version: '1'
+                updatedAt: '2026-10-21T12:03:00Z'
+                items:
+                  - position: 1
+                    resourceId: 73000000-0000-4000-8000-000000000001
+                    contentVersion: '2'
+                    actionId: 72000000-0000-4000-8000-000000000001
+                    retired: false
+                    label: Slow breathing practice
+                    evidence: CONTENT_VERIFIED
+                    selfConfirmedAt: null
+                    verifiedAt: '2026-10-21T12:02:00Z'
+                    verificationSource: PRACTICE_SESSION
+                unavailableActions:
+                  - actionId: 72000000-0000-4000-8000-000000000002
+                    reason: RESOURCE_VERSION_UNAVAILABLE
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: RESOURCE_BINGO_WEEK_NOT_CURRENT; past or future weeks cannot be resynced
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_BINGO_WEEK_NOT_CURRENT
+                title: Bingo week is not current
+                status: 409
+                code: RESOURCE_BINGO_WEEK_NOT_CURRENT
+                correlationId: 78000000-0000-4000-8000-000000000001
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503":
+          description: RESOURCE_BINGO_CARE_UNAVAILABLE for Care failure, or persistence dependency unavailable; board unchanged
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_BINGO_CARE_UNAVAILABLE
+                title: Care resource actions unavailable
+                status: 503
+                code: RESOURCE_BINGO_CARE_UNAVAILABLE
+                correlationId: 78000000-0000-4000-8000-000000000001
+
   /api/v1/resource-bingo/{weekStart}/items/{position}/self-confirmation:
     x-mentalbridge-status: implemented
     put:
       tags: [Resource progress]
       summary: Replace one owner self-confirmation on a persisted Bingo item
+      description: Self-confirmation is undoable and never Care completion evidence. Retired items cannot be changed.
       operationId: setResourceBingoSelfConfirmation
       security:
         - BearerAuth: []
@@ -520,6 +759,17 @@ paths:
         "400": { $ref: "#/components/responses/RequestRejected" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: RESOURCE_BINGO_ITEM_RETIRED; retired items are read-only
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_BINGO_ITEM_RETIRED
+                title: Bingo item retired
+                status: 409
+                code: RESOURCE_BINGO_ITEM_RETIRED
+                correlationId: 78000000-0000-4000-8000-000000000001
         "412": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "428": { $ref: "#/components/responses/RequestRejected" }
@@ -1950,7 +2200,8 @@ components:
         practiceStartedAt:
           type: string
           format: date-time
-          description: Optional start instant for the practice session.
+          deprecated: true
+          description: Ignored client instant. Practice start is derived from server completion time minus measured duration.
         practiceDurationSeconds:
           type: integer
           minimum: 1
@@ -1982,6 +2233,25 @@ components:
       additionalProperties: false
       required: [status, completedActionIds]
       properties:
+        resourceVersion:
+          type: string
+          pattern: '^(0|[1-9][0-9]*)$'
+          maxLength: 19
+          description: Exact listed publication snapshot actually used; omitted selects the current version.
+        practiceSessionId:
+          type: string
+          format: uuid
+          description: Client-generated idempotency key for one completed repeatable practice session.
+        practiceStartedAt:
+          type: string
+          format: date-time
+          deprecated: true
+          description: Ignored client instant retained for compatibility. Practice start is server completion time minus measured duration.
+        practiceDurationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 7200
+          description: Measured duration; requires practiceSessionId. Evidence requires 60 through 7200 seconds.
         status:
           $ref: "#/components/schemas/ResourceProgressStatus"
         completedActionIds:
@@ -2024,6 +2294,24 @@ components:
           items:
             $ref: "#/components/schemas/ResourceBookmark"
 
+    ResourceCompletionEvidence:
+      type: object
+      additionalProperties: false
+      required: [factKind, factId, resourceVersion, occurredAt, verifiedAt]
+      properties:
+        factKind: { type: string, enum: [RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION] }
+        factId:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Practice session UUID or deterministic resourceId:localDate daily-progress identity.
+        resourceVersion: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
+        occurredAt:
+          type: string
+          format: date-time
+          description: Server practice completed_at minus duration_seconds, or daily-progress completed_at; never client started_at or localDate.
+        verifiedAt: { type: string, format: date-time }
+
     ResourceBingoEvidence:
       type: string
       enum: [NONE, SELF_CONFIRMED, CONTENT_VERIFIED]
@@ -2036,16 +2324,30 @@ components:
       type: object
       additionalProperties: false
       required:
-        [position, resourceId, contentVersion, label, evidence, selfConfirmedAt, verifiedAt, verificationSource]
+        [position, resourceId, contentVersion, actionId, retired, label, evidence, selfConfirmedAt, verifiedAt, verificationSource]
       properties:
         position: { type: integer, minimum: 1, maximum: 9 }
         resourceId: { type: string, format: uuid }
+        actionId:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 128
+          description: Care native action or v2 adapter slot identity; null for legacy catalogue items.
+        retired:
+          type: boolean
+          description: No longer in this plan; retained in its ordinal with history and no self-confirmation edits.
         contentVersion:
           type: string
           pattern: "^(0|[1-9][0-9]*)$"
           maxLength: 19
         label: { type: string, minLength: 1 }
-        evidence: { $ref: "#/components/schemas/ResourceBingoEvidence" }
+        evidence:
+          description: >-
+            Action-bound CONTENT_VERIFIED requires an exact-version owner Content
+            fact whose server occurredAt falls inside this board week in its
+            timeZone. Practice duration must be 60-7200 seconds. Only legacy
+            items retain journey-assignment binding. A retired tile keeps history.
+          $ref: "#/components/schemas/ResourceBingoEvidence"
         selfConfirmedAt: { type: [string, "null"], format: date-time }
         verifiedAt: { type: [string, "null"], format: date-time }
         verificationSource:
@@ -2070,6 +2372,30 @@ components:
           maxItems: 9
           items:
             $ref: "#/components/schemas/ResourceBingoItemState"
+
+    ResourceBingoPlanSync:
+      type: object
+      additionalProperties: false
+      required: [weekStart, timeZone, version, updatedAt, items, unavailableActions]
+      properties:
+        weekStart: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        version: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          maxItems: 9
+          items: { $ref: "#/components/schemas/ResourceBingoItemState" }
+        unavailableActions:
+          type: array
+          description: Current plan actions skipped without exposing resource rationale or copied content.
+          items:
+            type: object
+            additionalProperties: false
+            required: [actionId, reason]
+            properties:
+              actionId: { type: string, minLength: 1, maxLength: 128 }
+              reason: { type: string, enum: [RESOURCE_VERSION_UNAVAILABLE, BOARD_FULL] }
 
     ResourceBingoSelfConfirmationUpdate:
       type: object
@@ -2503,6 +2829,10 @@ components:
           format: date
         bingo:
           type: array
+          description: >-
+            Read-only items from the week's most recently synced persisted board,
+            or [] when none exists. Journey materialization never creates or
+            alters a Bingo board. Use plan-sync to update the current week.
           maxItems: 9
           items:
             $ref: "#/components/schemas/ResourceJourneyBingoItem"
@@ -3263,3 +3593,110 @@ components:
         failed: { type: integer, minimum: 0 }
         suppressed: { type: integer, minimum: 0 }
         invalidated: { type: integer, minimum: 0 }
+
+    ReminderOverview:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          asOf,
+          localDate,
+          timeZone,
+          preferences,
+          today,
+          previews,
+          unavailableCategories,
+        ]
+      properties:
+        schemaVersion: { type: string, const: "1.0" }
+        asOf: { type: string, format: date-time }
+        localDate: { type: string, format: date }
+        timeZone: { type: string, minLength: 1, maxLength: 64 }
+        preferences: { $ref: "#/components/schemas/NotificationPreferences" }
+        today:
+          type: array
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ReminderActivity" }
+        previews:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/ReminderPreview" }
+        unavailableCategories:
+          type: array
+          uniqueItems: true
+          maxItems: 4
+          items:
+            { type: string, enum: [SUPPORT_PLAN, RESOURCES, ASSESSMENT, PUSH] }
+
+    ReminderActivity:
+      type: object
+      additionalProperties: false
+      required: [id, category, status, action]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        category: { type: string, enum: [JOURNAL, EMOTION_CHECK_IN] }
+        status: { type: string, enum: [DUE, COMPLETED] }
+        action: { type: string, enum: [OPEN_JOURNAL, OPEN_EMOTION_CHECK_IN] }
+
+    ReminderPreview:
+      type: object
+      additionalProperties: false
+      required: [kind, channel, state, nextEligibleAt, estimate, latestDelivery]
+      properties:
+        kind:
+          {
+            type: string,
+            enum:
+              [
+                JOURNAL_REMINDER,
+                EMOTION_CHECKIN_REMINDER,
+                DAILY_DIGEST,
+                RESOURCE_REMINDER,
+                APPOINTMENT_EMAIL,
+              ],
+          }
+        channel: { type: string, enum: [IN_APP, EMAIL] }
+        state:
+          type: string
+          enum:
+            [
+              ELIGIBLE,
+              SCHEDULED,
+              QUIET_HOURS,
+              PAUSED,
+              DISABLED,
+              COMPLETED,
+              NOT_NEEDED,
+              ALREADY_DELIVERED,
+              IN_PROGRESS,
+              UNAVAILABLE,
+            ]
+        nextEligibleAt: { type: [string, "null"], format: date-time }
+        estimate: { type: boolean, const: true }
+        latestDelivery:
+          oneOf:
+            - { type: "null" }
+            - { $ref: "#/components/schemas/ReminderDeliveryFact" }
+
+    ReminderDeliveryFact:
+      type: object
+      additionalProperties: false
+      required: [state, recordedAt]
+      properties:
+        state:
+          type: string
+          enum:
+            [
+              PENDING,
+              PROCESSING,
+              CLAIMED,
+              DELIVERED,
+              FAILED,
+              CANCELLED,
+              INVALIDATED,
+              SUPPRESSED,
+              EXPIRED,
+              UNKNOWN,
+            ]
+        recordedAt: { type: string, format: date-time }

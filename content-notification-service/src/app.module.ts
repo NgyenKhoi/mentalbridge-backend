@@ -58,7 +58,9 @@ import { ResourceJourneyService } from './resources/resource-journey.service.js'
 import {
   ResourceBingoController,
   ResourceBookmarkController,
+  ResourceCompletionEvidenceController,
 } from './resources/resource-engagement.controller.js';
+import { CareResourceActionsClient } from './resources/care-resource-actions.client.js';
 import { ResourceEngagementRepository } from './resources/resource-engagement.repository.js';
 import { ResourceEngagementService } from './resources/resource-engagement.service.js';
 import { ResourceRewardController } from './resources/resource-reward.controller.js';
@@ -92,6 +94,9 @@ import { ReminderMaterializationService } from './reminders/reminder-materializa
 import type { ReminderActivityClient } from './reminders/reminder-activity.client.js';
 import type { ReminderClock } from './reminders/reminder-materialization.service.js';
 import { ReminderScheduler } from './reminders/reminder.scheduler.js';
+import { ReminderOverviewController } from './reminders/reminder-overview.controller.js';
+import { ReminderOverviewService } from './reminders/reminder-overview.service.js';
+import { ReminderOverviewRepository } from './reminders/reminder-overview.repository.js';
 import {
   AccountLifecycleConsumer,
   AccountLifecycleProjector,
@@ -145,6 +150,7 @@ export interface ApplicationDependencies {
   readonly resourceProgressRepository?: ResourceProgressRepository;
   readonly resourceJourneyRepository?: ResourceJourneyRepository;
   readonly resourceEngagementRepository?: ResourceEngagementRepository;
+  readonly careResourceActionsClient?: CareResourceActionsClient;
   readonly resourceRewardRepository?: ResourceRewardRepository;
   readonly achievementRepository?: AchievementRepository;
   readonly outageState?: { enabled: boolean };
@@ -154,6 +160,7 @@ export interface ApplicationDependencies {
   readonly notificationRepository?: NotificationRepository;
   readonly reminderActivityClient?: ReminderActivityClient;
   readonly reminderClock?: ReminderClock;
+  readonly reminderOverviewRepository?: ReminderOverviewRepository;
   readonly wellbeingDigestService?: WellbeingDigestService;
   readonly contentAdminAuditPublisher?: ContentAdminAuditPublisher;
 }
@@ -255,6 +262,7 @@ export const createAppModule = (
       ResourceJourneyController,
       ResourceBookmarkController,
       ResourceBingoController,
+      ResourceCompletionEvidenceController,
       ResourceRewardController,
       AchievementController,
       ResourceEligibilityController,
@@ -265,6 +273,7 @@ export const createAppModule = (
       NotificationController,
       NotificationAdminController,
       WellbeingDigestController,
+      ReminderOverviewController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -283,6 +292,9 @@ export const createAppModule = (
       resourceJourneyRepositoryProvider,
       { provide: RESOURCE_JOURNEY_SERVICE_TOKEN, useClass: ResourceJourneyService },
       resourceEngagementRepositoryProvider,
+      dependencies.careResourceActionsClient
+        ? { provide: CareResourceActionsClient, useValue: dependencies.careResourceActionsClient }
+        : CareResourceActionsClient,
       { provide: RESOURCE_ENGAGEMENT_SERVICE_TOKEN, useClass: ResourceEngagementService },
       resourceRewardRepositoryProvider,
       { provide: RESOURCE_REWARD_SERVICE_TOKEN, useClass: ResourceRewardService },
@@ -306,6 +318,10 @@ export const createAppModule = (
         useValue: dependencies.reminderClock ?? { now: () => new Date() },
       },
       { provide: REMINDER_SCHEDULER_TOKEN, useClass: ReminderScheduler },
+      ReminderOverviewService,
+      dependencies.reminderOverviewRepository
+        ? { provide: ReminderOverviewRepository, useValue: dependencies.reminderOverviewRepository }
+        : ReminderOverviewRepository,
       { provide: WELLBEING_DIGEST_REPOSITORY_TOKEN, useClass: WellbeingDigestRepository },
       { provide: WELLBEING_EMAIL_DELIVERY_TOKEN, useClass: BrevoWellbeingEmailDelivery },
       { provide: WELLBEING_RECIPIENT_CLIENT_TOKEN, useClass: IdentityWellbeingRecipientClient },

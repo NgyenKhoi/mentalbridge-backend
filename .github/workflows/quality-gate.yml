@@ -117,6 +117,10 @@ jobs:
       - name: Contract validation
         working-directory: ${{ matrix.service }}
         run: npm run contract:check
+      - name: Companion Voice proposal contract tests
+        if: matrix.service == 'journal-ai-service'
+        working-directory: ${{ matrix.service }}
+        run: node --test ../contracts/proposals/companion-voice-contract.test.mjs
       - name: Migration validation
         working-directory: ${{ matrix.service }}
         run: npm run migration:check

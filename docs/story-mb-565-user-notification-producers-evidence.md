@@ -39,7 +39,7 @@ the same logical identity fails closed. Disabled preferences create only a
 - `contracts/openapi/content-notification-service.yaml`
 - `content-notification-service/migrations/25_add_general_user_notification_producers.sql`
 - `docs/domain-model/canonical-entities.md`
-- `docs/database/postgresql-field-data-dictionary.md`
+- [Content/Notification field dictionary](database/postgresql/content-notification-service.md)
 
 The migration is forward-only and expands the existing notification category
 and action constraints. It adds no cross-service foreign key or producer-owned

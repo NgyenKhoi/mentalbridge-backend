@@ -6,6 +6,9 @@ import { z } from 'zod';
 import type { CommunityFact, CommunityMessage } from '../../src/community/community-schema.js';
 import { factSchema } from '../../src/community/community-schema.js';
 
+type ActiveCommunityMessage = Extract<CommunityMessage, { state: 'ACTIVE' }>;
+type RetractedCommunityMessage = Extract<CommunityMessage, { state: 'RETRACTED' }>;
+
 export const communityConversation = '88888888-8888-4888-8888-888888888888';
 export const communityAlice = '11111111-1111-4111-8111-111111111111';
 export const communityBob = '22222222-2222-4222-8222-222222222222';
@@ -184,6 +187,7 @@ export class CommunityOwnerFixture {
               (message, index) =>
                 index >= read &&
                 message.sender.state === 'AVAILABLE' &&
+                message.state === 'ACTIVE' &&
                 message.sender.communityProfileId !== subject &&
                 !this.hidden.has(subject + ':' + message.messageId),
             );
@@ -221,17 +225,84 @@ export class CommunityOwnerFixture {
         server.closeAllConnections();
       });
   }
-  save(sender = communityAlice): CommunityMessage {
-    const message: CommunityMessage = {
+  save(sender = communityAlice): ActiveCommunityMessage {
+    const message: ActiveCommunityMessage = {
       messageId: randomUUID(),
       conversationId: communityConversation,
       clientMessageId: randomUUID(),
       sender: { state: 'AVAILABLE', communityProfileId: sender, displayName: 'Synthetic peer' },
+      state: 'ACTIVE',
       content: 'Private synthetic chat ' + String(this.messages.length + 1),
       createdAt: new Date().toISOString(),
     };
     this.messages.push(message);
     return message;
+  }
+  retract(message: ActiveCommunityMessage): RetractedCommunityMessage {
+    const index = this.messages.findIndex((value) => value.messageId === message.messageId);
+    if (index < 0) throw new Error('Fixture message missing');
+    const tombstone: RetractedCommunityMessage = {
+      messageId: message.messageId,
+      conversationId: message.conversationId,
+      clientMessageId: message.clientMessageId,
+      sender: message.sender,
+      state: 'RETRACTED',
+      createdAt: message.createdAt,
+      retractedAt: new Date().toISOString(),
+    };
+    this.messages[index] = tombstone;
+    return tombstone;
+  }
+  retraction(message: RetractedCommunityMessage): CommunityFact {
+    return factSchema.parse({
+      messageId: randomUUID(),
+      messageType: 'community.chat.fact',
+      schemaVersion: '1.0',
+      producer: 'community-service',
+      occurredAt: new Date().toISOString(),
+      correlationId: randomUUID(),
+      aggregateId: communityConversation,
+      aggregateVersion: String(this.messages.length + 2),
+      payload: {
+        kind: 'MESSAGE_RETRACTED',
+        conversationId: communityConversation,
+        targetId: message.messageId,
+      },
+    });
+  }
+  readStateFact(recipient: string): CommunityFact {
+    return factSchema.parse({
+      messageId: randomUUID(),
+      messageType: 'community.chat.fact',
+      schemaVersion: '1.0',
+      producer: 'community-service',
+      occurredAt: new Date().toISOString(),
+      correlationId: randomUUID(),
+      aggregateId: communityConversation,
+      aggregateVersion: String(this.messages.length + 2),
+      payload: {
+        kind: 'READ_STATE_CHANGED',
+        conversationId: communityConversation,
+        recipientRoutingReference: recipient,
+      },
+    });
+  }
+  cleared(recipient: string): CommunityFact {
+    return factSchema.parse({
+      messageId: randomUUID(),
+      messageType: 'community.chat.fact',
+      schemaVersion: '1.0',
+      producer: 'community-service',
+      occurredAt: new Date().toISOString(),
+      correlationId: randomUUID(),
+      aggregateId: communityConversation,
+      aggregateVersion: String(this.messages.length + 3),
+      payload: {
+        kind: 'CONVERSATION_CLEARED',
+        conversationId: communityConversation,
+        recipientRoutingReference: recipient,
+      },
+    });
   }
   fact(message?: CommunityMessage): CommunityFact {
     return factSchema.parse({

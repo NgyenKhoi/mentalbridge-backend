@@ -57,6 +57,13 @@ class CommunityChatController {
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
         return chat.conversation(subject(jwt), ChatModels.uuid(conversationId), correlation(correlation));
     }
+    @DeleteMapping("/conversations/{conversationId}")
+    ResponseEntity<Void> clear(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
+        messages.clear(subject(jwt), ChatModels.uuid(conversationId), ChatModels.uuid(key), correlation(correlation));
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+    }
     @PostMapping("/conversations/{conversationId}/messages")
     ResponseEntity<ChatModels.SendResult> send(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
             @RequestHeader(value = "Idempotency-Key", required = false) String key, @RequestBody ChatModels.SendMessage request,
@@ -69,6 +76,13 @@ class CommunityChatController {
             @RequestParam(required = false) String cursor, @RequestParam(defaultValue = "20") int limit,
             @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
         return messages.history(subject(jwt), ChatModels.uuid(conversationId), cursor, limit, correlation(correlation));
+    }
+    @DeleteMapping("/conversations/{conversationId}/messages/{messageId}")
+    ResponseEntity<ChatModels.Message> retract(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
+            @PathVariable String messageId,
+            @RequestHeader(value = "X-Correlation-Id", required = false) String correlation) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(messages.retract(subject(jwt),
+                ChatModels.uuid(conversationId), ChatModels.uuid(messageId), correlation(correlation)));
     }
     @PutMapping("/conversations/{conversationId}/read-cursor")
     ChatModels.ReadResult read(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,

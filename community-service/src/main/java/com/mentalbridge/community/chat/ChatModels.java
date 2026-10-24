@@ -44,7 +44,9 @@ final class ChatModels {
         @JsonAnySetter public void rejectUnknown(String name, Object value) { throw ChatException.invalid(); }
         @Override public String toString() { return "ChatSendMessage[REDACTED]"; }
     }
-    record Message(UUID messageId, UUID conversationId, UUID clientMessageId, Peer sender, String content, Instant createdAt) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record Message(UUID messageId, UUID conversationId, UUID clientMessageId, Peer sender, String state,
+            String content, Instant createdAt, Instant retractedAt) {
         @Override public String toString() { return "ChatMessage[REDACTED]"; }
     }
     record SendResult(Message message, String persistence, String delivery) {

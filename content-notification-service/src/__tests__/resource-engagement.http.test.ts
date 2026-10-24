@@ -7,12 +7,15 @@ import { createApplication } from '../application.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import {
   ResourceBingoVersionMismatchError,
+  ResourceBingoItemRetiredError,
   type ResourceEngagementRepository,
 } from '../resources/resource-engagement.repository.js';
 import type {
   ResourceBingoBoardState,
   ResourceBookmark,
 } from '../resources/resource-engagement.types.js';
+import { CareResourceActionsClient } from '../resources/care-resource-actions.client.js';
+import { mondayOf, localDateInTimeZone } from '../resources/resource-journey.planner.js';
 
 const ISSUER = 'https://identity.local.mentalbridge';
 const AUDIENCE = 'mentalbridge-api';
@@ -25,6 +28,7 @@ let app: INestApplication;
 let repository: ResourceEngagementRepository;
 let bookmarks: Map<string, ResourceBookmark>;
 let board: ResourceBingoBoardState;
+let care: CareResourceActionsClient;
 
 beforeAll(async () => {
   const keys = await generateKeyPair('RS256');
@@ -41,6 +45,8 @@ beforeEach(async () => {
     updatedAt: '2026-10-12T00:00:00.000Z',
     items: [
       {
+        actionId: null,
+        retired: false,
         position: 1,
         resourceId: RESOURCE_ID,
         contentVersion: '4',
@@ -53,6 +59,8 @@ beforeEach(async () => {
     ],
   };
   repository = {
+    syncPlanBingo: vi.fn(async () => ({ ...board, unavailableActions: [] })),
+    completionEvidence: vi.fn(async () => null),
     listBookmarks: vi.fn(async (ownerId: string) => {
       const item = bookmarks.get(ownerId);
       return item ? [item] : [];
@@ -98,6 +106,9 @@ beforeEach(async () => {
       },
     ),
   } as unknown as ResourceEngagementRepository;
+  care = {
+    get: vi.fn(async () => ({ planState: 'NONE', actions: [] })),
+  } as unknown as CareResourceActionsClient;
 
   const configuration: ServiceConfiguration = {
     NODE_ENV: 'test',
@@ -124,6 +135,7 @@ beforeEach(async () => {
   app = await createApplication(configuration, {
     readinessProbe: { check: async () => undefined },
     resourceEngagementRepository: repository,
+    careResourceActionsClient: care,
   });
   await app.init();
 });
@@ -143,6 +155,141 @@ async function token(subject = OWNER_A): Promise<string> {
 }
 
 describe('resource engagement HTTP boundary', () => {
+  it('syncs only the current local week from the owner-authorized Care projection', async () => {
+    const timeZone = 'Asia/Ho_Chi_Minh';
+    const today = localDateInTimeZone(new Date().toISOString(), timeZone);
+    const currentWeek = mondayOf(today);
+    const authorization = `Bearer ${await token()}`;
+    const correlationId = '67000000-0000-4000-8000-000000000001';
+    const target = `/api/v1/resource-bingo/${currentWeek}/plan-sync`;
+    await request(app.getHttpServer()).put(target).send({ timeZone }).expect(401);
+    await request(app.getHttpServer())
+      .put(target)
+      .set('Authorization', authorization)
+      .send({ timeZone: 'invalid/timezone' })
+      .expect(422);
+    await request(app.getHttpServer())
+      .put('/api/v1/resource-bingo/2020-01-06/plan-sync')
+      .set('Authorization', authorization)
+      .send({ timeZone })
+      .expect(409);
+    expect(care.get).not.toHaveBeenCalled();
+    const result = await request(app.getHttpServer())
+      .put(target)
+      .set('Authorization', authorization)
+      .set('X-Correlation-Id', correlationId)
+      .send({ timeZone })
+      .expect(200)
+      .expect('ETag', '"0"');
+    expect(result.body.unavailableActions).toEqual([]);
+    expect(care.get).toHaveBeenCalledWith(authorization, today, correlationId);
+    expect(repository.syncPlanBingo).toHaveBeenCalledWith(OWNER_A, currentWeek, timeZone, {
+      planState: 'NONE',
+      actions: [],
+    });
+  });
+
+  it('leaves board state untouched when Care is unavailable', async () => {
+    const weekStart = mondayOf(localDateInTimeZone(new Date().toISOString(), 'UTC'));
+    vi.mocked(care.get).mockRejectedValueOnce(
+      new (await import('@nestjs/common')).ServiceUnavailableException(),
+    );
+    await request(app.getHttpServer())
+      .put(`/api/v1/resource-bingo/${weekStart}/plan-sync`)
+      .set('Authorization', `Bearer ${await token()}`)
+      .send({ timeZone: 'UTC' })
+      .expect(503);
+    expect(repository.syncPlanBingo).not.toHaveBeenCalled();
+  });
+
+  it('rejects self-confirmation for retired items with a stable conflict code', async () => {
+    vi.mocked(repository.setBingoSelfConfirmed).mockRejectedValueOnce(
+      new ResourceBingoItemRetiredError(),
+    );
+    const result = await request(app.getHttpServer())
+      .put('/api/v1/resource-bingo/2026-10-12/items/1/self-confirmation')
+      .set('Authorization', `Bearer ${await token()}`)
+      .set('If-Match', '"0"')
+      .send({ selfConfirmed: true })
+      .expect(409);
+    expect(result.body.code).toBe('RESOURCE_BINGO_ITEM_RETIRED');
+  });
+
+  it('returns only owner-scoped completion facts and distinguishes absence and outage', async () => {
+    const target = `/api/v1/resource-completion-evidence?resourceId=${RESOURCE_ID}&resourceVersion=4&localDate=2026-10-21&timeZone=Asia%2FHo_Chi_Minh`;
+    await request(app.getHttpServer()).get(target).expect(401);
+    const authorization = `Bearer ${await token()}`;
+    const missing = await request(app.getHttpServer())
+      .get(target)
+      .set('Authorization', authorization)
+      .expect(404);
+    expect(missing.body.code).toBe('RESOURCE_EVIDENCE_NOT_FOUND');
+    const fact = {
+      factKind: 'RESOURCE_COMPLETION' as const,
+      factId: `${RESOURCE_ID}:2026-10-21`,
+      resourceVersion: '4',
+      occurredAt: '2026-10-21T03:00:00.000Z',
+      verifiedAt: '2026-10-21T03:01:00.000Z',
+    };
+    vi.mocked(repository.completionEvidence).mockResolvedValueOnce(fact);
+    const result = await request(app.getHttpServer())
+      .get(target)
+      .set('Authorization', authorization)
+      .expect(200)
+      .expect('Cache-Control', 'private, no-store');
+    expect(result.body).toEqual(fact);
+    expect(repository.completionEvidence).toHaveBeenCalledWith(
+      OWNER_A,
+      RESOURCE_ID,
+      '4',
+      '2026-10-21',
+      'Asia/Ho_Chi_Minh',
+      [],
+    );
+    const usedId = '77000000-0000-4000-8000-000000000001';
+    await request(app.getHttpServer())
+      .get(`${target}&excludedFactIds=${usedId}`)
+      .set('Authorization', authorization)
+      .expect(404);
+    expect(repository.completionEvidence).toHaveBeenLastCalledWith(
+      OWNER_A,
+      RESOURCE_ID,
+      '4',
+      '2026-10-21',
+      'Asia/Ho_Chi_Minh',
+      [usedId],
+    );
+    await request(app.getHttpServer())
+      .get(`${target}&excludedFactIds=${usedId}&excludedFactIds=${RESOURCE_ID}:2026-10-21`)
+      .set('Authorization', authorization)
+      .expect(404);
+    expect(repository.completionEvidence).toHaveBeenLastCalledWith(
+      OWNER_A,
+      RESOURCE_ID,
+      '4',
+      '2026-10-21',
+      'Asia/Ho_Chi_Minh',
+      [usedId, `${RESOURCE_ID}:2026-10-21`],
+    );
+    for (const excludedFactIds of ['', 'x'.repeat(256)]) {
+      await request(app.getHttpServer())
+        .get(`${target}&excludedFactIds=${excludedFactIds}`)
+        .set('Authorization', authorization)
+        .expect(422);
+    }
+    await request(app.getHttpServer())
+      .get(`${target}&ownerId=${OWNER_B}`)
+      .set('Authorization', authorization)
+      .expect(422);
+    await request(app.getHttpServer())
+      .get(target.replace('resourceVersion=4', 'resourceVersion=10000000000000000000'))
+      .set('Authorization', authorization)
+      .expect(422);
+    vi.mocked(repository.completionEvidence).mockRejectedValueOnce(
+      new Error('private database error'),
+    );
+    await request(app.getHttpServer()).get(target).set('Authorization', authorization).expect(503);
+  });
   it('requires authentication and keeps bookmarks owner scoped', async () => {
     await request(app.getHttpServer()).get('/api/v1/resource-bookmarks').expect(401);
     const authorization = `Bearer ${await token(OWNER_A)}`;

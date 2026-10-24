@@ -16,6 +16,11 @@ versioned configuration), and nullable occurrence provenance on ACTIVE
 one immutable `platform_report_artifact`; the unique schedule/UTC occurrence
 pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 
+MB-673 adds ACTIVE `deletion_request`, `deletion_owner_fact`, and
+`retention_execution_record` for fail-closed Identity coordination and truthful
+owner-scoped execution evidence. These rows do not authorize cross-owner data
+access or fabricate external owner completion.
+
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `role` | identity-service | PostgreSQL | ACTIVE | Physical one-to-many to `account` through `account.role_code`. |
@@ -25,6 +30,9 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `idempotency_record` | identity-service | PostgreSQL | ACTIVE | Optional physical reference to `account`; owns encrypted replay result metadata. |
 | `outbox_event` | identity-service | PostgreSQL | ACTIVE | Logical aggregate ID; no cross-service foreign key. |
 | `security_audit_event` | identity-service | PostgreSQL | ACTIVE | Optional physical subject/actor references to `account`. |
+| `deletion_request` | identity-service | PostgreSQL | ACTIVE | Identity-coordinated workflow for one account reference and privacy-minimized subject tombstone; no cascading account FK or cross-owner storage access. |
+| `deletion_owner_fact` | identity-service | PostgreSQL | ACTIVE | Physical child of `deletion_request`; one minimized state per required owner, with completion accepted only from an authoritative producer. |
+| `retention_execution_record` | identity-service | PostgreSQL | ACTIVE | Immutable owner-scoped retention attempt evidence, including failed, stale, and unavailable outcomes. |
 | `account_role` | identity-service | PostgreSQL | HISTORICAL | Removed by migration 002 after `account.role_code` became the single authoritative role. |
 
 ## Care — PostgreSQL
@@ -67,7 +75,7 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `support_plan_command` | care-service | PostgreSQL | ACTIVE | Physical owner/plan reference; idempotent activation outcome with exact revalidation evidence. |
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Additive shared physical child of a plan; references either legacy v2 slot/resource provenance or one native v3 action and snapshots recurrence, local time, and IANA timezone without backfilling old rows. |
-| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. |
+| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. Native RESOURCE completion also accepts exact Content practice/completion references; the same owner fact revision can satisfy only one occurrence. |
 | `reassessment_self_report` | care-service | PostgreSQL | ACTIVE | Versioned owner-authored current-period experience with bounded optional context; deletion clears response content and retains only a minimal tombstone/provenance. |
 | `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, SupportPlan engagement, explicit self-reported experience, and separately labelled supporting activity reflection; never a combined score. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
@@ -138,6 +146,9 @@ settle or release credit. Historical chat policy remains unchanged.
 | `resource_eligibility_declaration` | content-notification-service | PostgreSQL | ACTIVE | Physical child of publication with domain/role/instrument eligibility. |
 | `resource_eligibility_withdrawal` | content-notification-service | PostgreSQL | ACTIVE | Physical one-to-one append-only withdrawal of a publication. |
 | `resource_eligibility_command_record` | content-notification-service | PostgreSQL | ACTIVE | Physical replay reference to publication; actor ID is external. |
+| `resource_daily_progress` / `resource_practice_session` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped exact-version Content facts; server completion/start instants determine their local date for Care reconciliation and action-bound Bingo. Learning completion is a separate fact and is not reconciliation evidence. |
+| `resource_weekly_bingo` | content-notification-service | PostgreSQL | ACTIVE | Board unique per external owner, local week and external Care SupportPlan; separate sync time selects the latest board without changing its ETag on an identical sync. |
+| `resource_weekly_bingo_item` | content-notification-service | PostgreSQL | ACTIVE | Physical ordered child of a board and exact publication snapshot; nullable external Care action/version identifies legacy rows, retirement preserves history and capacity, and self-confirmation remains independent of computed Content evidence. |
 | `resource_reward_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped optional visibility only; authoritative XP is a deterministic read model over exact progress, practice, and publication evidence. |
 | `achievement_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped private-gallery visibility only; achievement status is a deterministic read model over minimized source-owner facts. |
 | `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One role-scoped atomic aggregate per external Identity owner covering channels, allowed content groups, quiet hours/timezone, and email cadence/opt-ins; specialist scope cannot enable user wellbeing categories. |
@@ -199,7 +210,7 @@ the active model.
 
 | Entity | Owner | Storage | Status | Invariant |
 | --- | --- | --- | --- | --- |
-| `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migrations 0018/0019; encrypted text, unique sender/conversation/client identity, immutable GROUP author membership epoch and private sequence; 90-day content expiry, content-free retry tombstone. |
+| `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migrations 0018/0019/0022; encrypted active text or sender-retracted content-free tombstone, unique sender/conversation/client identity, immutable GROUP author membership epoch and private sequence; 90-day content expiry and no retry resurrection. |
 | `community_chat_read_state` | community-service | PostgreSQL | ACTIVE | Migration 0018; one private monotonic read cursor per current reader/conversation; no shared-receipt opt-in implied. |
 
 ### MB-687 private group extension — ACTIVE

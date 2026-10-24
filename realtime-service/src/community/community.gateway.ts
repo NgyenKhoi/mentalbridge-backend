@@ -260,6 +260,26 @@ export class CommunityGateway implements OnGatewayInit, OnGatewayConnection, OnG
   private receive(fact: CommunityFact): void {
     const { conversationId, kind } = fact.payload;
     for (const socket of this.sockets) {
+      if (
+        kind === 'CONVERSATION_CLEARED' &&
+        this.current(socket) &&
+        fact.payload.recipientRoutingReference === this.session(socket).subject
+      ) {
+        const current = socket.data.subscriptions?.get(conversationId);
+        if (current) {
+          current.generation++;
+          current.presence?.clear();
+          current.presenceRoutes?.clear();
+          socket.data.subscriptions?.delete(conversationId);
+        }
+        this.emit(
+          socket,
+          'community.conversation.invalidated',
+          { conversationId },
+          fact.correlationId,
+        );
+        continue;
+      }
       const subscription = socket.data.subscriptions?.get(conversationId);
       if (!subscription || !this.current(socket)) continue;
       if (kind === 'AUTHORIZATION_CHANGED') {
@@ -279,7 +299,15 @@ export class CommunityGateway implements OnGatewayInit, OnGatewayConnection, OnG
         fact.payload.recipientRoutingReference !== this.session(socket).subject
       )
         continue;
-      if (!['MESSAGE_SAVED', 'AUTHORIZATION_CHANGED', 'READ_STATE_CHANGED'].includes(kind))
+      if (
+        ![
+          'MESSAGE_SAVED',
+          'MESSAGE_RETRACTED',
+          'AUTHORIZATION_CHANGED',
+          'READ_STATE_CHANGED',
+          'CONVERSATION_CLEARED',
+        ].includes(kind)
+      )
         continue;
       void this.enqueue(socket, conversationId, subscription, () =>
         this.deliver(socket, subscription, fact),
@@ -307,6 +335,22 @@ export class CommunityGateway implements OnGatewayInit, OnGatewayConnection, OnG
         if (error instanceof CommunityError && error.code === 'TARGET_UNAVAILABLE') return;
         throw error;
       }
+    }
+    if (fact.payload.kind === 'MESSAGE_RETRACTED') {
+      try {
+        const message = await this.owner.message(
+          subject,
+          conversation,
+          fact.payload.targetId,
+          correlation,
+        );
+        if (!this.valid(socket, conversation, subscription, generation)) return;
+        this.emit(socket, 'community.message.updated', { message }, correlation);
+      } catch (error) {
+        if (error instanceof CommunityError && error.code === 'TARGET_UNAVAILABLE') return;
+        throw error;
+      }
+      return;
     }
     if (subscription.cursor === null) return;
     try {

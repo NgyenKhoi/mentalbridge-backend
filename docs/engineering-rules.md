@@ -11,7 +11,7 @@ This document is a stable index, not a second copy of implementation rules. Use 
 | Spring/NestJS code organization | `docs/agent-guides/service-structure.md` |
 | Node.js runtime and libraries | `docs/nodejs-service-stack.md` |
 | REST/event/WebSocket lifecycle | `contracts/README.md` and versioned contracts |
-| Executable PostgreSQL fields and constraints | owner migration plus `docs/database/postgresql-field-data-dictionary.md` |
+| Executable PostgreSQL fields and constraints | owner migration plus the matching service file under `docs/database/postgresql/`, located through the [field dictionary index](database/postgresql-field-data-dictionary.md) |
 | Canonical relational/document model for ERD and domain diagrams | `docs/domain-model/` (read-only; never executable) |
 | Concrete shallow examples | `docs/reference-implementations.md` |
 

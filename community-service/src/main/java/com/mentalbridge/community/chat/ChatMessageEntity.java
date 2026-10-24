@@ -15,8 +15,10 @@ class ChatMessageEntity {
     @Column(name = "server_sequence", nullable = false) long serverSequence;
     @Column(name = "content_ciphertext", columnDefinition = "text") String contentCiphertext;
     @Column(name = "content_fingerprint", nullable = false) String contentFingerprint;
+    @Column(nullable = false) String state = "ACTIVE";
     @Column(name = "created_at", nullable = false) Instant createdAt;
     @Column(name = "expires_at", nullable = false) Instant expiresAt;
+    @Column(name = "retracted_at") Instant retractedAt;
     @Column(name = "purged_at") Instant purgedAt;
     protected ChatMessageEntity() {}
     ChatMessageEntity(UUID id, UUID conversation, UUID sender, UUID clientId, long sequence,
@@ -30,5 +32,12 @@ class ChatMessageEntity {
         serverSequence = sequence; contentCiphertext = ciphertext; contentFingerprint = fingerprint;
         createdAt = now; expiresAt = now.plus(java.time.Duration.ofDays(90));
     }
-    boolean readable(Instant now) { return contentCiphertext != null && expiresAt.isAfter(now); }
+    boolean readable(Instant now) { return state.equals("ACTIVE") && contentCiphertext != null && expiresAt.isAfter(now); }
+    boolean visible(Instant now) { return state.equals("RETRACTED") || readable(now); }
+    void retract(Instant now) {
+        state = "RETRACTED";
+        contentCiphertext = null;
+        retractedAt = now;
+        purgedAt = now;
+    }
 }

@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/proposals/companion-voice-policy-v1.schema.json",
+  "title": "companion-voice-policy-v1",
+  "description": "Frozen MB-755 approved target. A changed product value requires a new policy version and explicit approval; this file does not activate voice runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyVersion",
+    "decisionId",
+    "approvalDate",
+    "status",
+    "timeZone",
+    "packages",
+    "limits",
+    "usage",
+    "privacy",
+    "providers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "policyVersion": {
+      "const": "companion-voice-policy-v1"
+    },
+    "decisionId": {
+      "const": "MB-AI-VOICE-COMPANION-001"
+    },
+    "approvalDate": {
+      "const": "2026-10-23"
+    },
+    "status": {
+      "const": "APPROVED_TARGET_NOT_IMPLEMENTED"
+    },
+    "timeZone": {
+      "const": "Asia/Ho_Chi_Minh"
+    },
+    "packages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["FREE", "PLUS", "PREMIUM"],
+      "properties": {
+        "FREE": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "voiceEligible",
+            "sessionsPerDay",
+            "dailySeconds",
+            "perSessionSeconds"
+          ],
+          "properties": {
+            "voiceEligible": {
+              "const": false
+            },
+            "sessionsPerDay": {
+              "const": 0
+            },
+            "dailySeconds": {
+              "const": 0
+            },
+            "perSessionSeconds": {
+              "const": 0
+            }
+          }
+        },
+        "PLUS": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "voiceEligible",
+            "sessionsPerDay",
+            "dailySeconds",
+            "perSessionSeconds"
+          ],
+          "properties": {
+            "voiceEligible": {
+              "const": true
+            },
+            "sessionsPerDay": {
+              "const": 2
+            },
+            "dailySeconds": {
+              "const": 600
+            },
+            "perSessionSeconds": {
+              "const": 300
+            }
+          }
+        },
+        "PREMIUM": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "voiceEligible",
+            "sessionsPerDay",
+            "dailySeconds",
+            "perSessionSeconds"
+          ],
+          "properties": {
+            "voiceEligible": {
+              "const": true
+            },
+            "sessionsPerDay": {
+              "const": 3
+            },
+            "dailySeconds": {
+              "const": 1800
+            },
+            "perSessionSeconds": {
+              "const": 600
+            }
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "globalSessions",
+        "userSessions",
+        "idleTimeoutSeconds",
+        "reconnectGraceSeconds",
+        "authorizationLeaseSeconds",
+        "leaseRenewalSeconds",
+        "ownerReadTimeoutMilliseconds",
+        "connectTimeoutSeconds",
+        "requestTimeoutSeconds",
+        "startAttemptsPerMinute",
+        "startAttemptsPerDay",
+        "maxContextTurnPairs",
+        "maxContextTokens",
+        "maxFinalTranscriptCharacters",
+        "maxSpokenReplyCharacters"
+      ],
+      "properties": {
+        "globalSessions": {
+          "const": 2
+        },
+        "userSessions": {
+          "const": 1
+        },
+        "idleTimeoutSeconds": {
+          "const": 60
+        },
+        "reconnectGraceSeconds": {
+          "const": 30
+        },
+        "authorizationLeaseSeconds": {
+          "const": 10
+        },
+        "leaseRenewalSeconds": {
+          "const": 5
+        },
+        "ownerReadTimeoutMilliseconds": {
+          "const": 2000
+        },
+        "connectTimeoutSeconds": {
+          "const": 45
+        },
+        "requestTimeoutSeconds": {
+          "const": 10
+        },
+        "startAttemptsPerMinute": {
+          "const": 3
+        },
+        "startAttemptsPerDay": {
+          "const": 10
+        },
+        "maxContextTurnPairs": {
+          "const": 4
+        },
+        "maxContextTokens": {
+          "const": 2000
+        },
+        "maxFinalTranscriptCharacters": {
+          "const": 2000
+        },
+        "maxSpokenReplyCharacters": {
+          "const": 1000
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dayAssignment",
+        "reset",
+        "admission",
+        "hardDeadline",
+        "sessionConsumedOn",
+        "timeChargedFrom",
+        "rounding",
+        "noDeliveredReply",
+        "deliveredReplyFailure",
+        "upgrade",
+        "entitlementLoss"
+      ],
+      "properties": {
+        "dayAssignment": {
+          "const": "AUTHORIZED_LOCAL_DAY"
+        },
+        "reset": {
+          "const": "LOCAL_MIDNIGHT_NO_ROLLOVER"
+        },
+        "admission": {
+          "const": "RESERVE_SESSION_AND_MIN_REMAINING_SECONDS"
+        },
+        "hardDeadline": {
+          "const": "AUTHORIZED_AT_PLUS_ADMITTED_SECONDS_NEVER_EXTENDED"
+        },
+        "sessionConsumedOn": {
+          "const": "FIRST_TRUSTED_VALIDATED_AI_AUDIO_PUBLICATION_WHILE_OWNER_CONNECTED"
+        },
+        "timeChargedFrom": {
+          "const": "FIRST_REPLY_PUBLICATION_ACTIVE_INTERVALS_ONLY"
+        },
+        "rounding": {
+          "const": "CEIL_SUMMED_ACTIVE_MILLISECONDS_ONCE_PER_SESSION"
+        },
+        "noDeliveredReply": {
+          "const": "RELEASE_ALL_RESERVED_QUOTA"
+        },
+        "deliveredReplyFailure": {
+          "const": "KEEP_DELIVERED_SESSION_AND_USED_ACTIVE_SECONDS"
+        },
+        "upgrade": {
+          "const": "RAISE_CURRENT_DAY_CAP_WITHOUT_RESET_OR_SESSION_EXTENSION"
+        },
+        "entitlementLoss": {
+          "const": "TERMINATE_AND_SETTLE_USED_QUOTA"
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordAudio",
+        "persistTranscripts",
+        "agentObservability",
+        "reuseJournal",
+        "reuseTextHistory",
+        "contextStorage",
+        "metadataRetentionDays",
+        "requiredConsents",
+        "voiceConsentVersion",
+        "consentOwner",
+        "voiceAuthority",
+        "entitlementOwner",
+        "materialProviderOrPurposeChange"
+      ],
+      "properties": {
+        "recordAudio": {
+          "const": false
+        },
+        "persistTranscripts": {
+          "const": false
+        },
+        "agentObservability": {
+          "const": false
+        },
+        "reuseJournal": {
+          "const": false
+        },
+        "reuseTextHistory": {
+          "const": false
+        },
+        "contextStorage": {
+          "const": "SESSION_RAM_ONLY"
+        },
+        "metadataRetentionDays": {
+          "const": 30
+        },
+        "requiredConsents": {
+          "type": "array",
+          "const": ["AI_PROCESSING", "AI_VOICE_PROCESSING"]
+        },
+        "voiceConsentVersion": {
+          "const": "ai-voice-processing-capstone-v1"
+        },
+        "consentOwner": {
+          "const": "CARE"
+        },
+        "voiceAuthority": {
+          "const": "JOURNAL_AI"
+        },
+        "entitlementOwner": {
+          "const": "CONSULTATION"
+        },
+        "materialProviderOrPurposeChange": {
+          "const": "NEW_VOICE_DISCLOSURE_AND_RECONSENT"
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "media",
+        "agent",
+        "speech",
+        "reasoning",
+        "bedrockRegion",
+        "approvedGlobalProfiles",
+        "routing",
+        "residency",
+        "liveReadiness"
+      ],
+      "properties": {
+        "media": {
+          "const": "LIVEKIT_CLOUD"
+        },
+        "agent": {
+          "const": "LIVEKIT_CLOUD_HOSTED_NODE"
+        },
+        "speech": {
+          "const": "LIVEKIT_INFERENCE_CANDIDATES_PENDING_MB_760"
+        },
+        "reasoning": {
+          "const": "JOURNAL_AI_BEDROCK"
+        },
+        "bedrockRegion": {
+          "const": "ap-southeast-1"
+        },
+        "approvedGlobalProfiles": {
+          "type": "array",
+          "const": [
+            "global.anthropic.claude-sonnet-4-6",
+            "global.anthropic.claude-opus-4-6-v1"
+          ]
+        },
+        "routing": {
+          "const": "REUSE_CURRENT_APPROVED_PACKAGE_ROUTE_NO_AUTOMATIC_FALLBACK"
+        },
+        "residency": {
+          "const": "GLOBAL_PROFILES_MAY_PROCESS_CROSS_REGION"
+        },
+        "liveReadiness": {
+          "const": "ACCOUNT_ACCESS_QUOTA_AND_SPEECH_BENCHMARK_REQUIRED"
+        }
+      }
+    }
+  }
+}
