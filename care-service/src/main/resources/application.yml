@@ -38,6 +38,9 @@ spring:
 
 mentalbridge:
   care:
+    voice-consent:
+      journal-service-token: ${CARE_VOICE_JOURNAL_SERVICE_TOKEN:}
+      idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}
       audience: ${IDENTITY_JWT_AUDIENCE}
