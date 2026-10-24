@@ -18,7 +18,6 @@ and shared decisions retain cross-story facts without duplicating story records.
 
 | Recorded date | Story or decision |
 | --- | --- |
-| 2026-10-24 | [MB-677](requirements-traceability/stories/mb-677.md#delivery-contract-2026-10-24) |
 | 2026-10-22 | [MB-676](requirements-traceability/stories/mb-676.md#delivery-2026-10-22) |
 | Undated | [MB-749](requirements-traceability/stories/mb-749.md#record-01) |
 | 2026-10-20 | [MB-684](requirements-traceability/stories/mb-684.md#record-02) |

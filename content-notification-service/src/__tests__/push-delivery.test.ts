@@ -188,6 +188,7 @@ describe('native push delivery', () => {
           actionType: null,
           actionTargetId: null,
           attemptCount: 1,
+          appointmentReminder: null,
         },
       ]),
       isDeliverable: vi.fn(async () => true),
@@ -213,6 +214,7 @@ describe('native push delivery', () => {
       } as ServiceConfiguration,
       repository as never,
       provider,
+      { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
     );
 
     await worker.runOnce();
@@ -258,6 +260,7 @@ describe('native push delivery', () => {
       } as ServiceConfiguration,
       repository as never,
       provider,
+      { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
     );
 
     await worker.runOnce();
@@ -283,6 +286,7 @@ describe('native push delivery', () => {
           actionType: null,
           actionTargetId: null,
           attemptCount: 1,
+          appointmentReminder: null,
         },
       ]),
       isDeliverable: vi.fn(async () => false),
@@ -301,6 +305,7 @@ describe('native push delivery', () => {
       } as ServiceConfiguration,
       repository as never,
       provider,
+      { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
     );
 
     await worker.runOnce();

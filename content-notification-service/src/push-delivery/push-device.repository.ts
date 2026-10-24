@@ -271,6 +271,11 @@ export class PushDeviceRepository {
           action_type: string | null;
           action_target_id: string | null;
           attempt_count: number | string;
+          reminder_recipient_id: string | null;
+          reminder_appointment_id: string | null;
+          reminder_appointment_version: number | string | null;
+          reminder_modality: 'IN_APP_CHAT' | 'IN_APP_VIDEO' | null;
+          reminder_scheduled_start_at: Date | string | null;
         }
       >(
         `WITH due AS (
@@ -306,14 +311,19 @@ export class PushDeviceRepository {
            LIMIT $1
          )
          UPDATE push_delivery_attempt a
-         SET state = 'PROCESSING', attempt_count = attempt_count + 1, claimed_at = now(),
+         SET state = 'PROCESSING', attempt_count = a.attempt_count + 1, claimed_at = now(),
              last_attempt_at = now(), failure_code = NULL, updated_at = now()
          FROM due, push_device_registration d, notification n
+         LEFT JOIN appointment_push_reminder r ON r.notification_id=n.id
          WHERE a.id = due.id AND d.id = a.device_registration_id AND n.id = a.notification_id
          RETURNING a.id, d.id AS device_id, d.provider_token_ciphertext AS token_ciphertext,
                    d.provider_token_iv AS token_iv, d.provider_token_auth_tag AS token_auth_tag,
                    n.title, n.id AS notification_id, n.action_type, n.action_target_id,
-                   a.attempt_count`,
+                   a.attempt_count, r.recipient_id AS reminder_recipient_id,
+                   r.appointment_id AS reminder_appointment_id,
+                   r.appointment_version AS reminder_appointment_version,
+                   r.modality AS reminder_modality,
+                   r.scheduled_start_at AS reminder_scheduled_start_at`,
         [limit],
       );
       return result.rows.map((row) => ({
@@ -327,6 +337,20 @@ export class PushDeviceRepository {
         actionType: row.action_type,
         actionTargetId: row.action_target_id,
         attemptCount: Number(row.attempt_count),
+        appointmentReminder:
+          row.reminder_recipient_id &&
+          row.reminder_appointment_id &&
+          row.reminder_appointment_version !== null &&
+          row.reminder_modality &&
+          row.reminder_scheduled_start_at
+            ? {
+                recipientId: row.reminder_recipient_id,
+                appointmentId: row.reminder_appointment_id,
+                appointmentVersion: Number(row.reminder_appointment_version),
+                modality: row.reminder_modality,
+                scheduledStartAt: new Date(row.reminder_scheduled_start_at),
+              }
+            : null,
       }));
     });
   }
@@ -363,6 +387,15 @@ export class PushDeviceRepository {
        SET state = 'SUPPRESSED', failure_code = $2, updated_at = now()
        WHERE id = $1 AND state = 'PROCESSING'`,
       [id, code],
+    );
+  }
+
+  async deferClaim(id: string, availableAt: Date, code: string): Promise<void> {
+    await this.db.query(
+      `UPDATE push_delivery_attempt
+       SET state='FAILED', available_at=$2, failure_code=$3, updated_at=now()
+       WHERE id=$1 AND state='PROCESSING'`,
+      [id, availableAt, code],
     );
   }
 

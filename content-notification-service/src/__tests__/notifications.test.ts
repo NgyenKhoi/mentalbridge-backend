@@ -41,6 +41,19 @@ describe('NotificationService producer boundary', () => {
     );
   });
 
+  it('accepts the closed appointment deep-link action', async () => {
+    const { repository, subject } = service();
+    vi.mocked(repository.create).mockResolvedValue({ id: 'saved' } as never);
+
+    await subject.create({
+      ...command(),
+      kind: 'APPOINTMENT',
+      action: { type: 'OPEN_APPOINTMENT', targetId: resourceId },
+    });
+
+    expect(repository.create).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { ...command(), externalUrl: 'https://untrusted.example' },
     { ...command(), action: { type: 'OPEN_RESOURCE' } },
