@@ -17,6 +17,13 @@ const bedrockModelIdSchema = z
 const routedModelSchema = z.string().min(1).max(2_048);
 const localEncryptionKey = Buffer.alloc(32, 7).toString("base64");
 const localIdempotencyKey = Buffer.alloc(32, 8).toString("base64");
+const voiceServiceToken = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z
+    .string()
+    .regex(/^[\x21-\x7e]{32,256}$/)
+    .optional(),
+);
 
 const configuredRoute = <TProvider extends string>(
   provider: TProvider | undefined,
@@ -97,6 +104,8 @@ const environmentSchema = z
       .default(2_000),
     JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
     JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: z.string().min(32).optional(),
+    JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN: voiceServiceToken,
+    JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_PROVIDER_MODE: z
       .enum(providerModes)
       .default("DETERMINISTIC_FAKE"),
@@ -239,6 +248,29 @@ const environmentSchema = z
       .default("companion-chat-routing-v1"),
   })
   .superRefine((environment, context) => {
+    const voiceTokens = [
+      "JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN",
+      "JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN",
+    ] as const;
+    for (const key of voiceTokens) {
+      const token = environment[key];
+      if (
+        token &&
+        [
+          ...voiceTokens
+            .filter((other) => other !== key)
+            .map((other) => environment[other]),
+          environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN,
+          environment.JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN,
+        ].includes(token)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: [key],
+          message: "Voice owner credentials must be purpose-specific",
+        });
+      }
+    }
     for (const route of [
       {
         provider: environment.JOURNAL_AI_FREE_PLUS_PROVIDER,
@@ -438,6 +470,11 @@ const environmentSchema = z
       environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN ?? null,
     SUPPORT_PLAN_CARE_SERVICE_TOKEN:
       environment.JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN ?? null,
+    VOICE_OWNER_TOKENS: {
+      care: environment.JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN ?? null,
+      entitlement:
+        environment.JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN ?? null,
+    },
     PROVIDER_MODE: environment.JOURNAL_AI_PROVIDER_MODE,
     ROUTING_POLICY_VERSION: environment.JOURNAL_AI_ROUTING_POLICY_VERSION,
     PROVIDER_APPROVAL_VERSION:
@@ -502,7 +539,15 @@ const environmentSchema = z
       environment.JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION,
   }));
 
-export type ServiceConfiguration = z.infer<typeof environmentSchema>;
+export type ServiceConfiguration = Omit<
+  z.infer<typeof environmentSchema>,
+  "VOICE_OWNER_TOKENS"
+> & {
+  readonly VOICE_OWNER_TOKENS?: {
+    readonly care: string | null;
+    readonly entitlement: string | null;
+  };
+};
 
 export const loadConfiguration = (
   environment: NodeJS.ProcessEnv = process.env,
