@@ -7,7 +7,10 @@ import java.util.Base64;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -21,11 +24,33 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+
+import com.mentalbridge.consultation.entitlement.VoiceEntitlementAuthenticationFilter;
+import com.mentalbridge.consultation.entitlement.VoiceEntitlementProperties;
 
 import com.mentalbridge.consultation.shared.SecurityProblemSupport;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(VoiceEntitlementProperties.class)
 public class SecurityConfiguration {
+
+	@Bean
+	@Order(1)
+	SecurityFilterChain voiceEntitlementSecurity(HttpSecurity http, VoiceEntitlementProperties properties,
+			Environment environment)
+			throws Exception {
+		if (properties.journalServiceToken() != null && !properties.journalServiceToken().isEmpty()) {
+			properties.requireDistinctFrom(environment.getProperty("mentalbridge.consultation.evidence-service-token"),
+					environment.getProperty("mentalbridge.consultation.appointment-notifications.service-token"));
+		}
+		http.securityMatcher(VoiceEntitlementAuthenticationFilter.PATH)
+				.csrf(csrf -> csrf.disable())
+				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.addFilterBefore(new VoiceEntitlementAuthenticationFilter(properties), AuthorizationFilter.class)
+				.authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll());
+		return http.build();
+	}
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
