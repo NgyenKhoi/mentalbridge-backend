@@ -1420,7 +1420,7 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 		var userId = UUID.randomUUID();
 		var specialistId = UUID.randomUUID();
 		var adminId = UUID.randomUUID();
-		
+
 		jdbc.sql("""
 				insert into specialist_profile (
 				 account_id, display_name, biography, years_experience, timezone, approval_status,
@@ -1512,7 +1512,7 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 				.andExpect(jsonPath("$.appointments").isEmpty())
 				.andExpect(jsonPath("$.earnings").isEmpty())
 				.andExpect(jsonPath("$.payouts").isEmpty());
-		
+
 		jdbc.sql("""
 				insert into payment_transaction (
 				 id, subscription_id, target_plan_version_id, payment_provider, momo_order_id, momo_request_id,
@@ -1630,4 +1630,3 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 		return jwt().jwt(token -> token.subject(id.toString())).authorities(new SimpleGrantedAuthority(authority));
 	}
 }
-

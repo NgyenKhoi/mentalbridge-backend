@@ -143,4 +143,3 @@ public class AdminSubscriptionController {
 			Instant createdAt) {
 	}
 }
-

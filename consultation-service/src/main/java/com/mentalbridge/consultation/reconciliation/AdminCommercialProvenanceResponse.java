@@ -102,4 +102,3 @@ public record AdminCommercialProvenanceResponse(
 			Instant paidAt) {
 	}
 }
-

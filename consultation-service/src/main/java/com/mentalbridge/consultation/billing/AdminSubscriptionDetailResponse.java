@@ -39,4 +39,3 @@ public record AdminSubscriptionDetailResponse(
 			Instant appliedAt) {
 	}
 }
-

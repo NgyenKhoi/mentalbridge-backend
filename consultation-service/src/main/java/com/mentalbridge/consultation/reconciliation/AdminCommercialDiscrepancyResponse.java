@@ -57,4 +57,3 @@ public record AdminCommercialDiscrepancyResponse(
 			Instant eligibleUntil) {
 	}
 }
-

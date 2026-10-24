@@ -41,4 +41,3 @@ public record AdminPayoutDetailResponse(
 			Instant processedAt) {
 	}
 }
-
