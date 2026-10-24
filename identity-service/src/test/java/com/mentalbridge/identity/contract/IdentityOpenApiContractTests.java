@@ -169,9 +169,13 @@ class IdentityOpenApiContractTests {
 		var deletionHoldReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionHoldReason");
 		var deletionEvidenceReference = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionOwnerFact")
 				.getProperties().get("evidenceReference");
+		var retentionJobStatusSource = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("jobStatusSource");
 		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
 		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
 		assertThat(registrationActor.getEnum()).extracting(Object::toString).containsExactly("USER", "SPECIALIST");
+		assertThat(retentionJobStatusSource.getEnum()).extracting(Object::toString).containsExactly(
+				"IDENTITY_POLICY_CATALOG", "IDENTITY_EXECUTION_RECORD", "NO_AUTHORITATIVE_SIGNAL");
 		assertThat(deletionHoldReason.getEnum()).extracting(Object::toString).containsExactly(
 				"STATUTORY_INQUIRY",
 				"PENDING_DISPUTE",

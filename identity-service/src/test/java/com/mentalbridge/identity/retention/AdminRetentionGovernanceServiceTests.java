@@ -5,8 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -79,19 +80,32 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(reportingPolicy.ownerService()).isEqualTo(RetentionOwnerService.IDENTITY);
 		assertThat(reportingPolicy.status()).isEqualTo(RetentionPolicyStatus.APPROVED);
 		assertThat(reportingPolicy.automatedExecutionSupported()).isTrue();
+		assertThat(reportingPolicy.jobStatusSource()).isEqualTo(RetentionJobStatusSource.IDENTITY_EXECUTION_RECORD);
 		assertThat(reportingPolicy.lastExecution()).isNotNull();
 		assertThat(reportingPolicy.lastExecution().recordsPurged()).isEqualTo(12);
 
 		var carePolicy = policies.stream()
 				.filter(p -> "MB-PRIVACY-CARE-001".equals(p.policyId())).findFirst().orElseThrow();
 		assertThat(carePolicy.version()).isEqualTo("1.1-capstone");
+		assertThat(carePolicy.jobStatus()).isEqualTo(RetentionJobStatus.UNAVAILABLE);
+		assertThat(carePolicy.jobStatusSource()).isEqualTo(RetentionJobStatusSource.NO_AUTHORITATIVE_SIGNAL);
 		assertThat(carePolicy.automatedExecutionSupported()).isFalse();
 		assertThat(carePolicy.unsupportedCapabilityNotice()).isNotBlank();
 
 		var contentPolicy = policies.stream()
 				.filter(p -> "MB-CONTENT-NOTIFICATION-RETENTION-001".equals(p.policyId())).findFirst().orElseThrow();
 		assertThat(contentPolicy.jobStatus()).isEqualTo(RetentionJobStatus.UNAVAILABLE);
+		assertThat(contentPolicy.jobStatusSource()).isEqualTo(RetentionJobStatusSource.NO_AUTHORITATIVE_SIGNAL);
 		assertThat(contentPolicy.automatedExecutionSupported()).isFalse();
+
+		assertThat(policies)
+				.filteredOn(policy -> policy.ownerService() != RetentionOwnerService.IDENTITY)
+				.allSatisfy(policy -> {
+					assertThat(policy.jobStatus()).isEqualTo(RetentionJobStatus.UNAVAILABLE);
+					assertThat(policy.jobStatusSource())
+							.isEqualTo(RetentionJobStatusSource.NO_AUTHORITATIVE_SIGNAL);
+					assertThat(policy.lastExecution()).isNull();
+				});
 	}
 
 	@Test
@@ -188,6 +202,7 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(policy.jobStatus()).isEqualTo(RetentionJobStatus.FAILED);
 		assertThat(policy.lastExecution().jobStatus()).isEqualTo("STALE");
 		verify(executionRecorder, never()).recordStale(any());
+		clearInvocations(executionRecords, executionRecorder);
 
 		assertThatThrownBy(() -> service.triggerRetentionSweep(policyId, actorId, correlationId))
 				.isInstanceOf(ResponseStatusException.class)

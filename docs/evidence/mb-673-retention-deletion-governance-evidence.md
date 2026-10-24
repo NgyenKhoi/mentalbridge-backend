@@ -13,10 +13,10 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `MB-IDENTITY-REPORTING-001` | Chính sách bảo lưu tệp báo cáo tổng hợp | `IDENTITY` | 1.0 | 30 ngày | **ACTIVE** (Automated & Admin sweep supported via authoritative metrics) | Không áp dụng | Số lượng tệp trích xuất báo cáo phân tích hết hạn đã dọn dẹp |
 | `MB-IDENTITY-AUDIT-001` | Chính sách bảo lưu nhật ký kiểm toán Identity | `IDENTITY` | 1.0 | 365 ngày | **PARTIALLY_SUPPORTED** (Bảo lưu bất biến MB-587; không hỗ trợ xóa sớm/thủ công) | Không áp dụng | Nhật ký kiểm toán danh tính tối thiểu hóa |
-| `MB-PRIVACY-CARE-001` | Chính sách bảo lưu sàng lọc & đồng ý chăm sóc | `CARE` | 1.1-capstone | Quản lý theo vòng đời Care (TTL 30p-2h ẩn danh, có tài khoản bảo lưu kiểm soát) | **PARTIALLY_SUPPORTED** (Care domain-managed only) | **Có hỗ trợ** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
-| `consultation-journey-v1` | Chính sách bảo lưu phiên tư vấn & đối soát giao dịch | `CONSULTATION` | 1.0-scope-v2 | 90 ngày (LiveKit metadata, tài chính kế toán theo luật) | **ACTIVE** (Consultation metadata sweep) | **Có hỗ trợ** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
-| `MB-DAILY-EMOTION-CHECK-IN-001` | Chính sách bảo lưu & xóa nhật ký cảm xúc | `JOURNAL_AI` | 1.0 | Quản lý mã hóa Journal AI (xóa ciphertext, tombstone có giới hạn) | **ACTIVE** (Journal AI tombstone purge) | **Có hỗ trợ** | Nhật ký cảm xúc định kỳ và vector suy luận AI |
-| `MB-COMMUNITY-RETENTION-001` | Chính sách bảo lưu nội dung cộng đồng | `COMMUNITY` | 1.0 | 7 ngày (phương tiện chưa liên kết) | **PARTIALLY_SUPPORTED** (Community media sweep) | Không áp dụng | Tệp đính kèm tạm thời bài đăng cộng đồng |
+| `MB-PRIVACY-CARE-001` | Chính sách bảo lưu sàng lọc & đồng ý chăm sóc | `CARE` | 1.1-capstone | Quản lý theo vòng đời Care (TTL 30p-2h ẩn danh, có tài khoản bảo lưu kiểm soát) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`; Care domain-managed only) | **Có hỗ trợ** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
+| `consultation-journey-v1` | Chính sách bảo lưu phiên tư vấn & đối soát giao dịch | `CONSULTATION` | 1.0-scope-v2 | 90 ngày (LiveKit metadata, tài chính kế toán theo luật) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | **Có hỗ trợ** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
+| `MB-DAILY-EMOTION-CHECK-IN-001` | Chính sách bảo lưu & xóa nhật ký cảm xúc | `JOURNAL_AI` | 1.0 | Quản lý mã hóa Journal AI (xóa ciphertext, tombstone có giới hạn) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | **Có hỗ trợ** | Nhật ký cảm xúc định kỳ và vector suy luận AI |
+| `MB-COMMUNITY-RETENTION-001` | Chính sách bảo lưu nội dung cộng đồng | `COMMUNITY` | 1.0 | 7 ngày (phương tiện chưa liên kết) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | Không áp dụng | Tệp đính kèm tạm thời bài đăng cộng đồng |
 | `MB-CONTENT-NOTIFICATION-RETENTION-001` | Chính sách bảo lưu hộp thư thông báo | `CONTENT` | 1.0 | 90 ngày | **UNAVAILABLE** (Explicitly Unavailable) | Không áp dụng | Hộp thư thông báo nội dung không quan trọng |
 
 ### Authority & Architectural Rules
@@ -31,6 +31,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 9. **Audit Transaction Isolation (P1-E)**: Audit logging enforces exact transactional boundaries: `RetentionAuditLogger.recordDenied` uses `REQUIRES_NEW` (ensuring denied audit records persist even when the caller transaction rolls back), while `recordSuccess` uses `REQUIRED` (ensuring success audit records roll back if the business transaction fails).
 10. **Deletion Evidence Preservation (P1-I)**: Foreign key `account_id` on `deletion_request` does NOT cascade delete on account removal, ensuring immutable audit evidence and traceability are permanently preserved.
 11. **Pagination Integration (P1)**: Authoritative pagination via `page` and `nextCursor` integrated seamlessly across OpenAPI, BFF, identity-client, and frontend UI pagination controls.
+12. **Job Status Provenance (P2)**: Every policy reports `jobStatusSource`. Identity-owned state comes from `IDENTITY_POLICY_CATALOG` or `IDENTITY_EXECUTION_RECORD`; external owners without an approved live status contract report `UNAVAILABLE` with `NO_AUTHORITATIVE_SIGNAL` instead of presenting a fabricated `ACTIVE` state.
 
 ---
 
@@ -73,7 +74,9 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 - **UI Components**:
   - `AdminRetentionGovernance.tsx`:
     - Policy tab: Displays policy version, owner, status, last execution, safe aggregate counts, and explicitly unavailable indicators with disabled sweep buttons.
+    - Destructive Identity sweeps require an accessible two-step confirmation naming the exact policy, owner, retention scope, and irreversible effect; cancellation sends no request and in-flight submission is single-shot.
     - Deletions tab: Minimized identifiers (`tombstone:<hash>`), status/hold badges, retry counter (`retryCount / maxRetries`), expandable owner facts table with evidence references, and hold management modal with safe reason selector.
+    - Deletion list reads and mutation refreshes share one request epoch and the latest filter/page snapshot, so stale responses cannot restore outdated actionable rows.
     - Audit-Safe Guarantee Banner: Explicit notice affirming privacy guarantees and absence of raw journal, assessment, or chat text.
   - Integrated into `AdminWorkspace.tsx` under section `/admin/retention` ("Bảo lưu & xóa dữ liệu").
 
@@ -81,7 +84,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ## 3. Test & Verification Results
 
-### 3.0 Local verification for the 2026-10-20 review
+### 3.0 Latest local verification (2026-10-24)
 
 | Check | Result | Actual tests |
 | :--- | :--- | :--- |
@@ -91,21 +94,25 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | `RetentionAuditLoggerTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates `REQUIRES_NEW` audit persistence on rollback. |
 | `RetentionExecutionRecorderTransactionTests` | **PASS** | **3 run, 0 failed, 0 errors, 0 skipped**; validates failure record commit and success rollback. |
 | `IdentityOpenApiContractTests` | **PASS** | **1 run, 0 failed, 0 errors, 0 skipped**; validates OpenAPI schema endpoints, status codes, and `evidenceReference` pattern/maxLength constraints. |
-| `RetentionTransactionIntegrationTests` | **PASS** | **5 run, 0 failed, 0 errors, 0 skipped**; executed against active Testcontainers PostgreSQL instance, verifying JPA `@JdbcTypeCode(SqlTypes.CHAR)` mapping and hold persistence across transactions. |
-| Total targeted backend run | **PASS** | **67 run, 0 failed, 0 errors, 0 skipped** (100% PASS, BUILD SUCCESS). |
-| Full `identity-service` suite (`./mvnw -B test`) | **PASS** | **225 run, 0 failed, 0 errors, 0 skipped**; validates all 33 runtime OpenAPI operations in `IdentitySessionFlowIntegrationTests`. |
-| `AdminRetentionGovernance.test.tsx` + `AdminWorkspace.test.tsx` + `identity-validation.test.ts` | **PASS** | **28 run, 0 failed, 0 errors, 0 skipped** (15 retention + 1 workspace + 12 validation; 100% pass via vitest). |
+| `RetentionTransactionIntegrationTests` | **NOT RUN (LATEST)** | Docker/Testcontainers was unavailable in this environment. Historical 5/5 pass is retained below and is not presented as a latest result. |
+| Total targeted backend run | **PASS** | **62 run, 0 failed, 0 errors, 0 skipped** (37 service + 11 controller + 7 security + 1 OpenAPI + 3 execution transaction + 3 audit transaction). |
+| Full `identity-service` suite | **NOT RUN** | Focused MB-673 suites and repository policy were run; no full backend suite result is claimed for this worktree. |
+| `AdminRetentionGovernance.test.tsx` + `identity-validation.test.ts` | **PASS** | **33 run, 0 failed** (20 retention + 13 validation), including sweep confirm/cancel/failure/duplicate guards, external-owner status provenance, stale response fencing, and mutation/filter races. |
+| Full frontend unit suite (`npm run test:unit`) | **PASS** | **297 files, 2126 tests passed, 0 failed**. |
 | Frontend code formatting (`npm run format:check`) | **PASS** | Prettier code style verified across all matched files with 0 warnings. |
 | Frontend contract consistency (`npm run contracts:check`) | **PASS** | All 6 microservice OpenAPI snapshots and generated TypeScript interfaces valid. |
 | Frontend typecheck (`npm run typecheck`) | **PASS** | Next.js typegen and `tsc --noEmit` clean with 0 errors. |
 | Frontend lint (`npm run lint`) | **PASS** | `eslint --max-warnings=0` clean with 0 warnings. |
-| Playwright Synthetic E2E (`run-e2e.mjs`) | **PASS** | **2 run, 2 passed, 0 failed** (100% pass in `admin-retention-governance.spec.ts`). |
-| Backend repository quality gate (`scripts/verify-repository.ps1`) | **PASS** | Repository policy passed (1686 tracked files checked, paired-change policy passed for changed files since origin/dev). |
+| Frontend realtime contract checks | **PASS** | `contract:check` and `contract:provider-check` passed; provider source was explicitly set to the current backend workspace, matching CI checkout semantics. |
+| Frontend production build (`npm run build`) | **PASS** | Next.js production build completed and generated 143 static pages. |
+| Playwright Synthetic E2E (`admin-retention-governance.spec.ts`) | **NOT RUN (LATEST)** | Local runner reached healthy fixture servers but did not start a browser test under the current application-control environment; it was terminated without a fabricated result. Historical pass remains in section 3.4. |
+| Backend repository quality gate (`scripts/verify-repository.ps1 -BaseSha origin/dev`) | **PASS** | Repository policy passed (1863 tracked files checked; paired-change policy passed for 46 changed files). |
+| Documentation policy tests | **PASS** | **20 tests passed**. |
 | Live cross-service E2E (`npm run test:e2e:live`) | **NOT RUN** | Requires deployed multi-service live environment. |
 
 During initial database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the five-test database integration suite now passes completely (5/5 PASS) with active Testcontainers PostgreSQL. No migration or transaction propagation was changed.
 
-Sections 3.1–3.4 below record verification from the earlier branch snapshot; their counts are historical, not tests rerun for this worktree.
+Sections 3.1–3.4 below record verification from earlier branch snapshots; their counts are **HISTORICAL PASS**, not tests rerun for this worktree.
 
 ### 3.1 Historical Backend Test Results (`mvnw.cmd test`)
 Executed test suites:
@@ -196,8 +203,8 @@ Verified UI behaviors:
 ### 3.5 Real Database Transaction Verification Notes
 - `RetentionExecutionRecorderTransactionTests` (3 tests) and `RetentionAuditLoggerTransactionTests` (3 tests) run in Spring's test framework with dynamic transaction managers to assert `REQUIRES_NEW` commits and `REQUIRED` rollbacks.
 - `RetentionTransactionIntegrationTests` uses Testcontainers with a real PostgreSQL instance:
-  - **LATEST RUN**: **PASS (5 run, 0 failed, 0 errors, 0 skipped)** with active Docker Testcontainers PostgreSQL instance.
-  - **HISTORICAL RUN**: **PASS (5/5)** verified.
+  - **LATEST RUN**: **NOT RUN** because Docker/Testcontainers was unavailable in the current environment.
+  - **HISTORICAL PASS**: **5/5** verified on an earlier branch snapshot with active PostgreSQL Testcontainers.
 
 ---
 

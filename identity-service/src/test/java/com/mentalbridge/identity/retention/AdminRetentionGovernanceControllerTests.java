@@ -48,6 +48,7 @@ class AdminRetentionGovernanceControllerTests {
 				"MB-IDENTITY-RETENTION-001", "Identity Retention", "1.0",
 				RetentionOwnerService.IDENTITY, RetentionPolicyStatus.APPROVED,
 				"365 days retention", 365, "IDENTITY_RETENTION_SWEEP", RetentionJobStatus.ACTIVE,
+				RetentionJobStatusSource.IDENTITY_POLICY_CATALOG,
 				true, true, false, null, null
 		);
 		when(service.getRetentionPolicies()).thenReturn(List.of(policy));
@@ -57,6 +58,7 @@ class AdminRetentionGovernanceControllerTests {
 				.andExpect(header().exists("X-Correlation-Id"))
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].policyId").value("MB-IDENTITY-RETENTION-001"))
+				.andExpect(jsonPath("$[0].jobStatusSource").value("IDENTITY_POLICY_CATALOG"))
 				.andExpect(jsonPath("$[0].automatedExecutionSupported").value(true));
 	}
 

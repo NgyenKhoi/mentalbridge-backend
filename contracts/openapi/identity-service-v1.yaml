@@ -1428,7 +1428,7 @@ components:
     RetentionPolicy:
       type: object
       additionalProperties: false
-      required: [policyId, name, version, ownerService, status, description, jobName, jobStatus, automatedExecutionSupported, manualHoldSupported, requiresManualReview]
+      required: [policyId, name, version, ownerService, status, description, jobName, jobStatus, jobStatusSource, automatedExecutionSupported, manualHoldSupported, requiresManualReview]
       properties:
         policyId: { type: string }
         name: { type: string }
@@ -1439,6 +1439,7 @@ components:
         retentionDays: { type: [integer, 'null'] }
         jobName: { type: string }
         jobStatus: { type: string, enum: [ACTIVE, IDLE, PARTIALLY_SUPPORTED, UNAVAILABLE, SUCCEEDED, FAILED, RUNNING, STALE] }
+        jobStatusSource: { type: string, enum: [IDENTITY_POLICY_CATALOG, IDENTITY_EXECUTION_RECORD, NO_AUTHORITATIVE_SIGNAL] }
         automatedExecutionSupported: { type: boolean }
         manualHoldSupported: { type: boolean }
         requiresManualReview: { type: boolean }

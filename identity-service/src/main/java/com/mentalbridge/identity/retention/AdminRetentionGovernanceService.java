@@ -98,7 +98,7 @@ public class AdminRetentionGovernanceService {
 				"Phiên ẩn danh TTL 30 phút, tối đa 2 giờ; Đánh giá có tài khoản được bảo lưu có kiểm soát phục vụ tái đánh giá; Không xóa trước thời hạn quy định",
 				null,
 				"CARE_ANONYMOUS_EXPIRY_SWEEP",
-				RetentionJobStatus.PARTIALLY_SUPPORTED,
+				RetentionJobStatus.UNAVAILABLE,
 				false,
 				true,
 				true,
@@ -113,7 +113,7 @@ public class AdminRetentionGovernanceService {
 				"Metadata phòng LiveKit lưu trữ 90 ngày (ADR 0039); Bằng chứng tài chính và giao dịch được bảo lưu theo quy định kế toán; Giữ lại vô thời hạn nếu có tranh chấp",
 				90,
 				"CONSULTATION_METADATA_RETENTION",
-				RetentionJobStatus.ACTIVE,
+				RetentionJobStatus.UNAVAILABLE,
 				false,
 				true,
 				true,
@@ -128,7 +128,7 @@ public class AdminRetentionGovernanceService {
 				"Xóa dữ liệu nhật ký sẽ lập tức xóa bản mã hóa (ciphertext); giữ lại tombstone có giới hạn trước khi chuyển thành MISSING; Tuyệt đối không xuất thô nội dung",
 				null,
 				"JOURNAL_AI_TOMBSTONE_PURGE",
-				RetentionJobStatus.ACTIVE,
+				RetentionJobStatus.UNAVAILABLE,
 				false,
 				true,
 				false,
@@ -143,7 +143,7 @@ public class AdminRetentionGovernanceService {
 				"Gỡ bài đăng sẽ lưu tombstone; Phương tiện chưa liên kết bị xóa sau 7 ngày",
 				7,
 				"COMMUNITY_MEDIA_SWEEP",
-				RetentionJobStatus.PARTIALLY_SUPPORTED,
+				RetentionJobStatus.UNAVAILABLE,
 				false,
 				false,
 				false,
@@ -170,10 +170,11 @@ public class AdminRetentionGovernanceService {
 	public List<RetentionPolicyResponse> getRetentionPolicies() {
 		List<RetentionPolicyResponse> result = new ArrayList<>();
 		for (PolicyMetadata meta : policyDefinitions.values()) {
-			RetentionExecutionResponse lastExec = executionRecords
-					.findFirstByPolicyIdOrderByStartedAtDesc(meta.policyId())
-					.map(this::toExecutionResponse)
-					.orElse(null);
+			RetentionExecutionResponse lastExec = meta.automatedExecutionSupported()
+					? executionRecords.findFirstByPolicyIdOrderByStartedAtDesc(meta.policyId())
+							.map(this::toExecutionResponse)
+							.orElse(null)
+					: null;
 
 			List<RetentionExecutionRecordEntity> recent = meta.automatedExecutionSupported()
 					? executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(meta.policyId())
@@ -212,7 +213,11 @@ public class AdminRetentionGovernanceService {
 			}
 
 			RetentionJobStatus effectiveJobStatus = meta.jobStatus();
+			RetentionJobStatusSource jobStatusSource = meta.ownerService() == RetentionOwnerService.IDENTITY
+					? RetentionJobStatusSource.IDENTITY_POLICY_CATALOG
+					: RetentionJobStatusSource.NO_AUTHORITATIVE_SIGNAL;
 			if (meta.automatedExecutionSupported() && lastExec != null) {
+				jobStatusSource = RetentionJobStatusSource.IDENTITY_EXECUTION_RECORD;
 				boolean hasUnresolvedRunning = !orphanedRunningDetected
 						&& ((lastExec != null && "RUNNING".equals(lastExec.jobStatus()))
 								|| recent.stream().anyMatch(r -> "RUNNING".equals(r.jobStatus())));
@@ -236,6 +241,7 @@ public class AdminRetentionGovernanceService {
 					meta.retentionDays(),
 					meta.jobName(),
 					effectiveJobStatus,
+					jobStatusSource,
 					meta.automatedExecutionSupported(),
 					meta.manualHoldSupported(),
 					meta.requiresManualReview(),
@@ -784,6 +790,7 @@ public class AdminRetentionGovernanceService {
 			Integer retentionDays,
 			String jobName,
 			RetentionJobStatus jobStatus,
+			RetentionJobStatusSource jobStatusSource,
 			boolean automatedExecutionSupported,
 			boolean manualHoldSupported,
 			boolean requiresManualReview,
