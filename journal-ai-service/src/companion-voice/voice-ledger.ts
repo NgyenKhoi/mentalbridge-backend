@@ -116,6 +116,7 @@ export interface ReserveVoiceInput {
   now: Date;
   entitlement: VoiceEntitlementSnapshot;
   authorityExpiresAt?: Date;
+  claimExpiresAt?: Date;
 }
 
 export interface VoiceGuard {
@@ -151,6 +152,11 @@ export interface VoiceAvailability {
   rateLimited: boolean;
 }
 
+export type VoiceStartAttemptClaim =
+  | { status: "CLAIMED"; expiresAt: Date }
+  | { status: "PENDING" }
+  | { status: "ACCEPTED" };
+
 export type VoiceTeardownProof =
   "NEVER_DISPATCHED" | "PROVIDER_CONFIRMED_STOPPED";
 
@@ -167,7 +173,7 @@ interface DailyUsage {
   usedSeconds: number;
   reservedSeconds: number;
   startAttempts: number;
-  attemptKeyHashes: string[];
+  pendingAttempts: { keyHash: string; expiresAt: Date }[];
   minuteStartedAt: Date;
   minuteAttempts: number;
   expiresAt: Date;
@@ -220,7 +226,7 @@ const freshUsage = (ownerId: string, now: Date): DailyUsage => ({
   usedSeconds: 0,
   reservedSeconds: 0,
   startAttempts: 0,
-  attemptKeyHashes: [],
+  pendingAttempts: [],
   minuteStartedAt: new Date(Math.floor(now.getTime() / 60_000) * 60_000),
   minuteAttempts: 0,
   expiresAt: new Date(now.getTime() + VOICE_RETENTION_MS),
@@ -365,17 +371,31 @@ export class MongoVoiceLedger {
     ownerId: string,
     now: Date,
     keyHash: string,
-  ): Promise<void> {
+  ): Promise<VoiceStartAttemptClaim> {
     assertOwner(ownerId);
     assertDate(now);
     if (!hash.test(keyHash)) throw new VoiceLedgerError("INVALID_REQUEST");
-    await this.atomic(async (transaction) => {
+    return this.atomic<VoiceStartAttemptClaim>(async (transaction) => {
+      const accepted = await this.sessions.findOne(
+        { ownerId, keyHash, expiresAt: { $gt: now } },
+        { session: transaction },
+      );
+      if (accepted) return { status: "ACCEPTED" };
+      await this.usage.updateMany(
+        { ownerId, "pendingAttempts.expiresAt": { $lte: now } },
+        { $pull: { pendingAttempts: { expiresAt: { $lte: now } } } },
+        { session: transaction },
+      );
+      const pending = await this.usage.findOne(
+        { ownerId, "pendingAttempts.keyHash": keyHash },
+        { session: transaction },
+      );
+      if (pending) return { status: "PENDING" };
       const usage =
         (await this.usage.findOne(
           { _id: usageId(ownerId, voiceQuotaDay(now)) },
           { session: transaction },
         )) ?? freshUsage(ownerId, now);
-      if (usage.attemptKeyHashes.includes(keyHash)) return;
       const minute = Math.floor(now.getTime() / 60_000) * 60_000;
       if (usage.minuteStartedAt.getTime() !== minute) {
         usage.minuteStartedAt = new Date(minute);
@@ -384,13 +404,37 @@ export class MongoVoiceLedger {
       if (usage.startAttempts >= 10 || usage.minuteAttempts >= 3)
         throw new VoiceLedgerError("RATE_LIMITED");
       usage.startAttempts += 1;
-      usage.attemptKeyHashes.push(keyHash);
+      const expiresAt = new Date(now.getTime() + 10_000);
+      usage.pendingAttempts.push({ keyHash, expiresAt });
       usage.minuteAttempts += 1;
       await this.usage.replaceOne({ _id: usage._id }, usage, {
         upsert: true,
         session: transaction,
       });
+      return { status: "CLAIMED", expiresAt };
     });
+  }
+
+  async releaseStartAttempt(
+    ownerId: string,
+    keyHash: string,
+    now: Date,
+    claimedExpiresAt: Date,
+  ): Promise<void> {
+    assertOwner(ownerId);
+    assertDate(now);
+    assertDate(claimedExpiresAt);
+    if (!hash.test(keyHash)) throw new VoiceLedgerError("INVALID_REQUEST");
+    await this.usage.updateMany(
+      {
+        ownerId,
+        expiresAt: { $gt: now },
+        pendingAttempts: {
+          $elemMatch: { keyHash, expiresAt: claimedExpiresAt },
+        },
+      },
+      { $pull: { pendingAttempts: { keyHash, expiresAt: claimedExpiresAt } } },
+    );
   }
 
   async reserve(input: ReserveVoiceInput): Promise<VoiceSession> {
@@ -413,6 +457,23 @@ export class MongoVoiceLedger {
         return publicSession(prior);
       }
       if (prior) throw new VoiceLedgerError("SESSION_EXPIRED");
+      if (input.claimExpiresAt) {
+        assertDate(input.claimExpiresAt);
+        const claim = await this.usage.findOne(
+          {
+            ownerId: input.ownerId,
+            pendingAttempts: {
+              $elemMatch: {
+                keyHash: input.keyHash,
+                expiresAt: input.claimExpiresAt,
+              },
+            },
+          },
+          { session: transaction },
+        );
+        if (input.claimExpiresAt <= input.now || !claim)
+          throw new VoiceLedgerError("STALE_ATTEMPT");
+      }
       assertEntitlement(input.entitlement, input.now);
       const capacity = await this.capacity.findOne(
         { _id: "voice-global-v1" },
@@ -491,11 +552,24 @@ export class MongoVoiceLedger {
       };
       usage.reservedSessions += 1;
       usage.reservedSeconds += admittedSeconds;
+      usage.pendingAttempts = usage.pendingAttempts.filter(
+        (attempt) =>
+          attempt.keyHash !== input.keyHash && attempt.expiresAt > input.now,
+      );
       await this.sessions.insertOne(session, { session: transaction });
       await this.usage.replaceOne({ _id: usage._id }, usage, {
         upsert: true,
         session: transaction,
       });
+      await this.usage.updateMany(
+        {
+          ownerId: input.ownerId,
+          _id: { $ne: usage._id },
+          "pendingAttempts.keyHash": input.keyHash,
+        },
+        { $pull: { pendingAttempts: { keyHash: input.keyHash } } },
+        { session: transaction },
+      );
       await this.capacity.replaceOne({ _id: capacity._id }, capacity, {
         session: transaction,
       });
@@ -759,7 +833,6 @@ export class MongoVoiceLedger {
       const value = await this.load(voiceSessionId, transaction);
       if (!this.guard(value, guard)) return publicSession(value);
       this.live(value, now);
-      value.entitlement = entitlement;
       value.authorityExpiresAt = new Date(
         Math.min(
           entitlement.checkedAt.getTime() + VOICE_LEASE_MS,
@@ -899,11 +972,12 @@ export class MongoVoiceLedger {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (value.expiresAt <= now) throw new VoiceLedgerError("SESSION_EXPIRED");
-      if (proof === "PROVIDER_CONFIRMED_STOPPED") {
-        if (!guard) throw new VoiceLedgerError("STALE_ATTEMPT");
-        this.guard(value, guard);
-      }
       if (value.settledAt) return publicSession(value);
+      if (proof === "PROVIDER_CONFIRMED_STOPPED") {
+        if (!guard || !this.guard(value, guard))
+          throw new VoiceLedgerError("STALE_ATTEMPT");
+        value.lastSequence = guard.sequence;
+      }
       if (value.state !== "ENDING")
         throw new VoiceLedgerError("INVALID_SESSION_STATE");
       return this.settleInTransaction(value, proof, now, transaction);

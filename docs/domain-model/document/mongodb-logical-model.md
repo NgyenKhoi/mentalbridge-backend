@@ -169,13 +169,15 @@ implements the MB-756 admission/accounting foundation under
 Media and public session/worker/turn APIs remain separate delivery scopes.
 
 Key fields: server session/owner IDs, keyed idempotency hash and intent
-fingerprint, policy and minimized entitlement provenance, closed lifecycle,
+fingerprint, policy and frozen admission entitlement provenance, closed lifecycle,
 frozen Vietnam quota day/admitted seconds/hard deadline, short authority lease,
 dispatch/attempt/generation/sequence fences, first-publication flag, accumulated
 ACTIVE milliseconds, timer cuts, terminal settlement, and creation-bound expiry.
-The first trusted connected-owner publication consumes one session; settlement
-rounds summed ACTIVE time once and refunds unused reservations. An undelivered
-session consumes no quota. Midnight or upgrade never extends a live session.
+Authority renewal uses current owner decisions without rewriting admission
+provenance. The first trusted connected-owner publication consumes one session;
+settlement rounds summed ACTIVE time once and refunds unused reservations. An
+undelivered session consumes no quota. Midnight or upgrade never extends a live
+session.
 
 Relationships:
 
@@ -196,12 +198,17 @@ expired session.
 Collection: `ai_voice_daily_usage`
 
 Key fields: unique owner/quota-day identity, used and reserved sessions/seconds,
-daily and minute attempt counters, at most ten unique HMAC attempt hashes, and
+daily and minute attempt counters, at most ten pending HMAC attempt identities, and
 creation-plus-30-day expiry. The server uses `Asia/Ho_Chi_Minh`; charging stays
 on the authorized day across midnight. Concurrent accepted-key retries add no
-attempt or reservation. Package upgrades raise ceilings without resetting use.
-This ledger is independent of text Companion quotas. Its TTL removes metadata
-only and never releases capacity.
+attempt or reservation. Pending attempt identities last at most ten seconds;
+only the atomic claimant performs owner reads, and a unique owner/pending-key
+index protects that claim across midnight. Admission and failure cleanup check
+the matching expiry fence, so stale work cannot reserve or release a replacement
+claim. Failed cleanup releases the identity without refunding the attempt count,
+so later denied-key retries are counted again. Package upgrades raise ceilings
+without resetting use. This ledger is independent of text Companion quotas. Its
+TTL removes metadata only and never releases capacity.
 
 ### AI Companion Voice Capacity — ACTIVE
 
@@ -213,9 +220,11 @@ references. Admission and settlement transact across session, daily usage, and
 this singleton, enforcing one session per owner and two global slots across
 processes. No all-user history, content, provider token, or TTL exists here.
 
-Expired leases and uncertain teardown keep capacity occupied. Before the
-session's creation-plus-30-day privacy deadline is swept, identifying slot
-references are scrubbed; unresolved media leaves only an anonymous blocked slot
+First settlement requires provider proof fenced by the current attempt, lease,
+generation, and a sequence newer than accepted progress. Completed settlement
+replay is stable. Expired leases and uncertain teardown keep capacity occupied.
+Before the session's creation-plus-30-day privacy deadline is swept, identifying
+slot references are scrubbed; unresolved media leaves only an anonymous blocked slot
 and random fence. Provider-verified namespace isolation is required for future
 reuse, and this foundation exposes no quarantine-clearing operation.
 

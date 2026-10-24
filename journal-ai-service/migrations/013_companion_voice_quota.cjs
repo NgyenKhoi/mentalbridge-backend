@@ -105,11 +105,11 @@ const usageValidator = {
     usedSeconds: integer(1800),
     reservedSeconds: integer(600),
     startAttempts: integer(10),
-    attemptKeyHashes: {
+    pendingAttempts: {
       bsonType: "array",
       maxItems: 10,
       uniqueItems: true,
-      items: digest,
+      items: closed({ keyHash: digest, expiresAt: date }),
     },
     minuteStartedAt: date,
     minuteAttempts: integer(3),
@@ -190,6 +190,16 @@ module.exports = {
         { ownerId: 1, quotaDay: 1 },
         { name: "uq_ai_voice_owner_day", unique: true },
       );
+    await db.collection(usageCollection).createIndex(
+      { ownerId: 1, "pendingAttempts.keyHash": 1 },
+      {
+        name: "uq_ai_voice_pending_owner_key",
+        unique: true,
+        partialFilterExpression: {
+          "pendingAttempts.keyHash": { $exists: true },
+        },
+      },
+    );
     await db
       .collection(usageCollection)
       .createIndex(

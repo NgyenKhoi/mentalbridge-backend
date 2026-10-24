@@ -204,7 +204,7 @@ and reservation.
 | Fields | Purpose |
 | --- | --- |
 | `state`, `policyVersion`, `terminalReason`, `settledAt` | Closed lifecycle, approved policy, and idempotent terminal outcome. |
-| `entitlement` | Minimized Consultation package, source, version, checked time, and validity snapshot; never authorizes a future turn by itself. |
+| `entitlement` | Frozen admission-time Consultation package, source, version, checked time, and validity snapshot; renewal never rewrites provenance or authorizes a future turn from this snapshot alone. |
 | `quotaDay`, `admittedSeconds`, `authorizedAt`, `hardStopAt` | Frozen server-derived Vietnam quota day and wall-clock admission deadline. |
 | `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence` | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing. |
 | `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts. |
@@ -223,11 +223,23 @@ One bounded document per `(ownerId, quotaDay)`, with `_id` formed from those
 values. The server fixes the day in `Asia/Ho_Chi_Minh`; a session remains charged
 to its authorization day across midnight. `usedSessions`, `reservedSessions`,
 `usedSeconds`, and `reservedSeconds` support atomic admission and settlement.
-`startAttempts`, `minuteStartedAt`, `minuteAttempts`, and at most ten unique
-HMAC `attemptKeyHashes` count distinct start attempts, including owner/provider
-denials, without counting concurrent retries of the same key twice.
+`startAttempts`, `minuteStartedAt`, and `minuteAttempts` count start attempts,
+including owner/provider denials. At most ten `pendingAttempts` contain only a
+HMAC `keyHash` and ten-second `expiresAt`. Attempt claiming returns `CLAIMED`,
+`PENDING`, or `ACCEPTED`; only the claimant performs owner reads. Pending retries
+do not fan out owner calls; accepted session replay is exempt independently.
+Successful admission verifies the unexpired claim fence and removes its pending
+identity in the transaction, including a claim from the previous local day.
+Failure cleanup removes only the matching expiry fence without refunding
+counters, so retrying a denied key counts again and stale cleanup cannot release
+a replacement claim.
+A crashed pending attempt expires after ten seconds rather than granting a
+permanent rate-limit exemption; cleanup also works across local midnight.
 
 `uq_ai_voice_owner_day` enforces unique owner/day identity.
+`uq_ai_voice_pending_owner_key` is a unique partial multikey index over owner and
+pending key; a claim remains unique across local midnight until released or
+expired. Empty pending arrays are excluded from that index.
 `ttl_ai_voice_daily_usage` expires metadata at its own creation plus 30 days;
 the reconciliation sweep also removes expired usage explicitly. It never
 releases capacity through this TTL.
@@ -259,7 +271,10 @@ converts the reserved session into one used session exactly once. Only ACTIVE
 intervals after that publication accrue milliseconds. Settlement rounds their
 sum upward once, caps it at admitted seconds, retains delivered-session usage,
 and refunds unused reserved seconds. No delivered reply refunds all reserved
-quota. Duplicate or reordered reports cannot charge or release twice.
+quota. The first provider-confirmed teardown must match the current attempt,
+lease, generation, and a sequence newer than all accepted progress; stale proof
+cannot free a slot. Repeating a completed settlement returns its recorded
+outcome. Duplicate or reordered reports cannot charge or release twice.
 
 Lease expiry, idle timeout, reconnect timeout, or the frozen hard deadline ends
 authorization and closes accounting at the applicable cut. Possibly issued

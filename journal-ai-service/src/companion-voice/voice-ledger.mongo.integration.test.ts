@@ -14,6 +14,7 @@ import {
   type VoiceEntitlementSnapshot,
   type VoiceGuard,
   type VoiceSession,
+  type VoiceStartAttemptClaim,
 } from "./voice-ledger.js";
 import { VOICE_RETENTION_MS } from "./voice-policy.js";
 
@@ -53,6 +54,10 @@ const guard = (session: VoiceSession, sequence: number): VoiceGuard => {
 };
 const code = (expected: string) => (error: unknown) =>
   error instanceof VoiceLedgerError && error.code === expected;
+const claimedExpiry = (claim: VoiceStartAttemptClaim): Date => {
+  assert.ok(claim.status === "CLAIMED");
+  return claim.expiresAt;
+};
 
 const processRaceProgram = `
 import { createInterface } from "node:readline";
@@ -284,6 +289,10 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
         (await b.availability(request.ownerId, start)).globalOccupied,
         1,
       );
+      const usage = await database
+        .collection("ai_voice_daily_usage")
+        .findOne({ ownerId: request.ownerId });
+      assert.deepEqual(usage?.pendingAttempts, []);
       await assert.rejects(
         b.reserve({ ...request, fingerprint: "x".repeat(43) }),
         code("IDEMPOTENCY_CONFLICT"),
@@ -296,6 +305,127 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
       assert.equal(
         await a.findOwned(randomUUID(), one.voiceSessionId, start),
         null,
+      );
+    },
+  );
+
+  await t.test(
+    "one same-key claimant owns pending work and stale cleanup cannot release its replacement",
+    async () => {
+      const { a, b } = await fixture();
+      const request = input();
+      const claims = await Promise.all(
+        Array.from({ length: 5 }, (_, index) =>
+          (index % 2 ? a : b).recordStartAttempt(
+            request.ownerId,
+            start,
+            request.keyHash,
+          ),
+        ),
+      );
+      assert.equal(
+        claims.filter((claim) => claim.status === "CLAIMED").length,
+        1,
+      );
+      assert.equal(
+        claims.filter((claim) => claim.status === "PENDING").length,
+        4,
+      );
+      const original = claims.find((claim) => claim.status === "CLAIMED");
+      assert.ok(original);
+      const replacement = await b.recordStartAttempt(
+        request.ownerId,
+        at(10_000),
+        request.keyHash,
+      );
+      await a.releaseStartAttempt(
+        request.ownerId,
+        request.keyHash,
+        at(10_100),
+        claimedExpiry(original),
+      );
+      assert.deepEqual(
+        await a.recordStartAttempt(
+          request.ownerId,
+          at(10_200),
+          request.keyHash,
+        ),
+        { status: "PENDING" },
+      );
+      await assert.rejects(
+        a.reserve({
+          ...request,
+          now: at(10_300),
+          entitlement: entitlement(at(10_300)),
+          claimExpiresAt: claimedExpiry(original),
+        }),
+        code("STALE_ATTEMPT"),
+      );
+      assert.equal(
+        (await a.availability(request.ownerId, at(10_300))).globalOccupied,
+        0,
+      );
+      const accepted = await b.reserve({
+        ...request,
+        now: at(10_400),
+        entitlement: entitlement(at(10_400)),
+        claimExpiresAt: claimedExpiry(replacement),
+      });
+      assert.equal(accepted.voiceSessionId, request.voiceSessionId);
+      assert.deepEqual(
+        await a.recordStartAttempt(
+          request.ownerId,
+          at(10_500),
+          request.keyHash,
+        ),
+        { status: "ACCEPTED" },
+      );
+      assert.equal(
+        (await a.availability(request.ownerId, at(10_500))).dailyAttempts,
+        1,
+      );
+      assert.equal(
+        (await a.availability(request.ownerId, start)).dailyAttempts,
+        1,
+      );
+    },
+  );
+
+  await t.test(
+    "claim ownership spans midnight and admission atomically clears the original pending identity",
+    async () => {
+      const { a, b, database } = await fixture();
+      const request = input();
+      const claims = await Promise.all([
+        a.recordStartAttempt(request.ownerId, at(4900), request.keyHash),
+        b.recordStartAttempt(request.ownerId, at(5100), request.keyHash),
+      ]);
+      assert.equal(
+        claims.filter((claim) => claim.status === "CLAIMED").length,
+        1,
+      );
+      assert.equal(
+        claims.filter((claim) => claim.status === "PENDING").length,
+        1,
+      );
+      const winner = claims.find((claim) => claim.status === "CLAIMED");
+      assert.ok(winner);
+      const accepted = await a.reserve({
+        ...request,
+        now: at(5200),
+        entitlement: entitlement(at(5200)),
+        claimExpiresAt: claimedExpiry(winner),
+      });
+      assert.equal(accepted.quotaDay, "2026-10-24");
+      const usage = await database
+        .collection("ai_voice_daily_usage")
+        .find({ ownerId: request.ownerId })
+        .toArray();
+      assert.ok(usage.length > 0);
+      for (const day of usage) assert.deepEqual(day.pendingAttempts, []);
+      assert.equal(
+        (await a.snapshot(request.ownerId, "PLUS", at(5200))).reservedSessions,
+        1,
       );
     },
   );
@@ -345,6 +475,146 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
         (await a.snapshot(owner, "PLUS", start)).reservedSessions,
         0,
       );
+    },
+  );
+
+  await t.test(
+    "failed same-key starts consume fresh attempts after release without refunding counters",
+    async () => {
+      const { a, b } = await fixture();
+      const request = input();
+      const rateStart = new Date("2026-10-23T10:00:00.000Z");
+      const rateAt = (offset: number) => new Date(rateStart.getTime() + offset);
+      for (let i = 0; i < 3; i += 1) {
+        const claim = await a.recordStartAttempt(
+          request.ownerId,
+          rateAt(i * 1000),
+          request.keyHash,
+        );
+        await b.releaseStartAttempt(
+          request.ownerId,
+          request.keyHash,
+          rateAt(i * 1000 + 100),
+          claimedExpiry(claim),
+        );
+        await a.releaseStartAttempt(
+          request.ownerId,
+          request.keyHash,
+          rateAt(i * 1000 + 200),
+          claimedExpiry(claim),
+        );
+      }
+      await assert.rejects(
+        b.recordStartAttempt(request.ownerId, rateAt(3000), request.keyHash),
+        code("RATE_LIMITED"),
+      );
+      assert.equal(
+        (await a.availability(request.ownerId, rateAt(3000))).dailyAttempts,
+        3,
+      );
+      for (let i = 1; i <= 7; i += 1) {
+        const claim = await b.recordStartAttempt(
+          request.ownerId,
+          rateAt(i * 60_000),
+          request.keyHash,
+        );
+        await a.releaseStartAttempt(
+          request.ownerId,
+          request.keyHash,
+          rateAt(i * 60_000 + 100),
+          claimedExpiry(claim),
+        );
+      }
+      await assert.rejects(
+        a.recordStartAttempt(
+          request.ownerId,
+          rateAt(8 * 60_000),
+          request.keyHash,
+        ),
+        code("RATE_LIMITED"),
+      );
+      assert.equal(
+        (await b.availability(request.ownerId, rateAt(8 * 60_000)))
+          .dailyAttempts,
+        10,
+      );
+      assert.equal(
+        await a.replay(request.ownerId, request.keyHash, rateStart),
+        null,
+      );
+    },
+  );
+
+  await t.test(
+    "crashed start attempts dedupe only until their persisted ten-second expiry",
+    async () => {
+      const { a, b, database } = await fixture();
+      const request = input();
+      const rateStart = new Date("2026-10-23T10:00:00.000Z");
+      const rateAt = (offset: number) => new Date(rateStart.getTime() + offset);
+      await a.recordStartAttempt(request.ownerId, rateStart, request.keyHash);
+      await b.recordStartAttempt(
+        request.ownerId,
+        rateAt(9999),
+        request.keyHash,
+      );
+      assert.equal(
+        (await b.availability(request.ownerId, rateAt(9999))).dailyAttempts,
+        1,
+      );
+      await b.recordStartAttempt(
+        request.ownerId,
+        rateAt(10_000),
+        request.keyHash,
+      );
+      const latest = await a.recordStartAttempt(
+        request.ownerId,
+        rateAt(20_000),
+        request.keyHash,
+      );
+      await assert.rejects(
+        b.recordStartAttempt(request.ownerId, rateAt(30_000), request.keyHash),
+        code("RATE_LIMITED"),
+      );
+      const usage = await database
+        .collection("ai_voice_daily_usage")
+        .findOne({ ownerId: request.ownerId });
+      assert.equal((usage?.pendingAttempts as unknown[]).length, 1);
+      await a.releaseStartAttempt(
+        request.ownerId,
+        request.keyHash,
+        rateAt(30_000),
+        claimedExpiry(latest),
+      );
+      const released = await database
+        .collection("ai_voice_daily_usage")
+        .findOne({ ownerId: request.ownerId });
+      assert.deepEqual(released?.pendingAttempts, []);
+    },
+  );
+
+  await t.test(
+    "failed start crossing midnight clears its original-day pending identity",
+    async () => {
+      const { a, b, database } = await fixture();
+      const request = input();
+      const claim = await a.recordStartAttempt(
+        request.ownerId,
+        start,
+        request.keyHash,
+      );
+      await b.releaseStartAttempt(
+        request.ownerId,
+        request.keyHash,
+        at(6000),
+        claimedExpiry(claim),
+      );
+      const usage = await database
+        .collection("ai_voice_daily_usage")
+        .findOne({ ownerId: request.ownerId });
+      assert.ok(usage);
+      assert.deepEqual(usage.pendingAttempts, []);
+      assert.equal(usage.startAttempts, 1);
     },
   );
 
@@ -458,6 +728,79 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
           at(2200),
         ),
         code("INVALID_SESSION_STATE"),
+      );
+    },
+  );
+
+  await t.test(
+    "stale teardown proof cannot free capacity after newer worker progress",
+    async () => {
+      const { a, b } = await fixture();
+      const request = input();
+      const reserved = await a.reserve(request);
+      const dispatched = await a.claimDispatch(reserved.voiceSessionId, start);
+      await a.transition(
+        dispatched.voiceSessionId,
+        guard(dispatched, 1),
+        "ACTIVE",
+        at(100),
+      );
+      await a.firstReply(
+        dispatched.voiceSessionId,
+        guard(dispatched, 2),
+        at(200),
+      );
+      await b.activity(
+        dispatched.voiceSessionId,
+        guard(dispatched, 10),
+        at(300),
+      );
+      await a.requestEnd(
+        request.ownerId,
+        dispatched.voiceSessionId,
+        "USER_ENDED",
+        at(400),
+      );
+      for (const sequence of [1, 10])
+        await assert.rejects(
+          b.settle(
+            dispatched.voiceSessionId,
+            guard(dispatched, sequence),
+            "PROVIDER_CONFIRMED_STOPPED",
+            at(500),
+          ),
+          code("STALE_ATTEMPT"),
+        );
+      assert.equal(
+        (await a.availability(request.ownerId, at(500))).ownerOccupied,
+        true,
+      );
+      assert.equal(
+        (await a.snapshot(request.ownerId, "PLUS", at(500))).reservedSeconds,
+        300,
+      );
+      const settled = await b.settle(
+        dispatched.voiceSessionId,
+        guard(dispatched, 11),
+        "PROVIDER_CONFIRMED_STOPPED",
+        at(500),
+      );
+      assert.equal(settled.lastSequence, 11);
+      assert.equal(settled.chargedSeconds, 1);
+      const replayed = await a.settle(
+        dispatched.voiceSessionId,
+        guard(dispatched, 11),
+        "PROVIDER_CONFIRMED_STOPPED",
+        at(600),
+      );
+      assert.equal(replayed.settledAt?.getTime(), settled.settledAt?.getTime());
+      assert.equal(
+        (await a.availability(request.ownerId, at(600))).ownerOccupied,
+        false,
+      );
+      assert.equal(
+        (await a.snapshot(request.ownerId, "PLUS", at(600))).usedSeconds,
+        1,
       );
     },
   );
@@ -882,6 +1225,14 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
         entitlement(at(4000), "PREMIUM"),
       );
       assert.equal(renewed.admittedSeconds, 300);
+      assert.deepEqual(renewed.entitlement, request.entitlement);
+      assert.equal(renewed.entitlement.packageCode, "PLUS");
+      assert.equal(renewed.authorityExpiresAt.getTime(), at(14_000).getTime());
+      assert.equal(
+        (await a.snapshot(request.ownerId, "PREMIUM", at(4000)))
+          .remainingSeconds,
+        1500,
+      );
       assert.equal(
         renewed.hardStopAt.toISOString(),
         reserved.hardStopAt.toISOString(),
@@ -945,6 +1296,24 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
         database
           .collection("ai_voice_capacity")
           .updateOne({}, { $set: { "slots.0.audio": "sensitive-content" } }),
+        (error: unknown) =>
+          error instanceof MongoServerError && error.code === 121,
+      );
+      await assert.rejects(
+        database.collection("ai_voice_daily_usage").updateOne(
+          { ownerId: reserved.ownerId },
+          {
+            $set: {
+              pendingAttempts: [
+                {
+                  keyHash: "k".repeat(43),
+                  expiresAt: at(10_000),
+                  rawKey: "not-allowed",
+                },
+              ],
+            },
+          },
+        ),
         (error: unknown) =>
           error instanceof MongoServerError && error.code === 121,
       );
