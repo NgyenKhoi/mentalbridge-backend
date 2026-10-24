@@ -42,6 +42,9 @@ import {
   DELIVERY_ADDRESS_CLIENT_TOKEN,
   COMMUNITY_INTERACTION_DEAD_LETTER_PUBLISHER_TOKEN,
   CARE_USER_NOTIFICATION_DEAD_LETTER_PUBLISHER_TOKEN,
+  PUSH_DEVICE_REPOSITORY_TOKEN,
+  PUSH_DEVICE_SERVICE_TOKEN,
+  PUSH_PROVIDER_TOKEN,
 } from './application.tokens.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { DatabaseService, type ReadinessProbe } from './database/database.service.js';
@@ -143,6 +146,11 @@ import {
   KafkaContentAdminAuditPublisher,
   type ContentAdminAuditPublisher,
 } from './audit/content-admin-audit.publisher.js';
+import { PushDeviceController } from './push-delivery/push-device.controller.js';
+import { PushDeviceRepository } from './push-delivery/push-device.repository.js';
+import { PushDeviceService } from './push-delivery/push-device.service.js';
+import { ExpoPushProvider, type PushProvider } from './push-delivery/expo-push.provider.js';
+import { PushDeliveryWorker } from './push-delivery/push-delivery.worker.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -163,6 +171,8 @@ export interface ApplicationDependencies {
   readonly reminderOverviewRepository?: ReminderOverviewRepository;
   readonly wellbeingDigestService?: WellbeingDigestService;
   readonly contentAdminAuditPublisher?: ContentAdminAuditPublisher;
+  readonly pushDeviceRepository?: PushDeviceRepository;
+  readonly pushProvider?: PushProvider;
 }
 
 @Module({})
@@ -274,6 +284,7 @@ export const createAppModule = (
       NotificationAdminController,
       WellbeingDigestController,
       ReminderOverviewController,
+      PushDeviceController,
     ],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
@@ -358,6 +369,14 @@ export const createAppModule = (
         useClass: KafkaCareUserNotificationDeadLetterPublisher,
       },
       CareUserNotificationConsumer,
+      dependencies.pushDeviceRepository
+        ? { provide: PUSH_DEVICE_REPOSITORY_TOKEN, useValue: dependencies.pushDeviceRepository }
+        : { provide: PUSH_DEVICE_REPOSITORY_TOKEN, useClass: PushDeviceRepository },
+      { provide: PUSH_DEVICE_SERVICE_TOKEN, useClass: PushDeviceService },
+      dependencies.pushProvider
+        ? { provide: PUSH_PROVIDER_TOKEN, useValue: dependencies.pushProvider }
+        : { provide: PUSH_PROVIDER_TOKEN, useClass: ExpoPushProvider },
+      PushDeliveryWorker,
       JwtStrategy,
       {
         provide: RolesGuard,

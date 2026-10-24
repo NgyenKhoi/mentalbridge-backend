@@ -201,14 +201,23 @@ export class NotificationRepository {
   }
 
   async delete(ownerId: string, notificationId: string): Promise<'DELETED' | 'NOT_FOUND'> {
-    const result = await this.db.query(
-      `UPDATE notification
-       SET deleted_at = COALESCE(deleted_at, now()),
-           version = version + CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END
-       WHERE id = $1 AND recipient_id = $2`,
-      [notificationId, ownerId],
-    );
-    return (result.rowCount ?? 0) > 0 ? 'DELETED' : 'NOT_FOUND';
+    return this.db.withTransaction(async (client) => {
+      const result = await client.query(
+        `UPDATE notification
+         SET deleted_at = COALESCE(deleted_at, now()),
+             version = version + CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END
+         WHERE id = $1 AND recipient_id = $2`,
+        [notificationId, ownerId],
+      );
+      if ((result.rowCount ?? 0) === 0) return 'NOT_FOUND';
+      await client.query(
+        `UPDATE push_delivery_attempt
+         SET state = 'SUPPRESSED', failure_code = 'NOTIFICATION_DELETED', updated_at = now()
+         WHERE notification_id = $1 AND state IN ('PENDING', 'FAILED', 'PROCESSING')`,
+        [notificationId],
+      );
+      return 'DELETED';
+    });
   }
 
   private async ownerRecordExists(ownerId: string, notificationId: string): Promise<boolean> {
