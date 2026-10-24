@@ -2,7 +2,9 @@
 
 Story: [MB-756](https://vunguyenkhoi47.atlassian.net/browse/MB-756).
 Branch: `feat/journal-ai-voice-quota-(MB-756)`.
-Status: implementation checkpoint; final owner integration and PR CI pending.
+Status: upstream prerequisites merged; final owner-contract/Mongo integration
+verified against `dev` baseline `5206b3a2`. Exact CI head/results are tracked in
+[PR #231](https://github.com/NgyenKhoi/mentalbridge-backend/pull/231).
 
 ## Delivered boundary
 
@@ -90,7 +92,7 @@ check passed. No test was weakened, disabled or skipped.
 All rows implement [policy v1](policies/companion-voice-policy-v1.md). They describe
 API/application behavior, not a delivered client screen or live audio path.
 
-## Final integration still pending
+## Final owner-contract and MongoDB integration
 
 Development checkpoints have exercised the synthetic owner-contract/HTTP/access
 tests and real MongoDB ledger/migration scenarios. Their current commands are:
@@ -99,29 +101,46 @@ tests and real MongoDB ledger/migration scenarios. Their current commands are:
 npm run build
 node --test dist/companion-voice/voice-ledger.test.js dist/companion-voice/voice-authorization.test.js dist/companion-voice/voice-access.test.js dist/companion-voice/voice-http.test.js
 node --test dist/companion-voice/voice-ledger.mongo.integration.test.js
+node --test dist/companion-voice/voice-owner.mongo.integration.test.js
 npm run contract:check
 npm run migration:check
 ```
 
-The final integrated command results, source SHA and CI run are pending the final
-delivery checkpoint and will be recorded in the Journal PR. This document does
-not present a partial or earlier test run as a final integrated gate. Schema and
-synthetic HTTP tests prove wire/admission behavior; MongoDB tests prove the
-tested transaction, replay, quota, cleanup and fencing cases. They do not prove
-real owner services, cloud quota, audio delivery or provider teardown.
+After both upstream merges, the new `voice-owner.mongo.integration.test.ts`
+executes the real HTTP owner client and application service over real disposable
+MongoDB. Synthetic Care/Consultation servers validate requests and normal/error
+responses against their merged active OpenAPI contracts. This coupled test
+covers missing prerequisite, PAID/DEMO admission and accepted replay, withdrawal
+of either consent, live entitlement downgrade/expiry/outage, malformed binding,
+cacheable authority, no-reservation compensation and unchanged seeded Text quota.
+No user bearer or worker credential is forwarded to the owners. Its 14 tests
+pass with no failures/skips and run through `npm run test:integration` in CI.
+
+These are contract-backed synthetic owner servers, not a running Spring/cloud
+E2E stack. They establish the tested consumer/application/persistence behavior;
+the prerequisite PRs independently exercised their real owner implementations.
+Final post-sync module checks and exact PR CI results are recorded in the PR.
+Cloud quota, audio delivery and provider teardown are not established here.
+
+Post-sync local module gate (exit 0): `npm run format:check`, `npm run lint`,
+`npm run typecheck`, `npm run build`, `npm run contract:check`,
+`npm run migration:check`, `npm test` (184 PASS) and `npm run test:integration`
+(44 PASS, no failures/skips). Integration uses disposable local MongoDB replica
+sets, refuses a local `.env.integration` or inherited external URI in the
+verification command, and contains no cloud provider calls. Repository and
+paired-change policy also pass for the 27 Journal-only changed paths.
 
 ## Ordered integration and remaining gates
 
 1. Care [PR #229](https://github.com/NgyenKhoi/mentalbridge-backend/pull/229)
-   must be merged into `dev` with its required checks passing.
+   merged into `dev` as `8f295d71` after current-head approval and green CI.
 2. Consultation [PR #230](https://github.com/NgyenKhoi/mentalbridge-backend/pull/230)
-   must then be merged into `dev` with its required checks passing.
-3. Journal must integrate that updated `dev` and rerun final owner-contract,
-   authorization, independent-quota and applicable module gates on its resulting
-   head before claiming combined MB-756 integration.
+   then merged as `5206b3a2` after refreshed green CI and current-head approval.
+3. Journal integrated both using normal merges, preserving published history
+   without force-push. Its base-to-head diff contains only Journal MB-756 paths.
 
-At this checkpoint those upstream merges and the final integrated Journal CI
-result are not claimed. Credential publication, provider account access/free
+The final updated Journal PR CI remains required before handoff. Credential
+publication, provider account access/free
 allowance, hosted-worker region, LiveKit deployment, speech benchmark, microphone,
 STT/TTS, Bedrock voice calls and real-device audio have not been verified here.
 MB-757/MB-760/MB-762 and their applicable downstream stories retain those gates;

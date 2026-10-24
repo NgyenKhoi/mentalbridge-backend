@@ -76,8 +76,11 @@ from voice persistence and operational logging.
 
 Delivery is ordered Care [PR #229](https://github.com/NgyenKhoi/mentalbridge-backend/pull/229),
 then Consultation [PR #230](https://github.com/NgyenKhoi/mentalbridge-backend/pull/230),
-then Journal. Final integration must wait until both owner prerequisites are on
-`dev`; isolated owner/HTTP fixtures do not prove this integration. See the
+then Journal. Both prerequisites are now on `dev` (`8f295d71`, `5206b3a2`).
+The new owner HTTP/Mongo integration validates synthetic owner decisions against
+the merged active contracts and proves admission, revocation/expiry compensation
+and unchanged Text quota. It runs in `npm run test:integration`; it does not prove
+a running Spring/cloud/audio stack. See the
 [MB-756 Journal evidence](../docs/story-mb-756-journal-voice-evidence.md) for the
 remaining checkpoint and provider gates.
 
