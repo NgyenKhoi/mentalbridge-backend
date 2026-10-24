@@ -61,3 +61,5 @@ databaseChangeLog:
       file: db/changelog/changes/030-support-plan-proposal-cycle.sql
   - include:
       file: db/changelog/changes/031-resource-completion-evidence.sql
+  - include:
+      file: db/changelog/changes/032-ai-voice-processing-consent.sql

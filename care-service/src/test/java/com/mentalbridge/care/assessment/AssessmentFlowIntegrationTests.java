@@ -45,6 +45,9 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	private static final UUID RETIRED_VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
 	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000004");
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
+			"GET /api/v1/ai-voice-processing-disclosure",
+			"GET /api/v1/consents/ai-voice-processing",
+			"POST /api/v1/consents/ai-voice-processing",
 			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/activity-dashboard",
 			"GET /api/v1/privacy-disclosures/current",
