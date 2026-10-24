@@ -20,6 +20,10 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class CareOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"GET /api/v1/ai-voice-processing-disclosure",
+			"GET /api/v1/consents/ai-voice-processing",
+			"POST /api/v1/consents/ai-voice-processing",
+			"POST /internal/v1/ai-companion/voice-consent-authorizations",
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
@@ -114,6 +118,9 @@ class CareOpenApiContractTests {
 			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v1/ai-voice-processing-disclosure",
+			"/api/v1/consents/ai-voice-processing",
+			"/internal/v1/ai-companion/voice-consent-authorizations",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"/api/v2/support-plans",
@@ -199,6 +206,9 @@ class CareOpenApiContractTests {
 			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"GET /api/v1/ai-voice-processing-disclosure",
+			"GET /api/v1/consents/ai-voice-processing",
+			"POST /api/v1/consents/ai-voice-processing",
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
@@ -289,6 +299,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
+			"POST /api/v1/consents/ai-voice-processing",
 			"POST /api/v2/support-plans",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
             "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
@@ -664,6 +675,10 @@ class CareOpenApiContractTests {
 			assertThat(operation.getSecurity())
 					.as("bearer security for %s", key)
 					.anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));
+		}
+		else if (key.equals("POST /internal/v1/ai-companion/voice-consent-authorizations")) {
+			assertThat(operation.getSecurity()).anySatisfy(requirement ->
+					assertThat(requirement).containsOnlyKeys("JournalVoiceCareToken"));
 		}
 		else if (ANONYMOUS_TOKEN_OPERATIONS.contains(key)) {
 			assertThat(operation.getSecurity())
