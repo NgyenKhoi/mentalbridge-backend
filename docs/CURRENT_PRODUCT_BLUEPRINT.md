@@ -4,6 +4,17 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+AI Voice Companion has an accepted prospective contract in
+[ADR 0046 / MB-AI-VOICE-COMPANION-001](adr/0046-ai-voice-companion-contract.md)
+and [Companion Voice policy v1](policies/companion-voice-policy-v1.md), frozen by
+MB-755. FREE remains text-only; PLUS receives two voice sessions of up to five
+minutes within ten daily minutes, and PREMIUM three sessions of up to ten
+minutes within thirty daily minutes. Voice uses independent quota, dual Care
+consent and isolated LiveKit agent rooms with no saved audio/transcript.
+Journal/AI owns voice authority; Consultation remains entitlement owner.
+These are approved targets, not implemented APIs or live-provider evidence;
+existing text and specialist consultation behavior is unchanged.
+
 Community peer messaging has a separate **accepted target** in
 [ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and
 [Community chat policy v1](policies/community-chat-policy-v1.md). MB-684 supplies
@@ -158,6 +169,8 @@ PLUS / PREMIUM
              ↓
           user-confirmed SupportPlan change
 ```
+
+MB-672 adds Care's owner-only `GET /api/v1/home-next-step`, embedding the unchanged guided journey with an ordered current-plan focus and bounded completed-plan context for web/native Home; see [ADR 0045](adr/0045-home-next-step-read.md) (`MB-HOME-NEXT-STEP-001`).
 
 ## 4. Support Guide versus SupportPlan
 
@@ -318,6 +331,7 @@ Detailed national-contact amendment: [ADR 0024](adr/0024-global-anonymous-crisis
 
 - **Care**: screening, safety triggers, SupportEvaluation, Support Guide, SupportPlan and its focuses/actions/schedules/occurrences, reassessment composition, eligibility revalidation, PlanChangeRequest decision, user-confirmed plan mutation.
 - **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility and progress, owner-scoped resource bookmarks, persisted weekly resource Bingo with separate self-confirmed and verified evidence, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
+- MB-670 ([ADR 0043](adr/0043-plan-scoped-resource-progress.md)): Care supplies current plan RESOURCE actions; Content syncs plan-scoped Bingo and exact-version facts; Care alone reconciles those facts into occurrence completion.
 - **Consultation/Billing**: specialist profile/approval/availability/discovery, service-plan entitlement, consultation-credit ledger, appointments, evidence-backed completion, SessionSummary/AgreedNextSteps persistence, earnings and payout.
 - **Realtime**: in-app chat transport/delivery under Consultation appointment eligibility.
 - **Journal/AI**: private Journal, AI analyses/conversations, model execution and minimized projections; no Care/financial authority.

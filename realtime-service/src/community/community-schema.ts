@@ -14,19 +14,32 @@ const peer = z.discriminatedUnion('state', [
     .strict(),
   z.object({ state: z.literal('UNAVAILABLE') }).strict(),
 ]);
-export const messageSchema = z
-  .object({
-    messageId: uuid,
-    conversationId: uuid,
-    clientMessageId: uuid,
-    sender: peer,
-    content: z
-      .string()
-      .min(1)
-      .refine((value) => Array.from(value).length <= 4000),
-    createdAt: z.iso.datetime({ offset: true }),
-  })
-  .strict();
+const messageIdentity = {
+  messageId: uuid,
+  conversationId: uuid,
+  clientMessageId: uuid,
+  sender: peer,
+  createdAt: z.iso.datetime({ offset: true }),
+};
+export const messageSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      ...messageIdentity,
+      state: z.literal('ACTIVE'),
+      content: z
+        .string()
+        .min(1)
+        .refine((value) => Array.from(value).length <= 4000),
+    })
+    .strict(),
+  z
+    .object({
+      ...messageIdentity,
+      state: z.literal('RETRACTED'),
+      retractedAt: z.iso.datetime({ offset: true }),
+    })
+    .strict(),
+]);
 export const readStateSchema = z
   .object({ lastReadMessageId: uuid.nullable(), unreadCount: z.number().int().nonnegative() })
   .strict();
@@ -106,6 +119,18 @@ export const factSchema = z
       .object({
         ...header,
         payload: z
+          .object({
+            kind: z.literal('MESSAGE_RETRACTED'),
+            conversationId: uuid,
+            targetId: uuid,
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        ...header,
+        payload: z
           .object({ kind: z.literal('AUTHORIZATION_CHANGED'), conversationId: uuid })
           .strict(),
       })
@@ -115,7 +140,7 @@ export const factSchema = z
         ...header,
         payload: z
           .object({
-            kind: z.literal('READ_STATE_CHANGED'),
+            kind: z.enum(['READ_STATE_CHANGED', 'CONVERSATION_CLEARED']),
             conversationId: uuid,
             recipientRoutingReference: uuid,
           })

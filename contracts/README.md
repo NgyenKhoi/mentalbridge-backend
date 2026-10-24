@@ -11,6 +11,15 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-755 freezes the accepted [AI Voice target](proposals/companion-voice-v1.openapi.json)
+under [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md). Journal/AI voice,
+Care's separate voice consent and narrow owner authorization reads are all
+`planned`; no active OpenAPI or runtime handler is promoted. Its closed worker
+envelope, policy schema, lifecycle, synthetic fixtures and executable contract
+tests are linked in the [proposal index](proposals/README.md). The approved
+target is separate from text-chat quotas and Consultation appointment/media
+contracts. The existing Journal CI lane runs the new proposal tests.
+
 MB-684's accepted [Community chat baseline](proposals/community-chat-v1.openapi.json)
 remains frozen in proposals with its original planned markers. Its closed
 [commands](proposals/community-chat-command-v1.schema.json),
@@ -26,7 +35,14 @@ fragment and separate `community-comment-reaction-v1.schema.json` fact. Existing
 interaction-v1 producers and schemas remain compatible. The new generic
 `community-push-v1.schema.json` defines a payload only; actual PUSH provider/device
 delivery remains MB-675/679. Typing/shared receipts and ADMIN case operations
-remain future runtime work.
+remain future runtime work. MB-745 adds the implemented sender-retraction DELETE
+operation, structured active/retracted Message projections, minimized
+`MESSAGE_RETRACTED` owner facts and the promoted
+`websocket/community/event-v1.schema.json` change event. The accepted
+MB-684 proposal artifacts remain frozen.
+MB-746 adds the implemented per-user conversation DELETE operation, a durable
+server-ordered cutoff in Community, and a recipient-routed
+`CONVERSATION_CLEARED` fact used only to invalidate the actor's live sockets.
 See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
 Existing appointment and Community interaction schemas are unchanged.
 

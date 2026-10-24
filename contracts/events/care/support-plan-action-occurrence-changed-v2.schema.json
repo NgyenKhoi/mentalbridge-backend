@@ -119,7 +119,25 @@
           }
         },
         {
-          "if": { "properties": { "actionType": { "enum": ["RESOURCE", "ROUTINE_SELF_MANAGEMENT"] } }, "required": ["actionType"] },
+          "if": { "properties": { "actionType": { "const": "RESOURCE" } }, "required": ["actionType"] },
+          "then": {
+            "properties": {
+              "ownerFact": {
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/boundedOwnerFact" },
+                      { "properties": { "kind": { "enum": ["USER_ACKNOWLEDGEMENT", "RESOURCE_PRACTICE_SESSION", "RESOURCE_COMPLETION"] } } }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "actionType": { "const": "ROUTINE_SELF_MANAGEMENT" } }, "required": ["actionType"] },
           "then": {
             "properties": {
               "ownerFact": {
@@ -262,9 +280,9 @@
       "additionalProperties": false,
       "required": ["ownerDomain", "kind", "factId", "factRevision", "occurredAt", "verifiedAt"],
       "properties": {
-        "ownerDomain": { "enum": ["CARE", "JOURNAL_AI", "CONSULTATION"] },
+        "ownerDomain": { "enum": ["CARE", "JOURNAL_AI", "CONSULTATION", "CONTENT"] },
         "kind": {
-          "enum": ["USER_ACKNOWLEDGEMENT", "JOURNAL_ENTRY", "EMOTION_CHECK_IN", "APPOINTMENT_FULFILMENT", "ASSESSMENT_HISTORY", "SELF_REPORT_REVIEW"]
+          "enum": ["USER_ACKNOWLEDGEMENT", "JOURNAL_ENTRY", "EMOTION_CHECK_IN", "APPOINTMENT_FULFILMENT", "ASSESSMENT_HISTORY", "SELF_REPORT_REVIEW", "RESOURCE_PRACTICE_SESSION", "RESOURCE_COMPLETION"]
         },
         "factId": {
           "type": "string",
@@ -277,6 +295,15 @@
         "verifiedAt": { "type": "string", "format": "date-time" }
       },
       "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["RESOURCE_PRACTICE_SESSION", "RESOURCE_COMPLETION"] } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "ownerDomain": { "const": "CONTENT" },
+              "factRevision": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 19 }
+            }
+          }
+        },
         {
           "if": { "properties": { "kind": { "enum": ["JOURNAL_ENTRY", "EMOTION_CHECK_IN"] } }, "required": ["kind"] },
           "then": { "properties": { "ownerDomain": { "const": "JOURNAL_AI" } } }

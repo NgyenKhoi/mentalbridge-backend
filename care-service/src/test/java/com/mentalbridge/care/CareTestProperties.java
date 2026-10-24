@@ -23,6 +23,8 @@ public abstract class CareTestProperties {
 				() -> "MB-SAFETY-PHQ9-001-test-v1");
 		properties.add("mentalbridge.care.assessment.idempotency-hmac-key",
 				() -> "test-only-idempotency-hmac-key-at-least-32-characters");
+		properties.add("mentalbridge.care.voice-consent.idempotency-hmac-key",
+				() -> "test-only-idempotency-hmac-key-at-least-32-characters");
 	}
 
 	private static KeyPair keyPair() {

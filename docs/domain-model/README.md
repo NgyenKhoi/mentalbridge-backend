@@ -20,7 +20,7 @@ Runtime database truth is always the owner-service migration history:
 Documentation and domain-model truth is this directory:
 
 - [Canonical entity index](canonical-entities.md)
-- [PostgreSQL logical schema](relational/postgresql-logical-schema.sql)
+- [PostgreSQL logical models by service](relational/README.md)
 - [MongoDB logical model](document/mongodb-logical-model.md)
 
 The logical model is read-only. Never execute the PostgreSQL logical schema or
@@ -59,9 +59,10 @@ owner's current migrations. A pull request that adds, removes, renames, or
 materially changes persisted domain data is incomplete until it updates:
 
 1. the owner migration and implementation;
-2. the relevant canonical logical model in this directory; and
+2. the owning service's canonical logical model linked from the
+   [relational index](relational/README.md), or the document model; and
 3. the detailed data documentation, including the
-   [PostgreSQL field data dictionary](../database/postgresql-field-data-dictionary.md)
+   [PostgreSQL field data dictionary by service](../database/postgresql-field-data-dictionary.md)
    or [MongoDB collection definitions](../database/mongodb.md).
 
 Pure implementation details that do not change domain understanding—such as a

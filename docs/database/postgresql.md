@@ -1,14 +1,23 @@
 # PostgreSQL Data Model
 
 Start with the [canonical domain model](../domain-model/README.md) and its
-[PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql)
+[PostgreSQL logical models by service](../domain-model/relational/README.md)
 for entities, ownership, and diagrams. That SQL is read-only documentation and
 must never be executed. Each module owns a separate PostgreSQL database and its
 default `public` schema; the service's migration history is the only executable
 runtime source of truth. Exact field purposes are documented in the
-[PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
+[PostgreSQL field data dictionary by service](postgresql-field-data-dictionary.md).
 
 ## Ownership
+
+MB-670 Care migration `031` permits bounded Content practice/completion evidence
+for native RESOURCE occurrences. The one-fact-one-occurrence unique index is
+owner-scoped because a daily completion ID is resource/date within its owner.
+Content migration `27_plan_scoped_resource_bingo.sql` makes boards unique per owner/week/plan and adds nullable
+external action references plus retirement; existing exact fact-version columns
+are reused. `last_synced_at` selects a week's latest synced board independently
+of its concurrency version. No migration rewrites legacy v2 occurrences or
+deletes historical board checks. See [ADR 0043](../adr/0043-plan-scoped-resource-progress.md).
 
 MB-669 adds nullable cycle state only for `support-plan-proposal-v1` native plans,
 under `030-support-plan-proposal-cycle.sql` (`care-031`). The stored IANA timezone,
@@ -159,13 +168,18 @@ At capstone scale, do not partition by default. Consider owner-local partitionin
 3. Never edit an applied migration; add a new migration.
 4. Seed questionnaire definitions and reviewed resources through versioned reference-data migrations; introduce any future template entity only with an approved owner migration and canonical-model update.
 5. Use synthetic development data only.
-6. Every table and column has a useful entry in `postgresql-field-data-dictionary.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/postgresql-logical-schema.sql` while preserving migrations as runtime truth.
+6. Every table and column has a useful entry in the owning service's `docs/database/postgresql/<owning-service>.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/<owning-service>.sql` while preserving migrations as runtime truth. Shared entry points remain indexes; ordinary feature changes edit the owner files.
 
 ## Community direct chat (MB-685)
 
 ADR 0042 is the explicit scoped exception to the appointment/MongoDB chat baseline above: Community owns peer direct conversations, text-free requests, privacy, retry identities and minimized outbox records in its own PostgreSQL. Existing appointment chat remains Realtime/MongoDB-owned. Liquibase 0017 and the canonical Community model define the unique ordered pair, one pending request, explicit acceptance, suppression and separate public-management/private-message revisions. Identity current-state reads precede local transactions; local blocks/restrictions serialize on sorted Community profile locks. No remote call is made while holding those transactions.
 
 MB-685 migration 0018 adds Community-owned encrypted messages and private per-reader cursors. Content expires at its save-time 90-day cutoff and is removed by bounded owner sweeps; content-free identity records prevent late retry resurrection. Sequence allocation, idempotency and minimized outbox facts commit atomically. This is the accepted ADR 0042 exception to appointment chat storage; no canonical SQL is executed and no other owner storage is read.
+
+MB-745 migration 0022 adds the one-way `ACTIVE` to `RETRACTED` message lifecycle
+and an owner retraction instant. The same transaction removes ciphertext, retains
+the original private sequence and retry identity, and writes a minimized outbox
+pointer. Retraction does not touch read state or isolated report snapshots.
 
 MB-687 adds Community Liquibase 0019: private group discriminator/name/cap, explicit invitation lifecycle, current membership epochs and deferred exactly-one-owner/cap guards. Existing direct pair identity and encrypted message storage remain Community-owned.
 

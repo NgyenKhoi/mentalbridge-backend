@@ -1,5 +1,14 @@
 # Content and Notification Service
 
+## Mobile reminder overview (MB-676)
+
+`GET /api/v1/reminder-overview` is a USER-only, non-cacheable read in OpenAPI
+v1.10.0 (payload v1.0). It composes current note-free Journal/Emotion facts,
+persisted preferences and Content-owned delivery ledgers. Eligibility times are
+bounded estimates; reads never run a producer or send a message. Settings stay
+at the existing strong-ETag notification-preferences boundary.
+See [scope, semantics and verification](../docs/mb-676-reminder-overview.md).
+
 MB-691 implements the accepted [Community chat policy](../docs/policies/community-chat-policy-v1.md)
 through recipient-specific `MESSAGE_RECEIVED`, `DIRECT_REQUESTED`, `GROUP_INVITED`
 facts and separate comment-reaction facts. Content owns durable notice jobs and
@@ -56,10 +65,9 @@ enabling the end-user journey. A pending request/invitation never grants history
 This slice makes no browser/mobile `ui-ready` claim.
 
 `community-push-v1.schema.json` and `communityPushPayload` define only the generic
-Vietnamese body plus opaque notification ID. PUSH remains preference/contract
-only; this delivery does not register devices or send to a provider. Backend
-device registration/provider delivery belongs to MB-675, with device permission,
-token and safe-link handling in MB-679. Appointment chat, message retraction and
+Vietnamese body plus opaque notification ID. MB-675 now supplies backend device
+registration and provider submission; mobile permission prompts and safe-link
+handling remain MB-679 client work. Appointment chat, message retraction and
 per-user conversation deletion remain independent.
 
 Roll out migrations, the authorization provider, then compatible consumers;
@@ -128,9 +136,11 @@ Admin resource create, draft update/delete, exact-version review, publish, archi
 
 MB-562 also implements `GET|PATCH /api/v1/notification-preferences` for the
 authenticated owner. The atomic preference aggregate covers `IN_APP`, `EMAIL`,
-and future `PUSH` channel choices, six independent content groups,
-timezone-aware quiet hours, and email cadence/opt-ins. `PUSH` is persisted only;
-device registration and provider delivery remain deferred.
+and `PUSH` channel choices, six independent content groups, timezone-aware quiet
+hours, and email cadence/opt-ins. MB-675 adds authenticated owner-only Expo
+device registration, encrypted token rotation/revocation, and privacy-minimized
+native provider delivery. Expo ticket acceptance is recorded separately and is
+never reported as end-device delivery.
 
 MB-514 extends that same preference aggregate with the owner's local daily
 digest and explicit resource-reminder times. The bounded wellbeing scheduler
@@ -148,6 +158,18 @@ Keep the interval and database page size bounded with
 `WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS` and
 `WELLBEING_DIGEST_BATCH_SIZE`. `BREVO_BASE_URL` and `BREVO_SENDER_NAME` are
 optional operational overrides.
+
+Native push delivery is disabled by default. Registration requires
+`CONTENT_PUSH_TOKEN_ENCRYPTION_KEY` (base64-encoded 32-byte key). Provider work
+also requires `CONTENT_PUSH_DELIVERY_ENABLED=true`, `EXPO_ACCESS_TOKEN`, and the
+same encryption key. `EXPO_PUSH_BASE_URL`, `CONTENT_PUSH_PROVIDER_TIMEOUT_MS`,
+`CONTENT_PUSH_DELIVERY_INTERVAL_MS`, `CONTENT_PUSH_DELIVERY_BATCH_SIZE`, receipt
+delays, and the per-owner device-command rate/window are bounded operational
+overrides. Accepted Expo tickets are checked through delayed bounded receipts;
+`DeviceNotRegistered` invalidates the registration, while a successful receipt
+does not claim physical display. Disable the worker before rolling back; additive
+registration and attempt evidence remains intact. CI uses a mocked provider and
+does not constitute staging or real-device delivery evidence.
 MB-548 adds a separate, opt-in appointment email reminder. A minimized
 Consultation status event materializes at most one row per
 recipient/appointment/version, and rejection, expiry, cancellation, reschedule,
@@ -158,6 +180,23 @@ the appointment start and never combines this message with the wellbeing digest.
 Production enablement also requires Brevo per-contact tracking consent to be
 enabled with unknown-contact tracking disabled; the adapter sends
 `contactPixelTrackingConsent=false` for every reminder recipient.
+
+MB-670 adds `PUT /api/v1/resource-bingo/{weekStart}/plan-sync` for the current
+local week. Content forwards the owner's bearer and correlation ID to Care's
+current RESOURCE-actions read, then retains at most nine plan tiles without
+catalogue padding. Removed actions become retired items; a plan switch retains
+a separate board. Journey reads return the latest board without changing it.
+`GET /api/v1/resource-completion-evidence` returns the newest exact-version
+completion or measured-practice fact for the owner's requested date, derived
+from its server instant in the requested timezone. No fact returns 404;
+provider/storage unavailability returns 503. Progress PUT accepts an optional
+`resourceVersion` to pin a listed publication snapshot, with 409 for an
+unavailable version. These Content facts do not directly mutate Care state.
+
+Configure the Care query with `CONTENT_CARE_BASE_URL` (default
+`http://localhost:8081`) and `CONTENT_CARE_TIMEOUT_MS` (default 2000 ms, allowed
+100–5000 ms). The forwarded owner JWT authorizes the read; this query has no
+service credential. Care errors leave the stored board unchanged.
 
 ## Stack
 
@@ -223,6 +262,13 @@ IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS=60
 Identity Service must be configured with the corresponding private key (`IDENTITY_JWT_PRIVATE_KEY`).
 
 ## Migrations
+
+Migration `27_plan_scoped_resource_bingo.sql` makes boards unique per owner,
+local week and SupportPlan, persists latest-sync ordering, and adds nullable
+action identity/version and retirement time to retained items. Existing boards
+are preserved; their first plan-sync binds matching resources and retires
+catalogue padding. Exact resource versions already exist on progress and
+practice facts, so this migration does not rewrite those histories.
 
 The application pool and `node-pg-migrate` share `DATABASE_URL`. Set `sslmode=require` or a stricter verified mode for remote PostgreSQL, then run:
 

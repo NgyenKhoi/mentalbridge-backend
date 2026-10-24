@@ -1,6 +1,7 @@
 package com.mentalbridge.community.chat;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import jakarta.persistence.*;
@@ -10,6 +11,8 @@ import jakarta.persistence.*;
 class ChatReadStateEntity {
     @EmbeddedId ReadId id;
     @Column(name = "last_read_sequence", nullable = false) long lastReadSequence;
+    @Column(name = "cleared_through_sequence", nullable = false) long clearedThroughSequence;
+    @Column(name = "cleared_at") Instant clearedAt;
     protected ChatReadStateEntity() {}
     ChatReadStateEntity(UUID conversation, UUID viewer) { id = new ReadId(conversation, viewer); }
     @Embeddable

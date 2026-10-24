@@ -36,8 +36,12 @@ still planned. Native-only credential ingress is the scoped
 | [0041-specialist-credential-review.md](0041-specialist-credential-review.md) | `MB-SPECIALIST-CREDENTIAL-001` | Accepted direction | Adds private specialist credentials, ADMIN verification, owner-controlled badges, and `zh`/`fr` profile languages |
 | [0042-community-chat-contract.md](0042-community-chat-contract.md) | `MB-COMMUNITY-CHAT-001` | Accepted | Community-owned private peer conversations and isolated Realtime transport |
 | [0043-native-community-credential-exchange.md](0043-native-community-credential-exchange.md) | `MB-COMMUNITY-NATIVE-CREDENTIAL-001` | Owner accepted; provider implemented MB-749 | Identity-authenticated native exchange preserving Community owner authorization and existing BFF tickets |
+| [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md) | `MB-PLAN-RESOURCE-PROGRESS-001` | Accepted for MB-670 implementation | Care-owned minimized plan resources, Content-owned plan-scoped Bingo and exact-version completion facts, and bounded Care occurrence reconciliation |
+| [0044-secure-native-push-delivery.md](0044-secure-native-push-delivery.md) | `MB-NATIVE-PUSH-DELIVERY-001` | Accepted for MB-675 implementation | Content-owned encrypted device registrations, Expo adapter, privacy-minimized payloads, and bounded delivery evidence |
+| [0045-home-next-step-read.md](0045-home-next-step-read.md) | `MB-HOME-NEXT-STEP-001` | Accepted for MB-672 implementation | Care-owned Home read embedding the unchanged journey with ordered current-plan focus and bounded completed-plan context |
+| [0046-ai-voice-companion-contract.md](0046-ai-voice-companion-contract.md) | `MB-AI-VOICE-COMPANION-001` | Accepted target for MB-755; runtime not implemented | AI Companion voice, independent finite quotas, Care dual consent, ephemeral content, isolated LiveKit agents and planned owner/worker contracts |
 
-For clauses explicitly amended by ADR 0022, ADR 0024, or ADR 0034, the relevant
+For clauses explicitly amended by ADR 0022, ADR 0024, ADR 0034, or [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md), the relevant
 latest amendment is the current prospective authority. Historical records keep
 their original policy/version.
 
@@ -53,8 +57,10 @@ The repository historically assigned the same numeric prefix to multiple accepte
 | `0020` | [0020-support-plan-activity-occurrence-scheduling.md](0020-support-plan-activity-occurrence-scheduling.md) | `MB-SUPPORT-PLAN-ACTIVITY-SCHEDULE-001` |
 | `0021` | [0021-ai-companion-conversation-and-quota.md](0021-ai-companion-conversation-and-quota.md) | `MB-AI-COMPANION-CHAT-001` |
 | `0021` | [0021-support-plan-engagement.md](0021-support-plan-engagement.md) | `MB-SUPPORT-PLAN-ENGAGEMENT-001` |
+| `0043` | [0043-native-community-credential-exchange.md](0043-native-community-credential-exchange.md) | `MB-COMMUNITY-NATIVE-CREDENTIAL-001` |
+| `0043` | [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md) | `MB-PLAN-RESOURCE-PROGRESS-001` |
 
-Do not create another ADR using `0018`, `0020`, or `0021`. Do not write a bare reference such as “ADR 0021” in new documentation; link the exact filename and include the Decision ID where the distinction matters.
+Do not create another ADR using `0018`, `0020`, `0021`, or `0043`. Do not write a bare reference such as “ADR 0021” in new documentation; link the exact filename and include the Decision ID where the distinction matters.
 
 ## Decision precedence
 

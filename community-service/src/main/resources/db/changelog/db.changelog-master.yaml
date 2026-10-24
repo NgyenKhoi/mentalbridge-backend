@@ -41,3 +41,7 @@ databaseChangeLog:
       file: db/changelog/changes/0020-community-chat-report-intake.yaml
   - include:
       file: db/changelog/changes/0021-community-comment-reactions.yaml
+  - include:
+      file: db/changelog/changes/0022-community-chat-message-retraction.yaml
+  - include:
+      file: db/changelog/changes/0023-community-chat-personal-clear.yaml

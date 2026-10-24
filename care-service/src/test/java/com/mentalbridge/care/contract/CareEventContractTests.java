@@ -198,13 +198,43 @@ class CareEventContractTests {
 		assertThat(evidenceAttachedRule.at("/then/properties/ownerFact/$ref").asText())
 				.isEqualTo("#/$defs/boundedOwnerFact");
 
-		assertOwnerFactMapping(rules, "RESOURCE", "CARE", "USER_ACKNOWLEDGEMENT");
+		var resourceRule = ruleWithActionType(rules, "RESOURCE");
+		assertThat(resourceRule.at("/then/properties/ownerFact/oneOf/0/type").asText()).isEqualTo("null");
+		assertThat(resourceRule.at("/then/properties/ownerFact/oneOf/1/allOf/1/properties/kind/enum"))
+				.extracting(JsonNode::asText)
+				.containsExactly("USER_ACKNOWLEDGEMENT", "RESOURCE_PRACTICE_SESSION", "RESOURCE_COMPLETION");
 		assertOwnerFactMapping(rules, "ROUTINE_SELF_MANAGEMENT", "CARE", "USER_ACKNOWLEDGEMENT");
 		assertOwnerFactMapping(rules, "SELF_REPORT_REVIEW", "CARE", "SELF_REPORT_REVIEW");
 		assertOwnerFactMapping(rules, "JOURNAL", "JOURNAL_AI", "JOURNAL_ENTRY");
 		assertOwnerFactMapping(rules, "EMOTION_CHECK_IN", "JOURNAL_AI", "EMOTION_CHECK_IN");
 		assertOwnerFactMapping(rules, "PROFESSIONAL_SUPPORT", "CONSULTATION", "APPOINTMENT_FULFILMENT");
 		assertOwnerFactMapping(rules, "REASSESSMENT_SCREENING", "CARE", "ASSESSMENT_HISTORY");
+	}
+
+	@Test
+	void resourceFactsKeepContentAuthorityAndExactRevisionWhileAcknowledgementStaysCareOwned() throws Exception {
+		var path = Path.of("..", "contracts", "events", "care",
+				"support-plan-action-occurrence-changed-v2.schema.json").toAbsolutePath();
+		var contract = objectMapper.readTree(Files.readString(path));
+		var schema = objectMapper.createObjectNode().put("$ref", "#/$defs/boundedOwnerFact");
+		schema.set("$defs", contract.path("$defs"));
+		var validator = com.networknt.schema.SchemaRegistry.withDialect(com.networknt.schema.dialect.Dialects.getDraft202012())
+				.getSchema(schema.toString(), com.networknt.schema.InputFormat.JSON);
+		var fact = objectMapper.createObjectNode().put("factId", "resource:2026-10-21")
+				.put("factRevision", "7").put("occurredAt", "2026-10-21T07:59:00Z")
+				.put("verifiedAt", "2026-10-21T08:00:00Z");
+		for (String kind : java.util.List.of("RESOURCE_PRACTICE_SESSION", "RESOURCE_COMPLETION")) {
+			fact.put("kind", kind).put("ownerDomain", "CONTENT").put("factRevision", "7");
+			assertThat(validator.validate(fact)).isEmpty();
+			fact.put("ownerDomain", "CARE");
+			assertThat(validator.validate(fact)).isNotEmpty();
+			fact.put("ownerDomain", "CONTENT").putNull("factRevision");
+			assertThat(validator.validate(fact)).isNotEmpty();
+		}
+		fact.put("kind", "USER_ACKNOWLEDGEMENT").put("ownerDomain", "CARE").putNull("factRevision");
+		assertThat(validator.validate(fact)).isEmpty();
+		fact.put("ownerDomain", "CONTENT");
+		assertThat(validator.validate(fact)).isNotEmpty();
 	}
 
 	private void assertOwnerFactMapping(JsonNode rules, String actionType, String ownerDomain, String kind) {

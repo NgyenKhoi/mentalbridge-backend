@@ -8,6 +8,7 @@
 /scripts/pr-overlap.mjs @NgyenKhoi
 /docs/domain-model/ @NgyenKhoi
 /docs/requirements-traceability.md @NgyenKhoi
+/docs/requirements-traceability/ @NgyenKhoi
 /contracts/ @NgyenKhoi
 /docs/adr/ @NgyenKhoi
 /docs/database/ @NgyenKhoi

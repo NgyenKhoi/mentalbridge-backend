@@ -1,0 +1,982 @@
+{
+  "schemaVersion": 1,
+  "policyExamples": [
+    {
+      "name": "approved-policy",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "policyVersion": "companion-voice-policy-v1",
+        "decisionId": "MB-AI-VOICE-COMPANION-001",
+        "approvalDate": "2026-10-23",
+        "status": "APPROVED_TARGET_NOT_IMPLEMENTED",
+        "timeZone": "Asia/Ho_Chi_Minh",
+        "packages": {
+          "FREE": {
+            "voiceEligible": false,
+            "sessionsPerDay": 0,
+            "dailySeconds": 0,
+            "perSessionSeconds": 0
+          },
+          "PLUS": {
+            "voiceEligible": true,
+            "sessionsPerDay": 2,
+            "dailySeconds": 600,
+            "perSessionSeconds": 300
+          },
+          "PREMIUM": {
+            "voiceEligible": true,
+            "sessionsPerDay": 3,
+            "dailySeconds": 1800,
+            "perSessionSeconds": 600
+          }
+        },
+        "limits": {
+          "globalSessions": 2,
+          "userSessions": 1,
+          "idleTimeoutSeconds": 60,
+          "reconnectGraceSeconds": 30,
+          "authorizationLeaseSeconds": 10,
+          "leaseRenewalSeconds": 5,
+          "ownerReadTimeoutMilliseconds": 2000,
+          "connectTimeoutSeconds": 45,
+          "requestTimeoutSeconds": 10,
+          "startAttemptsPerMinute": 3,
+          "startAttemptsPerDay": 10,
+          "maxContextTurnPairs": 4,
+          "maxContextTokens": 2000,
+          "maxFinalTranscriptCharacters": 2000,
+          "maxSpokenReplyCharacters": 1000
+        },
+        "usage": {
+          "dayAssignment": "AUTHORIZED_LOCAL_DAY",
+          "reset": "LOCAL_MIDNIGHT_NO_ROLLOVER",
+          "admission": "RESERVE_SESSION_AND_MIN_REMAINING_SECONDS",
+          "hardDeadline": "AUTHORIZED_AT_PLUS_ADMITTED_SECONDS_NEVER_EXTENDED",
+          "sessionConsumedOn": "FIRST_TRUSTED_VALIDATED_AI_AUDIO_PUBLICATION_WHILE_OWNER_CONNECTED",
+          "timeChargedFrom": "FIRST_REPLY_PUBLICATION_ACTIVE_INTERVALS_ONLY",
+          "rounding": "CEIL_SUMMED_ACTIVE_MILLISECONDS_ONCE_PER_SESSION",
+          "noDeliveredReply": "RELEASE_ALL_RESERVED_QUOTA",
+          "deliveredReplyFailure": "KEEP_DELIVERED_SESSION_AND_USED_ACTIVE_SECONDS",
+          "upgrade": "RAISE_CURRENT_DAY_CAP_WITHOUT_RESET_OR_SESSION_EXTENSION",
+          "entitlementLoss": "TERMINATE_AND_SETTLE_USED_QUOTA"
+        },
+        "privacy": {
+          "recordAudio": false,
+          "persistTranscripts": false,
+          "agentObservability": false,
+          "reuseJournal": false,
+          "reuseTextHistory": false,
+          "contextStorage": "SESSION_RAM_ONLY",
+          "metadataRetentionDays": 30,
+          "requiredConsents": ["AI_PROCESSING", "AI_VOICE_PROCESSING"],
+          "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+          "consentOwner": "CARE",
+          "voiceAuthority": "JOURNAL_AI",
+          "entitlementOwner": "CONSULTATION",
+          "materialProviderOrPurposeChange": "NEW_VOICE_DISCLOSURE_AND_RECONSENT"
+        },
+        "providers": {
+          "media": "LIVEKIT_CLOUD",
+          "agent": "LIVEKIT_CLOUD_HOSTED_NODE",
+          "speech": "LIVEKIT_INFERENCE_CANDIDATES_PENDING_MB_760",
+          "reasoning": "JOURNAL_AI_BEDROCK",
+          "bedrockRegion": "ap-southeast-1",
+          "approvedGlobalProfiles": [
+            "global.anthropic.claude-sonnet-4-6",
+            "global.anthropic.claude-opus-4-6-v1"
+          ],
+          "routing": "REUSE_CURRENT_APPROVED_PACKAGE_ROUTE_NO_AUTOMATIC_FALLBACK",
+          "residency": "GLOBAL_PROFILES_MAY_PROCESS_CROSS_REGION",
+          "liveReadiness": "ACCOUNT_ACCESS_QUOTA_AND_SPEECH_BENCHMARK_REQUIRED"
+        }
+      }
+    },
+    {
+      "name": "reject-unlimited-premium",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "policyVersion": "companion-voice-policy-v1",
+        "decisionId": "MB-AI-VOICE-COMPANION-001",
+        "approvalDate": "2026-10-23",
+        "status": "APPROVED_TARGET_NOT_IMPLEMENTED",
+        "timeZone": "Asia/Ho_Chi_Minh",
+        "packages": {
+          "FREE": {
+            "voiceEligible": false,
+            "sessionsPerDay": 0,
+            "dailySeconds": 0,
+            "perSessionSeconds": 0
+          },
+          "PLUS": {
+            "voiceEligible": true,
+            "sessionsPerDay": 2,
+            "dailySeconds": 600,
+            "perSessionSeconds": 300
+          },
+          "PREMIUM": {
+            "voiceEligible": true,
+            "sessionsPerDay": 3,
+            "dailySeconds": 0,
+            "perSessionSeconds": 600
+          }
+        },
+        "limits": {
+          "globalSessions": 2,
+          "userSessions": 1,
+          "idleTimeoutSeconds": 60,
+          "reconnectGraceSeconds": 30,
+          "authorizationLeaseSeconds": 10,
+          "leaseRenewalSeconds": 5,
+          "ownerReadTimeoutMilliseconds": 2000,
+          "connectTimeoutSeconds": 45,
+          "requestTimeoutSeconds": 10,
+          "startAttemptsPerMinute": 3,
+          "startAttemptsPerDay": 10,
+          "maxContextTurnPairs": 4,
+          "maxContextTokens": 2000,
+          "maxFinalTranscriptCharacters": 2000,
+          "maxSpokenReplyCharacters": 1000
+        },
+        "usage": {
+          "dayAssignment": "AUTHORIZED_LOCAL_DAY",
+          "reset": "LOCAL_MIDNIGHT_NO_ROLLOVER",
+          "admission": "RESERVE_SESSION_AND_MIN_REMAINING_SECONDS",
+          "hardDeadline": "AUTHORIZED_AT_PLUS_ADMITTED_SECONDS_NEVER_EXTENDED",
+          "sessionConsumedOn": "FIRST_TRUSTED_VALIDATED_AI_AUDIO_PUBLICATION_WHILE_OWNER_CONNECTED",
+          "timeChargedFrom": "FIRST_REPLY_PUBLICATION_ACTIVE_INTERVALS_ONLY",
+          "rounding": "CEIL_SUMMED_ACTIVE_MILLISECONDS_ONCE_PER_SESSION",
+          "noDeliveredReply": "RELEASE_ALL_RESERVED_QUOTA",
+          "deliveredReplyFailure": "KEEP_DELIVERED_SESSION_AND_USED_ACTIVE_SECONDS",
+          "upgrade": "RAISE_CURRENT_DAY_CAP_WITHOUT_RESET_OR_SESSION_EXTENSION",
+          "entitlementLoss": "TERMINATE_AND_SETTLE_USED_QUOTA"
+        },
+        "privacy": {
+          "recordAudio": false,
+          "persistTranscripts": false,
+          "agentObservability": false,
+          "reuseJournal": false,
+          "reuseTextHistory": false,
+          "contextStorage": "SESSION_RAM_ONLY",
+          "metadataRetentionDays": 30,
+          "requiredConsents": ["AI_PROCESSING", "AI_VOICE_PROCESSING"],
+          "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+          "consentOwner": "CARE",
+          "voiceAuthority": "JOURNAL_AI",
+          "entitlementOwner": "CONSULTATION",
+          "materialProviderOrPurposeChange": "NEW_VOICE_DISCLOSURE_AND_RECONSENT"
+        },
+        "providers": {
+          "media": "LIVEKIT_CLOUD",
+          "agent": "LIVEKIT_CLOUD_HOSTED_NODE",
+          "speech": "LIVEKIT_INFERENCE_CANDIDATES_PENDING_MB_760",
+          "reasoning": "JOURNAL_AI_BEDROCK",
+          "bedrockRegion": "ap-southeast-1",
+          "approvedGlobalProfiles": [
+            "global.anthropic.claude-sonnet-4-6",
+            "global.anthropic.claude-opus-4-6-v1"
+          ],
+          "routing": "REUSE_CURRENT_APPROVED_PACKAGE_ROUTE_NO_AUTOMATIC_FALLBACK",
+          "residency": "GLOBAL_PROFILES_MAY_PROCESS_CROSS_REGION",
+          "liveReadiness": "ACCOUNT_ACCESS_QUOTA_AND_SPEECH_BENCHMARK_REQUIRED"
+        }
+      }
+    },
+    {
+      "name": "reject-single-consent",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "policyVersion": "companion-voice-policy-v1",
+        "decisionId": "MB-AI-VOICE-COMPANION-001",
+        "approvalDate": "2026-10-23",
+        "status": "APPROVED_TARGET_NOT_IMPLEMENTED",
+        "timeZone": "Asia/Ho_Chi_Minh",
+        "packages": {
+          "FREE": {
+            "voiceEligible": false,
+            "sessionsPerDay": 0,
+            "dailySeconds": 0,
+            "perSessionSeconds": 0
+          },
+          "PLUS": {
+            "voiceEligible": true,
+            "sessionsPerDay": 2,
+            "dailySeconds": 600,
+            "perSessionSeconds": 300
+          },
+          "PREMIUM": {
+            "voiceEligible": true,
+            "sessionsPerDay": 3,
+            "dailySeconds": 1800,
+            "perSessionSeconds": 600
+          }
+        },
+        "limits": {
+          "globalSessions": 2,
+          "userSessions": 1,
+          "idleTimeoutSeconds": 60,
+          "reconnectGraceSeconds": 30,
+          "authorizationLeaseSeconds": 10,
+          "leaseRenewalSeconds": 5,
+          "ownerReadTimeoutMilliseconds": 2000,
+          "connectTimeoutSeconds": 45,
+          "requestTimeoutSeconds": 10,
+          "startAttemptsPerMinute": 3,
+          "startAttemptsPerDay": 10,
+          "maxContextTurnPairs": 4,
+          "maxContextTokens": 2000,
+          "maxFinalTranscriptCharacters": 2000,
+          "maxSpokenReplyCharacters": 1000
+        },
+        "usage": {
+          "dayAssignment": "AUTHORIZED_LOCAL_DAY",
+          "reset": "LOCAL_MIDNIGHT_NO_ROLLOVER",
+          "admission": "RESERVE_SESSION_AND_MIN_REMAINING_SECONDS",
+          "hardDeadline": "AUTHORIZED_AT_PLUS_ADMITTED_SECONDS_NEVER_EXTENDED",
+          "sessionConsumedOn": "FIRST_TRUSTED_VALIDATED_AI_AUDIO_PUBLICATION_WHILE_OWNER_CONNECTED",
+          "timeChargedFrom": "FIRST_REPLY_PUBLICATION_ACTIVE_INTERVALS_ONLY",
+          "rounding": "CEIL_SUMMED_ACTIVE_MILLISECONDS_ONCE_PER_SESSION",
+          "noDeliveredReply": "RELEASE_ALL_RESERVED_QUOTA",
+          "deliveredReplyFailure": "KEEP_DELIVERED_SESSION_AND_USED_ACTIVE_SECONDS",
+          "upgrade": "RAISE_CURRENT_DAY_CAP_WITHOUT_RESET_OR_SESSION_EXTENSION",
+          "entitlementLoss": "TERMINATE_AND_SETTLE_USED_QUOTA"
+        },
+        "privacy": {
+          "recordAudio": false,
+          "persistTranscripts": false,
+          "agentObservability": false,
+          "reuseJournal": false,
+          "reuseTextHistory": false,
+          "contextStorage": "SESSION_RAM_ONLY",
+          "metadataRetentionDays": 30,
+          "requiredConsents": ["AI_PROCESSING"],
+          "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+          "consentOwner": "CARE",
+          "voiceAuthority": "JOURNAL_AI",
+          "entitlementOwner": "CONSULTATION",
+          "materialProviderOrPurposeChange": "NEW_VOICE_DISCLOSURE_AND_RECONSENT"
+        },
+        "providers": {
+          "media": "LIVEKIT_CLOUD",
+          "agent": "LIVEKIT_CLOUD_HOSTED_NODE",
+          "speech": "LIVEKIT_INFERENCE_CANDIDATES_PENDING_MB_760",
+          "reasoning": "JOURNAL_AI_BEDROCK",
+          "bedrockRegion": "ap-southeast-1",
+          "approvedGlobalProfiles": [
+            "global.anthropic.claude-sonnet-4-6",
+            "global.anthropic.claude-opus-4-6-v1"
+          ],
+          "routing": "REUSE_CURRENT_APPROVED_PACKAGE_ROUTE_NO_AUTOMATIC_FALLBACK",
+          "residency": "GLOBAL_PROFILES_MAY_PROCESS_CROSS_REGION",
+          "liveReadiness": "ACCOUNT_ACCESS_QUOTA_AND_SPEECH_BENCHMARK_REQUIRED"
+        }
+      }
+    }
+  ],
+  "workerExamples": [
+    {
+      "name": "safe-heartbeat",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE"
+        }
+      }
+    },
+    {
+      "name": "no-raw-transcript-in-control",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE"
+        },
+        "transcript": "SYNTHETIC_ONLY"
+      }
+    },
+    {
+      "name": "no-user-token-in-control",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE"
+        },
+        "userBearer": "SYNTHETIC_FORBIDDEN"
+      }
+    },
+    {
+      "name": "no-audio-in-payload",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE",
+          "audio": "SYNTHETIC_FORBIDDEN"
+        }
+      }
+    },
+    {
+      "name": "no-worker-selected-user",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE"
+        },
+        "ownerId": "75500000-0000-4000-8000-000000000007"
+      }
+    },
+    {
+      "name": "reject-zero-sequence",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 0,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE"
+        }
+      }
+    },
+    {
+      "name": "closed-dispatch",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "DISPATCH",
+        "payload": {
+          "dispatchId": "75500000-0000-4000-8000-000000000004",
+          "agentName": "mentalbridge-ai-voice-v1",
+          "roomName": "mb-ai-voice-75500000-0000-4000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "name": "closed-lease_renewed",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "LEASE_RENEWED",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "validUntil": "2026-10-23T14:00:10Z",
+          "hardStopAt": "2026-10-23T14:00:10Z",
+          "admittedSeconds": 300
+        }
+      }
+    },
+    {
+      "name": "closed-stop",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "STOP",
+        "payload": {
+          "reason": "USER_ENDED"
+        }
+      }
+    },
+    {
+      "name": "closed-media_ready",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "MEDIA_READY",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004"
+        }
+      }
+    },
+    {
+      "name": "closed-playback_started",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "PLAYBACK_STARTED",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "turnId": "75500000-0000-4000-8000-000000000005",
+          "replyId": "75500000-0000-4000-8000-000000000006"
+        }
+      }
+    },
+    {
+      "name": "closed-interrupted",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "INTERRUPTED",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "turnId": "75500000-0000-4000-8000-000000000005",
+          "replyId": "75500000-0000-4000-8000-000000000006"
+        }
+      }
+    },
+    {
+      "name": "closed-heartbeat",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "CONNECTING"
+        }
+      }
+    },
+    {
+      "name": "closed-finished",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "FINISHED",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "reason": "USER_ENDED"
+        }
+      }
+    }
+  ],
+  "openapiExamples": [
+    {
+      "name": "eligible-plus",
+      "schema": "Eligibility",
+      "valid": true,
+      "value": {
+        "policyVersion": "companion-voice-policy-v1",
+        "state": "ELIGIBLE",
+        "eligible": true,
+        "packageCode": "PLUS",
+        "quota": {
+          "policyVersion": "companion-voice-policy-v1",
+          "quotaDay": "2026-10-23",
+          "timeZone": "Asia/Ho_Chi_Minh",
+          "resetAt": "2026-10-23T17:00:00Z",
+          "remainingSessions": 2,
+          "remainingSeconds": 600,
+          "reservedSessions": 0,
+          "reservedSeconds": 0
+        },
+        "checkedAt": "2026-10-23T14:00:00Z",
+        "voiceConsentVersion": "ai-voice-processing-capstone-v1"
+      }
+    },
+    {
+      "name": "free-cannot-be-eligible",
+      "schema": "Eligibility",
+      "valid": false,
+      "value": {
+        "policyVersion": "companion-voice-policy-v1",
+        "state": "ELIGIBLE",
+        "eligible": true,
+        "packageCode": "FREE",
+        "quota": {
+          "policyVersion": "companion-voice-policy-v1",
+          "quotaDay": "2026-10-23",
+          "timeZone": "Asia/Ho_Chi_Minh",
+          "resetAt": "2026-10-23T17:00:00Z",
+          "remainingSessions": 2,
+          "remainingSeconds": 600,
+          "reservedSessions": 0,
+          "reservedSeconds": 0
+        },
+        "checkedAt": "2026-10-23T14:00:00Z",
+        "voiceConsentVersion": "ai-voice-processing-capstone-v1"
+      }
+    },
+    {
+      "name": "deny-cannot-be-true",
+      "schema": "Eligibility",
+      "valid": false,
+      "value": {
+        "policyVersion": "companion-voice-policy-v1",
+        "state": "CONSENT_REQUIRED",
+        "eligible": true,
+        "packageCode": "PLUS",
+        "quota": {
+          "policyVersion": "companion-voice-policy-v1",
+          "quotaDay": "2026-10-23",
+          "timeZone": "Asia/Ho_Chi_Minh",
+          "resetAt": "2026-10-23T17:00:00Z",
+          "remainingSessions": 2,
+          "remainingSeconds": 600,
+          "reservedSessions": 0,
+          "reservedSeconds": 0
+        },
+        "checkedAt": "2026-10-23T14:00:00Z",
+        "voiceConsentVersion": "ai-voice-processing-capstone-v1"
+      }
+    },
+    {
+      "name": "closed-start-command",
+      "schema": "EmptyCommand",
+      "valid": true,
+      "value": {}
+    },
+    {
+      "name": "no-client-package",
+      "schema": "EmptyCommand",
+      "valid": false,
+      "value": {
+        "packageCode": "PREMIUM"
+      }
+    },
+    {
+      "name": "final-vietnamese-turn",
+      "schema": "VoiceTurn",
+      "valid": true,
+      "value": {
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "leaseId": "75500000-0000-4000-8000-000000000004",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "sequence": 1,
+        "language": "vi-VN",
+        "isFinal": true,
+        "finalTranscript": "Xin chào, đây là câu kiểm thử tổng hợp."
+      }
+    },
+    {
+      "name": "no-interim-turn",
+      "schema": "VoiceTurn",
+      "valid": false,
+      "value": {
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "leaseId": "75500000-0000-4000-8000-000000000004",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "sequence": 1,
+        "language": "vi-VN",
+        "isFinal": false,
+        "finalTranscript": "Xin chào, đây là câu kiểm thử tổng hợp."
+      }
+    },
+    {
+      "name": "no-empty-transcript",
+      "schema": "VoiceTurn",
+      "valid": false,
+      "value": {
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "leaseId": "75500000-0000-4000-8000-000000000004",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "sequence": 1,
+        "language": "vi-VN",
+        "isFinal": true,
+        "finalTranscript": ""
+      }
+    },
+    {
+      "name": "no-oversized-transcript",
+      "schema": "VoiceTurn",
+      "valid": false,
+      "value": {
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "leaseId": "75500000-0000-4000-8000-000000000004",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "sequence": 1,
+        "language": "vi-VN",
+        "isFinal": true,
+        "finalTranscript": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    },
+    {
+      "name": "no-client-selected-model",
+      "schema": "VoiceTurn",
+      "valid": false,
+      "value": {
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "leaseId": "75500000-0000-4000-8000-000000000004",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "sequence": 1,
+        "language": "vi-VN",
+        "isFinal": true,
+        "finalTranscript": "Xin chào, đây là câu kiểm thử tổng hợp.",
+        "modelId": "SYNTHETIC_FORBIDDEN"
+      }
+    },
+    {
+      "name": "voice-consent-grant",
+      "schema": "VoiceConsentCommand",
+      "valid": true,
+      "value": {
+        "consentVersion": "ai-voice-processing-capstone-v1",
+        "granted": true
+      }
+    },
+    {
+      "name": "reject-old-voice-disclosure",
+      "schema": "VoiceConsentCommand",
+      "valid": false,
+      "value": {
+        "consentVersion": "ai-processing-capstone-v2",
+        "granted": true
+      }
+    },
+    {
+      "name": "no-voice-recording-request",
+      "schema": "EmptyCommand",
+      "valid": false,
+      "value": {
+        "record": true
+      }
+    },
+    {
+      "name": "worker-heartbeat-signal",
+      "schema": "WorkerSignal",
+      "valid": true,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "HEARTBEAT",
+        "payload": {
+          "leaseId": "75500000-0000-4000-8000-000000000004",
+          "observedState": "ACTIVE"
+        }
+      }
+    },
+    {
+      "name": "worker-cannot-order-stop",
+      "schema": "WorkerSignal",
+      "valid": false,
+      "value": {
+        "schemaVersion": 1,
+        "commandId": "75500000-0000-4000-8000-000000000003",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "attemptId": "75500000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "issuedAt": "2026-10-23T14:00:00Z",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "kind": "STOP",
+        "payload": {
+          "reason": "USER_ENDED"
+        }
+      }
+    },
+    {
+      "name": "stable-error-status",
+      "schema": "Problem",
+      "valid": true,
+      "value": {
+        "type": "https://mentalbridge.dev/problems/free-locked",
+        "title": "Voice requires an eligible package",
+        "status": 403,
+        "code": "FREE_LOCKED",
+        "correlationId": "75500000-0000-4000-8000-000000000003"
+      }
+    },
+    {
+      "name": "error-code-status-mismatch",
+      "schema": "Problem",
+      "valid": false,
+      "value": {
+        "type": "https://mentalbridge.dev/problems/free-locked",
+        "title": "Synthetic invalid status",
+        "status": 503,
+        "code": "FREE_LOCKED",
+        "correlationId": "75500000-0000-4000-8000-000000000003"
+      }
+    },
+    {
+      "name": "paid-current-owner-entitlement",
+      "schema": "EntitlementDecision",
+      "valid": true,
+      "value": {
+        "ownerId": "75500000-0000-4000-8000-000000000007",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "purpose": "AI_COMPANION_VOICE",
+        "packageCode": "PLUS",
+        "source": "PAID",
+        "entitlementVersion": "synthetic-version-1",
+        "checkedAt": "2026-10-23T14:00:00Z",
+        "validUntil": "2026-10-24T14:00:00Z"
+      }
+    },
+    {
+      "name": "free-source-cannot-be-paid-package",
+      "schema": "EntitlementDecision",
+      "valid": false,
+      "value": {
+        "ownerId": "75500000-0000-4000-8000-000000000007",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "purpose": "AI_COMPANION_VOICE",
+        "packageCode": "PREMIUM",
+        "source": "DEFAULT_FREE",
+        "entitlementVersion": "synthetic-version-1",
+        "checkedAt": "2026-10-23T14:00:00Z",
+        "validUntil": "2026-10-24T14:00:00Z"
+      }
+    },
+    {
+      "name": "paid-source-needs-expiry",
+      "schema": "EntitlementDecision",
+      "valid": false,
+      "value": {
+        "ownerId": "75500000-0000-4000-8000-000000000007",
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "purpose": "AI_COMPANION_VOICE",
+        "packageCode": "PLUS",
+        "source": "PAID",
+        "entitlementVersion": "synthetic-version-1",
+        "checkedAt": "2026-10-23T14:00:00Z"
+      }
+    },
+    {
+      "name": "grant-has-owner-issued-time",
+      "schema": "VoiceConsent",
+      "valid": true,
+      "value": {
+        "consentType": "AI_VOICE_PROCESSING",
+        "consentVersion": "ai-voice-processing-capstone-v1",
+        "current": true,
+        "granted": true,
+        "acceptedAt": "2026-10-23T14:00:00Z"
+      }
+    },
+    {
+      "name": "grant-cannot-omit-owner-time",
+      "schema": "VoiceConsent",
+      "valid": false,
+      "value": {
+        "consentType": "AI_VOICE_PROCESSING",
+        "consentVersion": "ai-voice-processing-capstone-v1",
+        "current": true,
+        "granted": true
+      }
+    },
+    {
+      "name": "withdrawal-cannot-omit-owner-time",
+      "schema": "VoiceConsent",
+      "valid": false,
+      "value": {
+        "consentType": "AI_VOICE_PROCESSING",
+        "consentVersion": "ai-voice-processing-capstone-v1",
+        "current": true,
+        "granted": false
+      }
+    }
+  ],
+  "acceptanceScenarios": [
+    {
+      "id": "FREE_TEXT_UNCHANGED",
+      "expected": "FREE_LOCKED",
+      "invariant": "NO_VOICE_OR_TEXT_QUOTA_MUTATION",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "PLUS_ADMITTED",
+      "expected": "AUTHORIZED",
+      "invariant": "RESERVE_ONE_SESSION_AND_AT_MOST_300_SECONDS",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "PREMIUM_ADMITTED",
+      "expected": "AUTHORIZED",
+      "invariant": "RESERVE_ONE_SESSION_AND_AT_MOST_600_SECONDS",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "TEXT_CONSENT_ONLY",
+      "expected": "VOICE_CONSENT_REQUIRED",
+      "invariant": "NO_MEDIA_OR_INFERENCE",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "VOICE_CONSENT_ONLY",
+      "expected": "CONSENT_REQUIRED",
+      "invariant": "NO_MEDIA_OR_INFERENCE",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "OWNER_UNAVAILABLE",
+      "expected": "ENTITLEMENT_UNAVAILABLE",
+      "invariant": "FAIL_CLOSED_NO_MEDIA",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "THIRD_GLOBAL_CALL",
+      "expected": "GLOBAL_CAPACITY_FULL",
+      "invariant": "MAX_TWO_PERMITS_ACROSS_PROCESSES",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "SECOND_OWNER_CALL",
+      "expected": "SESSION_LIMIT",
+      "invariant": "MAX_ONE_PER_OWNER",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "EXACT_START_RETRY",
+      "expected": "SAME_SESSION",
+      "invariant": "NO_DOUBLE_RESERVATION",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "CHANGED_IDEMPOTENCY_INTENT",
+      "expected": "IDEMPOTENCY_CONFLICT",
+      "invariant": "NO_SIDE_EFFECT",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "MIDNIGHT_RECONNECT",
+      "expected": "SAME_AUTHORIZED_DAY",
+      "invariant": "NO_RESET_OR_DEADLINE_EXTENSION",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "PROVIDER_FAILED_BEFORE_REPLY",
+      "expected": "FAILED",
+      "invariant": "RELEASE_ALL_QUOTA_AFTER_FENCED_TEARDOWN",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "FAILURE_AFTER_REPLY",
+      "expected": "FAILED",
+      "invariant": "CONSUME_ONE_AND_ONLY_USED_POST_REPLY_ACTIVE_SECONDS",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "CONSENT_WITHDRAWN",
+      "expected": "ENDING",
+      "invariant": "CANCEL_AUDIO_INFERENCE_PURGE_RAM",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "ENTITLEMENT_EXPIRED",
+      "expected": "ENDING",
+      "invariant": "NO_NEW_TURN_OR_RECONNECT",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "LEASE_NOT_RENEWED",
+      "expected": "EXPIRED",
+      "invariant": "STOP_ALL_PROCESSING_WITHIN_TEN_SECONDS",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "UPGRADE_MIDDAY",
+      "expected": "HIGHER_CAP_MINUS_USED_RESERVED",
+      "invariant": "NO_RESET_OR_LONGER_EXISTING_SESSION",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "ACCOUNT_DELETED",
+      "expected": "ENDING",
+      "invariant": "STOP_PURGE_RAM_DELETE_OWNER_VOICE_METADATA",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "TEXT_HISTORY_SELECTED",
+      "expected": "INVALID_REQUEST",
+      "invariant": "NO_JOURNAL_OR_TEXT_HISTORY_ACCESS",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    },
+    {
+      "id": "DISCLOSURE_PROVIDER_CHANGE",
+      "expected": "VOICE_CONSENT_REQUIRED",
+      "invariant": "TEXT_CONSENT_REMAINS_VALID",
+      "proofStatus": "RUNTIME_ACCEPTANCE_PENDING_DOWNSTREAM_STORY"
+    }
+  ]
+}

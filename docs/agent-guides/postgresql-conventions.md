@@ -2,7 +2,7 @@
 
 ## Ownership and consistency
 
-Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Owner migrations are executable runtime truth. The read-only [`postgresql-logical-schema.sql`](../domain-model/relational/postgresql-logical-schema.sql) groups tables into visual owner namespaces for documentation only; its cross-owner identifiers are logical/external relationships, never physical foreign keys. No runtime query or ORM relationship may cross a service boundary.
+Each service owns a separate database and database user, even when services share one PostgreSQL server locally. Service tables use the owned database's default `public` schema. Owner migrations are executable runtime truth. The read-only [logical models by service](../domain-model/relational/README.md) group tables into visual owner namespaces for documentation only; their cross-owner identifiers are logical/external relationships, never physical foreign keys. No runtime query or ORM relationship may cross a service boundary.
 
 Before adding or changing persisted data, inspect both the owner migration
 history and the canonical model. A migration PR that adds, removes, renames, or
@@ -25,7 +25,7 @@ Every new or changed table and column must have a plain-language description tha
 - whether it is authoritative, derived, encrypted, hashed, external, nullable, or retained for audit;
 - which service owns the value and which operation changes it when that is not obvious.
 
-Descriptions belong in `docs/database/postgresql-field-data-dictionary.md`, with aggregate-level reasoning and access patterns added to the owning module README when useful. Do not add descriptions as SQL comments merely to duplicate this documentation.
+Descriptions belong in `docs/database/postgresql/<owning-service>.md`, found through the [field dictionary index](../database/postgresql-field-data-dictionary.md), with aggregate-level reasoning and access patterns added to the owning module README when useful. Pair migrations with that owner's dictionary and logical SQL; editing another owner's file or the shared router does not satisfy the check. Do not add descriptions as SQL comments merely to duplicate this documentation.
 
 Example:
 
@@ -64,3 +64,22 @@ Do not use descriptions that merely repeat the name, such as â€œappointment ID.â
 - Pagination is deterministic and bounded. Use cursor/keyset pagination for growing histories and include a unique tie-breaker.
 - Never expose persistence entities directly from REST or messages.
 - Repository integration tests run against real PostgreSQL and verify migration application, constraints, locking, and query mapping. Review checks verify that the Markdown data dictionary covers all application-owned tables/fields.
+
+### Consultation migration names
+
+After MB-717, new Consultation SQL filenames use UTC
+`yyyyMMddHHmmss-lowercase-kebab-description.sql`, with valid calendar timestamps
+and no repeated timestamp prefix. Append an explicit master include after the
+frozen legacy history; timestamp naming does not authorize sorting or moving old
+includes. New changeset IDs should include the same timestamp and description.
+
+The 29 existing changesets retain their full `id + author + filepath` identities,
+version-9 checksums and execution order. Both legacy `021` filenames are retained:
+their full IDs and paths differ, and both appear in the applied history. Numeric
+prefix equality is not Liquibase identity equality. Do not repair this cosmetic
+ambiguity by renaming applied files or editing migration-history rows. This
+scoped change does not renumber other services' existing migration histories.
+
+See the [Consultation README](../../consultation-service/README.md#migration-naming-and-applied-history-mb-717)
+for the enforced naming check and the [MB-717 evidence](../story-mb-717-consultation-migration-names.md)
+for the compatibility decision and validation commands.

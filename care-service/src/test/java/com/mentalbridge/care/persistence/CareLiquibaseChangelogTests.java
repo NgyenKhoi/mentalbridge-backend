@@ -48,7 +48,9 @@ class CareLiquibaseChangelogTests {
 					"care-028-support-plan-cadence",
 					"care-029-support-plan-schedule-activation",
 					"care-030-support-plan-schedule-generation-cutoff",
-					"care-031-support-plan-proposal-cycle");
+					"care-031-support-plan-proposal-cycle",
+					"care-032-resource-completion-evidence",
+					"care-033-ai-voice-processing-consent");
 		}
 	}
 

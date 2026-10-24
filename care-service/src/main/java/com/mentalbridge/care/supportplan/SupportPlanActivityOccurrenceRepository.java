@@ -26,11 +26,25 @@ interface SupportPlanActivityOccurrenceRepository
 	@Query(value = """
 			select id
 			from support_plan_activity_occurrence
-			where evidence_owner = :owner and evidence_kind = :kind and evidence_id = :factId
+			where user_id = :userId and evidence_owner = :owner and evidence_kind = :kind and evidence_id = :factId
 			  and evidence_revision is not distinct from :factRevision
 			""", nativeQuery = true)
-	Optional<UUID> findOccurrenceIdByEvidence(@Param("owner") String owner, @Param("kind") String kind,
+	Optional<UUID> findOccurrenceIdByEvidence(@Param("userId") UUID userId, @Param("owner") String owner, @Param("kind") String kind,
 			@Param("factId") String factId, @Param("factRevision") String factRevision);
+
+	@Query(value = """
+			select distinct occurrence.evidence_id
+			from support_plan_activity_occurrence occurrence
+			join support_plan_action action on action.id = occurrence.source_action_id and action.user_id = occurrence.user_id
+			where occurrence.user_id = :userId and occurrence.evidence_owner = 'CONTENT'
+			  and occurrence.id <> :occurrenceId
+			  and occurrence.evidence_kind in ('RESOURCE_PRACTICE_SESSION', 'RESOURCE_COMPLETION')
+			  and occurrence.evidence_revision = :resourceVersion
+			  and action.source_owner = 'CONTENT' and action.source_kind = 'RESOURCE_VERSION'
+			  and action.source_id = :resourceId and action.source_revision = :resourceVersion
+			""", nativeQuery = true)
+	List<String> findUsedResourceFactIds(@Param("userId") UUID userId, @Param("resourceId") String resourceId,
+			@Param("resourceVersion") String resourceVersion, @Param("occurrenceId") UUID occurrenceId);
 
 	@Query("select occurrence.supportPlanId from SupportPlanActivityOccurrenceEntity occurrence where occurrence.id = :id and occurrence.userId = :userId")
 	Optional<UUID> findSupportPlanIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);

@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -60,6 +61,44 @@ public class SupportPlanV3Service {
 		return view(plan);
 	}
 
+	@Transactional
+	public PlanResourceActionsView resourceActions(UUID userId, LocalDate localDate) {
+		var current = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"));
+		if (current.isEmpty()) return new PlanResourceActionsView("NONE", null, null, null, null, localDate, List.of());
+		var plan = current.get();
+		Map<String, SupportPlanActivityOccurrenceEntity> today = new java.util.HashMap<>();
+		if (plan.modelVersion() == 3) {
+			for (var value : activities.loadV3Window(userId, localDate, localDate).occurrences()) {
+				if (!"CANCELLED".equals(value.state()) && value.sourceActionId() != null) {
+					today.putIfAbsent(value.sourceActionId().toString(), value);
+				}
+			}
+		}
+		var focuses = plan.modelVersion() == 2 ? adaptedFocuses(plan) : nativeFocuses(plan);
+		var values = focuses.stream().flatMap(focus -> focus.actions().stream())
+				.filter(action -> "RESOURCE".equals(action.actionType()) && "ACTIVE".equals(action.status()))
+				.map(action -> {
+					var source = action.source();
+					var occurrence = today.get(action.actionId());
+					var scheduled = action.schedules().stream()
+							.filter(value -> List.of("ACTIVE", "PAUSED").contains(value.status())).findFirst().orElse(null);
+					return new PlanResourceActionView(action.actionId(), action.actionVersion(), action.presentation().title(),
+							new PlanResourceReferenceView(UUID.fromString(source.sourceId()), source.sourceRevision(), source.publicationId()),
+							scheduled, occurrence == null ? null : resourceToday(occurrence));
+				}).toList();
+		return new PlanResourceActionsView(plan.status(), plan.id(), plan.version(), representation(plan),
+				activities.planTimezone(plan), localDate, values);
+	}
+
+	private PlanResourceTodayView resourceToday(SupportPlanActivityOccurrenceEntity occurrence) {
+		String displayState = "SCHEDULED".equals(occurrence.state()) && occurrence.scheduledAt().isBefore(clock.instant())
+				? "OVERDUE" : occurrence.state();
+		var evidence = occurrence.evidenceKind() == null ? null : new CompletionEvidenceView(occurrence.evidenceKind(),
+				occurrence.evidenceOwner(), occurrence.evidenceId(), occurrence.evidenceRevision(),
+				occurrence.evidenceOccurredAt(), occurrence.evidenceVerifiedAt());
+		return new PlanResourceTodayView(occurrence.id(), occurrence.version(), occurrence.timezone(), displayState, evidence);
+	}
+
 	@Transactional(readOnly = true)
 	public SupportPlanV3View currentDraft(UUID userId) {
 		var plan = plans.findByUserIdAndStatus(userId, "DRAFT").orElseThrow(() ->
@@ -73,6 +112,22 @@ public class SupportPlanV3Service {
 		return plans.findAllByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED", "DRAFT")).stream()
 				.min(Comparator.comparing(plan -> "DRAFT".equals(plan.status())))
 				.map(plan -> new PlanStatusView(plan.id(), plan.status()));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<PlanHistoryStatusView> latestHistoryStatus(UUID userId) {
+		return plans.findTerminalHistory(userId, null, null, 1).stream().findFirst()
+				.map(plan -> new PlanHistoryStatusView(plan.id(), plan.status(), plan.completedAt()));
+	}
+
+	@Transactional
+	public Optional<CurrentDayView> currentDay(UUID userId, ZoneId requestedZone) {
+		return plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"))
+				.map(plan -> {
+					ZoneId zone = requestedZone == null ? ZoneId.of(activities.planTimezone(plan)) : requestedZone;
+					LocalDate date = LocalDate.ofInstant(clock.instant(), zone);
+					return new CurrentDayView(view(plan), date, zone.getId(), occurrences(userId, date, date).occurrences());
+				});
 	}
 
 	@Transactional(readOnly = true)
@@ -331,7 +386,22 @@ public class SupportPlanV3Service {
 				"SupportPlan action model is incomplete or inconsistent");
 	}
 
+	public record PlanResourceActionsView(String planState,
+			@JsonInclude(JsonInclude.Include.NON_NULL) UUID supportPlanId,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Long supportPlanVersion,
+			@JsonInclude(JsonInclude.Include.NON_NULL) String representationMode,
+			@JsonInclude(JsonInclude.Include.NON_NULL) String timeZone,
+			LocalDate localDate, List<PlanResourceActionView> actions) { }
+	public record PlanResourceActionView(String actionId, long actionVersion, String title,
+			PlanResourceReferenceView resource, ActionScheduleView schedule, PlanResourceTodayView today) { }
+	public record PlanResourceReferenceView(UUID resourceId, String resourceVersion, UUID publicationId) { }
+	public record PlanResourceTodayView(UUID occurrenceId, long occurrenceVersion, String timeZone, String displayState,
+			CompletionEvidenceView completionEvidence) { }
+
 	public record PlanStatusView(UUID supportPlanId, String status) { }
+	public record PlanHistoryStatusView(UUID supportPlanId, String status, Instant completedAt) { }
+	public record CurrentDayView(SupportPlanV3View plan, LocalDate localDate, String timeZone,
+			List<ActionOccurrenceView> occurrences) { }
 	public record SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
 			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,

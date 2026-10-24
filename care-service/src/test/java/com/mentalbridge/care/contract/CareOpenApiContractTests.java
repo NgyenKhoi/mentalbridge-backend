@@ -20,6 +20,10 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class CareOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"GET /api/v1/ai-voice-processing-disclosure",
+			"GET /api/v1/consents/ai-voice-processing",
+			"POST /api/v1/consents/ai-voice-processing",
+			"POST /internal/v1/ai-companion/voice-consent-authorizations",
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
@@ -34,6 +38,7 @@ class CareOpenApiContractTests {
             "DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile",
 			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
@@ -53,6 +58,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/screening-episodes/current",
 			"GET /api/v1/screening-episodes/history",
 			"GET /api/v1/guided-journey/current",
+			"GET /api/v1/home-next-step",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
@@ -98,6 +104,7 @@ class CareOpenApiContractTests {
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"GET /api/v2/support-plans/current",
+			"GET /api/v2/support-plans/current/resource-actions",
 			"GET /api/v2/support-plans/current-draft",
 			"GET /api/v2/support-plans/{supportPlanId}",
 			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
@@ -111,6 +118,9 @@ class CareOpenApiContractTests {
 			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v1/ai-voice-processing-disclosure",
+			"/api/v1/consents/ai-voice-processing",
+			"/internal/v1/ai-companion/voice-consent-authorizations",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"/api/v2/support-plans",
@@ -124,6 +134,7 @@ class CareOpenApiContractTests {
             "/api/v2/support-plan-occurrences/{occurrenceId}/engagement",
 			"/api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"/api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
+			"/api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile",
 			"/api/v1/admin/product-journey-metrics",
 			"/api/v1/profile",
 			"/api/v1/consents",
@@ -141,6 +152,7 @@ class CareOpenApiContractTests {
 			"/api/v1/screening-episodes/current",
 			"/api/v1/screening-episodes/history",
 			"/api/v1/guided-journey/current",
+			"/api/v1/home-next-step",
 			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"/api/v1/reassessment-self-reports",
@@ -181,6 +193,7 @@ class CareOpenApiContractTests {
 			"/api/v1/support-plan-occurrences/{occurrenceId}/state",
 			"/api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"/api/v2/support-plans/current",
+			"/api/v2/support-plans/current/resource-actions",
 			"/api/v2/support-plans/current-draft",
 			"/api/v2/support-plans/{supportPlanId}",
 			"/api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
@@ -193,6 +206,9 @@ class CareOpenApiContractTests {
 			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"GET /api/v1/ai-voice-processing-disclosure",
+			"GET /api/v1/consents/ai-voice-processing",
+			"POST /api/v1/consents/ai-voice-processing",
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
@@ -207,6 +223,7 @@ class CareOpenApiContractTests {
             "DELETE /api/v2/support-plan-occurrences/{occurrenceId}/engagement",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile",
 			"POST /api/v2/support-plan-occurrences/{occurrenceId}/journal/reconcile",
+			"POST /api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile",
 			"GET /api/v1/admin/product-journey-metrics",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
@@ -223,6 +240,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/screening-episodes/history",
 			"GET /api/v1/guided-journey/current",
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"GET /api/v1/home-next-step",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
 			"GET /api/v1/reassessment-self-reports/current",
@@ -267,6 +285,7 @@ class CareOpenApiContractTests {
 			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
 			"GET /api/v2/support-plans/current",
+			"GET /api/v2/support-plans/current/resource-actions",
 			"GET /api/v2/support-plans/current-draft",
 			"GET /api/v2/support-plans/{supportPlanId}",
 			"PUT /api/v2/support-plans/{supportPlanId}/actions/{actionId}/schedule",
@@ -280,6 +299,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
+			"POST /api/v1/consents/ai-voice-processing",
 			"POST /api/v2/support-plans",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
             "POST /api/v2/support-plans/{supportPlanId}/cycle-continuation",
@@ -491,6 +511,74 @@ class CareOpenApiContractTests {
 	}
 
 	@Test
+	void homeNextStepReusesTheJourneyAndKeepsPlanContextMinimizedWithSevenExamples() {
+		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
+		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
+		var schemas = openApi.getComponents().getSchemas();
+		var home = schemas.get("HomeNextStep");
+		var plan = schemas.get("HomePlanStep");
+		var occurrence = schemas.get("HomeNextOccurrence");
+		var operation = openApi.getPaths().get("/api/v1/home-next-step").getGet();
+
+		assertThat(home.getRequired()).containsExactlyInAnyOrder("homePolicyVersion", "journey", "plan",
+				"lastCompletedPlan");
+		assertThat(home.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(home.getRequired());
+		assertThat(allowsAdditionalProperties(home)).isFalse();
+		assertThat(property(home, "homePolicyVersion").getConst()).isEqualTo("mb-home-next-step-v1");
+		assertThat(property(home, "journey").get$ref()).isEqualTo("#/components/schemas/GuidedJourney");
+		assertThat(property(home, "plan").getOneOf().getFirst().get$ref())
+				.isEqualTo("#/components/schemas/HomePlanStep");
+		assertThat(property(home, "plan").getOneOf().get(1).getTypes()).containsExactly("null");
+		assertThat(property(home, "lastCompletedPlan").getOneOf().getFirst().get$ref())
+				.isEqualTo("#/components/schemas/HomeCompletedPlan");
+		assertThat(property(home, "lastCompletedPlan").getOneOf().get(1).getTypes()).containsExactly("null");
+		assertThat(plan.getRequired()).containsExactlyInAnyOrder("supportPlanId", "status", "focus", "reviewDueOn",
+				"cycleDay", "cycleLengthDays", "localDate", "timeZone", "today", "nextOccurrence");
+		assertThat(plan.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(plan.getRequired());
+		assertThat(property(plan, "cycleDay").getTypes()).containsExactlyInAnyOrder("integer", "null");
+		assertThat(property(plan, "cycleLengthDays").getTypes()).containsExactlyInAnyOrder("integer", "null");
+		assertThat(enumValues(property(plan, "focus"))).containsExactly("RESUME_PAUSED", "REVIEW_DUE", "DO_TODAY",
+				"TODAY_DONE", "NOTHING_TODAY");
+		assertThat(property(plan, "nextOccurrence").getOneOf().get(1).getTypes()).containsExactly("null");
+		assertThat(occurrence.getRequired()).containsExactlyInAnyOrder("occurrenceId", "actionId", "actionType",
+				"title", "displayState", "scheduledAt", "estimatedDurationMinutes");
+		assertThat(enumValues(property(occurrence, "displayState"))).containsExactly("SCHEDULED", "OVERDUE");
+		assertThat(enumValues(property(occurrence, "actionType")))
+				.containsExactlyElementsOf(enumValues(property(schemas.get("ActionOccurrence"), "actionType")));
+		assertThat(operation.getOperationId()).isEqualTo("getOwnHomeNextStep");
+		assertThat(operation.getResponses()).containsOnlyKeys("200", "400", "401", "403", "503");
+		assertThat(operation.getResponses().get("200").getHeaders().get("Cache-Control").getSchema().getConst())
+				.isEqualTo("no-store");
+		var examples = operation.getResponses().get("200").getContent().get("application/json").getExamples();
+		assertThat(examples).containsOnlyKeys("assessmentRequired", "freeResources", "plusProposal", "doToday",
+				"resumePaused", "reviewDue", "lastCompletedPlan");
+		examples.values().forEach(example -> {
+			JsonNode body = io.swagger.v3.core.util.Json.mapper().valueToTree(example.getValue());
+			assertThat(body.size()).isEqualTo(4);
+			assertThat(body.path("homePolicyVersion").asText()).isEqualTo("mb-home-next-step-v1");
+			assertThat(body.hasNonNull("journey")).isTrue();
+			assertThat(body.has("plan")).isTrue();
+			assertThat(body.has("lastCompletedPlan")).isTrue();
+			if (body.hasNonNull("plan")) {
+				assertThat(body.path("plan").properties()).extracting(Map.Entry::getKey)
+						.containsExactlyInAnyOrderElementsOf(plan.getRequired());
+			}
+			for (var excluded : List.of("answers", "totalScore", "compositeScore", "journal", "emotion")) {
+				assertThat(body.findValues(excluded)).as("private field %s", excluded).isEmpty();
+			}
+		});
+		var doToday = io.swagger.v3.core.util.Json.mapper().valueToTree(examples.get("doToday").getValue()).path("plan");
+		assertThat(doToday.path("cycleDay").intValue()).isEqualTo(1);
+		assertThat(doToday.path("cycleLengthDays").intValue()).isEqualTo(14);
+		var paused = io.swagger.v3.core.util.Json.mapper().valueToTree(examples.get("resumePaused").getValue()).path("plan");
+		assertThat(paused.path("cycleDay").isNull()).isTrue();
+		assertThat(paused.path("cycleLengthDays").isNull()).isTrue();
+		var reviewDue = io.swagger.v3.core.util.Json.mapper().valueToTree(examples.get("reviewDue").getValue()).path("plan");
+		assertThat(reviewDue.path("cycleDay").intValue()).isEqualTo(14);
+		assertThat(reviewDue.path("cycleLengthDays").intValue()).isEqualTo(14);
+	}
+
+	@Test
 	void supportPlanV3IsAnAdditiveTypedActionReadModelWithBoundedReferences() {
 		var contract = Path.of("..", "contracts", "openapi", "care-service-v1.yaml").toAbsolutePath();
 		var openApi = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, null).getOpenAPI();
@@ -587,6 +675,10 @@ class CareOpenApiContractTests {
 			assertThat(operation.getSecurity())
 					.as("bearer security for %s", key)
 					.anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));
+		}
+		else if (key.equals("POST /internal/v1/ai-companion/voice-consent-authorizations")) {
+			assertThat(operation.getSecurity()).anySatisfy(requirement ->
+					assertThat(requirement).containsOnlyKeys("JournalVoiceCareToken"));
 		}
 		else if (ANONYMOUS_TOKEN_OPERATIONS.contains(key)) {
 			assertThat(operation.getSecurity())

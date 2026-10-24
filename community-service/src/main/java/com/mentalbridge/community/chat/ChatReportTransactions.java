@@ -17,10 +17,13 @@ class ChatReportTransactions {
     private final ChatCrypto crypto;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final ChatHistoryVisibility visibility;
     ChatReportTransactions(ChatGroupAccess groups, ChatMessageRepository messages, ChatConversationRepository conversations,
-            ChatAccess direct, ChatReportCaseRepository reports, ChatCommandRepository commands, ChatCrypto crypto, ObjectMapper mapper, Clock clock) {
+            ChatAccess direct, ChatReportCaseRepository reports, ChatCommandRepository commands, ChatCrypto crypto,
+            ObjectMapper mapper, Clock clock, ChatHistoryVisibility visibility) {
         this.groups = groups; this.messages = messages; this.conversations = conversations; this.direct = direct; this.reports = reports;
         this.commands = commands; this.crypto = crypto; this.mapper = mapper; this.clock = clock;
+        this.visibility = visibility;
     }
     @Transactional
     ChatReportModels.Result capture(UUID conversation, UUID actor, UUID peer, ChatGroupAccess.Authorization auth, UUID key, ChatReportModels.Input input) {
@@ -34,7 +37,7 @@ class ChatReportTransactions {
             if (!current.kind.equals("DIRECT") || !current.state.equals("ACTIVE") || !current.other(actor).equals(peer)
                     || !message.conversationId.equals(conversation)) throw ChatException.target();
         }
-        if (!message.readable(clock.instant())) throw ChatException.target();
+        if (!message.readable(clock.instant()) || !visibility.visible(conversation, actor, message)) throw ChatException.target();
         var normalized = input.messageId() + ":" + input.reasonCode() + ":" + input.details();
         var retry = commands.findByActorProfileIdAndOperationAndIdempotencyKey(actor, "REPORT_MESSAGE", key);
         if (retry.isPresent()) {

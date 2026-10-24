@@ -1,5 +1,59 @@
 # Care Service
 
+## MB-756 independent voice consent prerequisite
+
+Care implements four operations from the accepted
+[Voice contract](../contracts/proposals/companion-voice-v1.openapi.json) under
+[ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md): authenticated USER
+disclosure retrieval, current voice consent, append-only grant/withdrawal, and
+Journal-only current dual-consent authorization. Their deployed wire contract
+is [care-service-v1.yaml](../contracts/openapi/care-service-v1.yaml). Journal
+voice admission, media, worker execution and actual voice enablement remain
+separate downstream work.
+
+`AI_VOICE_PROCESSING` uses the exact Vietnamese
+`ai-voice-processing-capstone-v1` notice. Existing `AI_PROCESSING` v2 is unchanged.
+The generic consent API still exposes only privacy and AI-processing streams;
+its enum, two-item collection and existing clients are unchanged. Voice writes
+require an existing owned Care profile, serialize on that profile, keep immutable
+decision history and persist an HMAC of the owner-scoped idempotency UUID rather
+than the raw key. An exact replay returns its original decision without making
+that historical decision current authority. Current authorization always reads
+the latest two independent grants in one repeatable-read snapshot.
+
+`GET /api/v1/ai-voice-processing-disclosure` and
+`GET|POST /api/v1/consents/ai-voice-processing` require an Identity USER bearer.
+The response `current` means the decision uses the current voice policy version;
+absence or an outdated version returns `current: false, granted: false`.
+Grant/withdrawal timestamps are server-issued. Withdrawing does not require a
+text grant or paid entitlement and never deletes historical decisions. The
+30-day Journal voice-usage retention does not alter Care consent retention.
+
+`POST /internal/v1/ai-companion/voice-consent-authorizations` accepts only
+`X-MentalBridge-Voice-Care-Token`, configured by
+`CARE_VOICE_JOURNAL_SERVICE_TOKEN` (empty disables access; otherwise 32–256
+printable characters). Startup rejects reuse of the configured SupportPlan
+Companion service credential or idempotency HMAC secret. It is a distinct Journal-to-Care credential transported
+over TLS, never a worker token or end-user JWT. Journal must derive the owner
+from its admitted session; Care validates the exact UUID owner/session assertion
+and constant `AI_COMPANION_VOICE` purpose, echoes that binding and resolves its
+own current grants. It does not call Journal or another owner's database.
+Journal validates the echoed binding and applies the accepted two-second read
+deadline and ten-second authority lease; a Care response is not a reusable grant.
+
+All four operations use `Cache-Control: no-store`, including security and
+validation errors. Voice-only errors retain the closed frozen Problem shape,
+absolute error URI and stable status/code mapping; legacy errors are unaffected.
+`CARE_IDEMPOTENCY_HMAC_KEY` remains the existing required secret, reused only
+with the explicit `voice-consent-key` purpose and owner prefix. Preserve it
+across retries; rotation needs a reviewed replay-compatibility procedure.
+
+Migration `032-ai-voice-processing-consent.sql` only extends the owner check
+constraint and preserves existing rows/checksums. Apply through Liquibase to
+the owner database before enabling voice consent writes; never execute the
+documentation-only logical model. No provider call, transcript, audio, Kafka
+message, text-quota change or financial side effect is introduced.
+
 MB-375 adds the Care-authoritative reassessment review and the single audited,
 idempotent, atomic SupportPlan replacement path described below.
 
@@ -480,6 +534,16 @@ Assessment answer text must never be copied into outbox payloads, logs, errors, 
 | `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport/malformed evidence failure percentage | `50` |
 | `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
 | `JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
+| `CONTENT_RESOURCE_EVIDENCE_BASE_URL` | Local/demo | Content owner endpoint for exact resource completion evidence | `http://localhost:3003` |
+| `CONTENT_RESOURCE_EVIDENCE_CONNECT_TIMEOUT` | No | Bounded owner TCP deadline | `PT0.2S` |
+| `CONTENT_RESOURCE_EVIDENCE_READ_TIMEOUT` | No | Bounded evidence GET response deadline | `PT0.8S` |
+| `CONTENT_RESOURCE_EVIDENCE_MAX_ATTEMPTS` | No | Safe read attempts, one or two | `2` |
+| `CONTENT_RESOURCE_EVIDENCE_RETRY_WAIT` | No | Positive retry delay with exponential jitter | `PT0.1S` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_WINDOW_SIZE` | No | Count-based evidence breaker window | `10` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_MINIMUM_CALLS` | No | Minimum calls before opening | `5` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_FAILURE_RATE` | No | Transport or malformed evidence failure percentage | `50` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_OPEN_DURATION` | No | Fail-fast open interval | `PT10S` |
+| `CONTENT_RESOURCE_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS` | No | Bounded recovery probes | `2` |
 | `JOURNAL_AI_SUPPORT_GUIDE_BASE_URL` | Local/demo only | Direct Journal/AI URL for optional consent-gated Support Guide phrasing | `http://localhost:3000` |
 | `JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT` | No | Bounded connection deadline for optional Support Guide phrasing | `PT0.5S` |
 | `JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT` | No | Bounded response deadline before Care persists its approved-copy fallback | `PT8S` |
@@ -571,3 +635,23 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
 ```
 
 The PostgreSQL integration suite applies Liquibase to a disposable real PostgreSQL database and validates owner isolation, profile optimistic concurrency, append-only consent history/idempotency/revocation, disclosure enforcement, stable history pagination, deterministic compatible progress selection, support-routing evidence validation and concurrency/idempotency, Support Guide safety/resource failure/history/ownership behavior, immutable Reassessment Summary creation/replay/current/history behavior and source-change independence, policy lookup serialization and fallback behavior, seed data, authenticated-versus-anonymous ownership, scoring boundaries, item-9 independence, token isolation/expiry, answer/result ranges, questionnaire version uniqueness, and minimized outbox payloads. Resource eligibility and Journal/AI consumer tests cover auth/correlation propagation, documented failures, deadlines, bounded retry, breaker opening, malformed data, response attribution, source deletion, consent denial, and safe fallback. Live Eureka registration is disabled in tests. The versioned assessment and support-tier event contracts exist, while a Kafka relay remains a separate delivery slice; scoring, progress, support routing, Support Guide safety, and local reassessment dimensions never wait for a broker.
+
+## MB-670 plan resources and Content evidence
+
+`GET /api/v2/support-plans/current/resource-actions?localDate=YYYY-MM-DD` returns
+only active resource actions in plan order, pinned Content publication references,
+current schedules, and minimized occurrence state. `NONE` is a successful empty
+projection. Paused plans and v2 adapters remain readable; v2 `today` is null.
+The projection omits plan/action rationale and resource summaries.
+
+`POST /api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile` accepts
+numeric strong occurrence `If-Match`. Care resolves the owner's native Resource
+source and local date, releases its read transaction, then queries Content using
+the forwarded bearer and correlation. A second transaction locks plan, action,
+and occurrence and rechecks the context before accepting exact-version evidence.
+Only the server fact instant in the plan timezone proves the occurrence date.
+Missing evidence returns 409, stale context 412, and unavailable Content 503;
+none writes completion. Accepted retries return the persisted completion without
+another dependency call. Content facts cannot reopen an accepted occurrence.
+Migration 031 expands the Resource evidence CHECK and scopes the fact uniqueness
+by owner so deterministic daily-progress fact IDs cannot collide across users.

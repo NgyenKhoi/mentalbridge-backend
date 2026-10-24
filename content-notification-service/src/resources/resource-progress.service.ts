@@ -1,4 +1,4 @@
-import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { RESOURCE_PROGRESS_REPOSITORY_TOKEN } from '../application.tokens.js';
 import type { ResourceProgressRepository } from './resource-progress.repository.js';
@@ -31,7 +31,8 @@ export class ResourceProgressService {
   ): Promise<ResourceProgressItem | null> {
     try {
       return await this.repository.save(ownerId, resourceId, localDate, update);
-    } catch {
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
       throw new ServiceUnavailableException();
     }
   }

@@ -95,7 +95,7 @@ a terminal plan accepts no further action lifecycle mutation.
 
 | Type | Source authority | Schedule and completion policy |
 | --- | --- | --- |
-| `RESOURCE` | Content exact ResourceVersion and publication eligibility | Schedulable; user completes/skips; opening content is not completion |
+| `RESOURCE` | Content exact ResourceVersion and publication eligibility | Schedulable; explicit user acknowledgement or exact Content fact reconciliation under ADR 0043; user may skip; opening content is not completion |
 | `JOURNAL` | Journal entry/capability facts | Schedulable and skippable; a linked entry is completed only by a bounded Journal fact |
 | `EMOTION_CHECK_IN` | Journal/AI emotion check-in facts | Schedulable and skippable; completed only by a bounded check-in fact |
 | `ROUTINE_SELF_MANAGEMENT` | Care-owned approved wording | Schedulable; user completes/skips explicitly |

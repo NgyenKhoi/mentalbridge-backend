@@ -4,6 +4,8 @@ import { GenericContainer, type StartedTestContainer } from 'testcontainers';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'node:crypto';
+import type { PlanResourceActions } from '../../resources/resource-engagement.types.js';
 import type { DatabaseClient, DatabaseService } from '../../database/database.service.js';
 import { AppointmentReminderRepository } from '../../appointment-reminders/appointment-reminder.repository.js';
 import {
@@ -24,6 +26,7 @@ import { ResourceProgressRepository } from '../../resources/resource-progress.re
 import { ResourceJourneyRepository } from '../../resources/resource-journey.repository.js';
 import {
   ResourceBingoVersionMismatchError,
+  ResourceBingoItemRetiredError,
   ResourceEngagementRepository,
 } from '../../resources/resource-engagement.repository.js';
 import { ResourceRewardRepository } from '../../resources/resource-reward.repository.js';
@@ -42,6 +45,7 @@ import {
   UserNotificationDedupeConflictError,
   UserNotificationRepository,
 } from '../../user-notifications/user-notification.repository.js';
+import { PushDeviceRepository } from '../../push-delivery/push-device.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -107,6 +111,9 @@ describe('Database Integration', () => {
       '24_add_specialist_notification_preferences.sql',
       '25_add_general_user_notification_producers.sql',
       '26_add_community_notice_delivery.sql',
+      '27_plan_scoped_resource_bingo.sql',
+      '28_add_native_push_delivery.sql',
+      '29_harden_native_push_delivery.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -195,6 +202,348 @@ describe('Database Integration', () => {
   afterAll(async () => {
     if (pool) await pool.end();
     if (container) await container.stop();
+  });
+
+  describe('native push device lifecycle', () => {
+    const database = (): DatabaseService =>
+      ({
+        query: (text: string, parameters?: never[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      }) as DatabaseService;
+
+    it('rotates one provider token to its latest owner and revokes idempotently', async () => {
+      const repository = new PushDeviceRepository(database());
+      const token = {
+        ciphertext: 'encrypted-token',
+        iv: 'synthetic-iv',
+        authTag: 'synthetic-tag',
+        hash: 'a'.repeat(64),
+      };
+      const firstOwner = randomUUID();
+      const secondOwner = randomUUID();
+      await repository.register(
+        firstOwner,
+        {
+          installationId: randomUUID(),
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        token,
+      );
+      const secondInstallation = randomUUID();
+      await repository.register(
+        secondOwner,
+        {
+          installationId: secondInstallation,
+          platform: 'IOS',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        token,
+      );
+
+      const states = await pool.query<{ owner_id: string; status: string }>(
+        `SELECT owner_id::text, status FROM push_device_registration
+         WHERE provider_token_hash = $1 ORDER BY created_at`,
+        [token.hash],
+      );
+      expect(states.rows).toEqual([
+        { owner_id: firstOwner, status: 'REVOKED' },
+        { owner_id: secondOwner, status: 'ACTIVE' },
+      ]);
+      await new NotificationPreferenceRepository(database()).getOrCreate(secondOwner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [secondOwner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, secondOwner, `push-test:${notificationId}`, 'b'.repeat(64)],
+      );
+      await expect(repository.materializeCandidates(10)).resolves.toBe(1);
+      expect(
+        (
+          await pool.query<{ state: string }>(
+            'SELECT state FROM push_delivery_attempt WHERE notification_id = $1',
+            [notificationId],
+          )
+        ).rows[0].state,
+      ).toBe('PENDING');
+      await expect(repository.revoke(secondOwner, secondInstallation)).resolves.toBe(true);
+      await repository.settleIneligible();
+      expect(
+        (
+          await pool.query<{ state: string; failure_code: string }>(
+            'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+            [notificationId],
+          )
+        ).rows[0],
+      ).toEqual({ state: 'SUPPRESSED', failure_code: 'DEVICE_DISABLED' });
+      await expect(repository.revoke(secondOwner, secondInstallation)).resolves.toBe(true);
+      await expect(repository.revoke(firstOwner, randomUUID())).resolves.toBe(false);
+    });
+
+    it('revokes the previous owner when one installation is reassigned with a new token', async () => {
+      const repository = new PushDeviceRepository(database());
+      const installationId = randomUUID();
+      const firstOwner = randomUUID();
+      const secondOwner = randomUUID();
+      await repository.register(
+        firstOwner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'first', iv: 'first-iv', authTag: 'first-tag', hash: 'c'.repeat(64) },
+      );
+      await repository.register(
+        secondOwner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'second', iv: 'second-iv', authTag: 'second-tag', hash: 'd'.repeat(64) },
+      );
+
+      const states = await pool.query<{ owner_id: string; status: string }>(
+        `SELECT owner_id::text, status
+         FROM push_device_registration
+         WHERE installation_id = $1
+         ORDER BY created_at`,
+        [installationId],
+      );
+      expect(states.rows).toEqual([
+        { owner_id: firstOwner, status: 'REVOKED' },
+        { owner_id: secondOwner, status: 'ACTIVE' },
+      ]);
+    });
+
+    it('keeps an identical PUT timestamp stable and does not skip a pending notification', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      const installationId = randomUUID();
+      const token = {
+        ciphertext: 'encrypted-token',
+        iv: 'synthetic-iv',
+        authTag: 'synthetic-tag',
+        hash: 'e'.repeat(64),
+      };
+      const input = {
+        installationId,
+        platform: 'ANDROID' as const,
+        provider: 'EXPO' as const,
+        providerToken: 'not-persisted-by-repository',
+        permissionStatus: 'GRANTED' as const,
+        appVersion: '1.0.0',
+      };
+      const first = await repository.register(owner, input, token);
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, owner, `push-noop:${notificationId}`, 'f'.repeat(64)],
+      );
+
+      const repeated = await repository.register(owner, input, {
+        ...token,
+        ciphertext: 'randomized-ciphertext-that-must-not-be-written',
+      });
+
+      expect(repeated.lastRegisteredAt).toBe(first.lastRegisteredAt);
+      expect(repeated.version).toBe(first.version);
+      await expect(repository.materializeCandidates(10)).resolves.toBe(1);
+      const persisted = await pool.query<{ provider_token_ciphertext: string }>(
+        `SELECT provider_token_ciphertext
+         FROM push_device_registration
+         WHERE owner_id = $1 AND installation_id = $2`,
+        [owner, installationId],
+      );
+      expect(persisted.rows[0].provider_token_ciphertext).toBe('encrypted-token');
+    });
+
+    it('does not claim expired or deleted notifications for provider delivery', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      const installationId = randomUUID();
+      await repository.register(
+        owner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'token', iv: 'iv', authTag: 'tag', hash: '1'.repeat(64) },
+      );
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, owner, `push-lifecycle:${notificationId}`, '2'.repeat(64)],
+      );
+      await repository.materializeCandidates(10);
+      await pool.query('UPDATE notification SET deleted_at = now() WHERE id = $1', [
+        notificationId,
+      ]);
+
+      const claims = await repository.claim(10);
+      expect(claims.some((claim) => claim.notificationId === notificationId)).toBe(false);
+      await repository.settleIneligible();
+      const attempt = await pool.query<{ state: string; failure_code: string }>(
+        'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+        [notificationId],
+      );
+      expect(attempt.rows[0]).toEqual({
+        state: 'SUPPRESSED',
+        failure_code: 'NOTIFICATION_DELETED',
+      });
+
+      const expiredNotificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version, created_at)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() - interval '1 hour', now() - interval '2 hours', 'CONTENT', $3, $4,
+                 'DELIVERED', 0, now() - interval '2 hours')`,
+        [expiredNotificationId, owner, `push-expired:${expiredNotificationId}`, '5'.repeat(64)],
+      );
+      await pool.query(
+        `INSERT INTO push_delivery_attempt (notification_id, device_registration_id)
+         SELECT $1, id
+         FROM push_device_registration
+         WHERE owner_id = $2 AND installation_id = $3`,
+        [expiredNotificationId, owner, installationId],
+      );
+
+      const expiredClaims = await repository.claim(10);
+      expect(expiredClaims.some((claim) => claim.notificationId === expiredNotificationId)).toBe(
+        false,
+      );
+      await repository.settleIneligible();
+      const expiredAttempt = await pool.query<{ state: string; failure_code: string }>(
+        'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+        [expiredNotificationId],
+      );
+      expect(expiredAttempt.rows[0]).toEqual({
+        state: 'SUPPRESSED',
+        failure_code: 'NOTIFICATION_EXPIRED',
+      });
+    });
+
+    it('enforces the configured owner command rate limit atomically', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+
+      await expect(repository.consumeCommandRateLimit(owner, 2, 60)).resolves.toBe(true);
+      await expect(repository.consumeCommandRateLimit(owner, 2, 60)).resolves.toBe(true);
+      await expect(repository.consumeCommandRateLimit(owner, 2, 60)).resolves.toBe(false);
+    });
+
+    it('persists delayed Expo receipt confirmation separately from ticket acceptance', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      const installationId = randomUUID();
+      await repository.register(
+        owner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        {
+          ciphertext: 'receipt-token',
+          iv: 'receipt-iv',
+          authTag: 'receipt-tag',
+          hash: '3'.repeat(64),
+        },
+      );
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, owner, `push-receipt:${notificationId}`, '4'.repeat(64)],
+      );
+      await repository.materializeCandidates(100);
+      const claims = await repository.claim(100);
+      const claim = claims.find((candidate) => candidate.notificationId === notificationId);
+      expect(claim).toBeDefined();
+      await repository.accepted(claim!.id, 'ticket-receipt-1', 0);
+
+      const receiptClaims = await repository.claimReceipts(100, 60);
+      const receiptClaim = receiptClaims.find(
+        (candidate) => candidate.providerTicketId === 'ticket-receipt-1',
+      );
+      expect(receiptClaim).toBeDefined();
+      await repository.confirmReceipt(receiptClaim!.id);
+      const attempt = await pool.query<{
+        state: string;
+        receipt_attempt_count: number;
+        receipt_checked_at: Date;
+      }>(
+        `SELECT state, receipt_attempt_count, receipt_checked_at
+         FROM push_delivery_attempt
+         WHERE notification_id = $1`,
+        [notificationId],
+      );
+      expect(attempt.rows[0].state).toBe('CONFIRMED');
+      expect(attempt.rows[0].receipt_attempt_count).toBe(1);
+      expect(attempt.rows[0].receipt_checked_at).toBeInstanceOf(Date);
+    });
   });
 
   describe('resource engagement migration', () => {
@@ -537,7 +886,7 @@ describe('Database Integration', () => {
       });
     });
 
-    it('materializes seven same-week dates concurrently without racing the bingo board', async () => {
+    it('materializes seven same-week dates without creating Bingo boards', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
         withTransaction: async <T>(operation: (client: Pool) => Promise<T>) => {
@@ -586,7 +935,8 @@ describe('Database Integration', () => {
          WHERE owner_id = $1 AND week_start = '2026-09-28'`,
         [owner],
       );
-      expect(boardCount.rows[0].count).toBe('1');
+      expect(boardCount.rows[0].count).toBe('0');
+      expect(journeys.every((journey) => journey?.bingo.length === 0)).toBe(true);
     });
 
     it('persists owner-scoped bookmarks and reconciles versioned Bingo evidence', async () => {
@@ -1995,6 +2345,679 @@ describe('Database Integration', () => {
       expect(await repository.delete(owner, active.rows[0].id)).toBe('DELETED');
       expect(await repository.delete(owner, active.rows[0].id)).toBe('DELETED');
       expect((await repository.list(owner, 20, null)).items).toEqual([]);
+    });
+  });
+  describe('MB-670 plan-scoped resource progress', () => {
+    const weekStart = '2026-10-19';
+    const timeZone = 'Asia/Ho_Chi_Minh';
+    function database(): DatabaseService {
+      return {
+        query: (text: string, values?: unknown[]) => pool.query(text, values),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      } as unknown as DatabaseService;
+    }
+    async function fixture(count = 3) {
+      const owner = randomUUID();
+      const planId = randomUUID();
+      const reviewer = randomUUID();
+      const resourceIds: string[] = [];
+      for (let index = 0; index < count; index++) {
+        const resourceId = randomUUID();
+        resourceIds.push(resourceId);
+        await pool.query(
+          `INSERT INTO resource
+             (id, category, locale, title, summary, content_body, source_organization,
+              source_title, source_url, source_review_note, status, reviewed_by,
+              reviewed_at, effective_at, source_review_status, resource_kind,
+              interaction_type, repeatability, completion_mode, streak_eligible,
+              catalogue_visibility)
+           VALUES ($1, 'BREATHING', 'vi-VN', $3, 'Summary', 'Body',
+             'Reviewed source', 'Reviewed title', 'https://example.com/source', 'Reviewed note',
+             'PUBLISHED', $2, now(), now(), 'REVIEWED', 'PRACTICE',
+             'BREATHING_PACER', 'REPEATABLE', 'TIMED', true, 'LISTED')`,
+          [resourceId, reviewer, `Plan resource ${index}`],
+        );
+        await pool.query(
+          `INSERT INTO resource_publication_snapshot
+          (resource_id, content_version, snapshot, published_by)
+          SELECT id, version, to_jsonb(resource), reviewed_by FROM resource WHERE id = $1`,
+          [resourceId],
+        );
+      }
+      const actions = resourceIds.map((resourceId) => ({
+        actionId: randomUUID(),
+        actionVersion: '1',
+        resource: { resourceId, resourceVersion: '0', publicationId: randomUUID() },
+      }));
+      const projection: PlanResourceActions = {
+        planState: 'ACTIVE',
+        supportPlanId: planId,
+        supportPlanVersion: '1',
+        timeZone,
+        actions,
+      };
+      const db = database();
+      return {
+        owner,
+        planId,
+        actions,
+        projection,
+        resourceIds,
+        db,
+        repository: new ResourceEngagementRepository(db),
+      };
+    }
+
+    it('creates only current plan tiles, deduplicates resources, and keeps identical/concurrent sync versions stable', async () => {
+      const f = await fixture(2);
+      const first = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [...f.actions, { ...f.actions[0], actionId: randomUUID() }],
+      });
+      expect(first.items).toHaveLength(2);
+      expect(first.items.map((item) => item.actionId)).toEqual(
+        f.actions.map((action) => action.actionId),
+      );
+      expect(first.items.every((item) => !item.retired)).toBe(true);
+      const replay = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        supportPlanVersion: '2',
+        actions: f.actions.map((action) => ({ ...action, actionVersion: '2' })),
+      });
+      expect(replay.version).toBe(first.version);
+      expect(replay.updatedAt).toBe(first.updatedAt);
+      const concurrent = await Promise.all(
+        Array.from({ length: 3 }, () =>
+          f.repository.syncPlanBingo(f.owner, weekStart, timeZone, f.projection),
+        ),
+      );
+      expect(
+        concurrent.every((board) => board.version === first.version && board.items.length === 2),
+      ).toBe(true);
+      const stale = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [],
+      });
+      expect(stale.items).toHaveLength(2);
+      expect(stale.version).toBe(first.version);
+      const rows = await pool.query('SELECT id FROM resource_weekly_bingo WHERE owner_id = $1', [
+        f.owner,
+      ]);
+      expect(rows.rows).toHaveLength(1);
+      const empty = await fixture(0);
+      expect(
+        (await empty.repository.syncPlanBingo(empty.owner, weekStart, timeZone, empty.projection))
+          .items,
+      ).toEqual([]);
+    });
+
+    it('retires removed actions, rejects their toggles, rebinds in place and clears personal checks only on version changes', async () => {
+      const f = await fixture(2);
+      let board = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, f.projection);
+      board = {
+        ...(await f.repository.setBingoSelfConfirmed(f.owner, weekStart, 1, board.version, true))!,
+        unavailableActions: [],
+      };
+      const confirmedAt = board.items[0].selfConfirmedAt;
+      const retired = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: f.actions.slice(1),
+      });
+      expect(retired.items[0]).toMatchObject({
+        position: 1,
+        retired: true,
+        selfConfirmedAt: confirmedAt,
+      });
+      await expect(
+        f.repository.setBingoSelfConfirmed(f.owner, weekStart, 1, retired.version, false),
+      ).rejects.toBeInstanceOf(ResourceBingoItemRetiredError);
+      const restored = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, f.projection);
+      expect(restored.items[0]).toMatchObject({
+        position: 1,
+        retired: false,
+        selfConfirmedAt: confirmedAt,
+      });
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot (resource_id, content_version, snapshot, published_by)
+        SELECT id, 1, to_jsonb(resource), reviewed_by FROM resource WHERE id = $1`,
+        [f.resourceIds[0]],
+      );
+      const upgraded = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [
+          { ...f.actions[0], resource: { ...f.actions[0].resource, resourceVersion: '1' } },
+          f.actions[1],
+        ],
+      });
+      expect(upgraded.items[0]).toMatchObject({
+        position: 1,
+        contentVersion: '1',
+        selfConfirmedAt: null,
+        retired: false,
+      });
+    });
+
+    it('reports unavailable versions for each action even when another action shares its resource tile', async () => {
+      const f = await fixture(1);
+      const unavailable = {
+        ...f.actions[0],
+        actionId: randomUUID(),
+        resource: { ...f.actions[0].resource, resourceVersion: '99' },
+      };
+      const board = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [f.actions[0], unavailable],
+      });
+      expect(board.items).toHaveLength(1);
+      expect(board.items[0]).toMatchObject({
+        actionId: f.actions[0].actionId,
+        contentVersion: '0',
+      });
+      expect(board.unavailableActions).toEqual([
+        { actionId: unavailable.actionId, reason: 'RESOURCE_VERSION_UNAVAILABLE' },
+      ]);
+    });
+
+    it('keeps plan switch history, returns the last synced plan, and retires only the latest board for NONE', async () => {
+      const f = await fixture(2);
+      const original = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [f.actions[0]],
+      });
+      const other = { ...f.projection, supportPlanId: randomUUID(), actions: [f.actions[1]] };
+      const switched = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, other);
+      expect(switched.version).not.toBe(original.version);
+      await expect(
+        f.repository.setBingoSelfConfirmed(f.owner, weekStart, 1, original.version, true),
+      ).rejects.toBeInstanceOf(ResourceBingoVersionMismatchError);
+      expect((await f.repository.readBingo(f.owner, weekStart))?.items[0].resourceId).toBe(
+        f.resourceIds[1],
+      );
+      const resynced = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [f.actions[0]],
+      });
+      expect(resynced.version).toBe(original.version);
+      expect((await f.repository.readBingo(f.owner, weekStart))?.items[0].resourceId).toBe(
+        f.resourceIds[0],
+      );
+      const none = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        planState: 'NONE',
+        actions: [],
+      });
+      expect(none.items[0].retired).toBe(true);
+      expect(
+        (
+          await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+            planState: 'NONE',
+            actions: [],
+          })
+        ).version,
+      ).toBe(none.version);
+      const historical = await pool.query<{ retired_at: Date | null }>(
+        `SELECT item.retired_at FROM resource_weekly_bingo board JOIN resource_weekly_bingo_item item ON item.board_id = board.id WHERE board.owner_id = $1 AND board.support_plan_id = $2`,
+        [f.owner, other.supportPlanId],
+      );
+      expect(historical.rows[0].retired_at).toBeNull();
+      const missingOwner = randomUUID();
+      expect(
+        await f.repository.syncPlanBingo(missingOwner, weekStart, timeZone, {
+          planState: 'NONE',
+          actions: [],
+        }),
+      ).toMatchObject({ version: '0', items: [], unavailableActions: [] });
+      expect(await f.repository.readBingo(missingOwner, weekStart)).toBeNull();
+    });
+
+    it('caps all historical slots at nine without padding and reports BOARD_FULL plus unavailable exact versions', async () => {
+      const f = await fixture(11);
+      const first = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, f.projection);
+      expect(first.items).toHaveLength(9);
+      expect(first.unavailableActions).toEqual(
+        f.actions.slice(9).map(({ actionId }) => ({ actionId, reason: 'BOARD_FULL' })),
+      );
+      const overflowDuplicate = { ...f.actions[9], actionId: randomUUID() };
+      const overflow = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [...f.actions, overflowDuplicate],
+      });
+      expect(overflow.unavailableActions).toEqual([
+        ...first.unavailableActions,
+        { actionId: overflowDuplicate.actionId, reason: 'BOARD_FULL' },
+      ]);
+      const next = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: f.actions.slice(1),
+      });
+      expect(next.items).toHaveLength(9);
+      expect(next.items[0].retired).toBe(true);
+      expect(next.unavailableActions.every(({ reason }) => reason === 'BOARD_FULL')).toBe(true);
+      const absent = {
+        ...f.actions[0],
+        resource: { ...f.actions[0].resource, resourceVersion: '99' },
+      };
+      const unavailable = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        supportPlanId: randomUUID(),
+        actions: [absent],
+      });
+      expect(unavailable.items).toEqual([]);
+      expect(unavailable.unavailableActions).toEqual([
+        { actionId: absent.actionId, reason: 'RESOURCE_VERSION_UNAVAILABLE' },
+      ]);
+      const outOfRange = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        supportPlanId: randomUUID(),
+        actions: [
+          { ...absent, resource: { ...absent.resource, resourceVersion: '9999999999999999999' } },
+        ],
+      });
+      expect(outOfRange.items).toEqual([]);
+      expect(outOfRange.unavailableActions).toEqual(unavailable.unavailableActions);
+    });
+
+    it('retires padded legacy resources while binding matching plan resources in their original ordinals', async () => {
+      const f = await fixture(2);
+      const boardId = (
+        await pool.query<{ id: string }>(
+          `INSERT INTO resource_weekly_bingo (owner_id, week_start, time_zone, support_plan_id, support_plan_version, plan_tags) VALUES ($1, $2::date, $3, $4, 1, '{}') RETURNING id`,
+          [f.owner, weekStart, timeZone, f.planId],
+        )
+      ).rows[0].id;
+      await pool.query(
+        `INSERT INTO resource_weekly_bingo_item (board_id, ordinal, resource_id, resource_version, self_confirmed_at) VALUES ($1, 0, $2, 0, now()), ($1, 1, $3, 0, NULL)`,
+        [boardId, f.resourceIds[0], f.resourceIds[1]],
+      );
+      const board = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [f.actions[1]],
+      });
+      expect(board.items[0]).toMatchObject({ actionId: null, retired: true, position: 1 });
+      expect(board.items[0].selfConfirmedAt).not.toBeNull();
+      expect(board.items[1]).toMatchObject({
+        actionId: f.actions[1].actionId,
+        retired: false,
+        position: 2,
+      });
+    });
+
+    it('frees unchecked legacy padding on a full nine-tile board while preserving personal checks and matching ordinals', async () => {
+      const f = await fixture(12);
+      const boardId = (
+        await pool.query<{ id: string }>(
+          `INSERT INTO resource_weekly_bingo (owner_id, week_start, time_zone, support_plan_id, support_plan_version, plan_tags) VALUES ($1, $2::date, $3, $4, 1, '{}') RETURNING id`,
+          [f.owner, weekStart, timeZone, f.planId],
+        )
+      ).rows[0].id;
+      for (let ordinal = 0; ordinal < 9; ordinal++) {
+        await pool.query(
+          `INSERT INTO resource_weekly_bingo_item (board_id, ordinal, resource_id, resource_version, self_confirmed_at) VALUES ($1, $2::smallint, $3, 0, CASE WHEN $2::smallint = 0 THEN now() ELSE NULL END)`,
+          [boardId, ordinal, f.resourceIds[ordinal]],
+        );
+      }
+      const projection = { ...f.projection, actions: [f.actions[1], ...f.actions.slice(9)] };
+      const board = await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, projection);
+      expect(board.unavailableActions).toEqual([]);
+      expect(board.items).toHaveLength(5);
+      expect(board.items[0]).toMatchObject({ actionId: null, retired: true, position: 1 });
+      expect(board.items[0].selfConfirmedAt).not.toBeNull();
+      expect(board.items.slice(1).map((item) => item.actionId)).toEqual(
+        projection.actions.map((action) => action.actionId),
+      );
+      expect(board.items.slice(1).every((item) => !item.retired)).toBe(true);
+      expect(board.items[1].position).toBe(2);
+      const stored = await pool.query<{ resource_id: string }>(
+        `SELECT resource_id FROM resource_weekly_bingo_item WHERE board_id = $1 ORDER BY ordinal`,
+        [boardId],
+      );
+      expect(stored.rows.map((item) => item.resource_id)).toEqual([
+        f.resourceIds[0],
+        f.resourceIds[1],
+        ...f.resourceIds.slice(9),
+      ]);
+      expect(
+        (await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, projection)).version,
+      ).toBe(board.version);
+    });
+
+    it('ignores legacy client practice start dates for action-bound Bingo and evidence near midnight', async () => {
+      const f = await fixture(4);
+      await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, f.projection);
+      await pool.query(
+        `INSERT INTO resource_practice_session (owner_id, resource_id, resource_version, local_date, started_at, completed_at, duration_seconds)
+         VALUES ($1, $2, 0, '2026-10-21', '2026-10-21T03:00:00Z', '2026-10-26T03:01:00Z', 60),
+                ($1, $3, 0, '2000-01-01', '2000-01-01T00:00:00Z', '2026-10-21T03:01:00Z', 60),
+                ($1, $4, 0, '2026-10-19', '2026-10-18T17:00:00Z', '2026-10-18T17:00:30Z', 60),
+                ($1, $5, 0, '2000-01-01', NULL, '2026-10-18T17:01:00Z', 60)`,
+        [f.owner, ...f.resourceIds],
+      );
+      expect(
+        (await f.repository.readBingo(f.owner, weekStart))?.items.map((item) => item.evidence),
+      ).toEqual(['NONE', 'CONTENT_VERIFIED', 'NONE', 'CONTENT_VERIFIED']);
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '0',
+          '2026-10-21',
+          timeZone,
+        ),
+      ).toBeNull();
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[1],
+          '0',
+          '2026-10-21',
+          timeZone,
+        ),
+      ).toMatchObject({ occurredAt: '2026-10-21T03:00:00.000Z' });
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[2],
+          '0',
+          '2026-10-19',
+          timeZone,
+        ),
+      ).toBeNull();
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[2],
+          '0',
+          '2026-10-18',
+          timeZone,
+        ),
+      ).toMatchObject({ occurredAt: '2026-10-18T16:59:30.000Z' });
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[3],
+          '0',
+          '2026-10-19',
+          timeZone,
+        ),
+      ).toMatchObject({ occurredAt: '2026-10-18T17:00:00.000Z' });
+    });
+
+    it('verifies facts using database time with verification never earlier than occurrence', async () => {
+      const f = await fixture(1);
+      await pool.query(
+        `INSERT INTO resource_daily_progress (owner_id, resource_id, resource_version, local_date, status, completed_at) VALUES ($1, $2, 0, '2099-10-21', 'COMPLETED', '2099-10-21T03:00:00Z')`,
+        [f.owner, f.resourceIds[0]],
+      );
+      const evidence = await f.repository.completionEvidence(
+        f.owner,
+        f.resourceIds[0],
+        '0',
+        '2099-10-21',
+        timeZone,
+      );
+      expect(evidence).toMatchObject({
+        occurredAt: '2099-10-21T03:00:00.000Z',
+        verifiedAt: '2099-10-21T03:00:00.000Z',
+      });
+    });
+
+    it('verifies action-bound tiles using exact versions and server instants in board timezone, without journey assignments', async () => {
+      const f = await fixture(3);
+      await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, f.projection);
+      await pool.query(
+        `INSERT INTO resource_daily_progress (owner_id, resource_id, local_date, resource_version, status, completed_at) VALUES ($1, $2, '2000-01-01', 0, 'COMPLETED', '2026-10-18T17:30:00Z'), ($1, $3, '2026-10-21', 0, 'COMPLETED', '2026-10-18T16:59:00Z')`,
+        [f.owner, f.resourceIds[0], f.resourceIds[1]],
+      );
+      await pool.query(
+        `INSERT INTO resource_practice_session (owner_id, resource_id, resource_version, local_date, started_at, completed_at, duration_seconds) VALUES ($1, $2, 0, '2000-01-01', '2026-10-21T03:00:00Z', '2026-10-21T03:01:00Z', 60)`,
+        [f.owner, f.resourceIds[2]],
+      );
+      const board = await f.repository.readBingo(f.owner, weekStart);
+      expect(board?.items.map((item) => item.evidence)).toEqual([
+        'CONTENT_VERIFIED',
+        'NONE',
+        'CONTENT_VERIFIED',
+      ]);
+      const evidence = await f.repository.completionEvidence(
+        f.owner,
+        f.resourceIds[0],
+        '0',
+        '2026-10-19',
+        timeZone,
+      );
+      expect(evidence).toMatchObject({
+        factKind: 'RESOURCE_COMPLETION',
+        factId: `${f.resourceIds[0]}:2000-01-01`,
+        resourceVersion: '0',
+        occurredAt: '2026-10-18T17:30:00.000Z',
+      });
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '0',
+          '2000-01-01',
+          timeZone,
+        ),
+      ).toBeNull();
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '1',
+          '2026-10-19',
+          timeZone,
+        ),
+      ).toBeNull();
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '9999999999999999999',
+          '2026-10-19',
+          timeZone,
+        ),
+      ).toBeNull();
+      expect(
+        await f.repository.completionEvidence(
+          randomUUID(),
+          f.resourceIds[0],
+          '0',
+          '2026-10-19',
+          timeZone,
+        ),
+      ).toBeNull();
+      const practice = await f.repository.completionEvidence(
+        f.owner,
+        f.resourceIds[2],
+        '0',
+        '2026-10-21',
+        timeZone,
+      );
+      expect(practice).toMatchObject({
+        factKind: 'RESOURCE_PRACTICE_SESSION',
+        occurredAt: '2026-10-21T03:00:00.000Z',
+      });
+      await pool.query(
+        `UPDATE resource_practice_session SET duration_seconds = 59 WHERE owner_id = $1`,
+        [f.owner],
+      );
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[2],
+          '0',
+          '2026-10-21',
+          timeZone,
+        ),
+      ).toBeNull();
+      await pool.query(
+        `UPDATE resource_daily_progress SET resource_version = 1 WHERE owner_id = $1 AND resource_id = $2`,
+        [f.owner, f.resourceIds[0]],
+      );
+      expect((await f.repository.readBingo(f.owner, weekStart))?.items[0].evidence).toBe('NONE');
+    });
+
+    it('returns the latest recorded qualifying fact, excludes used facts, and ignores learning history', async () => {
+      const f = await fixture(1);
+      await pool.query(
+        `INSERT INTO resource_learning_completion (owner_id, resource_id, resource_version, local_date) VALUES ($1, $2, 0, '2026-10-21')`,
+        [f.owner, f.resourceIds[0]],
+      );
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '0',
+          '2026-10-21',
+          timeZone,
+        ),
+      ).toBeNull();
+      const firstId = randomUUID();
+      const newestId = randomUUID();
+      await pool.query(
+        `INSERT INTO resource_practice_session (id, owner_id, resource_id, resource_version, local_date, started_at, completed_at, duration_seconds) VALUES ($1, $3, $4, 0, '2026-10-21', '2026-10-21T03:59:00Z', '2026-10-21T04:00:00Z', 60), ($2, $3, $4, 0, '2026-10-21', '2026-10-21T02:02:00Z', '2026-10-21T04:02:00Z', 7200)`,
+        [firstId, newestId, f.owner, f.resourceIds[0]],
+      );
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '0',
+          '2026-10-21',
+          timeZone,
+        ),
+      ).toMatchObject({ factId: newestId });
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '0',
+          '2026-10-21',
+          timeZone,
+          [newestId],
+        ),
+      ).toMatchObject({ factId: firstId, occurredAt: '2026-10-21T03:59:00.000Z' });
+      expect(
+        await f.repository.completionEvidence(
+          f.owner,
+          f.resourceIds[0],
+          '0',
+          '2026-10-21',
+          timeZone,
+          [newestId, firstId],
+        ),
+      ).toBeNull();
+    });
+
+    it('records the pinned publication version, retains completed progress binding, and derives practice time from the server', async () => {
+      const f = await fixture(1);
+      const progress = new ResourceProgressRepository(f.db);
+      const resourceId = f.resourceIds[0];
+      await pool.query('UPDATE resource SET version = 1 WHERE id = $1', [resourceId]);
+      await pool.query(
+        `INSERT INTO resource_publication_snapshot (resource_id, content_version, snapshot, published_by) SELECT id, version, to_jsonb(resource), reviewed_by FROM resource WHERE id = $1`,
+        [resourceId],
+      );
+      const before = Date.now();
+      const initial = await progress.save(f.owner, resourceId, '2000-01-01', {
+        status: 'COMPLETED',
+        completedActionIds: [],
+        resourceVersion: '0',
+      });
+      expect(initial?.contentVersion).toBe('0');
+      const practiceSessionId = randomUUID();
+      const updated = await progress.save(f.owner, resourceId, '2000-01-01', {
+        status: 'COMPLETED',
+        completedActionIds: ['new-step'],
+        resourceVersion: '0',
+        practiceSessionId,
+        practiceStartedAt: '2000-01-01T00:00:00Z',
+        practiceDurationSeconds: 120,
+      });
+      expect(updated?.contentVersion).toBe('0');
+      expect(updated?.completedAt).toBe(initial?.completedAt);
+      await expect(
+        progress.save(f.owner, resourceId, '2000-01-01', {
+          status: 'COMPLETED',
+          completedActionIds: [],
+          resourceVersion: '1',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect((await progress.list(f.owner, '2000-01-01', '2000-01-01'))[0]).toMatchObject({
+        contentVersion: '0',
+        completedAt: initial?.completedAt,
+      });
+      const fact = (
+        await pool.query<{
+          resource_version: string;
+          started_at: Date;
+          support_plan_id: string | null;
+        }>(
+          'SELECT resource_version, started_at, support_plan_id FROM resource_practice_session WHERE id = $1',
+          [practiceSessionId],
+        )
+      ).rows[0];
+      expect(fact.resource_version).toBe('0');
+      expect(fact.support_plan_id).toBeNull();
+      expect(fact.started_at.getTime()).toBeGreaterThanOrEqual(before - 120_000);
+      expect(fact.started_at.getTime()).toBeLessThanOrEqual(Date.now());
+      await expect(
+        progress.save(f.owner, resourceId, '2026-10-21', {
+          status: 'COMPLETED',
+          completedActionIds: [],
+          resourceVersion: '99',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      await expect(
+        progress.save(f.owner, resourceId, '2026-10-21', {
+          status: 'COMPLETED',
+          completedActionIds: [],
+          resourceVersion: '9999999999999999999',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(
+        await f.repository.completionEvidence(f.owner, resourceId, '1', '2000-01-01', timeZone),
+      ).toBeNull();
+    });
+
+    it('journey reads the latest board without materializing, replacing, or syncing it', async () => {
+      const f = await fixture(2);
+      await f.repository.syncPlanBingo(f.owner, weekStart, timeZone, {
+        ...f.projection,
+        actions: [f.actions[1]],
+      });
+      const before = (
+        await pool.query('SELECT * FROM resource_weekly_bingo WHERE owner_id = $1', [f.owner])
+      ).rows;
+      const journey = await new ResourceJourneyRepository(f.db).materialize(f.owner, '2026-10-21', {
+        timeZone,
+        supportPlan: {
+          supportPlanId: randomUUID(),
+          version: 1,
+          status: 'ACTIVE',
+          activatedAt: '2026-10-19T00:00:00Z',
+          domains: ['ANXIETY_SYMPTOMS'],
+          selectedResourceIds: f.resourceIds,
+        },
+      });
+      expect(journey?.bingo.map((item) => item.resourceId)).toEqual([f.resourceIds[1]]);
+      const after = (
+        await pool.query('SELECT * FROM resource_weekly_bingo WHERE owner_id = $1', [f.owner])
+      ).rows;
+      expect(after).toEqual(before);
     });
   });
 });

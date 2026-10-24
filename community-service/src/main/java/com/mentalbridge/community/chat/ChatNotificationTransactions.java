@@ -15,11 +15,13 @@ class ChatNotificationTransactions {
     private final ChatRequestRepository requests;
     private final ChatInvitationRepository invites;
     private final Clock clock;
+    private final ChatHistoryVisibility visibility;
     ChatNotificationTransactions(ChatAccess access, ChatGroupAccess groups, ChatGroupTransactions invitations,
             ChatConversationRepository conversations, ChatMessageRepository messages, ChatRequestRepository requests,
-            ChatInvitationRepository invites, Clock clock) {
+            ChatInvitationRepository invites, Clock clock, ChatHistoryVisibility visibility) {
         this.access = access; this.groups = groups; this.invitations = invitations; this.conversations = conversations;
         this.messages = messages; this.requests = requests; this.invites = invites; this.clock = clock;
+        this.visibility = visibility;
     }
     @Transactional
     void direct(ChatNotificationController.Target target, UUID recipient) {
@@ -29,7 +31,8 @@ class ChatNotificationTransactions {
         switch (target.kind()) {
             case MESSAGE_RECEIVED -> {
                 if (!conversation.state.equals("ACTIVE")) throw ChatException.target();
-                message(target);
+                var message = message(target);
+                if (!visibility.visible(target.conversationId(), recipient, message)) throw ChatException.target();
             }
             case DIRECT_REQUESTED -> {
                 var request = requests.findById(target.targetId()).orElseThrow(ChatException::target);
@@ -47,7 +50,8 @@ class ChatNotificationTransactions {
         switch (target.kind()) {
             case MESSAGE_RECEIVED -> {
                 var message = message(target);
-                if (!groups.messageVisible(context, message)) throw ChatException.target();
+                if (!groups.messageVisible(context, message)
+                        || !visibility.visible(target.conversationId(), context.actor().id(), message)) throw ChatException.target();
             }
             case GROUP_INVITED -> {
                 var invite = invites.findById(target.targetId()).orElseThrow(ChatException::target);
