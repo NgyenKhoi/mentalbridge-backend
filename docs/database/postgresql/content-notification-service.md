@@ -177,7 +177,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | `notifications_enabled` | Top-level user switch for optional notification delivery. |
 | `channel_in_app_enabled` | Whether optional in-app delivery is enabled. |
 | `channel_email_enabled` | Whether email delivery is enabled; email delivery still requires an applicable behavior and opt-in. |
-| `channel_push_enabled` | Persisted future-mobile preference only; it does not imply a registered device or active provider. |
+| `channel_push_enabled` | Owner opt-in for native push; delivery additionally requires an active permitted device and enabled provider worker. |
 | `group_journal_reminder_enabled` | Independent journal/reminder content-group choice. |
 | `group_emotion_check_in_enabled` | Independent emotion check-in content-group choice. |
 | `group_streak_milestone_enabled` | Independent streak/milestone content-group choice. |
@@ -264,6 +264,64 @@ commit together. Exact chat authorization is read remotely before that transacti
 | `notification_id` | Nullable physical reference to the one resulting inbox item; multiple reaction jobs may reference one unread grouped notification. |
 | `expires_at` | Source occurrence plus 90 days; expired work is not delivered and bounded cleanup removes receipts. Old replay remains expired. |
 | `created_at` | Immutable UTC intake instant, separate from authoritative source occurrence and inbox insertion time. |
+
+### `content.push_device_registration`
+
+Content-owned native installation lifecycle. Provider tokens are sensitive
+routing credentials: REST never returns them, logs never contain them, and only
+the delivery adapter decrypts them immediately before a provider request.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal registration UUID used by delivery attempts. |
+| `owner_id` | External Identity account UUID taken from the verified JWT; it is not client input. |
+| `installation_id` | App-generated installation UUID; at most one active/disabled owner assignment exists across accounts, and it is not a hardware identifier. |
+| `platform` / `provider` | Closed routing facts (`ANDROID`/`IOS`, initial `EXPO`) selecting the approved adapter. |
+| `provider_token_ciphertext` / `provider_token_iv` / `provider_token_auth_tag` | AES-256-GCM encrypted provider credential and authentication material; plaintext is never persisted. |
+| `provider_token_hash` | One-way SHA-256 lookup used to atomically rotate/reassign one active provider token without decrypting rows. |
+| `permission_status` | Last explicit native permission result (`GRANTED` or `DENIED`). |
+| `status` | Content-owned lifecycle: `ACTIVE`, `DISABLED`, `REVOKED`, or provider-invalidated `INVALID`. |
+| `app_version` | Optional bounded diagnostic application version; no device model or advertising identity is stored. |
+| `last_registered_at` | UTC instant of the latest material registration change. An identical PUT leaves it and `version` unchanged so enqueue eligibility cannot move past an unmaterialized notification. |
+| `delivery_eligible_from_at` | UTC start of the current permitted registration interval. Token/app-version rotation keeps it stable; reactivation after revocation, invalidation, or denied permission resets it to prevent stale backfill. |
+| `revoked_at` / `invalidated_at` | Mutually lifecycle-bound UTC evidence of owner revocation or provider invalidation. |
+| `created_at` / `updated_at` | UTC insertion and latest persisted business-change instants. |
+| `version` | Monotonic mutation counter for token rotation, permission, reassignment, and lifecycle changes. |
+
+### `content.push_delivery_attempt`
+
+Auditable and deduplicated provider-submission work. It references authoritative
+inbox truth and stores no rendered body, token, health content, or raw provider
+response.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal work UUID used to fence one claimed attempt. |
+| `notification_id` | Physical reference to the authoritative minimized Content notification. |
+| `device_registration_id` | Physical reference to the owner installation selected for this delivery. |
+| `state` | `PENDING`/`PROCESSING`/`FAILED` work states, terminal `SUPPRESSED`/`UNKNOWN`, provider-ticket `ACCEPTED`, or receipt `CONFIRMED`; neither provider state claims physical device display. |
+| `attempt_count` | Provider submissions, database constrained to at most three. |
+| `available_at` | Earliest UTC retry/claim instant; quiet hours remain an additional live eligibility check. |
+| `claimed_at` / `last_attempt_at` | UTC worker-claim and most recent provider-submission evidence. |
+| `provider_ticket_id` | Bounded Expo acknowledgement identifier; it is not delivery proof. |
+| `failure_code` | Coarse safe classification such as preference disabled, invalid device, transient outage, or unknown outcome. |
+| `accepted_at` | UTC provider-ticket acceptance instant retained through later `CONFIRMED` or terminal receipt outcomes. |
+| `receipt_attempt_count` | Bounded Expo receipt lookups, database constrained to at most three. |
+| `receipt_checked_at` | UTC instant of the latest receipt lookup; null until the first lookup. |
+| `created_at` / `updated_at` | UTC insertion and latest state-transition instants. |
+
+### `content.push_device_command_rate_limit`
+
+Bounded fixed-window command protection for the authenticated registration and
+revocation API. It stores no provider token, installation identifier, or client
+content and is not notification delivery truth.
+
+| Field | Purpose |
+| --- | --- |
+| `owner_id` | External Identity account UUID used as the per-owner rate-limit key. |
+| `window_started_at` | UTC start of the current fixed command window. |
+| `request_count` | Atomic number of accepted commands in that window. |
+| `updated_at` | UTC instant of the latest accepted command or window reset. |
 
 ### `content.appointment_email_reminder`
 
