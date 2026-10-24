@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.10.0
+  version: 1.11.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -1753,6 +1753,7 @@ components:
           OPEN_JOURNAL,
           OPEN_MESSAGES,
           OPEN_APPOINTMENTS,
+          OPEN_APPOINTMENT,
           OPEN_SPECIALIST_APPOINTMENTS,
           OPEN_RESOURCES,
           OPEN_ASSESSMENTS,

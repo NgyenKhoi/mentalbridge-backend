@@ -1,5 +1,8 @@
 # Content and Notification Service
 
+The service OpenAPI is v1.11.0. MB-677 adds the closed `OPEN_APPOINTMENT`
+notification action used by Content-owned appointment push reminders.
+
 ## Mobile reminder overview (MB-676)
 
 `GET /api/v1/reminder-overview` is a USER-only, non-cacheable read in OpenAPI
@@ -170,6 +173,22 @@ overrides. Accepted Expo tickets are checked through delayed bounded receipts;
 does not claim physical display. Disable the worker before rolling back; additive
 registration and attempt evidence remains intact. CI uses a mocked provider and
 does not constitute staging or real-device delivery evidence.
+
+MB-677 reuses Consultation's approved appointment status v2 event and current
+notification-eligibility read to materialize one native appointment reminder
+fact at the existing exact 60-minute target. The current preference, quiet
+hours and exact appointment version are checked before materialization and
+again before Expo submission. Quiet hours always win: work waits until quiet
+hours end only when that instant is still before appointment start; otherwise
+it is suppressed. Cancellation/reschedule invalidates the old fact and unsent
+device attempts. Transient materialization failures retry within the same
+three-attempt/start-time bound; an expired final processing lease is reconciled
+to a timestamped terminal failure and cannot be sent later. The provider
+payload remains generic and carries only the
+notification UUID plus `OPEN_APPOINTMENT` and the opaque appointment UUID.
+SupportPlan activity push is deferred because Care's current occurrence v2
+event does not publish an approved reminder instant, timezone or reminder
+choice; Content does not poll private Care state to infer them.
 MB-548 adds a separate, opt-in appointment email reminder. A minimized
 Consultation status event materializes at most one row per
 recipient/appointment/version, and rejection, expiry, cancellation, reschedule,
