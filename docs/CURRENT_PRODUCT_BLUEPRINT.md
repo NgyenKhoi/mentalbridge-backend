@@ -4,6 +4,17 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+AI Voice Companion has an accepted prospective contract in
+[ADR 0046 / MB-AI-VOICE-COMPANION-001](adr/0046-ai-voice-companion-contract.md)
+and [Companion Voice policy v1](policies/companion-voice-policy-v1.md), frozen by
+MB-755. FREE remains text-only; PLUS receives two voice sessions of up to five
+minutes within ten daily minutes, and PREMIUM three sessions of up to ten
+minutes within thirty daily minutes. Voice uses independent quota, dual Care
+consent and isolated LiveKit agent rooms with no saved audio/transcript.
+Journal/AI owns voice authority; Consultation remains entitlement owner.
+These are approved targets, not implemented APIs or live-provider evidence;
+existing text and specialist consultation behavior is unchanged.
+
 Community peer messaging has a separate **accepted target** in
 [ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and
 [Community chat policy v1](policies/community-chat-policy-v1.md). MB-684 supplies

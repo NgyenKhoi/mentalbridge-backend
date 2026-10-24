@@ -6,6 +6,19 @@
 
 ## 1. Product boundary
 
+MB-755 adds the accepted prospective
+[AI Voice Companion use case](adr/0046-ai-voice-companion-contract.md): an
+authenticated PLUS/PREMIUM USER explicitly grants Care-owned voice consent in
+addition to current AI-processing consent, requests a bounded voice session,
+speaks to the isolated agent and may stop or withdraw consent. Journal/AI
+authorizes admission, every inference turn and reconnect; it owns independent
+voice usage and purges current-call RAM context on termination. Voice never
+reads saved Journal/text history, books a specialist, mutates a SupportPlan or
+spends text answers/Consultation credits. The
+[policy](policies/companion-voice-policy-v1.md), planned contracts and
+[acceptance evidence](story-mb-755-ai-voice-contract-evidence.md) precede runtime
+delivery in MB-756 onward; FREE and existing text users keep current behavior.
+
 MentalBridge provides self-screening, emotional self-tracking, educational support, referral assistance, and follow-up. It does not diagnose, prescribe, provide psychotherapy, dispatch emergency responders, or guarantee continuous human monitoring.
 
 V1 supports exactly two screening and post-screening support domains for the primary Capstone cohort of adults aged 18 through 30 residing in Vietnam: `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. It does not claim specialized screening for OCD, trauma/PTSD, panic disorder, social anxiety, bipolar/mania, psychosis, eating disorders, substance use, ADHD, insomnia as an independent domain, personality disorders, or another unapproved concern. An additional domain requires a separately governed product vertical.
