@@ -158,6 +158,67 @@ Collection: `ai_companion_rate_ledgers`
 Key fields: owner, bounded request window, count, and TTL expiry. It contains no
 message or context data.
 
+### AI Companion Voice Session — ACTIVE
+
+Collection: `ai_voice_sessions`
+
+Owner: `journal-ai-service`. Migration
+[`013_companion_voice_quota.cjs`](../../../journal-ai-service/migrations/013_companion_voice_quota.cjs)
+implements the MB-756 admission/accounting foundation under
+[`companion-voice-policy-v1`](../../policies/companion-voice-policy-v1.json).
+Media and public session/worker/turn APIs remain separate delivery scopes.
+
+Key fields: server session/owner IDs, keyed idempotency hash and intent
+fingerprint, policy and minimized entitlement provenance, closed lifecycle,
+frozen Vietnam quota day/admitted seconds/hard deadline, short authority lease,
+dispatch/attempt/generation/sequence fences, first-publication flag, accumulated
+ACTIVE milliseconds, timer cuts, terminal settlement, and creation-bound expiry.
+The first trusted connected-owner publication consumes one session; settlement
+rounds summed ACTIVE time once and refunds unused reservations. An undelivered
+session consumes no quota. Midnight or upgrade never extends a live session.
+
+Relationships:
+
+- `ownerId` is a logical/external Identity reference;
+- `quotaDay` and owner logically identify the Voice Daily Usage document;
+- a held Voice Capacity slot logically identifies this session and its fence;
+- current consent and entitlement are REST decisions from Care and Consultation,
+  not database relationships or reusable authorization cached in this document.
+
+No audio, transcript, prompt, model reply, old Journal/text context, bearer or
+participant token is stored. Metadata expires 30 days from creation, including
+unsettled sessions. There is no session TTL: a transaction first scrubs any
+identifying held-slot references, quarantines uncertain media, and deletes the
+expired session.
+
+### AI Companion Voice Daily Usage — ACTIVE
+
+Collection: `ai_voice_daily_usage`
+
+Key fields: unique owner/quota-day identity, used and reserved sessions/seconds,
+daily and minute attempt counters, at most ten unique HMAC attempt hashes, and
+creation-plus-30-day expiry. The server uses `Asia/Ho_Chi_Minh`; charging stays
+on the authorized day across midnight. Concurrent accepted-key retries add no
+attempt or reservation. Package upgrades raise ceilings without resetting use.
+This ledger is independent of text Companion quotas. Its TTL removes metadata
+only and never releases capacity.
+
+### AI Companion Voice Capacity — ACTIVE
+
+Collection: `ai_voice_capacity`
+
+One singleton contains exactly two bounded `FREE`, `HELD`, or `QUARANTINED`
+slots. Each has a random generation; only HELD slots contain owner/session
+references. Admission and settlement transact across session, daily usage, and
+this singleton, enforcing one session per owner and two global slots across
+processes. No all-user history, content, provider token, or TTL exists here.
+
+Expired leases and uncertain teardown keep capacity occupied. Before the
+session's creation-plus-30-day privacy deadline is swept, identifying slot
+references are scrubbed; unresolved media leaves only an anonymous blocked slot
+and random fence. Provider-verified namespace isolation is required for future
+reuse, and this foundation exposes no quarantine-clearing operation.
+
 ## Realtime active model
 
 ### Conversation — ACTIVE

@@ -182,6 +182,21 @@ assert.equal(
   false,
 );
 
+const voiceMigration = require("../migrations/013_companion_voice_quota.cjs");
+assert.equal(typeof voiceMigration.up, "function");
+assert.equal(typeof voiceMigration.down, "function");
+assert.equal(
+  voiceMigration.sessionValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  voiceMigration.usageValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  voiceMigration.capacityValidator.$jsonSchema.properties.slots.maxItems,
+  2,
+);
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 012_ai_companion_conversation_context.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 013_companion_voice_quota.cjs",
 );
