@@ -1,7 +1,8 @@
 # AI voice controlled-demo runbook
 
-Status: **accepted target; no voice runtime delivered by MB-755**. This runbook
-documents the later implementation and opt-in demo gates. It does not enable a
+Status: **accepted target with the disabled MB-757 control plane implemented**.
+MB-755 itself delivered no runtime. This runbook documents implementation and
+opt-in demo gates. It does not enable a
 feature, create an agent, modify a provider account, or approve a paid call.
 Public documentation was checked on 2026-10-23; account-specific evidence below
 has **not** been collected. The MB-759 Node.js worker does not exist yet.
@@ -9,6 +10,49 @@ has **not** been collected. The MB-759 Node.js worker does not exist yet.
 Authority: [ADR 0046](adr/0046-ai-voice-companion-contract.md),
 [Companion Voice policy v1](policies/companion-voice-policy-v1.md), and the
 [planned voice REST contract](../contracts/proposals/companion-voice-v1.openapi.json).
+
+## MB-757 control plane checkpoint
+
+The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
+now implements start/status/connection/end and internal worker claim/control.
+The inference-turn endpoint and hosted Node worker remain MB-758/759 work.
+[MB-757 evidence](story-mb-757-livekit-sessions.md) covers local synthetic SDK
+transport, actual Nest HTTP and disposable Mongo replica-set checks. No Cloud
+deployment, quota check, live room, speech benchmark or paid call was run.
+
+Keep `JOURNAL_AI_VOICE_ENABLED=false` until downstream tests and the account,
+privacy, speech and E2E gates below are reviewed. No new registration or upgrade
+is needed to implement this control plane. Follow the existing-project checks
+below before enabling; a zero allowance or unresolved access check blocks enablement.
+
+For a later authorized synthetic Cloud test, use this order:
+
+1. Apply owner migration 014 after 013, with replica-set transactions available.
+   Inject the existing project's dedicated API credentials and a distinct
+   worker REST secret through operator-managed secrets, following the
+   [Journal configuration](../journal-ai-service/README.md#current-scope).
+2. Deploy the reviewed MB-759 worker with the exact explicit agent name
+   `mentalbridge-ai-voice-v1` (or matching reviewed configuration), identity
+   `va-<attemptId>`, `record: false`, and no automatic room dispatch registration.
+   Check that no unnamed automatic agent can join AI rooms in this shared project.
+   The worker receives only three opaque dispatch UUIDs, claims through Journal
+   and stops/clears RAM on STOP, failed renewal or expiry of its ten-second lease.
+   USER/appointment tokens and Bedrock credentials never go to the worker.
+3. After the remaining privacy, actual account allowance, Vietnamese speech and
+   client/E2E checks pass, record their reviewed evidence version and set
+   `JOURNAL_AI_VOICE_APPROVAL_VERSION` with explicit voice enablement. Configuration
+   validates prerequisites; it cannot establish that those external checks passed.
+4. With synthetic accounts and both current Care consents, exercise all acceptance
+   rows in the MB-757 evidence and later device scenarios below. Observe only
+   sanitized outcome codes, state and counts; do not export token bodies,
+   private room references or content. Verify maximum two global/one owner,
+   grant scopes, reconnect, revocation, hard stop and provider teardown.
+5. Disable new admission for rollback, retain backend media credentials, end
+   current sessions and let reconciliation prove cleanup. Unknown outcomes stay
+   ENDING with capacity held; deadlines never justify manually freeing a slot.
+   Only after every media record is STOPPED may 014 be rolled back. Expired
+   unidentified media keeps the existing anonymous quarantine; do not clear it
+   without independent provider-verified isolation.
 
 ## Approved path and existing resources
 

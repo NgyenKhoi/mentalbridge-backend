@@ -29,7 +29,8 @@ original session hard stop. Explicit participant revocation uses the Cloud API's
 Unix-second cutoff near current server time, followed by exact-room teardown.
 Token expiration alone is never used as proof of media cutoff or quota release.
 
-Public OpenAPI v1.13.0 adds the MB-756 voice-eligibility read described below.
+Public OpenAPI v1.14.0 adds the MB-757 session and worker lifecycle routes below;
+v1.13.0 introduced the MB-756 voice-eligibility read.
 The preceding v1.12.0 adds the MB-642 content-free exact Journal creation
 evidence read alongside MB-641 daily check-in evidence and retains MB-649
 bounded SupportPlan Companion orchestration. The preceding provider enum amendment aligns exact-analysis,
@@ -43,7 +44,7 @@ change routing/approval/consent gates, or change persisted data.
 ### MB-756 independent voice admission foundation
 
 The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
-implements only `GET /api/v1/ai-companion/voice-eligibility` from the accepted
+introduced `GET /api/v1/ai-companion/voice-eligibility` from the accepted
 [Voice ADR](../docs/adr/0046-ai-voice-companion-contract.md) and
 [policy](../docs/policies/companion-voice-policy-v1.md). It requires an Identity
 USER bearer, derives the owner from that principal, returns `no-store`, and
@@ -52,15 +53,14 @@ voice quota. It creates no reservation, room, token, dispatch or provider call.
 Uncertain owner reads fail closed. Missing consent, FREE, occupied capacity,
 exhausted quota and provider unavailability never become eligible access.
 
-The application exports `VoiceAccessService` for later server-owned reserve and
+The application exports `VoiceAccessService` for server-owned reserve and
 current-session authorization. Admission reads current owners before the short
 MongoDB transaction, hashes retry intent with the existing Journal HMAC secret,
 and atomically reserves quota plus the global two-session/per-owner one-session
 capacity. Current authorization re-resolves both grants and entitlement; the
-stored admission snapshot cannot authorize a later turn. No public start,
-connection, turn, status or end route is delivered here. The runtime provider
-readiness predicate deliberately remains false pending MB-757/MB-760/MB-762;
-setting credentials or using an eligible paid package does not enable a call.
+stored admission snapshot cannot authorize a later turn. MB-756 delivered only
+this foundation. MB-757 adds the session routes below while voice admission
+remains disabled by default, pending reviewed MB-758/759/760/762 evidence.
 
 | Optional variable                            | Purpose                                                                                                                                                  |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -108,6 +108,49 @@ and unchanged Text quota. It runs in `npm run test:integration`; it does not pro
 a running Spring/cloud/audio stack. See the
 [MB-756 Journal evidence](../docs/story-mb-756-journal-voice-evidence.md) for the
 remaining checkpoint and provider gates.
+
+### MB-757 authorized LiveKit session lifecycle
+
+The active contract publishes these additive routes. Public commands derive the
+owner from the Identity USER bearer, accept only `{}`, require a UUID
+`Idempotency-Key`, and return `Cache-Control: no-store` on success and failure.
+Other owners receive 404. Status is an owner-only read without a command key.
+
+| Method and path                                                                | Result                                                                                        |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `POST /api/v1/ai-companion/voice-sessions`                                     | 202 minimized session; atomic quota/capacity reservation and fenced AI room/explicit dispatch |
+| `GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}`                     | 200 current minimized state, without media credentials                                        |
+| `POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection`         | 200 ephemeral, freshly authorized microphone-only token                                       |
+| `POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end`                | 202 terminal state or truthful ENDING while provider cleanup is uncertain                     |
+| `POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim`   | 200 attempt/dispatch-bound worker lease                                                       |
+| `POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control` | 200 fenced CONTINUE/STOP control response                                                     |
+
+Worker routes require only the dedicated `X-MentalBridge-Voice-Worker-Token`,
+reject USER bearers and closed-schema violations, and bind the exact session,
+attempt, logical dispatch, lease and sequence. The worker must connect as
+`va-<attemptId>`, claim before processing audio and renew every five seconds;
+loss of its ten-second lease must stop processing and clear RAM. MB-759 owns
+that worker implementation. A server-side `VoiceSessionsService.registerReply`
+hook lets MB-758 register opaque turn/reply evidence before publication; arbitrary
+worker reply IDs cannot commit usage. The inference turn endpoint remains planned.
+
+Migration [`014_companion_voice_media.cjs`](migrations/014_companion_voice_media.cjs)
+persists only bounded media progress, sequencing and keyed connection/end
+bindings. It must follow 013 before starting this revision. Unknown create or
+dispatch outcomes reconcile the original references without duplicate dispatch;
+unverified cleanup retains capacity. A one-second non-overlapping maintenance
+loop enforces deadlines, current-owner revocation and cleanup retries. Before
+claim it can renew authorized setup for at most 45 seconds; after claim it
+observes revocation without renewing worker liveness. Heartbeats never reset
+the 60-second conversation-idle deadline. Reconnect stays within 30 seconds and
+the original hard stop. Metadata expiry preserves anonymous occupied quarantine.
+
+Rollback: disable admission, keep media credentials available for cleanup, end
+all voice sessions and verify teardown before rolling back 014. Its down migration
+refuses non-STOPPED media. Do not clear capacity manually or roll back 013 while
+an uncertain room may still run. See the [controlled-demo runbook](../docs/ai-voice-demo-runbook.md#mb-757-control-plane-checkpoint)
+for opt-in checks and the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md)
+for deterministic tests. No real Cloud/audio success is claimed by this story.
 
 The service provides:
 
