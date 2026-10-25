@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.12.0
+  version: 1.13.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -27,6 +27,42 @@ tags:
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
+  /api/v1/ai-companion/voice-eligibility:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    get:
+      operationId: getVoiceEligibility
+      summary: getVoiceEligibility
+      description: >-
+        Current owner-sourced capability, not authority to connect. Resolve BOTH Care consents, Consultation
+        current entitlement, independent voice quota and provider readiness. Uncertainty never maps to ELIGIBLE.
+        No client package/policy/clock authority. MB-756 uses a fresh server-generated check UUID for this read;
+        it creates no Voice Session or quota reservation. Live readiness remains unavailable until
+        MB-757/760/762 supply the approved media/provider gates.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Owner-authorized response
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+              description: >-
+                Required on success and errors. Never cache capabilities, connection tokens, transcripts or
+                owner decisions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceEligibility"
+        "401":
+          $ref: "#/components/responses/VoiceProblem401"
+        "403":
+          $ref: "#/components/responses/VoiceProblem403"
+        "503":
+          $ref: "#/components/responses/VoiceProblem503"
+      tags:
+        - AI Companion
   /health/live:
     x-mentalbridge-status: implemented
     get:
@@ -956,6 +992,49 @@ components:
         type: string
       description: Correlation ID used in request logs.
   responses:
+    VoiceProblem401:
+      description: "Stable sanitized errors: UNAUTHENTICATED. No downstream payload or private identifiers."
+      headers:
+        Cache-Control:
+          schema:
+            const: no-store
+          description: >-
+            Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner
+            decisions.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/VoiceProblem"
+    VoiceProblem403:
+      description: >-
+        Stable sanitized errors: FORBIDDEN, FREE_LOCKED, CONSENT_REQUIRED, VOICE_CONSENT_REQUIRED. No downstream
+        payload or private identifiers.
+      headers:
+        Cache-Control:
+          schema:
+            const: no-store
+          description: >-
+            Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner
+            decisions.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/VoiceProblem"
+    VoiceProblem503:
+      description: >-
+        Stable sanitized errors: ENTITLEMENT_UNAVAILABLE, CONSENT_UNAVAILABLE, PROVIDER_UNAVAILABLE. No downstream
+        payload or private identifiers.
+      headers:
+        Cache-Control:
+          schema:
+            const: no-store
+          description: >-
+            Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner
+            decisions.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/VoiceProblem"
     BadRequest:
       description: Request failed validation.
       content:
@@ -999,6 +1078,356 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    VoiceEligibility:
+      type: object
+      additionalProperties: false
+      required:
+        - policyVersion
+        - state
+        - eligible
+        - packageCode
+        - quota
+        - checkedAt
+        - voiceConsentVersion
+      properties:
+        policyVersion:
+          const: companion-voice-policy-v1
+        state:
+          type: string
+          enum:
+            - ELIGIBLE
+            - FREE_LOCKED
+            - CONSENT_REQUIRED
+            - VOICE_CONSENT_REQUIRED
+            - ENTITLEMENT_UNAVAILABLE
+            - CONSENT_UNAVAILABLE
+            - SESSION_LIMIT
+            - GLOBAL_CAPACITY_FULL
+            - QUOTA_EXHAUSTED
+            - RATE_LIMITED
+            - PROVIDER_UNAVAILABLE
+        eligible:
+          type: boolean
+        packageCode:
+          type: string
+          enum:
+            - FREE
+            - PLUS
+            - PREMIUM
+        quota:
+          $ref: "#/components/schemas/VoiceQuota"
+        checkedAt:
+          type: string
+          format: date-time
+        voiceConsentVersion:
+          const: ai-voice-processing-capstone-v1
+      allOf:
+        - if:
+            properties:
+              state:
+                const: ELIGIBLE
+            required:
+              - state
+          then:
+            properties:
+              eligible:
+                const: true
+              packageCode:
+                type: string
+                enum:
+                  - PLUS
+                  - PREMIUM
+          else:
+            properties:
+              eligible:
+                const: false
+    VoiceQuota:
+      type: object
+      additionalProperties: false
+      required:
+        - policyVersion
+        - quotaDay
+        - timeZone
+        - resetAt
+        - remainingSessions
+        - remainingSeconds
+        - reservedSessions
+        - reservedSeconds
+      properties:
+        policyVersion:
+          const: companion-voice-policy-v1
+        quotaDay:
+          type: string
+          format: date
+        timeZone:
+          const: Asia/Ho_Chi_Minh
+        resetAt:
+          type: string
+          format: date-time
+        remainingSessions:
+          type: integer
+          minimum: 0
+          maximum: 3
+        remainingSeconds:
+          type: integer
+          minimum: 0
+          maximum: 1800
+        reservedSessions:
+          type: integer
+          minimum: 0
+          maximum: 1
+        reservedSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+    VoiceProblem:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - title
+        - status
+        - code
+        - correlationId
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum:
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - FREE_LOCKED
+            - CONSENT_REQUIRED
+            - VOICE_CONSENT_REQUIRED
+            - SESSION_NOT_FOUND
+            - SESSION_LIMIT
+            - IDEMPOTENCY_CONFLICT
+            - STALE_ATTEMPT
+            - INVALID_SESSION_STATE
+            - SESSION_EXPIRED
+            - INVALID_REQUEST
+            - INVALID_FINAL_TRANSCRIPT
+            - GLOBAL_CAPACITY_FULL
+            - QUOTA_EXHAUSTED
+            - RATE_LIMITED
+            - ENTITLEMENT_UNAVAILABLE
+            - CONSENT_UNAVAILABLE
+            - PROVIDER_UNAVAILABLE
+            - PROVIDER_TIMEOUT
+        correlationId:
+          type: string
+          format: uuid
+      allOf:
+        - if:
+            properties:
+              code:
+                const: UNAUTHENTICATED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 401
+        - if:
+            properties:
+              code:
+                const: FORBIDDEN
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 403
+        - if:
+            properties:
+              code:
+                const: FREE_LOCKED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 403
+        - if:
+            properties:
+              code:
+                const: CONSENT_REQUIRED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 403
+        - if:
+            properties:
+              code:
+                const: VOICE_CONSENT_REQUIRED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 403
+        - if:
+            properties:
+              code:
+                const: SESSION_NOT_FOUND
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 404
+        - if:
+            properties:
+              code:
+                const: SESSION_LIMIT
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 409
+        - if:
+            properties:
+              code:
+                const: IDEMPOTENCY_CONFLICT
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 409
+        - if:
+            properties:
+              code:
+                const: STALE_ATTEMPT
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 409
+        - if:
+            properties:
+              code:
+                const: INVALID_SESSION_STATE
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 409
+        - if:
+            properties:
+              code:
+                const: SESSION_EXPIRED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 410
+        - if:
+            properties:
+              code:
+                const: INVALID_REQUEST
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 422
+        - if:
+            properties:
+              code:
+                const: INVALID_FINAL_TRANSCRIPT
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 422
+        - if:
+            properties:
+              code:
+                const: GLOBAL_CAPACITY_FULL
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 429
+        - if:
+            properties:
+              code:
+                const: QUOTA_EXHAUSTED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 429
+        - if:
+            properties:
+              code:
+                const: RATE_LIMITED
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 429
+        - if:
+            properties:
+              code:
+                const: ENTITLEMENT_UNAVAILABLE
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 503
+        - if:
+            properties:
+              code:
+                const: CONSENT_UNAVAILABLE
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 503
+        - if:
+            properties:
+              code:
+                const: PROVIDER_UNAVAILABLE
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 503
+        - if:
+            properties:
+              code:
+                const: PROVIDER_TIMEOUT
+            required:
+              - code
+          then:
+            properties:
+              status:
+                const: 504
     ConsultationBriefAiDraftScreeningContext:
       type: object
       additionalProperties: false

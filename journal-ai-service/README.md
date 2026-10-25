@@ -4,7 +4,8 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
-Public OpenAPI v1.12.0 adds the MB-642 content-free exact Journal creation
+Public OpenAPI v1.13.0 adds the MB-756 voice-eligibility read described below.
+The preceding v1.12.0 adds the MB-642 content-free exact Journal creation
 evidence read alongside MB-641 daily check-in evidence and retains MB-649
 bounded SupportPlan Companion orchestration. The preceding provider enum amendment aligns exact-analysis,
 longitudinal evidence and Support
@@ -13,6 +14,75 @@ route and migration 011. Consumers must accept this provider without relaxing
 other result validation. `contract:check` compares these public enums with the
 migrated result validators. This publication does not activate a provider,
 change routing/approval/consent gates, or change persisted data.
+
+### MB-756 independent voice admission foundation
+
+The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
+implements only `GET /api/v1/ai-companion/voice-eligibility` from the accepted
+[Voice ADR](../docs/adr/0046-ai-voice-companion-contract.md) and
+[policy](../docs/policies/companion-voice-policy-v1.md). It requires an Identity
+USER bearer, derives the owner from that principal, returns `no-store`, and
+reads current Care dual consent, Consultation entitlement and independent
+voice quota. It creates no reservation, room, token, dispatch or provider call.
+Uncertain owner reads fail closed. Missing consent, FREE, occupied capacity,
+exhausted quota and provider unavailability never become eligible access.
+
+The application exports `VoiceAccessService` for later server-owned reserve and
+current-session authorization. Admission reads current owners before the short
+MongoDB transaction, hashes retry intent with the existing Journal HMAC secret,
+and atomically reserves quota plus the global two-session/per-owner one-session
+capacity. Current authorization re-resolves both grants and entitlement; the
+stored admission snapshot cannot authorize a later turn. No public start,
+connection, turn, status or end route is delivered here. The runtime provider
+readiness predicate deliberately remains false pending MB-757/MB-760/MB-762;
+setting credentials or using an eligible paid package does not enable a call.
+
+| Optional variable                            | Purpose                                                                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN`        | Dedicated Journal-to-Care credential matching Care's `CARE_VOICE_JOURNAL_SERVICE_TOKEN`; sent only as `X-MentalBridge-Voice-Care-Token`.                 |
+| `JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN` | Dedicated Journal-to-Consultation credential matching `CONSULTATION_VOICE_JOURNAL_SERVICE_TOKEN`; sent only as `X-MentalBridge-Voice-Entitlement-Token`. |
+
+Blank values disable the corresponding authorization read without changing
+existing text configuration. Configured secrets must contain 32–256 printable
+ASCII characters without spaces, be distinct from each other, and differ from
+configured reminder/SupportPlan service tokens. The clients reuse the existing
+Care/Consultation base URLs, enforce a fixed two-second read deadline, reject
+redirects, malformed/stale responses and mismatched owner/session/purpose, and
+require `no-store`. They do not forward or persist the user's bearer, replicate
+grants, query another owner's database or retry a stale positive decision.
+
+Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
+owns the three closed, content-free MongoDB collections described in the
+[database documentation](../docs/database/mongodb.md#ai-companion-voice-admission-and-usage-collections).
+MongoDB must support replica-set transactions. The service reconciliation loop
+uses server time for authority/deadline expiry, safe unissued-session settlement
+and retention cleanup; possibly issued media remains held until verified
+teardown. Session and usage records expire 30 days from their own creation,
+without extension by activity or settlement. Session deletion scrubs capacity
+references transactionally. An unknown old room leaves an anonymous quarantined
+slot occupied after identifying metadata is purged; no TTL or current ledger
+method makes that slot free.
+
+Voice usage is independent of text answers and Consultation credits. PLUS has
+two successful sessions/day, at most 300 seconds/session and 600 ACTIVE seconds/day;
+PREMIUM has three, at most 600 seconds/session and 1,800 ACTIVE seconds/day. The
+quota day is `Asia/Ho_Chi_Minh`, frozen at admission. The first trusted AI audio
+publication while the owner is connected consumes one session and starts ACTIVE
+accounting; summed eligible milliseconds are rounded up once on settlement.
+No first reply refunds reserved quota. These are ledger rules tested with
+synthetic signals; MB-756 does not produce or hear real audio. Audio, transcript,
+prompts/replies, prior Journal/chat history and provider/user tokens are excluded
+from voice persistence and operational logging.
+
+Delivery is ordered Care [PR #229](https://github.com/NgyenKhoi/mentalbridge-backend/pull/229),
+then Consultation [PR #230](https://github.com/NgyenKhoi/mentalbridge-backend/pull/230),
+then Journal. Both prerequisites are now on `dev` (`8f295d71`, `5206b3a2`).
+The new owner HTTP/Mongo integration validates synthetic owner decisions against
+the merged active contracts and proves admission, revocation/expiry compensation
+and unchanged Text quota. It runs in `npm run test:integration`; it does not prove
+a running Spring/cloud/audio stack. See the
+[MB-756 Journal evidence](../docs/story-mb-756-journal-voice-evidence.md) for the
+remaining checkpoint and provider gates.
 
 The service provides:
 
