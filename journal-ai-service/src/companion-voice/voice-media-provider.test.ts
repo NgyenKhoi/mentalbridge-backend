@@ -46,12 +46,13 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
   let roomPresent = false;
   let dispatchPresent = false;
   let unavailable = false;
+  let recording = false;
   const room = () => ({
     sid: "RM_synthetic",
     name: ref.roomName,
     metadata: ref.dispatchId,
     maxParticipants: 2,
-    activeRecording: false,
+    activeRecording: recording,
   });
   const dispatch = () => ({
     id: "AD_synthetic",
@@ -182,6 +183,7 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
     roomExists: true,
     providerDispatchId: "AD_synthetic",
     ownerConnected: true,
+    agentConnected: true,
     agentAudioPublished: true,
   });
   const create = calls.find((call) => call.method === "CreateRoom");
@@ -255,6 +257,10 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
     VoiceMediaError,
   );
   assert.equal(calls.length, before);
+  recording = true;
+  await assert.rejects(provider.createRoom(ref), VoiceMediaError);
+  assert.equal(roomPresent, false);
+  recording = false;
   unavailable = true;
   await assert.rejects(
     provider.dispatch(ref),

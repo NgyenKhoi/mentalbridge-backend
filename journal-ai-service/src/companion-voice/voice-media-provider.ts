@@ -3,6 +3,7 @@ import {
   AccessToken,
   AgentDispatchClient,
   JobRestartPolicy,
+  ParticipantInfo_State,
   RoomServiceClient,
   ServerError,
   TrackSource,
@@ -44,6 +45,7 @@ export interface VoiceMediaInspection {
   roomExists: boolean;
   providerDispatchId: string | null;
   ownerConnected: boolean;
+  agentConnected: boolean;
   agentAudioPublished: boolean;
 }
 
@@ -155,10 +157,13 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
       });
       if (
         room.name !== reference.roomName ||
-        room.metadata !== reference.dispatchId ||
-        room.activeRecording
+        room.metadata !== reference.dispatchId
       )
         throw new VoiceMediaError();
+      if (room.activeRecording) {
+        await this.stop(reference);
+        throw new VoiceMediaError();
+      }
     });
   }
 
@@ -192,17 +197,34 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
           roomExists: false,
           providerDispatchId: null,
           ownerConnected: false,
+          agentConnected: false,
           agentAudioPublished: false,
         };
-      if (room.metadata !== reference.dispatchId || room.activeRecording)
+      if (room.metadata !== reference.dispatchId) throw new VoiceMediaError();
+      if (room.activeRecording) {
+        await this.stop(reference);
         throw new VoiceMediaError();
+      }
       const [dispatches, participants] = await Promise.all([
         this.agents.listDispatch(reference.roomName),
         this.rooms.listParticipants(reference.roomName),
       ]);
+      if (
+        participants.some(
+          (participant) =>
+            ![reference.participantIdentity, reference.agentIdentity].includes(
+              participant.identity,
+            ) ||
+            participant.tracks.some((track) => track.type !== TrackType.AUDIO),
+        )
+      ) {
+        await this.stop(reference);
+        throw new VoiceMediaError();
+      }
       const matching = dispatches.filter(
         (value) =>
           value.agentName === this.configuration.agentName &&
+          value.room === reference.roomName &&
           value.metadata === dispatchMetadata(reference),
       );
       if (matching.length > 1) throw new VoiceMediaError();
@@ -210,11 +232,19 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
         roomExists: true,
         providerDispatchId: matching[0]?.id ?? null,
         ownerConnected: participants.some(
-          (value) => value.identity === reference.participantIdentity,
+          (value) =>
+            value.identity === reference.participantIdentity &&
+            value.state === ParticipantInfo_State.ACTIVE,
+        ),
+        agentConnected: participants.some(
+          (value) =>
+            value.identity === reference.agentIdentity &&
+            value.state === ParticipantInfo_State.ACTIVE,
         ),
         agentAudioPublished: participants.some(
           (value) =>
             value.identity === reference.agentIdentity &&
+            value.state === ParticipantInfo_State.ACTIVE &&
             value.tracks.some(
               (track) => track.type === TrackType.AUDIO && !track.muted,
             ),

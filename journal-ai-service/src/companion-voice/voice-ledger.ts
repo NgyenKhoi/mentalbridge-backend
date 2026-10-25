@@ -158,7 +158,7 @@ export type VoiceStartAttemptClaim =
   | { status: "ACCEPTED" };
 
 export type VoiceTeardownProof =
-  "NEVER_DISPATCHED" | "PROVIDER_CONFIRMED_STOPPED";
+  "NEVER_DISPATCHED" | "PROVIDER_CONFIRMED_STOPPED" | "NO_MEDIA_INITIALIZATION";
 
 interface StoredSession extends VoiceSession {
   _id: string;
@@ -316,10 +316,13 @@ const dueReason = (
   return null;
 };
 
+export const voiceSessionExpiryReason = dueReason;
+
 export class MongoVoiceLedger {
   private readonly sessions: Collection<StoredSession>;
   private readonly usage: Collection<DailyUsage>;
   private readonly capacity: Collection<Capacity>;
+  private readonly mediaInitialization: Collection<{ _id: string }>;
 
   constructor(
     private readonly client: MongoClient,
@@ -329,6 +332,7 @@ export class MongoVoiceLedger {
     this.sessions = database.collection("ai_voice_sessions");
     this.usage = database.collection("ai_voice_daily_usage");
     this.capacity = database.collection("ai_voice_capacity");
+    this.mediaInitialization = database.collection("ai_voice_media");
   }
 
   private async atomic<T>(
@@ -672,6 +676,32 @@ export class MongoVoiceLedger {
     return found;
   }
 
+  async findSession(
+    voiceSessionId: string,
+    now: Date,
+  ): Promise<VoiceSession | null> {
+    const value = await this.sessions.findOne({
+      _id: voiceSessionId,
+      expiresAt: { $gt: now },
+    });
+    return value ? publicSession(value) : null;
+  }
+
+  async acknowledgeSignal(
+    voiceSessionId: string,
+    guard: VoiceGuard,
+    now: Date,
+  ): Promise<VoiceSession> {
+    return this.atomic(async (transaction) => {
+      const value = await this.load(voiceSessionId, transaction);
+      if (!this.guard(value, guard)) return publicSession(value);
+      this.live(value, now);
+      value.lastSequence = guard.sequence;
+      value.updatedAt = now;
+      return this.save(value, transaction);
+    });
+  }
+
   private async save(
     value: StoredSession,
     transaction: ClientSession,
@@ -967,12 +997,25 @@ export class MongoVoiceLedger {
     proof: VoiceTeardownProof,
     now: Date,
   ): Promise<VoiceSession> {
-    if (!["NEVER_DISPATCHED", "PROVIDER_CONFIRMED_STOPPED"].includes(proof))
+    if (
+      ![
+        "NEVER_DISPATCHED",
+        "PROVIDER_CONFIRMED_STOPPED",
+        "NO_MEDIA_INITIALIZATION",
+      ].includes(proof)
+    )
       throw new VoiceLedgerError("INVALID_REQUEST");
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (value.expiresAt <= now) throw new VoiceLedgerError("SESSION_EXPIRED");
       if (value.settledAt) return publicSession(value);
+      if (proof === "NO_MEDIA_INITIALIZATION") {
+        const initialized = await this.mediaInitialization.findOne(
+          { _id: voiceSessionId },
+          { session: transaction },
+        );
+        if (initialized) throw new VoiceLedgerError("INVALID_SESSION_STATE");
+      }
       if (proof === "PROVIDER_CONFIRMED_STOPPED") {
         if (!guard || !this.guard(value, guard))
           throw new VoiceLedgerError("STALE_ATTEMPT");
@@ -996,6 +1039,13 @@ export class MongoVoiceLedger {
       })
       .toArray();
     return found.map(publicSession);
+  }
+
+  async endingSessions(now: Date): Promise<VoiceSession[]> {
+    const values = await this.sessions
+      .find({ state: "ENDING", expiresAt: { $gt: now } })
+      .toArray();
+    return values.map(publicSession);
   }
 
   async reconcile(
