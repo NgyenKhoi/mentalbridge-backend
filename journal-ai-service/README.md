@@ -4,6 +4,31 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
+MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for
+AI-only rooms and explicit named dispatch. Its deterministic transport tests
+exercise the real SDK against a local synthetic server; no Cloud credentials
+or real media are used. Public session/lifecycle integration is described in
+the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md).
+
+| Optional configuration                  | Meaning                                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_VOICE_ENABLED`              | Defaults to `false`. Live enablement requires all owner/media credentials and reviewed downstream worker, speech, privacy and account evidence. Forbidden in test/CI.      |
+| `JOURNAL_AI_VOICE_APPROVAL_VERSION`     | Reviewed operational evidence version required when enabling; configuration alone is not proof of readiness.                                                               |
+| `JOURNAL_AI_VOICE_LIVEKIT_URL`          | Existing project `wss://<project>.livekit.cloud` origin only, without path, credentials, query, fragment or custom port.                                                   |
+| `JOURNAL_AI_VOICE_LIVEKIT_API_KEY`      | Existing LiveKit project key, backend only.                                                                                                                                |
+| `JOURNAL_AI_VOICE_LIVEKIT_API_SECRET`   | Existing LiveKit project secret, backend only; never placed in client grants or metadata.                                                                                  |
+| `JOURNAL_AI_VOICE_AGENT_NAME`           | Explicit registered agent name, default `mentalbridge-ai-voice-v1`; MB-759 must deploy this named worker.                                                                  |
+| `JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN` | Independent 32–256 printable ASCII secret without spaces; distinct from owner-read, reminder/SupportPlan and provider secrets. Sent only on internal worker REST requests. |
+
+Blank optional secrets keep Voice disabled. No new provider registration or
+plan upgrade is required for this implementation. Reuse the existing project;
+do not copy actual secrets into repository files, issue descriptions or CI.
+Media RPCs use a three-second timeout with SDK region failover disabled.
+Participant tokens are microphone-only and at most 60 seconds, capped by the
+original session hard stop. Explicit participant revocation uses the Cloud API's
+Unix-second cutoff near current server time, followed by exact-room teardown.
+Token expiration alone is never used as proof of media cutoff or quota release.
+
 Public OpenAPI v1.13.0 adds the MB-756 voice-eligibility read described below.
 The preceding v1.12.0 adds the MB-642 content-free exact Journal creation
 evidence read alongside MB-641 daily check-in evidence and retains MB-649

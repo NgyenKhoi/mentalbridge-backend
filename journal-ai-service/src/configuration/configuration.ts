@@ -106,6 +106,43 @@ const environmentSchema = z
     JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN: z.string().min(32).optional(),
     JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: voiceServiceToken,
+    JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: voiceServiceToken,
+    JOURNAL_AI_VOICE_ENABLED: z.enum(["true", "false"]).default("false"),
+    JOURNAL_AI_VOICE_APPROVAL_VERSION: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().regex(versionPattern).optional(),
+    ),
+    JOURNAL_AI_VOICE_LIVEKIT_URL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .url()
+        .refine((value) => {
+          const url = new URL(value);
+          return (
+            url.protocol === "wss:" &&
+            url.hostname.endsWith(".livekit.cloud") &&
+            !url.username &&
+            !url.password &&
+            !url.port &&
+            !url.search &&
+            !url.hash &&
+            url.pathname === "/"
+          );
+        })
+        .optional(),
+    ),
+    JOURNAL_AI_VOICE_LIVEKIT_API_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{8,128}$/)
+        .optional(),
+    ),
+    JOURNAL_AI_VOICE_LIVEKIT_API_SECRET: voiceServiceToken,
+    JOURNAL_AI_VOICE_AGENT_NAME: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+      .default("mentalbridge-ai-voice-v1"),
     JOURNAL_AI_PROVIDER_MODE: z
       .enum(providerModes)
       .default("DETERMINISTIC_FAKE"),
@@ -251,6 +288,7 @@ const environmentSchema = z
     const voiceTokens = [
       "JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN",
       "JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN",
+      "JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN",
     ] as const;
     for (const key of voiceTokens) {
       const token = environment[key];
@@ -262,6 +300,7 @@ const environmentSchema = z
             .map((other) => environment[other]),
           environment.JOURNAL_AI_REMINDER_SERVICE_TOKEN,
           environment.JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN,
+          environment.JOURNAL_AI_VOICE_LIVEKIT_API_SECRET,
         ].includes(token)
       ) {
         context.addIssue({
@@ -269,6 +308,30 @@ const environmentSchema = z
           path: [key],
           message: "Voice owner credentials must be purpose-specific",
         });
+      }
+    }
+    if (environment.JOURNAL_AI_VOICE_ENABLED === "true") {
+      if (environment.NODE_ENV === "test" || environment.CI === "true") {
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_VOICE_ENABLED"],
+          message: "Live Voice is disabled in test and CI",
+        });
+      }
+      for (const key of [
+        "JOURNAL_AI_VOICE_APPROVAL_VERSION",
+        "JOURNAL_AI_VOICE_LIVEKIT_URL",
+        "JOURNAL_AI_VOICE_LIVEKIT_API_KEY",
+        "JOURNAL_AI_VOICE_LIVEKIT_API_SECRET",
+        ...voiceTokens,
+      ] as const) {
+        if (!environment[key])
+          context.addIssue({
+            code: "custom",
+            path: [key],
+            message:
+              "Approved Voice requires complete purpose-specific configuration",
+          });
       }
     }
     for (const route of [
@@ -475,6 +538,15 @@ const environmentSchema = z
       entitlement:
         environment.JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN ?? null,
     },
+    VOICE_MEDIA: {
+      enabled: environment.JOURNAL_AI_VOICE_ENABLED === "true",
+      approvedVersion: environment.JOURNAL_AI_VOICE_APPROVAL_VERSION ?? null,
+      serverUrl: environment.JOURNAL_AI_VOICE_LIVEKIT_URL ?? null,
+      apiKey: environment.JOURNAL_AI_VOICE_LIVEKIT_API_KEY ?? null,
+      apiSecret: environment.JOURNAL_AI_VOICE_LIVEKIT_API_SECRET ?? null,
+      agentName: environment.JOURNAL_AI_VOICE_AGENT_NAME,
+      workerToken: environment.JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN ?? null,
+    },
     PROVIDER_MODE: environment.JOURNAL_AI_PROVIDER_MODE,
     ROUTING_POLICY_VERSION: environment.JOURNAL_AI_ROUTING_POLICY_VERSION,
     PROVIDER_APPROVAL_VERSION:
@@ -541,8 +613,9 @@ const environmentSchema = z
 
 export type ServiceConfiguration = Omit<
   z.infer<typeof environmentSchema>,
-  "VOICE_OWNER_TOKENS"
+  "VOICE_OWNER_TOKENS" | "VOICE_MEDIA"
 > & {
+  readonly VOICE_MEDIA?: z.infer<typeof environmentSchema>["VOICE_MEDIA"];
   readonly VOICE_OWNER_TOKENS?: {
     readonly care: string | null;
     readonly entitlement: string | null;
