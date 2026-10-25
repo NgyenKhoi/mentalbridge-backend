@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -80,6 +81,8 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(reportingPolicy.ownerService()).isEqualTo(RetentionOwnerService.IDENTITY);
 		assertThat(reportingPolicy.status()).isEqualTo(RetentionPolicyStatus.APPROVED);
 		assertThat(reportingPolicy.automatedExecutionSupported()).isTrue();
+		assertThat(reportingPolicy.jobStatus()).isEqualTo(RetentionJobStatus.SUCCEEDED);
+		assertThat(reportingPolicy.manualEscalationRequired()).isFalse();
 		assertThat(reportingPolicy.jobStatusSource()).isEqualTo(RetentionJobStatusSource.IDENTITY_EXECUTION_RECORD);
 		assertThat(reportingPolicy.lastExecution()).isNotNull();
 		assertThat(reportingPolicy.lastExecution().recordsPurged()).isEqualTo(12);
@@ -104,8 +107,53 @@ class AdminRetentionGovernanceServiceTests {
 					assertThat(policy.jobStatus()).isEqualTo(RetentionJobStatus.UNAVAILABLE);
 					assertThat(policy.jobStatusSource())
 							.isEqualTo(RetentionJobStatusSource.NO_AUTHORITATIVE_SIGNAL);
+					assertThat(policy.manualHoldSupported()).isFalse();
 					assertThat(policy.lastExecution()).isNull();
 				});
+	}
+
+	@Test
+	void getRetentionPoliciesReportsLatestExecutionOutcomeSeparatelyFromRetryExhaustion() {
+		String policyId = "MB-IDENTITY-REPORTING-001";
+		var failedFirst = retentionExecution(policyId, "FAILED", NOW.minusSeconds(300));
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(Optional.of(failedFirst));
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(List.of(failedFirst));
+
+		var afterFirstFailure = policy(policyId);
+		assertThat(afterFirstFailure.jobStatus()).isEqualTo(RetentionJobStatus.FAILED);
+		assertThat(afterFirstFailure.manualEscalationRequired()).isFalse();
+
+		var failedSecond = retentionExecution(policyId, "FAILED", NOW.minusSeconds(200));
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(Optional.of(failedSecond));
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(List.of(failedSecond, failedFirst));
+
+		var afterSecondFailure = policy(policyId);
+		assertThat(afterSecondFailure.jobStatus()).isEqualTo(RetentionJobStatus.FAILED);
+		assertThat(afterSecondFailure.manualEscalationRequired()).isFalse();
+
+		var failedThird = retentionExecution(policyId, "FAILED", NOW.minusSeconds(100));
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(Optional.of(failedThird));
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(List.of(failedThird, failedSecond, failedFirst));
+
+		var afterThirdFailure = policy(policyId);
+		assertThat(afterThirdFailure.jobStatus()).isEqualTo(RetentionJobStatus.FAILED);
+		assertThat(afterThirdFailure.manualEscalationRequired()).isTrue();
+
+		var succeeded = retentionExecution(policyId, "SUCCEEDED", NOW);
+		when(executionRecords.findFirstByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(Optional.of(succeeded));
+		when(executionRecords.findTop3ByPolicyIdOrderByStartedAtDesc(policyId))
+				.thenReturn(List.of(succeeded, failedThird, failedSecond));
+
+		var afterSuccess = policy(policyId);
+		assertThat(afterSuccess.jobStatus()).isEqualTo(RetentionJobStatus.SUCCEEDED);
+		assertThat(afterSuccess.manualEscalationRequired()).isFalse();
 	}
 
 	@Test
@@ -542,12 +590,16 @@ class AdminRetentionGovernanceServiceTests {
 		when(accounts.findById(accountId)).thenReturn(Optional.of(account));
 
 		var response = service.retryDeletion(requestId, actorId, UUID.randomUUID());
+		var successAudit = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+		verify(auditLogger).recordSuccess(successAudit.capture());
 
-		// Identity fact is completed
 		var identityFact = response.ownerFacts().stream()
 				.filter(f -> f.ownerService() == RetentionOwnerService.IDENTITY).findFirst().orElseThrow();
 		assertThat(identityFact.status()).isEqualTo(DeletionFactStatus.COMPLETED);
-		assertThat(identityFact.evidenceReference()).isEqualTo("audit:identity:account-deleted:" + requestId);
+		assertThat(identityFact.evidenceReference())
+				.isEqualTo("audit:identity:account-deleted:" + successAudit.getValue().getId());
+		assertThat(successAudit.getValue().getAction()).isEqualTo("DATA_DELETION_RETRY_REQUESTED");
+		assertThat(successAudit.getValue().getOutcome()).isEqualTo("SUCCEEDED");
 
 		// CARE fact MUST NOT be fabricated - remains PENDING!
 		var careFact = response.ownerFacts().stream()
@@ -559,7 +611,6 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
 		assertThat(account.status()).isEqualTo(AccountStatus.DELETED);
 		verify(authentication).revokeAll(eq(account.id()), eq("ACCOUNT_DELETED"), any(Instant.class));
-		verify(auditLogger).recordSuccess(any(SecurityAuditEventEntity.class));
 	}
 
 	@Test
@@ -1114,5 +1165,21 @@ class AdminRetentionGovernanceServiceTests {
 		assertThat(facts.get(1).failureReason()).isNull();
 		assertThat(facts.get(2).failureReason()).isNull();
 		assertThat(facts.get(3).failureReason()).isNull();
+	}
+
+	private RetentionExecutionRecordEntity retentionExecution(String policyId, String status, Instant startedAt) {
+		return new RetentionExecutionRecordEntity(
+				UUID.randomUUID(), policyId, "IDENTITY", "REPORT_ARTIFACT_RETENTION_SWEEP",
+				status, startedAt, startedAt.plusSeconds(10), 10,
+				"SUCCEEDED".equals(status) ? 2 : 0, 0, 0,
+				"FAILED".equals(status) ? "SWEEP_EXECUTION_FAILED" : null, startedAt
+		);
+	}
+
+	private AdminRetentionGovernanceService.RetentionPolicyResponse policy(String policyId) {
+		return service.getRetentionPolicies().stream()
+				.filter(candidate -> policyId.equals(candidate.policyId()))
+				.findFirst()
+				.orElseThrow();
 	}
 }

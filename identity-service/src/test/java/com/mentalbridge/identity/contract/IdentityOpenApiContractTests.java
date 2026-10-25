@@ -171,11 +171,21 @@ class IdentityOpenApiContractTests {
 				.getProperties().get("evidenceReference");
 		var retentionJobStatusSource = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
 				.getProperties().get("jobStatusSource");
+		var retentionJobStatus = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("jobStatus");
+		var manualHoldSupported = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("manualHoldSupported");
+		var manualEscalationRequired = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("manualEscalationRequired");
 		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
 		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
 		assertThat(registrationActor.getEnum()).extracting(Object::toString).containsExactly("USER", "SPECIALIST");
 		assertThat(retentionJobStatusSource.getEnum()).extracting(Object::toString).containsExactly(
 				"IDENTITY_POLICY_CATALOG", "IDENTITY_EXECUTION_RECORD", "NO_AUTHORITATIVE_SIGNAL");
+		assertThat(retentionJobStatus.getDescription()).contains("does not by itself mean retries are exhausted");
+		assertThat(manualHoldSupported.getDescription()).contains("owner-level", "Identity coordinator Hold");
+		assertThat(manualEscalationRequired).isNotNull();
+		assertThat(manualEscalationRequired.getDescription()).contains("three consecutive failed or stale executions");
 		assertThat(deletionHoldReason.getEnum()).extracting(Object::toString).containsExactly(
 				"STATUTORY_INQUIRY",
 				"PENDING_DISPUTE",
@@ -186,6 +196,8 @@ class IdentityOpenApiContractTests {
 		assertThat(deletionEvidenceReference.getPattern()).isEqualTo(
 				"^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
 		assertThat(deletionEvidenceReference.getMaxLength()).isEqualTo(67);
+		assertThat(deletionEvidenceReference.getDescription())
+				.contains("committed authoritative Identity audit event");
 		var retentionFailureCode = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionFailureCode");
 		assertThat(retentionFailureCode.getEnum()).extracting(Object::toString).containsExactly(
 				"PRIOR_EXECUTION_STALE", "SWEEP_EXECUTION_FAILED");

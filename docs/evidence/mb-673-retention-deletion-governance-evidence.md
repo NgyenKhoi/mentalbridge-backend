@@ -13,9 +13,9 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `MB-IDENTITY-REPORTING-001` | Chính sách bảo lưu tệp báo cáo tổng hợp | `IDENTITY` | 1.0 | 30 ngày | **ACTIVE** (Automated & Admin sweep supported via authoritative metrics) | Không áp dụng | Số lượng tệp trích xuất báo cáo phân tích hết hạn đã dọn dẹp |
 | `MB-IDENTITY-AUDIT-001` | Chính sách bảo lưu nhật ký kiểm toán Identity | `IDENTITY` | 1.0 | 365 ngày | **PARTIALLY_SUPPORTED** (Bảo lưu bất biến MB-587; không hỗ trợ xóa sớm/thủ công) | Không áp dụng | Nhật ký kiểm toán danh tính tối thiểu hóa |
-| `MB-PRIVACY-CARE-001` | Chính sách bảo lưu sàng lọc & đồng ý chăm sóc | `CARE` | 1.1-capstone | Quản lý theo vòng đời Care (TTL 30p-2h ẩn danh, có tài khoản bảo lưu kiểm soát) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`; Care domain-managed only) | **Có hỗ trợ** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
-| `consultation-journey-v1` | Chính sách bảo lưu phiên tư vấn & đối soát giao dịch | `CONSULTATION` | 1.0-scope-v2 | 90 ngày (LiveKit metadata, tài chính kế toán theo luật) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | **Có hỗ trợ** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
-| `MB-DAILY-EMOTION-CHECK-IN-001` | Chính sách bảo lưu & xóa nhật ký cảm xúc | `JOURNAL_AI` | 1.0 | Quản lý mã hóa Journal AI (xóa ciphertext, tombstone có giới hạn) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | **Có hỗ trợ** | Nhật ký cảm xúc định kỳ và vector suy luận AI |
+| `MB-PRIVACY-CARE-001` | Chính sách bảo lưu sàng lọc & đồng ý chăm sóc | `CARE` | 1.1-capstone | Quản lý theo vòng đời Care (TTL 30p-2h ẩn danh, có tài khoản bảo lưu kiểm soát) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`; Care domain-managed only) | **Không có owner contract** | Bản ghi đánh giá tâm lý lâm sàng và hồ sơ phiên chăm sóc |
+| `consultation-journey-v1` | Chính sách bảo lưu phiên tư vấn & đối soát giao dịch | `CONSULTATION` | 1.0-scope-v2 | 90 ngày (LiveKit metadata, tài chính kế toán theo luật) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | **Không có owner contract** | Lịch sử cuộc hẹn và ghi chú tư vấn hoàn tất |
+| `MB-DAILY-EMOTION-CHECK-IN-001` | Chính sách bảo lưu & xóa nhật ký cảm xúc | `JOURNAL_AI` | 1.0 | Quản lý mã hóa Journal AI (xóa ciphertext, tombstone có giới hạn) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | **Không có owner contract** | Nhật ký cảm xúc định kỳ và vector suy luận AI |
 | `MB-COMMUNITY-RETENTION-001` | Chính sách bảo lưu nội dung cộng đồng | `COMMUNITY` | 1.0 | 7 ngày (phương tiện chưa liên kết) | **UNAVAILABLE** (`NO_AUTHORITATIVE_SIGNAL`) | Không áp dụng | Tệp đính kèm tạm thời bài đăng cộng đồng |
 | `MB-CONTENT-NOTIFICATION-RETENTION-001` | Chính sách bảo lưu hộp thư thông báo | `CONTENT` | 1.0 | 90 ngày | **UNAVAILABLE** (Explicitly Unavailable) | Không áp dụng | Hộp thư thông báo nội dung không quan trọng |
 
@@ -31,7 +31,9 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 9. **Audit Transaction Isolation (P1-E)**: Audit logging enforces exact transactional boundaries: `RetentionAuditLogger.recordDenied` uses `REQUIRES_NEW` (ensuring denied audit records persist even when the caller transaction rolls back), while `recordSuccess` uses `REQUIRED` (ensuring success audit records roll back if the business transaction fails).
 10. **Deletion Evidence Preservation (P1-I)**: Foreign key `account_id` on `deletion_request` does NOT cascade delete on account removal, ensuring immutable audit evidence and traceability are permanently preserved.
 11. **Pagination Integration (P1)**: Authoritative pagination via `page` and `nextCursor` integrated seamlessly across OpenAPI, BFF, identity-client, and frontend UI pagination controls.
-12. **Job Status Provenance (P2)**: Every policy reports `jobStatusSource`. Identity-owned state comes from `IDENTITY_POLICY_CATALOG` or `IDENTITY_EXECUTION_RECORD`; external owners without an approved live status contract report `UNAVAILABLE` with `NO_AUTHORITATIVE_SIGNAL` instead of presenting a fabricated `ACTIVE` state.
+12. **Job Status Provenance (P2)**: Every policy reports `jobStatusSource`. Identity-owned state comes from `IDENTITY_POLICY_CATALOG` or `IDENTITY_EXECUTION_RECORD`; the latest failed execution is reported as `FAILED`, while the separate `manualEscalationRequired` flag becomes true only after the existing three-consecutive-failure threshold. External owners without an approved live status contract report `UNAVAILABLE` with `NO_AUTHORITATIVE_SIGNAL` instead of presenting a fabricated `ACTIVE` state.
+13. **Evidence-to-Audit Linkage (P1)**: Identity completion evidence uses `audit:identity:account-deleted:<audit-event-uuid>`, where the UUID is the committed success audit event ID, not the deletion request ID. The owner-fact update and success audit use the same transaction, so neither can independently claim completion after rollback.
+14. **Coordinator vs Owner Holds (P2)**: ADMIN hold endpoints manage the Identity coordinator deletion request only. `manualHoldSupported` represents an authoritative owner-level hold contract; external owners report false until such a contract exists.
 
 ---
 
@@ -84,7 +86,19 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 
 ## 3. Test & Verification Results
 
-### 3.0 Latest local verification (2026-10-24)
+### 3.0 Latest scoped hardening verification (2026-10-25)
+
+| Check | Result | Actual tests |
+| :--- | :--- | :--- |
+| Backend service/controller/OpenAPI/transaction integration selection | **PASS / SKIPPED** | Maven selected **56 tests: 50 passed, 0 failed, 0 errors, 6 skipped**. `AdminRetentionGovernanceServiceTests` 38/38, `AdminRetentionGovernanceControllerTests` 11/11, and `IdentityOpenApiContractTests` 1/1 passed. All 6 `RetentionTransactionIntegrationTests`, including the new committed evidence-to-audit linkage assertion, were **SKIPPED** because Docker was unavailable. |
+| Frontend retention + identity validation unit tests | **PASS** | **34 passed, 0 failed** (21 retention component + 13 identity validation). |
+| Frontend contract consistency | **PASS** | `npm.cmd run contracts:check` completed successfully for all configured contracts. |
+| Frontend typecheck | **PASS** | `npm.cmd run typecheck` completed with 0 errors. |
+| Changed frontend files lint | **PASS** | Targeted ESLint completed with 0 errors and 0 warnings. |
+| Changed human-authored frontend files format | **PASS** | Targeted Prettier check completed successfully. Generated Identity artifacts remain generator-owned and were validated by `contracts:check`. |
+| Live cross-service deletion E2E | **NOT RUN** | No deployed authoritative external-owner workflow was available; no result is fabricated. |
+
+### 3.0a Previous local verification (2026-10-24; historical, not rerun on current worktree)
 
 | Check | Result | Actual tests |
 | :--- | :--- | :--- |
@@ -110,7 +124,7 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | Documentation policy tests | **PASS** | **20 tests passed**. |
 | Live cross-service E2E (`npm run test:e2e:live`) | **NOT RUN** | Requires deployed multi-service live environment. |
 
-During initial database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and the five-test database integration suite now passes completely (5/5 PASS) with active Testcontainers PostgreSQL. No migration or transaction propagation was changed.
+During historical database testing, two early runs failed before executing test bodies because the `deletion_request.subject_reference_hash` JPA mapping expected JDBC `VARCHAR` while the existing migration creates `char(64)`; setting only `columnDefinition` did not change the JDBC type. The mapping was updated to use the repository's existing `@JdbcTypeCode(SqlTypes.CHAR)` pattern, and that earlier snapshot's five-test database integration suite passed completely (5/5 PASS) with active Testcontainers PostgreSQL. This is not a current-worktree result. No migration or transaction propagation was changed.
 
 Sections 3.1–3.4 below record verification from earlier branch snapshots; their counts are **HISTORICAL PASS**, not tests rerun for this worktree.
 
@@ -179,7 +193,7 @@ Executed test suites:
 
 Verified UI behaviors:
 - Sweep action disabled when job status is `RUNNING`, explaining execution in progress.
-- Sweep action disabled when job status is `FAILED` (3 consecutive failed/stale executions), explaining `MANUAL_ESCALATION_REQUIRED`.
+- A latest failed execution is shown as `FAILED`; retry remains available before exhaustion, while `manualEscalationRequired` disables sweep only after 3 consecutive failed/stale executions.
 - Renders audit-safe guarantee banner and policy information without exposing secrets or PII.
 - Explicitly renders unsupported capabilities as unavailable with disabled button (`MB-CONTENT-NOTIFICATION-RETENTION-001`).
 - Allows triggering sweep for supported policies (`MB-IDENTITY-REPORTING-001`) and displays aggregate feedback.

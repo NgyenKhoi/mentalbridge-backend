@@ -17,6 +17,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.mentalbridge.identity.IdentityTestProperties;
 import com.mentalbridge.identity.TestcontainersConfiguration;
+import com.mentalbridge.identity.account.AccountEntity;
+import com.mentalbridge.identity.account.AccountRepository;
+import com.mentalbridge.identity.account.RoleCode;
 import com.mentalbridge.identity.account.SecurityAuditEventEntity;
 
 @org.junit.jupiter.api.condition.EnabledIf("dockerAvailable")
@@ -34,6 +37,12 @@ class RetentionTransactionIntegrationTests extends IdentityTestProperties {
 	private DeletionRequestRepository deletionRequests;
 
 	@Autowired
+	private AccountRepository accounts;
+
+	@Autowired
+	private AdminRetentionGovernanceService governanceService;
+
+	@Autowired
 	private TransactionTemplate transactionTemplate;
 
 	@Autowired
@@ -42,6 +51,7 @@ class RetentionTransactionIntegrationTests extends IdentityTestProperties {
 	private UUID executionId;
 	private UUID auditId;
 	private UUID deletionRequestId;
+	private UUID accountId;
 
 	@AfterEach
 	void cleanUp() {
@@ -60,6 +70,57 @@ class RetentionTransactionIntegrationTests extends IdentityTestProperties {
 					.param("id", deletionRequestId)
 					.update();
 		}
+		if (accountId != null) {
+			jdbc.sql("delete from account where id = :id")
+					.param("id", accountId)
+					.update();
+		}
+	}
+
+	@Test
+	void retryDeletionCommitsOwnerEvidenceLinkedToTheSuccessAuditEvent() {
+		Instant now = Instant.now();
+		var account = AccountEntity.pending(
+				"mb673-" + UUID.randomUUID() + "@synthetic.invalid", "test-password-hash", RoleCode.USER, now);
+		account.activate(now);
+		accountId = account.id();
+		deletionRequestId = UUID.randomUUID();
+		var request = new DeletionRequestEntity(
+				deletionRequestId, accountId, "a".repeat(64), DeletionRequestStatus.PENDING,
+				DeletionHoldType.NONE, null, 0, 3, DeletionEscalationState.NONE, null,
+				now, now.minusSeconds(1), null, null, now, now);
+		request.addOwnerFact(new DeletionOwnerFactEntity(
+				UUID.randomUUID(), request, RetentionOwnerService.IDENTITY, DeletionFactStatus.PENDING,
+				null, null, null, now));
+
+		transactionTemplate.executeWithoutResult(tx -> {
+			accounts.save(account);
+			deletionRequests.save(request);
+		});
+
+		governanceService.retryDeletion(deletionRequestId, null, UUID.randomUUID());
+
+		String evidenceReference = jdbc.sql("""
+				select evidence_reference
+				from deletion_owner_fact
+				where deletion_request_id = :requestId and owner_service = 'IDENTITY'
+				""")
+				.param("requestId", deletionRequestId)
+				.query(String.class)
+				.single();
+		auditId = UUID.fromString(evidenceReference.substring("audit:identity:account-deleted:".length()));
+
+		assertThat(auditId).isNotEqualTo(deletionRequestId);
+		assertThat(jdbc.sql("""
+				select count(*)
+				from security_audit_event
+				where id = :auditId
+				  and action = 'DATA_DELETION_RETRY_REQUESTED'
+				  and outcome = 'SUCCEEDED'
+				""")
+				.param("auditId", auditId)
+				.query(Long.class)
+				.single()).isOne();
 	}
 
 	@Test

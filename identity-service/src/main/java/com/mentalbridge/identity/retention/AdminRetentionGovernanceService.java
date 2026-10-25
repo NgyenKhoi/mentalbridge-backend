@@ -100,7 +100,7 @@ public class AdminRetentionGovernanceService {
 				"CARE_ANONYMOUS_EXPIRY_SWEEP",
 				RetentionJobStatus.UNAVAILABLE,
 				false,
-				true,
+				false,
 				true,
 				"Identity không có quyền can thiệp cơ sở dữ liệu Care Service. Quá trình dọn dẹp do Care Service tự thực thi độc lập."
 		));
@@ -115,7 +115,7 @@ public class AdminRetentionGovernanceService {
 				"CONSULTATION_METADATA_RETENTION",
 				RetentionJobStatus.UNAVAILABLE,
 				false,
-				true,
+				false,
 				true,
 				"Identity không thể xóa dữ liệu giao dịch hoặc lịch hẹn Consultation. Phải tôn trọng giữ lại khi có tranh chấp (DISPUTE_HOLD)."
 		));
@@ -130,7 +130,7 @@ public class AdminRetentionGovernanceService {
 				"JOURNAL_AI_TOMBSTONE_PURGE",
 				RetentionJobStatus.UNAVAILABLE,
 				false,
-				true,
+				false,
 				false,
 				"Dữ liệu nhật ký mã hóa thuộc quyền riêng tư của Journal AI. Identity chỉ điều phối sự kiện xóa, không truy cập trực tiếp."
 		));
@@ -213,6 +213,7 @@ public class AdminRetentionGovernanceService {
 			}
 
 			RetentionJobStatus effectiveJobStatus = meta.jobStatus();
+			boolean manualEscalationRequired = false;
 			RetentionJobStatusSource jobStatusSource = meta.ownerService() == RetentionOwnerService.IDENTITY
 					? RetentionJobStatusSource.IDENTITY_POLICY_CATALOG
 					: RetentionJobStatusSource.NO_AUTHORITATIVE_SIGNAL;
@@ -222,12 +223,17 @@ public class AdminRetentionGovernanceService {
 						&& ((lastExec != null && "RUNNING".equals(lastExec.jobStatus()))
 								|| recent.stream().anyMatch(r -> "RUNNING".equals(r.jobStatus())));
 
-				if (retryExhausted(recent, orphanedRunningDetected)) {
+				manualEscalationRequired = retryExhausted(recent, orphanedRunningDetected);
+				if (manualEscalationRequired) {
 					effectiveJobStatus = RetentionJobStatus.FAILED;
 				} else if (hasUnresolvedRunning) {
 					effectiveJobStatus = RetentionJobStatus.RUNNING;
 				} else if ("STALE".equals(lastExec.jobStatus())) {
 					effectiveJobStatus = RetentionJobStatus.STALE;
+				} else if ("FAILED".equals(lastExec.jobStatus())) {
+					effectiveJobStatus = RetentionJobStatus.FAILED;
+				} else if ("SUCCEEDED".equals(lastExec.jobStatus())) {
+					effectiveJobStatus = RetentionJobStatus.SUCCEEDED;
 				}
 			}
 
@@ -244,6 +250,7 @@ public class AdminRetentionGovernanceService {
 					jobStatusSource,
 					meta.automatedExecutionSupported(),
 					meta.manualHoldSupported(),
+					manualEscalationRequired,
 					meta.requiresManualReview(),
 					meta.unsupportedCapabilityNotice(),
 					lastExec
@@ -528,7 +535,8 @@ public class AdminRetentionGovernanceService {
 				authentication.revokeAll(account.id(), "ACCOUNT_DELETED", now);
 				accounts.save(account);
 			}
-			identityFact.markCompleted(now, "audit:identity:account-deleted:" + request.id());
+			UUID successAuditEventId = UUID.randomUUID();
+			identityFact.markCompleted(now, "audit:identity:account-deleted:" + successAuditEventId);
 
 			boolean hasFacts = !request.ownerFacts().isEmpty();
 			boolean identityFactCompleted = request.ownerFacts().stream()
@@ -550,7 +558,7 @@ public class AdminRetentionGovernanceService {
 			deletionRequests.save(request);
 
 			auditLogger.recordSuccess(new SecurityAuditEventEntity(
-					UUID.randomUUID(), request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "SUCCEEDED",
+					successAuditEventId, request.accountId(), actorId, "DATA_DELETION_RETRY_REQUESTED", "SUCCEEDED",
 					allCompleted ? "DELETION_COMPLETED" : "DELETION_ATTEMPTED_IN_PROGRESS", effectiveCorrelation,
 					request.subjectReferenceHash(), "IDENTITY", "DATA_RETENTION", now, now
 			));
@@ -793,6 +801,7 @@ public class AdminRetentionGovernanceService {
 			RetentionJobStatusSource jobStatusSource,
 			boolean automatedExecutionSupported,
 			boolean manualHoldSupported,
+			boolean manualEscalationRequired,
 			boolean requiresManualReview,
 			String unsupportedCapabilityNotice,
 			RetentionExecutionResponse lastExecution
