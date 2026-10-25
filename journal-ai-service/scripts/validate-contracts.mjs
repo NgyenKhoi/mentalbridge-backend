@@ -31,6 +31,35 @@ const voiceNames = (value) =>
         "#/components/schemas/VoiceProblem",
       ),
   );
+const sessionVoiceNames = {
+  Session: "VoiceSession",
+  Connection: "VoiceConnection",
+  EmptyCommand: "VoiceEmptyCommand",
+  AgentClaim: "VoiceAgentClaim",
+  AgentLease: "VoiceAgentLease",
+  WorkerSignal: "VoiceWorkerSignal",
+  AgentControlResponse: "VoiceAgentControlResponse",
+};
+const sessionVoiceValue = (value) => {
+  let text = JSON.stringify(voiceNames(value));
+  for (const [old, current] of Object.entries(sessionVoiceNames))
+    text = text.replaceAll(
+      `#/components/schemas/${old}`,
+      `#/components/schemas/${current}`,
+    );
+  return JSON.parse(text);
+};
+for (const [old, current] of Object.entries(sessionVoiceNames)) {
+  assert.deepEqual(
+    activeVoiceContract.components.schemas[current],
+    sessionVoiceValue(voiceProposal.components.schemas[old]),
+    `Implemented ${current} must preserve MB-755`,
+  );
+}
+assert.deepEqual(
+  activeVoiceContract.components.securitySchemes.VoiceWorkerToken,
+  voiceProposal.components.securitySchemes.VoiceWorkerToken,
+);
 for (const name of ["VoiceEligibility", "VoiceQuota", "VoiceProblem"]) {
   assert.deepEqual(
     activeVoiceContract.components.schemas[name],
@@ -46,7 +75,7 @@ for (const name of ["VoiceEligibility", "VoiceQuota", "VoiceProblem"]) {
     `Implemented ${name} must preserve the approved MB-755 contract`,
   );
 }
-for (const status of ["401", "403", "503"]) {
+for (const status of ["401", "403", "404", "409", "410", "422", "429", "503"]) {
   const name = `VoiceProblem${status}`;
   assert.deepEqual(
     activeVoiceContract.components.responses[name],
@@ -72,6 +101,12 @@ const implementedOperations = new Set([
   "GET /health/ready",
   "GET /metrics",
   "GET /api/v1/ai-companion/voice-eligibility",
+  "POST /api/v1/ai-companion/voice-sessions",
+  "GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}",
+  "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection",
+  "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end",
+  "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim",
+  "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control",
   "POST /api/v1/journals",
   "GET /api/v1/journals",
   "GET /api/v1/journals/{journalId}",
@@ -104,6 +139,30 @@ const implementedOperations = new Set([
   "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
+  [
+    "POST /api/v1/ai-companion/voice-sessions",
+    new Set(["202", "401", "403", "409", "422", "429", "503"]),
+  ],
+  [
+    "GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}",
+    new Set(["200", "401", "403", "404", "503"]),
+  ],
+  [
+    "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection",
+    new Set(["200", "401", "403", "404", "409", "410", "422", "429", "503"]),
+  ],
+  [
+    "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end",
+    new Set(["202", "401", "403", "404", "409", "422", "503"]),
+  ],
+  [
+    "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim",
+    new Set(["200", "401", "403", "404", "409", "410", "422", "503"]),
+  ],
+  [
+    "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control",
+    new Set(["200", "401", "403", "404", "409", "410", "422", "503"]),
+  ],
   [
     "GET /api/v1/ai-companion/voice-eligibility",
     new Set(["200", "401", "403", "503"]),

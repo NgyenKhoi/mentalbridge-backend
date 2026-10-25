@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   VoiceLedgerError,
+  voiceSessionExpiryReason,
   type MongoVoiceLedger,
   type VoicePlan,
   type VoiceSession,
@@ -257,10 +258,37 @@ export class VoiceAccessService {
     voiceSessionId: string,
     correlationId: string,
   ): Promise<VoiceSession> {
+    return this.sessionAuthority(ownerId, voiceSessionId, correlationId, true);
+  }
+
+  async inspectSession(
+    ownerId: string,
+    voiceSessionId: string,
+    correlationId: string,
+  ): Promise<VoiceSession> {
+    return this.sessionAuthority(ownerId, voiceSessionId, correlationId, false);
+  }
+
+  private async sessionAuthority(
+    ownerId: string,
+    voiceSessionId: string,
+    correlationId: string,
+    renew: boolean,
+  ): Promise<VoiceSession> {
     const session = await this.ledger.findOwned(ownerId, voiceSessionId);
     if (!session) throw new VoiceAccessError("SESSION_NOT_FOUND");
     if (isTerminal(session) || session.state === "ENDING")
       throw new VoiceAccessError("SESSION_EXPIRED");
+    const expiry = voiceSessionExpiryReason(session, this.clock());
+    if (expiry) {
+      await this.ledger.requestEnd(
+        ownerId,
+        voiceSessionId,
+        expiry,
+        this.clock(),
+      );
+      throw new VoiceAccessError("SESSION_EXPIRED");
+    }
     try {
       const decision = await this.authorizer.check(
         ownerId,
@@ -271,6 +299,7 @@ export class VoiceAccessService {
       if (denial) throw new VoiceAccessError(denial);
       if (!this.providerReady(decision.entitlement.packageCode))
         throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
+      if (!renew) return session;
       return await this.ledger.renewAuthority(
         ownerId,
         voiceSessionId,
@@ -289,17 +318,18 @@ export class VoiceAccessService {
     }
   }
 
-  async reconcile(): Promise<void> {
+  async reconcile(
+    renewUnclaimed?: (session: VoiceSession) => Promise<boolean>,
+  ): Promise<void> {
     await this.ledger.reconcile(this.clock());
     const sessions = await this.ledger.reauthorizationCandidates(this.clock());
     await Promise.all(
       sessions.map(async (session) => {
         try {
-          await this.authorizeSession(
-            session.ownerId,
-            session.voiceSessionId,
-            randomUUID(),
-          );
+          const inspect = (await renewUnclaimed?.(session))
+            ? this.authorizeSession.bind(this)
+            : this.inspectSession.bind(this);
+          await inspect(session.ownerId, session.voiceSessionId, randomUUID());
         } catch (error) {
           this.telemetry(this.failure(error).code);
         }

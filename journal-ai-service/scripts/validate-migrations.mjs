@@ -197,6 +197,25 @@ assert.equal(
   voiceMigration.capacityValidator.$jsonSchema.properties.slots.maxItems,
   2,
 );
+const mediaMigration = require("../migrations/014_companion_voice_media.cjs");
+assert.equal(typeof mediaMigration.up, "function");
+assert.equal(typeof mediaMigration.down, "function");
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  mediaMigration.commandValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.properties.participantToken,
+  undefined,
+);
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.properties.transcript,
+  undefined,
+);
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 013_companion_voice_quota.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 014_companion_voice_media.cjs",
 );

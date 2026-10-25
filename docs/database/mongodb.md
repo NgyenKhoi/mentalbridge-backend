@@ -186,6 +186,65 @@ owner's recent Content progress before any minimized context is assembled.
 
 ## AI Companion Voice admission and usage collections
 
+MB-757 adds migration [`014_companion_voice_media.cjs`](../../journal-ai-service/migrations/014_companion_voice_media.cjs)
+alongside the unchanged migration 013. `ai_voice_media` and
+`ai_voice_media_commands` are Journal-owned metadata; neither contains a
+participant token, provider/user credential, audio, transcript or model text.
+
+### `ai_voice_media`
+
+One document per `voiceSessionId` (`_id`), logically referencing the existing
+Voice Session. `attemptId` binds the MB-756 dispatch fence. `dispatchId` is the
+server's logical UUID; `providerDispatchId` is the separate opaque LiveKit ID.
+`roomName`, `participantIdentity` and `agentIdentity` are AI-only opaque
+references, never Identity IDs, appointment IDs, names or emails. The approved
+agent identity is bound to the attempt. `hardStopAt` copies the immutable
+admission deadline; room/token operations cannot extend it.
+
+`phase` is one of NEW, CREATING, ROOM_READY, DISPATCHING, READY, STOPPING and
+STOPPED. A compare-and-set transition admits one creator/dispatcher across
+processes. CREATING/DISPATCHING is written before calling LiveKit. An unknown
+provider result is inspected through the same references; absence alone does
+not prove that a delayed dispatch cannot arrive. Uncertain cleanup retains its
+capacity slot. STOPPED records confirmed provider cleanup before ledger
+settlement, allowing settlement retry without another release.
+
+`claimedAt` records the first trusted worker claim. `workerSequence` and keyed
+`workerFingerprint` fence/replay the latest worker signal. `backendSequence`
+is allocated independently and monotonically for backend control envelopes.
+`lastControl` contains only the closed lease/stop response; it never contains a
+recognized turn or reply. A repeated callback cannot return an old CONTINUE
+after current authorization observes withdrawal. `expectedTurnId` and
+`expectedReplyId` are the latest opaque server-issued publication proof; MB-758
+will register them after guarded generation. Worker-supplied IDs alone do not
+commit first-publication quota.
+
+`createdAt`/`expiresAt` retain the original Voice Session creation and its
+creation-plus-30-day deadline. `updatedAt` never extends retention. Unique
+indexes protect room and logical dispatch identity; phase/expiry supports
+reconciliation. The TTL and explicit sweep delete this metadata only; they
+cannot free the MB-756 capacity singleton or clear anonymous quarantine.
+
+If a process fails between the ledger dispatch fence and metadata initialization,
+ENDING plus a transactionally verified absence of any `ai_voice_media` row is a
+`NO_MEDIA_INITIALIZATION` proof. Every creator must persist that row and freshly
+authorize before any provider effect. This internal proof cannot release an
+initialized media attempt and is never accepted from a worker/client callback.
+
+### `ai_voice_media_commands`
+
+The keyed `_id` binds authenticated owner + `connection|end` operation + command
+key; the raw key and owner bearer are absent. `operation` and `voiceSessionId`
+prevent reuse of a key for a different session. `createdAt` records command
+creation; `expiresAt` is capped by the original session metadata deadline and
+never renewed. A replay of connection reauthorizes and mints a fresh ephemeral
+token rather than persisting/replaying a token. End remains available after
+consent/entitlement loss and settles the same session once. Expiry/TTL removes
+only the command binding, never a capacity permit.
+
+Migration 014 rollback refuses any non-STOPPED media record. Disable new
+admission, reconcile all media and verify provider cleanup before rollback.
+
 Migration [`013_companion_voice_quota.cjs`](../../journal-ai-service/migrations/013_companion_voice_quota.cjs)
 owns three Journal/AI collections with closed validators. This is the MB-756
 admission and accounting foundation; it does not activate media dispatch, public

@@ -228,6 +228,36 @@ slot references are scrubbed; unresolved media leaves only an anonymous blocked 
 and random fence. Provider-verified namespace isolation is required for future
 reuse, and this foundation exposes no quarantine-clearing operation.
 
+### AI Companion Voice Media — ACTIVE
+
+Collection: `ai_voice_media`, migration 014, Journal/AI owner.
+
+One logical reference to a Voice Session/attempt, unique opaque AI room and
+logical UUID dispatch identity, separate opaque provider dispatch ID and two
+provider participant identities. It contains the immutable hard stop, bounded
+creation/dispatch/teardown phase, worker claim and independent worker/backend
+sequence fences, latest content-free control replay and latest server-issued
+turn/reply identifier proof. It contains no audio, transcript, answer, credential
+or participant-token snapshot. New media effects require both persisted mapping
+and current owner authorization. Unknown provider outcomes retain capacity;
+only confirmed cleanup permits settlement. An uninitialized ledger fence can
+be compensated only while ENDING and after transactionally proving this media
+document is absent. Such a proof cannot come from worker input.
+
+Creation and expiry follow the original session's 30-day metadata window.
+Deleting this mapping never clears a capacity permit or anonymous quarantine.
+The model has no relationship to Consultation appointments, attendance or credits.
+
+### AI Companion Voice Media Command — ACTIVE
+
+Collection: `ai_voice_media_commands`, migration 014, Journal/AI owner.
+
+Keyed owner/operation/command identity binds connection/end to one Voice Session.
+Only the digest, operation, logical session reference and creation/expiry are
+stored. Connection replay reauthorizes instead of replaying a saved token; end
+is naturally terminal/idempotent. Retention is capped by the original session
+deadline, without extension. TTL removes bindings only.
+
 ## Realtime active model
 
 ### Conversation — ACTIVE
