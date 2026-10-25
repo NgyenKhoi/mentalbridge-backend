@@ -1,4 +1,6 @@
 import SwaggerParser from "@apidevtools/swagger-parser";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +12,77 @@ const contractPath = fileURLToPath(
 );
 
 const contract = await SwaggerParser.validate(contractPath);
+
+const voiceProposalPath = new URL(
+  "../../contracts/proposals/companion-voice-v1.openapi.json",
+  import.meta.url,
+);
+const voiceProposal = JSON.parse(await readFile(voiceProposalPath, "utf8"));
+const activeVoiceContract = await SwaggerParser.parse(contractPath);
+const voiceNames = (value) =>
+  JSON.parse(
+    JSON.stringify(value)
+      .replaceAll(
+        "#/components/schemas/Eligibility",
+        "#/components/schemas/VoiceEligibility",
+      )
+      .replaceAll(
+        "#/components/schemas/Problem",
+        "#/components/schemas/VoiceProblem",
+      ),
+  );
+const sessionVoiceNames = {
+  Session: "VoiceSession",
+  Connection: "VoiceConnection",
+  EmptyCommand: "VoiceEmptyCommand",
+  AgentClaim: "VoiceAgentClaim",
+  AgentLease: "VoiceAgentLease",
+  WorkerSignal: "VoiceWorkerSignal",
+  AgentControlResponse: "VoiceAgentControlResponse",
+};
+const sessionVoiceValue = (value) => {
+  let text = JSON.stringify(voiceNames(value));
+  for (const [old, current] of Object.entries(sessionVoiceNames))
+    text = text.replaceAll(
+      `#/components/schemas/${old}`,
+      `#/components/schemas/${current}`,
+    );
+  return JSON.parse(text);
+};
+for (const [old, current] of Object.entries(sessionVoiceNames)) {
+  assert.deepEqual(
+    activeVoiceContract.components.schemas[current],
+    sessionVoiceValue(voiceProposal.components.schemas[old]),
+    `Implemented ${current} must preserve MB-755`,
+  );
+}
+assert.deepEqual(
+  activeVoiceContract.components.securitySchemes.VoiceWorkerToken,
+  voiceProposal.components.securitySchemes.VoiceWorkerToken,
+);
+for (const name of ["VoiceEligibility", "VoiceQuota", "VoiceProblem"]) {
+  assert.deepEqual(
+    activeVoiceContract.components.schemas[name],
+    voiceNames(
+      voiceProposal.components.schemas[
+        name === "VoiceEligibility"
+          ? "Eligibility"
+          : name === "VoiceProblem"
+            ? "Problem"
+            : name
+      ],
+    ),
+    `Implemented ${name} must preserve the approved MB-755 contract`,
+  );
+}
+for (const status of ["401", "403", "404", "409", "410", "422", "429", "503"]) {
+  const name = `VoiceProblem${status}`;
+  assert.deepEqual(
+    activeVoiceContract.components.responses[name],
+    voiceNames(voiceProposal.components.responses[`Problem${status}`]),
+    `Implemented ${name} must preserve the approved MB-755 contract`,
+  );
+}
 
 if (contract.openapi !== "3.1.0") {
   throw new Error("Journal/AI OpenAPI contract must use version 3.1.0");
@@ -27,6 +100,13 @@ const implementedOperations = new Set([
   "GET /health/live",
   "GET /health/ready",
   "GET /metrics",
+  "GET /api/v1/ai-companion/voice-eligibility",
+  "POST /api/v1/ai-companion/voice-sessions",
+  "GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}",
+  "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection",
+  "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end",
+  "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim",
+  "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control",
   "POST /api/v1/journals",
   "GET /api/v1/journals",
   "GET /api/v1/journals/{journalId}",
@@ -59,6 +139,34 @@ const implementedOperations = new Set([
   "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
+  [
+    "POST /api/v1/ai-companion/voice-sessions",
+    new Set(["202", "401", "403", "409", "422", "429", "503"]),
+  ],
+  [
+    "GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}",
+    new Set(["200", "401", "403", "404", "503"]),
+  ],
+  [
+    "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection",
+    new Set(["200", "401", "403", "404", "409", "410", "422", "429", "503"]),
+  ],
+  [
+    "POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end",
+    new Set(["202", "401", "403", "404", "409", "422", "503"]),
+  ],
+  [
+    "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim",
+    new Set(["200", "401", "403", "404", "409", "410", "422", "503"]),
+  ],
+  [
+    "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control",
+    new Set(["200", "401", "403", "404", "409", "410", "422", "503"]),
+  ],
+  [
+    "GET /api/v1/ai-companion/voice-eligibility",
+    new Set(["200", "401", "403", "503"]),
+  ],
   ["GET /health/live", new Set(["200"])],
   ["GET /health/ready", new Set(["200", "503"])],
   ["GET /metrics", new Set(["200"])],
