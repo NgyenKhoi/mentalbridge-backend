@@ -96,6 +96,9 @@ Under the MB-583 architecture, `Identity Service` coordinates deletion workflows
 | Frontend typecheck | **PASS** | `npm.cmd run typecheck` completed with 0 errors. |
 | Changed frontend files lint | **PASS** | Targeted ESLint completed with 0 errors and 0 warnings. |
 | Changed human-authored frontend files format | **PASS** | Targeted Prettier check completed successfully. Generated Identity artifacts remain generator-owned and were validated by `contracts:check`. |
+| Backend GitHub Actions | **PASS** | Exact HEAD `2a000dbad639754c630b92fb6db35b2146620dfe`: [Backend quality gate run 40174143545](https://github.com/NgyenKhoi/mentalbridge-backend/actions/runs/40174143545) completed successfully with **227 tests passed**, including **6/6 `RetentionTransactionIntegrationTests`** on PostgreSQL Testcontainers. |
+| Frontend GitHub Actions | **PASS** | Exact HEAD `fcad7ef37398daa79305e8376926f10644a7578b`: [Frontend quality run 40174049076](https://github.com/NgyenKhoi/mentalbridge-frontend/actions/runs/40174049076) completed successfully with **297 files / 2,127 tests passed**, plus formatting, lint, typecheck, contracts, and production build. |
+| Playwright synthetic E2E (`admin-retention-governance.spec.ts`) | **FAIL (runner teardown timeout)** | All **2/2 test bodies completed without assertion failure** and exercised policy visibility, confirmed sweep, unavailable capability, audit-safe deletion facts, Hold, and Retry. However, Playwright did not emit a final summary/exit and was terminated after a reproducible 180-second timeout (`exit 124`); this is not recorded as a clean PASS. |
 | Live cross-service deletion E2E | **NOT RUN** | No deployed authoritative external-owner workflow was available; no result is fabricated. |
 
 ### 3.0a Previous local verification (2026-10-24; historical, not rerun on current worktree)
@@ -217,7 +220,8 @@ Verified UI behaviors:
 ### 3.5 Real Database Transaction Verification Notes
 - `RetentionExecutionRecorderTransactionTests` (3 tests) and `RetentionAuditLoggerTransactionTests` (3 tests) run in Spring's test framework with dynamic transaction managers to assert `REQUIRES_NEW` commits and `REQUIRED` rollbacks.
 - `RetentionTransactionIntegrationTests` uses Testcontainers with a real PostgreSQL instance:
-  - **LATEST RUN**: **NOT RUN** because Docker/Testcontainers was unavailable in the current environment.
+  - **LATEST CI RUN**: **PASS 6/6** on exact backend HEAD `2a000dbad639754c630b92fb6db35b2146620dfe` in [Backend quality gate run 40174143545](https://github.com/NgyenKhoi/mentalbridge-backend/actions/runs/40174143545), including committed evidence-to-audit linkage.
+  - **LATEST LOCAL RUN**: **SKIPPED 6/6** because Docker/Testcontainers was unavailable locally.
   - **HISTORICAL PASS**: **5/5** verified on an earlier branch snapshot with active PostgreSQL Testcontainers.
 
 ---
@@ -230,7 +234,7 @@ Verified UI behaviors:
 | :--- | :--- | :--- |
 | **AC 1: Retention Policy Inventory & Sweep Execution** | **PASS** | Complete catalog of approved policies, versions, owners, status, last execution, and authoritative sweep execution for Identity report-artifacts with aggregate metrics; unsupported capabilities explicitly unavailable. |
 | **AC 2: Audit-Safe Fact Tracking & Privacy Guarantees** | **PASS** | Bounded tombstone hashes (`tombstone:<sha256>`), strict UUID evidence format (`audit:identity:account-deleted:<uuid>`), authoritative failure reason (`ACCOUNT_NOT_FOUND`), fail-closed to null for unapproved codes/external reasons, zero leakage of clinical journals, assessments, or chat logs. |
-| **AC 3: Gated Deletion Execution & Bounded Retries** | **PARTIAL / DEFERRED BY ARCHITECTURE** | **Delivered (Identity coordinator)**: Bounded retries (`maxRetries = 3`), schedule gating (`scheduledExecutionAt`), escalation states (`RETRY_EXHAUSTED` / `MANUAL_ESCALATION_REQUIRED`), hold blocking, retry rejected when Identity completed.<br>**Deferred by architecture**: Production deletion intake and cross-service deletion execution across external data owners (`Care`, `Consultation`, `Journal AI`, `Community`, `Content`) remain deferred because no authoritative cross-service deletion contracts or events exist. Identity does not synthesize completion. |
+| **AC 3: Gated Deletion Execution & Bounded Retries** | **PARTIAL / DEFERRED BY ARCHITECTURE** | **Delivered (Identity coordinator)**: Bounded retries (`maxRetries = 3`), schedule gating (`scheduledExecutionAt`), escalation states (`RETRY_EXHAUSTED` / `MANUAL_ESCALATION_REQUIRED`), hold blocking, retry rejected when Identity completed.<br>**Deferred by architecture**: Production deletion intake and cross-service deletion execution across external data owners (`Care`, `Consultation`, `Journal AI`, `Community`, `Content`) remain deferred because no authoritative cross-service deletion contracts or events exist. Identity does not synthesize completion.<br>**NEEDS POLICY CONFIRMATION**: `AccountEntity.markDeleted()` sets terminal `DELETED` and authentication is revoked, but the current implementation retains normalized email and password hash. MB-673/MB-583/MB-365 and checked repository policy/ADR material do not explicitly approve that Identity-field retention behavior, so no deletion-appropriateness claim is made and logic remains unchanged. |
 | **AC 4: Fail-Closed Retention Holds** | **PASS** | Coordinator-level hold enforcement (`LEGAL_HOLD`, `OPERATIONAL_HOLD`, `DISPUTE_HOLD`) blocking Identity coordination and retries; safe hold reasons enum (`STATUTORY_INQUIRY`, `PENDING_DISPUTE`, etc.); hold applied/released via dedicated endpoints. |
 | **AC 5: Explicit Unavailability for Unsupported Capabilities** | **PASS** | Policies and capabilities without authoritative execution endpoints return HTTP 422 with clear notice; frontend renders disabled buttons with descriptive hints. |
 
@@ -245,12 +249,15 @@ Verified UI behaviors:
 6. **Existing Owner-Fact Governance**: The ADMIN view and retry logic expose and govern minimized owner facts on existing deletion rows. Identity only completes its own fact; external owner facts are never fabricated.
 7. **Audit-Safe Transactions**: `RetentionAuditLogger` with `REQUIRES_NEW` propagation ensures denied audit events persist even when transactions roll back.
 8. **Contract & Fixture Alignment**: Real policy IDs, HTTP POST for holds, and valid UUIDs synchronized across backend, OpenAPI, BFF, UI, and mock fixtures.
+9. **Identity-Owned Retry Effect**: On an existing eligible deletion request, Identity moves the account to terminal `DELETED`, revokes authentication, and records its own transactional completion audit fact. This describes current behavior, not policy approval for retaining account fields.
 
 #### Deferred
 1. **Universal Hard-Delete**: Explicitly prohibited by ticket scope and architectural boundary MB-583.
 2. **Simulated Completion**: Deferred any simulated completion of external services that have not exposed authoritative retention APIs.
 3. **Production Deletion Intake and External Facts**: No production code path creates a `DeletionRequestEntity`, and no approved deletion-request/owner-completion event contract or producer/consumer was found in the checked Identity and owner-service sources. Creating requests, fan-out, and authoritative external owner completion therefore remain unavailable; this ADMIN surface only governs existing rows and does not imply a live end-to-end deletion workflow.
 4. **Manual Escalation Procedure**: Retry exhaustion is fail-closed, but no operator runbook or approved reset authority was found in the checked MB-673 evidence, Identity module documentation, or runbooks. No reset endpoint or procedure is implied by the status label.
+5. **Identity Account Field Retention Policy**: **NEEDS POLICY CONFIRMATION**. `AccountEntity.markDeleted()` does not erase or pseudonymize `email` or `passwordHash`; the checked Jira items and repository policy/ADR material do not explicitly authorize retaining those fields after terminal deletion. No deletion logic was changed without that authority.
+6. **Synthetic E2E Teardown**: The two MB-673 browser scenarios execute without assertion failures, but the local Playwright process reproducibly remains alive after the second test and times out. A clean process exit is still required before claiming the current synthetic run as PASS.
 
 ---
 
