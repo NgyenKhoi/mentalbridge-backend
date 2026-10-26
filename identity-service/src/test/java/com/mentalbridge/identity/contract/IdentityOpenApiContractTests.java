@@ -16,6 +16,7 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class IdentityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
+			"GET /internal/v1/accounts/{accountId}/authorization",
 			"POST /internal/v1/community-chat/account-authorizations",
 			"POST /api/v1/auth/registrations",
 			"POST /api/v1/auth/email-verifications",
@@ -49,6 +50,7 @@ class IdentityOpenApiContractTests {
 
 	private static final Set<String> PLANNED_OPERATIONS = Set.of();
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
+			"GET /internal/v1/accounts/{accountId}/authorization",
 			"POST /internal/v1/community-chat/account-authorizations",
 			"POST /api/v1/auth/logout",
 			"POST /api/v1/auth/logout-all",
@@ -72,6 +74,7 @@ class IdentityOpenApiContractTests {
 			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
 			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
+			Map.entry("GET /internal/v1/accounts/{accountId}/authorization", Set.of("200", "401")),
 			Map.entry("POST /internal/v1/community-chat/account-authorizations", Set.of("200", "400", "401")),
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
 			Map.entry("POST /api/v1/auth/email-verifications", Set.of("200", "400", "429")),

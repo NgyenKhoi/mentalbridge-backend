@@ -36,6 +36,10 @@ spring:
 
 mentalbridge:
   identity:
+    account-status-authorization:
+      care-service-token: ${IDENTITY_ACCOUNT_STATUS_CARE_SERVICE_TOKEN:}
+      community-service-token: ${IDENTITY_ACCOUNT_STATUS_COMMUNITY_SERVICE_TOKEN:}
+      consultation-service-token: ${IDENTITY_ACCOUNT_STATUS_CONSULTATION_SERVICE_TOKEN:}
     community-chat:
       service-token: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:}
     notification-service-token: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:}

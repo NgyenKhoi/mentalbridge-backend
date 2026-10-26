@@ -34,6 +34,8 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 
 	boolean existsByIdAndStatusNot(UUID id, AccountStatus status);
 
+	boolean existsByIdAndStatus(UUID id, AccountStatus status);
+
 	@Query("select account.id from AccountEntity account where account.id in :ids and account.status = :status")
 	List<UUID> findIdsByIdInAndStatus(@Param("ids") Collection<UUID> ids, @Param("status") AccountStatus status);
 
