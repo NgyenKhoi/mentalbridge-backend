@@ -1641,7 +1641,7 @@ describe('Database Integration', () => {
       expect(attempts.rows[0].count).toBe(2);
     });
 
-    it('terminally fails a third deferred push claim instead of stranding it as PENDING', async () => {
+    it('ends the third deferred push claim instead of stranding PENDING', async () => {
       const repository = reminderRepository();
       const appointmentId = randomUUID();
       await repository.apply(
@@ -1687,10 +1687,7 @@ describe('Database Integration', () => {
           terminal_at: new Date('2030-01-02T02:02:00.000Z'),
         },
       ]);
-      const next = await repository.claimPushDue(
-        new Date('2030-01-02T02:31:00.000Z'),
-        100,
-      );
+      const next = await repository.claimPushDue(new Date('2030-01-02T02:31:00.000Z'), 100);
       expect(next.some((row) => row.appointmentId === appointmentId)).toBe(false);
     });
 
