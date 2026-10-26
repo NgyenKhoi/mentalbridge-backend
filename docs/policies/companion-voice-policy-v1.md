@@ -255,6 +255,13 @@ and reconciliation. Provider recordings/transcripts are never an alternative
 source. MB-756 must provide the retention/deletion implementation and must not
 restore discarded content during replay or recovery.
 
+For MB-756 the Product Owner clarified that the 30-day window starts at each
+record's creation, not at call completion. Updating or settling a record never
+extends that deadline. At expiry, remove owner/session references and usage
+metadata. If provider teardown remains unconfirmed, retain only an anonymous
+quarantined capacity slot; deletion must not make an uncertain live room appear
+available. A later trusted media adapter must verify cleanup before reuse.
+
 Live enablement requires verifying provider-side no-content-retention settings
 and the disclosed processing locations. A configured AWS region alone does not
 prove single-region handling when a `global.*` Bedrock profile is used. No
