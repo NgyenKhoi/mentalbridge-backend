@@ -290,7 +290,15 @@ export class AppointmentReminderRepository {
   async retryPush(id: string, nextAttemptAt: Date, code: string, now: Date): Promise<void> {
     await this.db.query(
       `UPDATE appointment_push_reminder
-       SET state='PENDING', next_attempt_at=$2, failure_code=$3, updated_at=$4
+       SET state=CASE WHEN attempt_count<3 AND $2<scheduled_start_at
+             THEN 'PENDING' ELSE 'FAILED' END,
+           next_attempt_at=CASE WHEN attempt_count<3 AND $2<scheduled_start_at
+             THEN $2 ELSE NULL END,
+           failure_code=CASE WHEN attempt_count>=3 THEN 'RETRY_LIMIT_EXHAUSTED'
+             WHEN $2>=scheduled_start_at THEN 'APPOINTMENT_STARTED' ELSE $3 END,
+           terminal_at=CASE WHEN attempt_count<3 AND $2<scheduled_start_at
+             THEN NULL ELSE $4 END,
+           updated_at=$4
        WHERE id=$1 AND state='PROCESSING'`,
       [id, nextAttemptAt, code, now],
     );
