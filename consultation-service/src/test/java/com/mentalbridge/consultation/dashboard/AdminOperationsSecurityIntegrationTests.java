@@ -1,6 +1,7 @@
 package com.mentalbridge.consultation.dashboard;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -10,6 +11,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -21,6 +23,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.configuration.ConsultationJwtProperties;
+import com.mentalbridge.consultation.configuration.IdentityAccountStatusVerifier;
 import com.mentalbridge.consultation.configuration.SecurityConfiguration;
 import com.mentalbridge.consultation.shared.SecurityProblemSupport;
 
@@ -34,6 +37,12 @@ class AdminOperationsSecurityIntegrationTests extends ConsultationTestProperties
 
 	@MockitoBean
 	AdminOperationsService service;
+	@MockitoBean IdentityAccountStatusVerifier accountStatus;
+
+	@BeforeEach
+	void activeAccounts() {
+		when(accountStatus.isActive(any(), any())).thenReturn(true);
+	}
 
 	@Test
 	void unauthenticatedRequestReturns401() throws Exception {

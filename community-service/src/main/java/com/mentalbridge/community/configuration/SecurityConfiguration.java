@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
 import com.mentalbridge.community.shared.SecurityProblemSupport;
 
@@ -30,7 +31,7 @@ public class SecurityConfiguration {
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
 			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-			SecurityProblemSupport problems) throws Exception {
+			SecurityProblemSupport problems, IdentityAccountStatusVerifier accountStatus) throws Exception {
 		http.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
@@ -41,7 +42,9 @@ public class SecurityConfiguration {
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(problems).accessDeniedHandler(problems))
 				.oauth2ResourceServer(resourceServer -> resourceServer
 						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
-						.authenticationEntryPoint(problems));
+						.authenticationEntryPoint(problems))
+				.addFilterAfter(new AccountStatusEnforcementFilter(accountStatus, problems,
+						"/actuator/health", "/actuator/health/**"), BearerTokenAuthenticationFilter.class);
 		return http.build();
 	}
 

@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -34,6 +35,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.configuration.CareJwtProperties;
+import com.mentalbridge.care.configuration.IdentityAccountStatusVerifier;
 import com.mentalbridge.care.configuration.SecurityConfiguration;
 import com.mentalbridge.care.guidedjourney.GuidedJourneyService.EntitlementStatus;
 import com.mentalbridge.care.guidedjourney.GuidedJourneyService.JourneyView;
@@ -55,6 +57,12 @@ class HomeNextStepControllerTests extends CareTestProperties {
 	@Autowired ObjectMapper mapper;
 	@MockitoBean GuidedJourneyService journeys;
 	@MockitoBean HomeNextStepService home;
+	@MockitoBean IdentityAccountStatusVerifier accountStatus;
+
+	@BeforeEach
+	void activeAccounts() {
+		when(accountStatus.isActive(any(), any())).thenReturn(true);
+	}
 
 	@Test
 	void enforcesTheSameUserRoleBoundaryAsJourney() throws Exception {
@@ -140,7 +148,7 @@ class HomeNextStepControllerTests extends CareTestProperties {
 	void malformedSubjectAndCorrelationAreRejectedBeforeTheService() throws Exception {
 		mvc.perform(get("/api/v1/home-next-step").with(jwt().jwt(token -> token.subject("invalid-subject"))
 				.authorities(new SimpleGrantedAuthority("ROLE_USER"))))
-				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("invalid_token"));
 		mvc.perform(get("/api/v1/home-next-step").with(user(UUID.randomUUID()))
 				.header("X-Correlation-Id", "invalid-correlation"))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
