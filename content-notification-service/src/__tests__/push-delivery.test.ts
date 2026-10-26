@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AppointmentPushReminderService } from '../appointment-reminders/appointment-push-reminder.service.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import {
   ExpoPushProvider,
@@ -188,6 +189,7 @@ describe('native push delivery', () => {
           actionType: null,
           actionTargetId: null,
           attemptCount: 1,
+          appointmentReminder: null,
         },
       ]),
       isDeliverable: vi.fn(async () => true),
@@ -213,6 +215,7 @@ describe('native push delivery', () => {
       } as ServiceConfiguration,
       repository as never,
       provider,
+      { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
     );
 
     await worker.runOnce();
@@ -258,6 +261,7 @@ describe('native push delivery', () => {
       } as ServiceConfiguration,
       repository as never,
       provider,
+      { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
     );
 
     await worker.runOnce();
@@ -283,6 +287,7 @@ describe('native push delivery', () => {
           actionType: null,
           actionTargetId: null,
           attemptCount: 1,
+          appointmentReminder: null,
         },
       ]),
       isDeliverable: vi.fn(async () => false),
@@ -301,11 +306,123 @@ describe('native push delivery', () => {
       } as ServiceConfiguration,
       repository as never,
       provider,
+      { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
     );
 
     await worker.runOnce();
 
     expect(repository.suppressClaim).toHaveBeenCalledWith('attempt-1', 'NOTIFICATION_UNAVAILABLE');
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it('does not call Expo when the appointment starts during Consultation reauthorization', async () => {
+    const encrypted = new PushTokenCrypto(encryptionKey).encrypt(
+      'ExponentPushToken[appointment-cutoff-race]',
+    );
+    let current = new Date('2026-10-24T02:59:59.000Z');
+    const ownerId = '10000000-0000-4000-8000-000000000001';
+    const appointmentId = '20000000-0000-4000-8000-000000000002';
+    const scheduledStartAt = new Date('2026-10-24T03:00:00.000Z');
+    const reminderService = new AppointmentPushReminderService(
+      { CONTENT_PUSH_DELIVERY_ENABLED: true } as never,
+      {
+        reconcilePushLeases: vi.fn(async () => 0),
+        claimPushDue: vi.fn(async () => []),
+      } as never,
+      {
+        get: vi.fn(async () => ({
+          notificationsEnabled: true,
+          channels: { inApp: true, email: false, push: true },
+          contentGroups: {
+            journalReminder: true,
+            emotionCheckIn: true,
+            streakMilestone: true,
+            screeningReassessment: true,
+            appointmentMessage: true,
+            resourceSystem: true,
+            communityInteraction: true,
+          },
+          quietHours: {
+            enabled: false,
+            start: '22:00',
+            end: '07:00',
+            timeZone: 'Asia/Ho_Chi_Minh',
+          },
+          email: {
+            cadence: 'DAILY_DIGEST',
+            wellbeingDigestEnabled: false,
+            resourceRemindersEnabled: false,
+            appointmentRemindersEnabled: false,
+          },
+          version: 1,
+          updatedAt: current.toISOString(),
+        })),
+      } as never,
+      {
+        get: vi.fn(async () => {
+          current = new Date('2026-10-24T03:00:02.000Z');
+          return {
+            appointmentId,
+            ownerAccountId: ownerId,
+            version: 4,
+            status: 'CONFIRMED',
+            scheduledStartAt: scheduledStartAt.toISOString(),
+            modality: 'IN_APP_VIDEO' as const,
+            eligible: true,
+          };
+        }),
+      },
+      { now: () => current },
+    );
+    const repository = {
+      materializeCandidates: vi.fn(async () => 0),
+      settleIneligible: vi.fn(),
+      claim: vi.fn(async () => [
+        {
+          id: 'attempt-cutoff-race',
+          deviceId: 'device-1',
+          tokenCiphertext: encrypted.ciphertext,
+          tokenIv: encrypted.iv,
+          tokenAuthTag: encrypted.authTag,
+          title: 'MentalBridge',
+          notificationId: '30000000-0000-4000-8000-000000000003',
+          actionType: 'OPEN_APPOINTMENT',
+          actionTargetId: appointmentId,
+          attemptCount: 1,
+          appointmentReminder: {
+            recipientId: ownerId,
+            appointmentId,
+            appointmentVersion: 4,
+            modality: 'IN_APP_VIDEO' as const,
+            scheduledStartAt,
+          },
+        },
+      ]),
+      isDeliverable: vi.fn(async () => true),
+      suppressClaim: vi.fn(),
+      claimReceipts: vi.fn(async () => []),
+    };
+    const provider = { send: vi.fn(), getReceipts: vi.fn() };
+    const worker = new PushDeliveryWorker(
+      {
+        ...configuration,
+        CONTENT_PUSH_DELIVERY_ENABLED: true,
+        CONTENT_PUSH_DELIVERY_BATCH_SIZE: 10,
+        CONTENT_PUSH_DELIVERY_INTERVAL_MS: 60_000,
+        CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS: 900,
+        CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS: 300,
+      } as ServiceConfiguration,
+      repository as never,
+      provider,
+      reminderService,
+    );
+
+    await worker.runOnce();
+
+    expect(repository.suppressClaim).toHaveBeenCalledWith(
+      'attempt-cutoff-race',
+      'APPOINTMENT_STARTED',
+    );
     expect(provider.send).not.toHaveBeenCalled();
   });
 });

@@ -305,7 +305,8 @@ CREATE TABLE content.notification (
         ) AND action_target_id IS NULL)
         OR (action_type IN (
             'OPEN_RESOURCE', 'OPEN_COMMUNITY_POST', 'OPEN_SUPPORT_GUIDE',
-            'OPEN_COMMUNITY_CONVERSATION', 'OPEN_COMMUNITY_REQUEST', 'OPEN_COMMUNITY_INVITATION'
+            'OPEN_COMMUNITY_CONVERSATION', 'OPEN_COMMUNITY_REQUEST', 'OPEN_COMMUNITY_INVITATION',
+            'OPEN_APPOINTMENT'
         ) AND action_target_id IS NOT NULL)
     )
 );
@@ -350,6 +351,29 @@ CREATE TABLE content.appointment_email_reminder (
     failure_code varchar(64),
     delivered_at timestamptz,
     invalidated_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (recipient_id, appointment_id, appointment_version)
+);
+
+CREATE TABLE content.appointment_push_reminder (
+    id uuid PRIMARY KEY,
+    recipient_id uuid NOT NULL, -- external -> identity.account.id
+    appointment_id uuid NOT NULL, -- external -> consultation.appointment.id
+    appointment_version bigint NOT NULL,
+    modality varchar(24) NOT NULL,
+    scheduled_start_at timestamptz NOT NULL,
+    target_at timestamptz NOT NULL,
+    due_at timestamptz NOT NULL,
+    state varchar(20) NOT NULL,
+    attempt_count smallint NOT NULL,
+    first_attempt_at timestamptz,
+    last_attempt_at timestamptz,
+    next_attempt_at timestamptz,
+    notification_id uuid REFERENCES content.notification(id),
+    failure_code varchar(64),
+    invalidated_at timestamptz,
+    terminal_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (recipient_id, appointment_id, appointment_version)

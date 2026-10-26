@@ -124,6 +124,7 @@ import {
   AppointmentStatusProjector,
 } from './appointment-reminders/appointment-status.consumer.js';
 import { AppointmentReminderScheduler } from './appointment-reminders/appointment-reminder.scheduler.js';
+import { AppointmentPushReminderService } from './appointment-reminders/appointment-push-reminder.service.js';
 import { SpecialistAppointmentNotificationRepository } from './appointment-reminders/specialist-appointment-notification.repository.js';
 import {
   CommunityInteractionConsumer,
@@ -351,6 +352,7 @@ export const createAppModule = (
       SpecialistAppointmentNotificationRepository,
       AppointmentStatusConsumer,
       AppointmentReminderScheduler,
+      AppointmentPushReminderService,
       CommunityNotificationRepository,
       CommunityNotificationJobs,
       CommunityNotificationClient,

@@ -349,6 +349,32 @@ rendered body.
 | `delivered_at`, `invalidated_at` | Terminal outcome instants. |
 | `created_at`, `updated_at` | Owner-local audit timestamps. |
 
+### `content.appointment_push_reminder`
+
+Content/Notification-owned scheduling intent for one exact confirmed
+appointment version before it becomes the single durable inbox fact used for
+native device fanout. It stores no provider token, specialist identity,
+consultation content or health data.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal UUID used to claim one scheduled materialization. |
+| `recipient_id` | External Identity USER owner; part of the logical reminder identity and rechecked against Consultation. |
+| `appointment_id` | External opaque Consultation appointment UUID and safe action target; it grants no authorization by itself. |
+| `appointment_version` | Exact confirmed aggregate version; a newer event invalidates the intent and any unsent device attempts. |
+| `modality` | Minimized `IN_APP_CHAT` or `IN_APP_VIDEO` fact used only for exact owner-truth comparison. |
+| `scheduled_start_at` | Authoritative UTC appointment start and strict delivery expiry. |
+| `target_at` | Exact start-minus-60-minutes policy instant inherited from the approved appointment reminder policy. |
+| `due_at` | Current UTC candidate, using now only for late confirmation before start and quiet-hour deferral otherwise. |
+| `state` | `PENDING`/`PROCESSING` materialization work or terminal `MATERIALIZED`, `INVALIDATED`, `SUPPRESSED`, `FAILED`, or `EXPIRED`. |
+| `attempt_count` | Bounded dependency/materialization attempts, constrained to at most three; provider attempts remain separate. |
+| `first_attempt_at`, `last_attempt_at`, `next_attempt_at` | UTC claim and bounded retry/quiet-hour deferral evidence. |
+| `notification_id` | Nullable physical reference to the one authoritative minimized inbox fact after successful materialization. |
+| `failure_code` | Safe coarse reason such as disabled preference, owner dependency outage, lifecycle invalidation, quiet-hour suppression, or expiry. |
+| `invalidated_at` | UTC instant a newer Consultation version made this intent stale. |
+| `terminal_at` | UTC audit instant for every terminal materialized, invalidated, suppressed, failed, or expired outcome. |
+| `created_at`, `updated_at` | Immutable insertion and latest persisted state-change instants in UTC. |
+
 ### `content.appointment_reminder_checkpoint`
 
 Latest consumed Consultation version per appointment. It prevents delayed or
