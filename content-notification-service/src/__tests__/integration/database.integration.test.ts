@@ -1653,7 +1653,7 @@ describe('Database Integration', () => {
         ['2030-01-02T02:00:00.000Z', '2030-01-02T02:01:00.000Z'],
         ['2030-01-02T02:01:00.000Z', '2030-01-02T02:02:00.000Z'],
         ['2030-01-02T02:02:00.000Z', '2030-01-02T02:30:00.000Z'],
-      ]) {
+      ] as const) {
         const claimTime = new Date(claimAt);
         const reminder = (await repository.claimPushDue(claimTime, 100)).find(
           (row) => row.appointmentId === appointmentId,
@@ -1687,7 +1687,10 @@ describe('Database Integration', () => {
           terminal_at: new Date('2030-01-02T02:02:00.000Z'),
         },
       ]);
-      const next = await repository.claimPushDue(new Date('2030-01-02T02:31:00.000Z'), 100);
+      const next = await repository.claimPushDue(
+        new Date('2030-01-02T02:31:00.000Z'),
+        100,
+      );
       expect(next.some((row) => row.appointmentId === appointmentId)).toBe(false);
     });
 
