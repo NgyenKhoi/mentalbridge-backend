@@ -1641,6 +1641,56 @@ describe('Database Integration', () => {
       expect(attempts.rows[0].count).toBe(2);
     });
 
+    it('terminally fails a third deferred push claim instead of stranding it as PENDING', async () => {
+      const repository = reminderRepository();
+      const appointmentId = randomUUID();
+      await repository.apply(
+        statusEvent(appointmentId, 1, 'CONFIRMED'),
+        new Date('2030-01-01T00:00:00.000Z'),
+      );
+
+      for (const [claimAt, retryAt] of [
+        ['2030-01-02T02:00:00.000Z', '2030-01-02T02:01:00.000Z'],
+        ['2030-01-02T02:01:00.000Z', '2030-01-02T02:02:00.000Z'],
+        ['2030-01-02T02:02:00.000Z', '2030-01-02T02:30:00.000Z'],
+      ]) {
+        const claimTime = new Date(claimAt);
+        const reminder = (await repository.claimPushDue(claimTime, 100)).find(
+          (row) => row.appointmentId === appointmentId,
+        );
+        expect(reminder).toBeDefined();
+        await repository.retryPush(
+          reminder!.id,
+          new Date(retryAt),
+          'QUIET_HOURS_DEFERRED',
+          claimTime,
+        );
+      }
+
+      const result = await pool.query<{
+        state: string;
+        attempt_count: number;
+        failure_code: string;
+        next_attempt_at: Date | null;
+        terminal_at: Date | null;
+      }>(
+        `SELECT state, attempt_count, failure_code, next_attempt_at, terminal_at
+         FROM appointment_push_reminder WHERE appointment_id=$1`,
+        [appointmentId],
+      );
+      expect(result.rows).toEqual([
+        {
+          state: 'FAILED',
+          attempt_count: 3,
+          failure_code: 'RETRY_LIMIT_EXHAUSTED',
+          next_attempt_at: null,
+          terminal_at: new Date('2030-01-02T02:02:00.000Z'),
+        },
+      ]);
+      const next = await repository.claimPushDue(new Date('2030-01-02T02:31:00.000Z'), 100);
+      expect(next.some((row) => row.appointmentId === appointmentId)).toBe(false);
+    });
+
     it('terminally reconciles a crashed final processing lease without another claim', async () => {
       const repository = reminderRepository();
       const appointmentId = '24000000-0000-4000-8000-000000000040';
