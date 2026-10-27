@@ -16,7 +16,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -31,7 +30,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.configuration.CareJwtProperties;
-import com.mentalbridge.care.configuration.IdentityAccountStatusVerifier;
 import com.mentalbridge.care.configuration.SecurityConfiguration;
 import com.mentalbridge.care.configuration.VoiceConsentSecurityConfiguration;
 import com.mentalbridge.care.shared.SecurityProblemSupport;
@@ -50,12 +48,6 @@ class VoiceConsentControllerTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired ObjectMapper mapper;
 	@MockitoBean VoiceConsentService service;
-	@MockitoBean IdentityAccountStatusVerifier accountStatus;
-
-	@BeforeEach
-	void activeAccounts() {
-		when(accountStatus.isActive(any(), any())).thenReturn(true);
-	}
 
 	@Test
 	void publicVoiceEndpointsRequireUserAndReturnClosedNoStoreSecurityProblems() throws Exception {

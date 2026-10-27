@@ -1,18 +1,33 @@
 package com.mentalbridge.consultation;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.mentalbridge.consultation.configuration.IdentityAccountStatusVerifier;
 
 public abstract class ConsultationTestProperties {
 
 	protected static final String EVIDENCE_SERVICE_TOKEN = "test-consultation-evidence-token-32-characters";
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+
+	@MockitoBean
+	protected IdentityAccountStatusVerifier accountStatusVerifier;
+
+	@BeforeEach
+	protected void defaultActiveAccountStatus() {
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
+	}
 
 	static {
 		System.setProperty("user.timezone", "UTC");

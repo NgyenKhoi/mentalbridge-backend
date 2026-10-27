@@ -7,7 +7,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -34,7 +33,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.configuration.ConsultationJwtProperties;
-import com.mentalbridge.consultation.configuration.IdentityAccountStatusVerifier;
 import com.mentalbridge.consultation.configuration.SecurityConfiguration;
 import com.mentalbridge.consultation.shared.SecurityProblemSupport;
 
@@ -57,13 +55,11 @@ class VoiceEntitlementControllerTests extends ConsultationTestProperties {
 	@Autowired MockMvc mvc;
 	@MockitoBean CurrentServiceEntitlementRepository repository;
 	@MockitoBean Clock clock;
-	@MockitoBean IdentityAccountStatusVerifier accountStatus;
 
 	@BeforeEach
 	void setup() {
 		reset(repository, clock);
 		when(clock.instant()).thenReturn(NOW);
-		when(accountStatus.isActive(any(), any())).thenReturn(true);
 	}
 
 	@Test

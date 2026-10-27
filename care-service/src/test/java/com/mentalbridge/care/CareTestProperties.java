@@ -1,15 +1,30 @@
 package com.mentalbridge.care;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.mentalbridge.care.configuration.IdentityAccountStatusVerifier;
 
 public abstract class CareTestProperties {
 
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+
+	@MockitoBean
+	protected IdentityAccountStatusVerifier accountStatusVerifier;
+
+	@BeforeEach
+	protected void defaultActiveAccountStatus() {
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
+	}
 
 	@DynamicPropertySource
 	static void careProperties(DynamicPropertyRegistry properties) {

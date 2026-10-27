@@ -18,7 +18,6 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -35,7 +34,6 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.configuration.CareJwtProperties;
-import com.mentalbridge.care.configuration.IdentityAccountStatusVerifier;
 import com.mentalbridge.care.configuration.SecurityConfiguration;
 import com.mentalbridge.care.guidedjourney.GuidedJourneyService.EntitlementStatus;
 import com.mentalbridge.care.guidedjourney.GuidedJourneyService.JourneyView;
@@ -57,12 +55,6 @@ class HomeNextStepControllerTests extends CareTestProperties {
 	@Autowired ObjectMapper mapper;
 	@MockitoBean GuidedJourneyService journeys;
 	@MockitoBean HomeNextStepService home;
-	@MockitoBean IdentityAccountStatusVerifier accountStatus;
-
-	@BeforeEach
-	void activeAccounts() {
-		when(accountStatus.isActive(any(), any())).thenReturn(true);
-	}
 
 	@Test
 	void enforcesTheSameUserRoleBoundaryAsJourney() throws Exception {

@@ -1,15 +1,30 @@
 package com.mentalbridge.community;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.mentalbridge.community.configuration.IdentityAccountStatusVerifier;
 
 public abstract class CommunityTestProperties {
 
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+
+	@MockitoBean
+	protected IdentityAccountStatusVerifier accountStatusVerifier;
+
+	@BeforeEach
+	protected void defaultActiveAccountStatus() {
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
+	}
 
 	static KeyPair jwtKeyPair() {
 		return JWT_KEY_PAIR;
