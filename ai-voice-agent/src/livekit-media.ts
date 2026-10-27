@@ -15,6 +15,7 @@ import {
   TrackKind,
   TrackSource,
   type RemoteParticipant,
+  type RemoteTrackPublication,
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
 import type { Dispatch } from "./contract.js";
@@ -38,7 +39,7 @@ export const sessionOptions = {
 export const startOptions = {
   record: false,
   inputOptions: {
-    audioEnabled: false,
+    audioEnabled: true,
     textEnabled: false,
     videoEnabled: false,
     closeOnDisconnect: false,
@@ -50,6 +51,19 @@ export const startOptions = {
     syncTranscription: false,
   },
 };
+export function microphoneSubscriptions(
+  publications: Iterable<
+    Pick<RemoteTrackPublication, "kind" | "source" | "setSubscribed">
+  >,
+  enabled: boolean,
+) {
+  for (const publication of publications)
+    publication.setSubscribed(
+      enabled &&
+        publication.kind === TrackKind.KIND_AUDIO &&
+        publication.source === TrackSource.SOURCE_MICROPHONE,
+    );
+}
 export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
   return new TransformStream<
     stt.SpeechEvent | string,
@@ -135,6 +149,7 @@ export class LiveKitMedia implements MediaPort {
   private callbacks: MediaCallbacks | undefined;
   private owner: string | undefined;
   private closed = false;
+  private inputEnabled = false;
   private readonly cleanup: (() => void)[] = [];
   constructor(
     private readonly context: JobContext,
@@ -176,6 +191,7 @@ export class LiveKitMedia implements MediaPort {
         return;
       }
       if (person) this.owner = person.identity;
+      this.input(this.inputEnabled);
     };
     context.room.on(RoomEvent.ParticipantConnected, guard);
     context.room.on(RoomEvent.TrackPublished, guard);
@@ -242,6 +258,7 @@ export class LiveKitMedia implements MediaPort {
       stt: sttModel,
       tts: ttsModel,
     });
+    this.session.input.setAudioEnabled(false);
     this.agent = voice.Agent.create({
       instructions: "",
       llm: null,
@@ -314,7 +331,15 @@ export class LiveKitMedia implements MediaPort {
     );
   }
   input(enabled: boolean) {
-    this.session?.input.setAudioEnabled(enabled && !this.closed);
+    this.inputEnabled = enabled && !this.closed;
+    this.session?.input.setAudioEnabled(this.inputEnabled);
+    const participant = this.owner
+      ? this.context.room.remoteParticipants.get(this.owner)
+      : undefined;
+    microphoneSubscriptions(
+      participant?.trackPublications.values() ?? [],
+      this.inputEnabled,
+    );
   }
   private isClosed() {
     return this.closed;

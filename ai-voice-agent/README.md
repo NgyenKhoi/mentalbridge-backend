@@ -98,6 +98,11 @@ room metadata is the logical dispatch UUID, and the accepted agent identity is
 `va-ATTEMPT_UUID`. Journal must accept `agent-claim` before connecting. Subscribe
 to one standard `vu-UUID` microphone participant only, no video/screens/data/text,
 and reject recorded, consultation, extra-participant or changed-owner rooms.
+RoomIO creates an audio input but it is detached before session startup. Only
+after `MEDIA_READY` acknowledgement does the worker attach it and explicitly
+subscribe the owner's microphone. Mute/disconnect/end detach and unsubscribe;
+newly published owner tracks follow the same gate. This is distinct from
+`inputOptions.audioEnabled:false`, which omits the SDK input permanently.
 
 Every job owns one session and current-turn RAM. Silero VAD is CPU-local and
 ships its model with the plugin. Endpointing plus a 1.5-second final-segment

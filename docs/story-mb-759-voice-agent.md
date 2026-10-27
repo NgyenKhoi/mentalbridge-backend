@@ -55,7 +55,7 @@ Authored tests:
 `ai-voice-agent/src/voice-worker.test.ts`,
 `ai-voice-agent/src/livekit-media.test.ts`.
 
-- `npm test` in `ai-voice-agent/`: **19 passed**, no skipped tests; local HTTP plus
+- `npm test` in `ai-voice-agent/`: **21 passed**, no skipped tests; local HTTP plus
   fake LiveKit/STT/TTS/Journal boundaries, no account calls.
 - `npm run format:check`, `lint`, `typecheck`, `build`, `contract:check` and
   `migration:check`: passed locally. Consumer bounds/authentication track the
@@ -68,6 +68,10 @@ Authored tests:
   preservation/paired-change rules. Exact remote results are recorded in the PR.
 - The worker is added to the existing quality-gate Node matrix; its image build
   also runs without credentials. Existing test/gate behavior is retained.
+- SDK regression coverage creates a real local RoomIO/AgentInput without a room
+  connection: the input exists while detached, explicitly subscribes only the
+  authorized microphone after readiness, and detaches/unsubscribes on mute. An
+  initial unmuted event cannot bypass pending `MEDIA_READY` acknowledgement.
 - Integrator approved MB-759 before overlapping #233. Its owner must refresh dev
   and preserve both independent additions to `quality-gate.yml` before merge.
 

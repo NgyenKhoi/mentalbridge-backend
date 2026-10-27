@@ -70,6 +70,7 @@ export class VoiceWorker {
   private nextHeartbeat = 0;
   private renewing = false;
   private busy = false;
+  private ready = false;
   private connected = true;
   private muted = false;
   private reconnectUntil = 0;
@@ -123,6 +124,7 @@ export class VoiceWorker {
       });
       await this.control("MEDIA_READY", {});
       if (!this.live()) throw new AgentFailure("AUTHORITY_EXPIRED");
+      this.ready = true;
       this.media.input(this.connected && !this.muted);
       this.setState(
         this.connected ? (this.muted ? "MUTED" : "LISTENING") : "DISCONNECTED",
@@ -181,7 +183,7 @@ export class VoiceWorker {
     return work;
   }
   receive(value: Transcript) {
-    if (!this.live() || !this.connected || this.muted) return;
+    if (!this.ready || !this.live() || !this.connected || this.muted) return;
     const text = value.text.trim();
     if (!text) return;
     if (
@@ -366,9 +368,10 @@ export class VoiceWorker {
     this.muted = value;
     this.pending = "";
     this.media.clearInput();
-    this.media.input(this.live() && this.connected && !value);
+    this.media.input(this.ready && this.live() && this.connected && !value);
     if (value && this.speaking) await this.bargeIn();
-    if (!this.life.signal.aborted) this.setState(value ? "MUTED" : "LISTENING");
+    if (this.ready && !this.life.signal.aborted)
+      this.setState(value ? "MUTED" : "LISTENING");
   }
   private async connection(value: boolean) {
     if (this.life.signal.aborted || value === this.connected) return;
@@ -392,8 +395,10 @@ export class VoiceWorker {
     try {
       await this.control("HEARTBEAT", { observedState: "RECONNECTING" });
       if (this.live()) {
-        this.media.input(!this.muted);
-        this.setState(this.muted ? "MUTED" : "LISTENING");
+        this.media.input(this.ready && !this.muted);
+        this.setState(
+          this.ready ? (this.muted ? "MUTED" : "LISTENING") : "CONNECTING",
+        );
       }
     } catch {
       await this.stop("AUTHORIZATION_EXPIRED", false);
@@ -408,6 +413,7 @@ export class VoiceWorker {
     const lease = this.lease;
     const notifyAllowed = notify && this.live();
     this.setState("ENDING");
+    this.ready = false;
     this.pending = "";
     this.seen.clear();
     this.lastEcho = "";

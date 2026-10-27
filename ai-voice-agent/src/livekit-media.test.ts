@@ -13,7 +13,61 @@ import {
 } from "./livekit-media.js";
 import { DispatchAdmission, run } from "./main.js";
 import { agentName } from "./contract.js";
+import { Room as RtcRoom, TrackKind, TrackSource } from "@livekit/rtc-node";
+import { initializeLogger } from "@livekit/agents";
+import { microphoneSubscriptions } from "./livekit-media.js";
 import type { Transcript } from "./voice-worker.js";
+
+void test("pinned SDK creates an input while detached, then subscribes only the authorized microphone", async () => {
+  initializeLogger({ pretty: false, level: "silent" });
+  const room = new RtcRoom();
+  const session = new voice.AgentSession(sessionOptions);
+  session.input.setAudioEnabled(false);
+  const io = new voice.RoomIO({
+    room,
+    agentSession: session,
+    inputOptions: startOptions.inputOptions,
+    outputOptions: { ...startOptions.outputOptions, audioEnabled: false },
+  });
+  io.start();
+  try {
+    const input = session.input.audio;
+    assert.ok(input, "audioEnabled:false would omit RoomIO input permanently");
+    assert.equal(session.input.audioEnabled, false);
+    const attached: boolean[] = [];
+    input.setAttached = (enabled) => {
+      attached.push(enabled);
+    };
+    session.input.setAudioEnabled(true);
+    session.input.setAudioEnabled(false);
+    assert.deepEqual(attached, [true, false]);
+    const subscriptions: boolean[][] = [[], [], []];
+    const publications = [
+      { kind: TrackKind.KIND_AUDIO, source: TrackSource.SOURCE_MICROPHONE },
+      { kind: TrackKind.KIND_VIDEO, source: TrackSource.SOURCE_CAMERA },
+      {
+        kind: TrackKind.KIND_AUDIO,
+        source: TrackSource.SOURCE_SCREENSHARE_AUDIO,
+      },
+    ].map((value, index) => ({
+      ...value,
+      setSubscribed: (enabled: boolean) => {
+        subscriptions[index]?.push(enabled);
+      },
+    }));
+    microphoneSubscriptions(publications, false);
+    microphoneSubscriptions(publications, true);
+    microphoneSubscriptions(publications, false);
+    assert.deepEqual(subscriptions, [
+      [false, true, false],
+      [false, false, false],
+      [false, false, false],
+    ]);
+  } finally {
+    await io.close();
+    await room.disconnect();
+  }
+});
 
 void test("SDK stream sends final/interim only to coordinator and removes transcript from SDK history", async () => {
   const received: Transcript[] = [];

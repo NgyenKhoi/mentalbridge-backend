@@ -51,6 +51,7 @@ function fixture() {
   let generation: Promise<void> | undefined;
   let play: Promise<void> | undefined;
   let publication: Promise<void> | undefined;
+  let readiness: Promise<void> | undefined;
   let playingReject: ((error: Error) => void) | undefined;
   const journal: Pick<JournalClient, "claim" | "control" | "turn"> = {
     claim: () =>
@@ -100,6 +101,8 @@ function fixture() {
               },
             },
           };
+      if (signal.kind === "MEDIA_READY" && readiness)
+        return readiness.then(() => value);
       return signal.kind === "PLAYBACK_STARTED" && publication
         ? publication.then(() => value)
         : Promise.resolve(value);
@@ -133,6 +136,7 @@ function fixture() {
   const media: MediaPort = {
     start: (value) => {
       callbacks = value;
+      callbacks.muted(false);
       return Promise.resolve();
     },
     input: (value) => {
@@ -231,6 +235,9 @@ function fixture() {
     publication: (value: Promise<void>) => {
       publication = value;
     },
+    readiness: (value: Promise<void>) => {
+      readiness = value;
+    },
   };
 }
 
@@ -266,6 +273,21 @@ void test("claims before audio and aggregates final Vietnamese segments, ignorin
   assert.equal(f.worker.state, "ENDED");
   await f.worker.stop("USER_ENDED");
   assert.equal(f.closes(), 1);
+});
+
+void test("initial unmuted event cannot enable input or accept STT before MEDIA_READY acknowledgement", async () => {
+  const f = fixture();
+  const gate = hold();
+  f.readiness(gate.wait);
+  const startup = f.start();
+  await flush();
+  assert.equal(f.input(), false);
+  f.emit("Không được nhận trước quyền media");
+  assert.equal(f.turns.length, 0);
+  gate.release();
+  await startup;
+  assert.equal(f.input(), true);
+  await f.worker.stop("USER_ENDED");
 });
 
 void test("barge-in before publication acknowledgement still reports one interruption after the trusted start", async () => {
