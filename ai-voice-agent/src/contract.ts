@@ -131,7 +131,8 @@ export function parseDispatch(input: {
     if (
       input.agentName !== agentName ||
       input.metadata.length > 512 ||
-      !/^ai-voice-[0-9a-f-]{36}$/u.test(input.roomName) ||
+      !input.roomName.startsWith("ai-voice-") ||
+      !z.uuid().safeParse(input.roomName.slice(9)).success ||
       input.recording
     )
       throw new AgentFailure("DISPATCH_INVALID");

@@ -21,6 +21,47 @@ const configuration = () =>
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
   });
+void test("Journal HTTP timeout/refusal/malformed responses fail closed without retry", async () => {
+  let calls = 0;
+  let mode = "timeout";
+  const server = createServer((_req, response) => {
+    calls++;
+    if (mode === "timeout") return;
+    response.setHeader("content-type", "application/json");
+    response.setHeader("cache-control", "no-store");
+    response.end(
+      mode === "oversize" ? "x".repeat(17000) : "{broken-private-payload",
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient({
+    ...configuration(),
+    journalUrl: `http://127.0.0.1:${String(address.port)}`,
+  });
+  try {
+    for (const next of ["timeout", "malformed", "oversize"]) {
+      mode = next;
+      await assert.rejects(
+        client.claim(dispatch),
+        (error) =>
+          error instanceof AgentFailure &&
+          error.message === "JOURNAL_UNAVAILABLE",
+      );
+    }
+    assert.equal(calls, 3);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
+  await assert.rejects(client.claim(dispatch), AgentFailure);
+  assert.equal(calls, 3);
+});
 void test("configuration is disabled by default and never leaks unsafe setup values", () => {
   assert.equal(configuration().enabled, false);
   for (const environment of [
