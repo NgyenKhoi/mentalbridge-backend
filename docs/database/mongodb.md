@@ -245,6 +245,38 @@ only the command binding, never a capacity permit.
 Migration 014 rollback refuses any non-STOPPED media record. Disable new
 admission, reconcile all media and verify provider cleanup before rollback.
 
+### MB-758 voice generation fences
+
+Migration [`015_companion_voice_turn_fences.cjs`](../../journal-ai-service/migrations/015_companion_voice_turn_fences.cjs)
+extends the existing `ai_voice_media_commands` aggregate with a closed `turn`
+variant; legacy connection/end records remain valid without rewriting 014.
+No new collection or content store is introduced. `_id` is a keyed owner/turn
+command digest, never the raw command key. The turn variant adds `attemptId`,
+`turnId`, increasing `sequence`, process-RAM `contextId`, keyed normalized intent
+`fingerprint` and pinned provider-route/version `routeHash`. `voiceSessionId`
+continues to reference the admitted session; no worker-supplied owner is stored.
+
+Unique partial indexes on session/sequence and session/turn ID admit one provider
+effect across processes. A claim is inserted before generation, never retried
+as fresh work after an unknown result. A previous context fence cannot be claimed
+by another RAM context after restart or replica routing. Only an exact live
+in-memory latest reply can replay; old/missing RAM returns stale/conflict without
+model work. This is a side-effect fence, not a transcript or response snapshot.
+
+`createdAt` records turn admission; `expiresAt` is the original Voice Session's
+creation-plus-30-day deadline, never turn time plus a renewed window. The existing
+TTL and explicit command sweep delete expired fences. The records contain no
+transcript, recognized text, reply, prompt, token, audio or history. Dialogue and
+the latest reply exist only in bounded RAM and are discarded on stop, failure,
+expiry, revocation or shutdown. Generation does not consume AI Text quota or
+commit first-spoken-reply Voice usage; existing media publication evidence does.
+
+For rollback, disable admission, stop sessions and the old/new turn handlers,
+then allow fences to expire or use a separately reviewed, owner-scoped cleanup
+after confirmed teardown. Down refuses any surviving turn fence, drops only its
+two partial indexes and restores the 014 command validator; it never drops the
+shared command collection or silently deletes replay protection.
+
 Migration [`013_companion_voice_quota.cjs`](../../journal-ai-service/migrations/013_companion_voice_quota.cjs)
 owns three Journal/AI collections with closed validators. This is the MB-756
 admission and accounting foundation; it does not activate media dispatch, public

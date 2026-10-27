@@ -198,6 +198,7 @@ export interface ProviderReply {
   message: string;
   inputTokens: number;
   outputTokens: number;
+  usageSource?: "PROVIDER" | "ESTIMATED";
 }
 
 export const companionMaxOutputTokens = 2_000;
@@ -274,7 +275,7 @@ export interface ChatProvider {
   reply(
     userMessage: string,
     context: MinimizedContext,
-    route: ChatRoute,
+    route: Pick<ChatRoute, "provider" | "model">,
     options?: { signal?: AbortSignal; voice?: boolean },
   ): Promise<ProviderReply>;
 }
@@ -1175,7 +1176,7 @@ export class RoutedChatProvider implements ChatProvider {
   async reply(
     userMessage: string,
     context: MinimizedContext,
-    route: ChatRoute,
+    route: Pick<ChatRoute, "provider" | "model">,
     options?: { signal?: AbortSignal; voice?: boolean },
   ) {
     options?.signal?.throwIfAborted();
@@ -1402,6 +1403,14 @@ export class RoutedChatProvider implements ChatProvider {
       inputTokens:
         inputTokens ?? Math.ceil((system.length + userMessage.length) / 4),
       outputTokens: outputTokens ?? Math.ceil(normalized.length / 4),
+      ...(options?.voice
+        ? {
+            usageSource:
+              inputTokens !== null && outputTokens !== null
+                ? ("PROVIDER" as const)
+                : ("ESTIMATED" as const),
+          }
+        : {}),
     };
   }
 }

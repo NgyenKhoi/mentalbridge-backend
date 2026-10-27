@@ -32,6 +32,8 @@ const voiceNames = (value) =>
       ),
   );
 const sessionVoiceNames = {
+  VoiceTurn: "VoiceTurn",
+  VoiceReply: "VoiceReply",
   Session: "VoiceSession",
   Connection: "VoiceConnection",
   EmptyCommand: "VoiceEmptyCommand",
@@ -75,7 +77,17 @@ for (const name of ["VoiceEligibility", "VoiceQuota", "VoiceProblem"]) {
     `Implemented ${name} must preserve the approved MB-755 contract`,
   );
 }
-for (const status of ["401", "403", "404", "409", "410", "422", "429", "503"]) {
+for (const status of [
+  "401",
+  "403",
+  "404",
+  "409",
+  "410",
+  "422",
+  "429",
+  "503",
+  "504",
+]) {
   const name = `VoiceProblem${status}`;
   assert.deepEqual(
     activeVoiceContract.components.responses[name],
@@ -97,6 +109,7 @@ if (contract.paths["/v1/journals"]) {
 }
 
 const implementedOperations = new Set([
+  "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns",
   "GET /health/live",
   "GET /health/ready",
   "GET /metrics",
@@ -139,6 +152,21 @@ const implementedOperations = new Set([
   "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
+  [
+    "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns",
+    new Set([
+      "200",
+      "401",
+      "403",
+      "404",
+      "409",
+      "410",
+      "422",
+      "429",
+      "503",
+      "504",
+    ]),
+  ],
   [
     "POST /api/v1/ai-companion/voice-sessions",
     new Set(["202", "401", "403", "409", "422", "429", "503"]),

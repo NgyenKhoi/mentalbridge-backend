@@ -36,13 +36,15 @@ remain opt-in downstream, and CI uses deterministic providers only.
 1. Reuse the Companion provider boundary: shared route selector and assistant
    validator, optional cancellation and voice presentation hints. Verify existing
    chat tests plus focused provider request/cancellation/safety tests.
-2. Guarded ephemeral turn use case: closed input, cross-process metadata fence,
-   bounded RAM, authorization/publication/cancellation and migration 015 with
-   paired model/dictionary. Verify real Mongo concurrency, stale replay and no
-   transcript/Text-quota persistence.
-3. Publish and wire the frozen REST operation, module lifecycle, contract/HTTP
-   tests, operational handoff and traceability. Run affected Journal gates,
-   refresh dev, review task-only diff/overlap, push/create PR and wait CI green.
+2. Guarded turn vertical slice: frozen REST operation, module lifecycle, closed
+   input, cross-process metadata fence, bounded RAM, authorization/publication/
+   cancellation and migration 015 with paired model/dictionary. Actual Nest +
+   real Mongo integration tests require these to commit together rather than
+   depending on a later wiring commit. Verify concurrency, stale replay, HTTP
+   response contracts and absence of transcript/Text-quota persistence.
+3. Operational handoff, acceptance evidence and traceability. Run affected
+   Journal gates, refresh dev, review task-only diff/overlap, push/create PR and
+   wait CI green. No unrelated runtime change belongs in this documentation slice.
 
 ## Verification
 

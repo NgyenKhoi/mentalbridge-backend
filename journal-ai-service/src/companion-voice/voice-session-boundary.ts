@@ -10,6 +10,7 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UseFilters,
   UseGuards,
   type ArgumentsHost,
@@ -31,19 +32,30 @@ import {
   VoiceSessionsService,
   voiceWorkerSignalSchema,
 } from "./voice-sessions.js";
+import {
+  voiceTurnSchema,
+  VoiceTurnError,
+  type VoiceTurnService,
+} from "./voice-turn.js";
 
 export const VOICE_SESSIONS = "COMPANION_VOICE_SESSIONS";
+export const VOICE_TURNS = "COMPANION_VOICE_TURNS";
 export type VoiceSessionOperations = Pick<
   VoiceSessionsService,
   "start" | "status" | "connection" | "end" | "claim" | "control"
 >;
 interface VoiceRequest extends AuthenticatedRequest {
+  once?(event: string, listener: () => void): void;
+  off?(event: string, listener: () => void): void;
   id?: string;
   url?: string;
   originalUrl?: string;
   rawHeaders?: string[];
 }
 interface VoiceResponse {
+  once?(event: string, listener: () => void): void;
+  off?(event: string, listener: () => void): void;
+  writableEnded?: boolean;
   setHeader(name: string, value: string): void;
   status(code: number): VoiceResponse;
   json(body: unknown): void;
@@ -129,6 +141,8 @@ const statuses: Readonly<Record<string, number>> = {
   INVALID_SESSION_STATE: 409,
   SESSION_EXPIRED: 410,
   INVALID_REQUEST: 422,
+  INVALID_FINAL_TRANSCRIPT: 422,
+  PROVIDER_TIMEOUT: 504,
   GLOBAL_CAPACITY_FULL: 429,
   QUOTA_EXHAUSTED: 429,
   RATE_LIMITED: 429,
@@ -146,7 +160,8 @@ export class VoiceBoundaryFilter implements ExceptionFilter {
     const code =
       error instanceof VoiceBoundaryError ||
       error instanceof VoiceAccessError ||
-      error instanceof VoiceLedgerError
+      error instanceof VoiceLedgerError ||
+      error instanceof VoiceTurnError
         ? error.code
         : error instanceof HttpException &&
             [400, 413, 415].includes(error.getStatus())
@@ -282,7 +297,40 @@ export class VoiceUserController {
 export class VoiceWorkerController {
   constructor(
     @Inject(VOICE_SESSIONS) private readonly sessions: VoiceSessionOperations,
+    @Inject(VOICE_TURNS)
+    private readonly turns: Pick<VoiceTurnService, "generate">,
   ) {}
+  @Post(":voiceSessionId/turns")
+  @HttpCode(200)
+  async turn(
+    @Req() request: VoiceRequest,
+    @Res({ passthrough: true }) response: VoiceResponse,
+    @Param("voiceSessionId") id: string,
+    @Body() body: unknown,
+  ) {
+    this.json(request);
+    const parsed = voiceTurnSchema.safeParse(body);
+    if (!parsed.success) throw new VoiceBoundaryError("INVALID_REQUEST");
+    const key = uuid(request.headers["idempotency-key"]);
+    const controller = new AbortController();
+    const abort = () => {
+      if (!response.writableEnded) controller.abort();
+    };
+    request.once?.("aborted", abort);
+    response.once?.("close", abort);
+    try {
+      return await this.turns.generate(
+        uuid(id),
+        key,
+        parsed.data,
+        request.id ?? randomUUID(),
+        controller.signal,
+      );
+    } finally {
+      request.off?.("aborted", abort);
+      response.off?.("close", abort);
+    }
+  }
   private json(request: VoiceRequest) {
     const value = request.headers["content-type"];
     if (

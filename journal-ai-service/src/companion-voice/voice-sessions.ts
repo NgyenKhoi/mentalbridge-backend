@@ -112,6 +112,7 @@ export const voiceSessionView = (session: VoiceSession) => ({
 });
 
 export class VoiceSessionsService {
+  private readonly terminationListeners = new Set<(id: string) => void>();
   constructor(
     private readonly ledger: MongoVoiceLedger,
     private readonly access: VoiceAccessService,
@@ -140,7 +141,7 @@ export class VoiceSessionsService {
     const reason = closed(session)
       ? null
       : voiceSessionExpiryReason(session, this.clock());
-    return reason
+    const result = reason
       ? this.ledger.requestEnd(
           session.ownerId,
           session.voiceSessionId,
@@ -148,6 +149,85 @@ export class VoiceSessionsService {
           this.clock(),
         )
       : session;
+    const value = await result;
+    if (closed(value)) this.discardContext(value.voiceSessionId);
+    return value;
+  }
+
+  onTermination(listener: (id: string) => void): () => void {
+    this.terminationListeners.add(listener);
+    return () => {
+      this.terminationListeners.delete(listener);
+    };
+  }
+
+  private discardContext(id: string) {
+    for (const listener of this.terminationListeners) listener(id);
+  }
+
+  async contextAlive(id: string, attemptId: string, leaseId: string) {
+    const session = await this.current(id);
+    if (session.attemptId !== attemptId || session.leaseId !== leaseId)
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+    if (closed(session) || this.clock() >= session.authorityExpiresAt)
+      throw new VoiceLedgerError("SESSION_EXPIRED");
+    return session;
+  }
+
+  async turnState(id: string, attemptId: string, leaseId: string) {
+    const session = await this.contextAlive(id, attemptId, leaseId);
+    if (session.state !== "ACTIVE")
+      throw new VoiceLedgerError("INVALID_SESSION_STATE");
+    return session;
+  }
+
+  async authorizeTurn(
+    id: string,
+    attemptId: string,
+    leaseId: string,
+    correlationId: string,
+  ) {
+    const session = await this.turnState(id, attemptId, leaseId);
+    const document = await this.store.find(id, this.clock());
+    if (
+      document?.phase !== "READY" ||
+      !document.claimedAt ||
+      document.attemptId !== attemptId
+    )
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+    try {
+      const authority = await this.access.authorizeTurn(
+        session.ownerId,
+        id,
+        correlationId,
+      );
+      const observed = await this.media.inspect(document);
+      if (
+        !observed.roomExists ||
+        !observed.ownerConnected ||
+        !observed.agentConnected
+      )
+        throw new VoiceLedgerError("INVALID_SESSION_STATE");
+      await this.turnState(id, attemptId, leaseId);
+      return authority;
+    } catch (error) {
+      this.discardContext(id);
+      await this.failTurn(id);
+      throw error;
+    }
+  }
+
+  async failTurn(id: string) {
+    const session = await this.current(id);
+    const ending = closed(session)
+      ? session
+      : await this.ledger.requestEnd(
+          session.ownerId,
+          id,
+          "PROVIDER_FAILURE",
+          this.clock(),
+        );
+    await this.cleanup(ending);
   }
   private guard(session: VoiceSession, sequence: number): VoiceGuard {
     if (!session.attemptId || !session.leaseId)
@@ -332,6 +412,7 @@ export class VoiceSessionsService {
   }
 
   private async cleanup(session: VoiceSession): Promise<void> {
+    if (closed(session)) this.discardContext(session.voiceSessionId);
     if (session.state !== "ENDING") return;
     let document = await this.store.find(session.voiceSessionId, this.clock());
     try {

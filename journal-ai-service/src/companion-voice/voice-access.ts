@@ -258,7 +258,9 @@ export class VoiceAccessService {
     voiceSessionId: string,
     correlationId: string,
   ): Promise<VoiceSession> {
-    return this.sessionAuthority(ownerId, voiceSessionId, correlationId, true);
+    return (
+      await this.sessionAuthority(ownerId, voiceSessionId, correlationId, true)
+    ).session;
   }
 
   async inspectSession(
@@ -266,6 +268,16 @@ export class VoiceAccessService {
     voiceSessionId: string,
     correlationId: string,
   ): Promise<VoiceSession> {
+    return (
+      await this.sessionAuthority(ownerId, voiceSessionId, correlationId, false)
+    ).session;
+  }
+
+  authorizeTurn(
+    ownerId: string,
+    voiceSessionId: string,
+    correlationId: string,
+  ) {
     return this.sessionAuthority(ownerId, voiceSessionId, correlationId, false);
   }
 
@@ -274,7 +286,10 @@ export class VoiceAccessService {
     voiceSessionId: string,
     correlationId: string,
     renew: boolean,
-  ): Promise<VoiceSession> {
+  ): Promise<{
+    session: VoiceSession;
+    entitlement: VoiceOwnerDecision["entitlement"];
+  }> {
     const session = await this.ledger.findOwned(ownerId, voiceSessionId);
     if (!session) throw new VoiceAccessError("SESSION_NOT_FOUND");
     if (isTerminal(session) || session.state === "ENDING")
@@ -299,13 +314,14 @@ export class VoiceAccessService {
       if (denial) throw new VoiceAccessError(denial);
       if (!this.providerReady(decision.entitlement.packageCode))
         throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
-      if (!renew) return session;
-      return await this.ledger.renewAuthority(
+      if (!renew) return { session, entitlement: decision.entitlement };
+      const renewed = await this.ledger.renewAuthority(
         ownerId,
         voiceSessionId,
         this.clock(),
         authorityDeadline(decision, this.clock()),
       );
+      return { session: renewed, entitlement: decision.entitlement };
     } catch (error) {
       const failure = this.failure(error);
       await this.ledger.requestEnd(
