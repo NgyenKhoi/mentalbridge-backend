@@ -206,6 +206,11 @@ RAM for the same session; only ACTIVE grants authorize another generation.
 Publication registers the reply with MB-757, but only trusted connected-audio
 playback commits first-reply usage. Generated/replayed text alone never does.
 
+Only a newly fenced, authorized final-speech turn records user conversational
+activity before generation, so speech near the idle cutoff remains active while
+the model responds. Replay/heartbeat never resets idle; this update neither
+consumes worker-control sequence nor extends the lease or absolute deadline.
+
 Shutdown/expiry clears RAM; the existing one-second lifecycle sweep removes
 expired command metadata. Fence expiry stays capped by the original session's
 30-day window. Disable admission, stop sessions/handlers and expire or separately

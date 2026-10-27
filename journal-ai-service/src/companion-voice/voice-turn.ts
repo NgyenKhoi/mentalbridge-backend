@@ -67,6 +67,7 @@ type Sessions = Pick<
   | "turnState"
   | "contextAlive"
   | "registerReply"
+  | "recordSpeechActivity"
   | "failTurn"
   | "onTermination"
 >;
@@ -246,6 +247,11 @@ export class VoiceTurnService {
       });
       if (!claimed) throw new VoiceLedgerError("STALE_ATTEMPT");
       context.sequence = input.sequence;
+      await this.sessions.recordSpeechActivity(
+        id,
+        input.attemptId,
+        input.leaseId,
+      );
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
       let checking = false;

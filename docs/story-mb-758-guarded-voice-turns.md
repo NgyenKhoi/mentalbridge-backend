@@ -69,6 +69,7 @@ follow [Voice policy v1](policies/companion-voice-policy-v1.md).
 | Unsafe/empty/English/oversized output, outage, timeout | Safe 503 or 504, no late spoken reply | Hidden reasoning, clinical/action claims or provider payload in errors | Existing schema/safe validator plus malformed output and timeout cases |
 | Pending request cancelled, user stop, consent/entitlement withdrawn, lease/hard stop elapsed | Abort/discard generation, clear RAM, close safely | Late publication, repeated charge or retained prior-call context | HTTP disconnect, both grants, downgrade, stop and elapsed-session tests |
 | Reply generated/replayed vs trusted playback | Generation alone consumes no successful session; exact connected playback counts once | Worker-invented publication proof or double settlement | Real media ledger and repeated PLAYBACK_STARTED integration |
+| Fresh speech near the idle cutoff | A newly fenced final turn records user activity before generation; reply after the old cutoff remains valid | Replay/heartbeat reset, control-sequence consumption or lease/hard-stop extension | Regression at second 59, response at second 61, exact replay leaves activity unchanged |
 
 Authored/extended tests:
 
@@ -76,7 +77,7 @@ Authored/extended tests:
   actual Companion request construction through a synthetic Bedrock transport,
   common prompt/schema, no tools/cache checkpoint, normalized safety and abort.
 - [Actual Nest + real Mongo application](../journal-ai-service/src/companion-voice/voice-turn.mongo.integration.test.ts):
-  13 scenarios plus parent, isolated disposable databases, two independent app
+  14 scenarios plus parent, isolated disposable databases, two independent app
   instances, five Vietnamese turns, guarded replay/publication, caller abort,
   reconnect, current authorization, metadata constraints and content-free usage.
 - [REST response contracts](../journal-ai-service/src/companion-voice/voice-sessions.http.test.ts):
@@ -97,10 +98,10 @@ frontend and hosted agent source are unchanged.
 | Focused Voice turn/HTTP/access/Companion tests | Actual Nest + disposable Mongo | PASS 49 tests after runtime changes |
 | `npm run format:check`, `npm run lint`, `npm run typecheck` | Journal / Node 22 | PASS |
 | `npm test` (includes build) | Journal local | PASS 189 tests; zero failures/skips |
-| `npm run test:integration` | Disposable actual MongoDB replica sets; no env file/shared DB | PASS 73 tests; zero failures/skips |
+| `npm run test:integration` | Disposable actual MongoDB replica sets; no env file/shared DB | PASS 74 tests after idle correction; zero failures/skips |
 | `npm run contract:check`, `npm run migration:check` | Journal local | PASS active OpenAPI 1.15.0 / frozen parity / migrations 001–015 |
 | `node --test ../contracts/proposals/companion-voice-contract.test.mjs` | Existing frozen proposal/policy fixtures | PASS 55 tests |
-| Repository paired-change/documentation policy, local link/diff review | Repository root | PASS; 22 task files, 7 changed Markdown files and 79 local links/anchors; whitespace clean |
+| Repository paired-change/documentation policy, local link/diff review | Repository root | Rechecked for 23 task files; 7 changed Markdown files and 79 local links/anchors; whitespace clean |
 | GitHub quality-gate and overlap | Exact pushed PR head | Recorded in PR/final delivery only after verification |
 | Cloud quota/access, deployed worker, real Bedrock/STT/TTS/devices | Opt-in downstream gates | Not run; no fabricated provider success |
 
@@ -111,6 +112,14 @@ install was blocked by sandbox access to AppData cache; an approved cached insta
 completed without dependency/lockfile changes. A resumed base update rebased the
 unpublished checkpoint safely, preserving all pending work and without force-push.
 No account/cloud mutation, paid inference or real speech is run for this story.
+
+A final review regression demonstrated that valid speech at second 59 did not
+advance `lastActivityAt`, allowing an idle cutoff during the reply. The correction
+records conversational activity only after a new durable generation claim,
+without consuming worker-control sequence, committing delivery or extending
+lease/hard stop. The same regression and all 15 Voice-turn integration tests pass
+after correction; the 189-unit/74-integration module gates were repeated because
+the ledger/application behavior changed. Exact replay does not reset activity.
 
 The [operator handoff](ai-voice-demo-runbook.md#mb-758-turn-checkpoint) keeps live
 enablement disabled pending hosted worker, speech, privacy/account allowance and

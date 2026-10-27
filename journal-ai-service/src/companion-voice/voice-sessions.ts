@@ -217,6 +217,15 @@ export class VoiceSessionsService {
     }
   }
 
+  async recordSpeechActivity(id: string, attemptId: string, leaseId: string) {
+    const session = await this.turnState(id, attemptId, leaseId);
+    await this.ledger.recordSpeechActivity(
+      id,
+      { attemptId, leaseId, generation: session.capacityGeneration },
+      this.clock(),
+    );
+  }
+
   async failTurn(id: string) {
     const session = await this.current(id);
     const ending = closed(session)

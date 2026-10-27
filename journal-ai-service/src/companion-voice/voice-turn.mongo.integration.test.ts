@@ -649,6 +649,79 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   );
 
   await t.test(
+    "fresh fenced speech resets conversational idle once without consuming worker sequence or delivered quota",
+    async () => {
+      const f = await fixture();
+      const first = f.input();
+      const initial = await f.generate(first);
+      const control = async (
+        sequence: number,
+        kind: "HEARTBEAT" | "PLAYBACK_STARTED",
+        payload: Record<string, unknown>,
+      ) =>
+        f.left.sessions.control(
+          f.active.id,
+          voiceWorkerSignalSchema.parse({
+            schemaVersion: 1,
+            kind,
+            commandId: randomUUID(),
+            voiceSessionId: f.active.id,
+            attemptId: f.active.attemptId,
+            sequence,
+            issuedAt: f.clock().toISOString(),
+            expiresAt: new Date(f.clock().getTime() + 5000).toISOString(),
+            payload: { leaseId: f.active.leaseId, ...payload },
+          }),
+          randomUUID(),
+        );
+      await control(2, "PLAYBACK_STARTED", {
+        turnId: first.turnId,
+        replyId: initial.replyId,
+      });
+      let sequence = 3;
+      for (let seconds = 5; seconds <= 55; seconds += 5) {
+        f.advance(5000);
+        await control(sequence++, "HEARTBEAT", { observedState: "ACTIVE" });
+      }
+      f.advance(4000);
+      const spokenAt = f.clock().getTime();
+      const gate = hold();
+      f.respond(async () => {
+        await gate.wait;
+        return reply();
+      });
+      const input = f.input(2, "Tôi vừa nói thêm điều đang khiến mình lo lắng");
+      const key = randomUUID();
+      const work = f.generate(input, key);
+      void work.catch(() => undefined);
+      let result: Awaited<ReturnType<typeof f.generate>>;
+      try {
+        await waitFor(() => f.calls() === 2);
+        const recorded = await f.db
+          .collection<RawRecord>("ai_voice_sessions")
+          .findOne({ _id: f.active.id });
+        assert.ok(recorded?.lastActivityAt instanceof Date);
+        assert.equal(recorded.lastActivityAt.getTime(), spokenAt);
+        f.advance(2000);
+        gate.release();
+        result = await work;
+      } finally {
+        gate.release();
+      }
+      await control(sequence, "HEARTBEAT", { observedState: "ACTIVE" });
+      f.advance(1000);
+      assert.deepEqual(await f.generate(input, key), result);
+      const latest = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(latest?.lastActivityAt instanceof Date);
+      assert.equal(latest.lastActivityAt.getTime(), spokenAt);
+      assert.equal(latest.state, "ACTIVE");
+      assert.equal(f.calls(), 2);
+    },
+  );
+
+  await t.test(
     "actual HTTP disconnect aborts the worker request and discards late provider work",
     async () => {
       const f = await fixture();

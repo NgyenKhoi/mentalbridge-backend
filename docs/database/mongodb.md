@@ -263,6 +263,11 @@ by another RAM context after restart or replica routing. Only an exact live
 in-memory latest reply can replay; old/missing RAM returns stale/conflict without
 model work. This is a side-effect fence, not a transcript or response snapshot.
 
+Only a fresh accepted fence can update the existing session's `lastActivityAt`
+for recognized user speech before generation. This does not alter delivery
+count, worker-control sequence, lease or hard stop. Replays and heartbeats cannot
+manufacture conversational activity or prolong an idle call.
+
 `createdAt` records turn admission; `expiresAt` is the original Voice Session's
 creation-plus-30-day deadline, never turn time plus a renewed window. The existing
 TTL and explicit command sweep delete expired fences. The records contain no
