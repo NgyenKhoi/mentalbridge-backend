@@ -113,10 +113,10 @@ export class VoiceWorker {
           this.receive(value);
         },
         muted: (value) => {
-          void this.mute(value);
+          void this.mute(value).catch(() => this.fail());
         },
         connected: (value) => {
-          void this.connection(value);
+          void this.connection(value).catch(() => this.fail());
         },
         failed: () => {
           void this.fail();
@@ -418,10 +418,22 @@ export class VoiceWorker {
     this.seen.clear();
     this.lastEcho = "";
     this.speaking = null;
-    this.media.input(false);
-    this.media.interrupt();
     this.playback?.abort();
     this.life.abort();
+    for (const cut of [
+      () => {
+        this.media.input(false);
+      },
+      () => {
+        this.media.interrupt();
+      },
+    ]) {
+      try {
+        cut();
+      } catch {
+        this.outcome("TEXT_OR_PUSH_TO_TALK");
+      }
+    }
     this.stopWork = (async () => {
       try {
         await this.media.close();

@@ -320,6 +320,21 @@ void test("late reconnect is rejected even before the periodic deadline check", 
   assert.equal(f.input(), false);
   assert.equal(f.closes(), 1);
 });
+
+void test("native input/interruption failures during stop still cancel work and attempt media teardown", async () => {
+  const f = fixture();
+  await f.start();
+  f.media.input = () => {
+    throw new Error("NATIVE_CLOSED");
+  };
+  f.media.interrupt = () => {
+    throw new Error("NATIVE_CLOSED");
+  };
+  await f.worker.stop("AGENT_FAILURE");
+  await f.worker.finished;
+  assert.equal(f.closes(), 1);
+  assert.equal(f.worker.state, "ENDED");
+});
 void test("uncertain/oversized/wrong-language final STT closes to text/manual fallback with no fabricated speech", async () => {
   for (const partial of [
     { confidence: 0.3 },

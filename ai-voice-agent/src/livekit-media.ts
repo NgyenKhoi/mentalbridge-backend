@@ -150,6 +150,7 @@ export class LiveKitMedia implements MediaPort {
   private owner: string | undefined;
   private closed = false;
   private inputEnabled = false;
+  private started = false;
   private readonly cleanup: (() => void)[] = [];
   constructor(
     private readonly context: JobContext,
@@ -326,6 +327,7 @@ export class LiveKitMedia implements MediaPort {
       await this.session.close();
       throw new AgentFailure("AUTHORITY_EXPIRED");
     }
+    this.started = true;
     callbacks.muted(
       [...person.trackPublications.values()].some((t) => t.muted),
     );
@@ -345,7 +347,7 @@ export class LiveKitMedia implements MediaPort {
     return this.closed;
   }
   clearInput() {
-    this.session?.clearUserTurn();
+    if (this.started) this.session?.clearUserTurn();
   }
   async speak(text: string, started: () => Promise<void>, signal: AbortSignal) {
     const session = this.session;
@@ -383,14 +385,18 @@ export class LiveKitMedia implements MediaPort {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    this.input(false);
-    this.interrupt();
-    this.clearInput();
-    for (const callback of this.cleanup.splice(0)) callback();
-    await this.session?.close();
-    this.session = undefined;
-    this.agent = undefined;
-    this.callbacks = undefined;
-    await this.context.room.disconnect();
+    try {
+      this.input(false);
+      this.interrupt();
+      this.clearInput();
+      for (const callback of this.cleanup.splice(0)) callback();
+      await this.session?.close();
+    } finally {
+      this.started = false;
+      this.session = undefined;
+      this.agent = undefined;
+      this.callbacks = undefined;
+      await this.context.room.disconnect();
+    }
   }
 }

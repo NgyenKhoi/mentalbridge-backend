@@ -55,7 +55,7 @@ Authored tests:
 `ai-voice-agent/src/voice-worker.test.ts`,
 `ai-voice-agent/src/livekit-media.test.ts`.
 
-- `npm test` in `ai-voice-agent/`: **21 passed**, no skipped tests; local HTTP plus
+- `npm test` in `ai-voice-agent/`: **22 passed**, no skipped tests; local HTTP plus
   fake LiveKit/STT/TTS/Journal boundaries, no account calls.
 - `npm run format:check`, `lint`, `typecheck`, `build`, `contract:check` and
   `migration:check`: passed locally. Consumer bounds/authentication track the
