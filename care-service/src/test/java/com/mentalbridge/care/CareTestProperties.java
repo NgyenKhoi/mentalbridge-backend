@@ -32,6 +32,8 @@ public abstract class CareTestProperties {
 		properties.add("mentalbridge.care.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.care.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.care.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.care.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.care.assessment.anonymous-session-ttl", () -> "PT30M");
 		properties.add("mentalbridge.care.assessment.anonymous-session-maximum-lifetime", () -> "PT2H");
 		properties.add("mentalbridge.care.assessment.phq9-safety-policy-version",

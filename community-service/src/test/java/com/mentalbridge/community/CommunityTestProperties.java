@@ -36,6 +36,8 @@ public abstract class CommunityTestProperties {
 		properties.add("mentalbridge.community.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.community.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.community.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.community.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.community.cloudinary.cloud-name", () -> "test-cloud");
 		properties.add("mentalbridge.community.cloudinary.api-key", () -> "test-api-key");
 		properties.add("mentalbridge.community.cloudinary.api-secret", () -> "test-api-secret");

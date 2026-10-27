@@ -40,6 +40,8 @@ public abstract class ConsultationTestProperties {
 		properties.add("mentalbridge.consultation.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.consultation.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.consultation.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.consultation.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.consultation.evidence-service-token", () -> EVIDENCE_SERVICE_TOKEN);
 		properties.add("mentalbridge.consultation.account-lifecycle.enabled", () -> "false");
 		properties.add("mentalbridge.consultation.video.demo-immediate-access-enabled", () -> "false");

@@ -1,5 +1,6 @@
 package com.mentalbridge.consultation.configuration;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -8,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -26,10 +28,17 @@ import com.mentalbridge.consultation.shared.SecurityProblemSupport;
 @WebMvcTest(AccountStatusSecurityChainTests.TestController.class)
 @ContextConfiguration(classes = { SecurityConfiguration.class, SecurityProblemSupport.class,
 		AccountStatusSecurityChainTests.TestController.class })
-@EnableConfigurationProperties(ConsultationJwtProperties.class)
+@EnableConfigurationProperties({ ConsultationJwtProperties.class, IdentityAccountStatusProperties.class })
 class AccountStatusSecurityChainTests extends ConsultationTestProperties {
 	private static final String PROTECTED = "/api/v1/specialist/status-test";
 	@Autowired MockMvc mvc;
+	@Autowired IdentityAccountStatusProperties accountStatusProperties;
+
+	@Test
+	void accountStatusTimeoutsBindInTestContext() {
+		assertThat(accountStatusProperties.connectTimeout()).isEqualTo(Duration.ofMillis(250));
+		assertThat(accountStatusProperties.readTimeout()).isEqualTo(Duration.ofMillis(750));
+	}
 
 	@Test
 	void activeJwtIsAllowedThroughTheRealSecurityChain() throws Exception {
