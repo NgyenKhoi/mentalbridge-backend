@@ -42,7 +42,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: ./scripts/verify-repository.ps1 -BaseSha $env:BASE_SHA
       - name: Validate Review 1 Compose profiles
-        run: docker compose --env-file .env.compose.example --profile demo --profile full-test config --quiet
+        run: |
+          export IDENTITY_ACCOUNT_STATUS_CARE_SERVICE_TOKEN="$(openssl rand -hex 32)"
+          export IDENTITY_ACCOUNT_STATUS_COMMUNITY_SERVICE_TOKEN="$(openssl rand -hex 32)"
+          export IDENTITY_ACCOUNT_STATUS_CONSULTATION_SERVICE_TOKEN="$(openssl rand -hex 32)"
+          docker compose --env-file .env.compose.example --profile demo --profile full-test config --quiet
       - name: Verify Compose service credential boundaries
         shell: pwsh
         run: ./scripts/verify-compose-service-boundaries.ps1
