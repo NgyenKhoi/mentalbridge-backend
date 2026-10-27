@@ -33,6 +33,13 @@ export interface PushDeliveryClaim {
   readonly actionType: string | null;
   readonly actionTargetId: string | null;
   readonly attemptCount: number;
+  readonly appointmentReminder: Readonly<{
+    recipientId: string;
+    appointmentId: string;
+    appointmentVersion: number;
+    modality: 'IN_APP_CHAT' | 'IN_APP_VIDEO';
+    scheduledStartAt: Date;
+  }> | null;
 }
 
 export interface PushReceiptClaim {

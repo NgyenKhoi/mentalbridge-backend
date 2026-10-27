@@ -18,6 +18,7 @@ import {
   UnknownPushProviderOutcomeError,
   type PushProvider,
 } from './expo-push.provider.js';
+import { AppointmentPushReminderService } from '../appointment-reminders/appointment-push-reminder.service.js';
 import type { PushDeviceRepository } from './push-device.repository.js';
 import { PushTokenCrypto } from './push-token.crypto.js';
 
@@ -31,6 +32,7 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
     @Inject(CONFIGURATION_TOKEN) private readonly config: ServiceConfiguration,
     @Inject(PUSH_DEVICE_REPOSITORY_TOKEN) private readonly repository: PushDeviceRepository,
     @Inject(PUSH_PROVIDER_TOKEN) private readonly provider: PushProvider,
+    private readonly appointmentPushReminders: AppointmentPushReminderService,
   ) {}
 
   onModuleInit(): void {
@@ -51,6 +53,7 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
     if (this.running) return;
     this.running = true;
     try {
+      await this.appointmentPushReminders.runDue(this.config.CONTENT_PUSH_DELIVERY_BATCH_SIZE);
       await this.repository.materializeCandidates(this.config.CONTENT_PUSH_DELIVERY_BATCH_SIZE);
       await this.repository.settleIneligible();
       const claims = await this.repository.claim(this.config.CONTENT_PUSH_DELIVERY_BATCH_SIZE);
@@ -59,6 +62,23 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
         try {
           if (!(await this.repository.isDeliverable(claim.id))) {
             await this.repository.suppressClaim(claim.id, 'NOTIFICATION_UNAVAILABLE');
+            continue;
+          }
+          const authorization = await this.appointmentPushReminders.authorizeClaim(claim);
+          if (authorization.outcome === 'SUPPRESS') {
+            await this.repository.suppressClaim(claim.id, authorization.code);
+            continue;
+          }
+          if (authorization.outcome === 'RETRY') {
+            await this.repository.failed(claim.id, authorization.code, true);
+            continue;
+          }
+          if (authorization.outcome === 'DEFER') {
+            await this.repository.deferClaim(
+              claim.id,
+              authorization.availableAt,
+              authorization.code,
+            );
             continue;
           }
           const ticketId = await this.provider.send({
