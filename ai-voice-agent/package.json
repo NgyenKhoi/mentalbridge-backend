@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "format:check": "prettier --check \"*.{json,js,md}\" \"src/**/*.ts\"",
+    "format:check": "prettier --check \"*.{json,js,md}\" \"src/**/*.ts\" \"scripts/**/*.mjs\"",
     "test": "npm run build && node --test dist/*.test.js",
     "contract:check": "node scripts/check-contract.mjs",
     "migration:check": "node scripts/check-boundaries.mjs",

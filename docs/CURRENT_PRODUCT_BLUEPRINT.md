@@ -17,7 +17,9 @@ current owner authorization; [MB-757](requirements-traceability/stories/mb-757.m
 adds disabled-by-default public sessions, isolated rooms, explicit dispatch and
 worker lifecycle control. [MB-758](requirements-traceability/stories/mb-758.md)
 adds guarded internal turns with bounded current-call RAM and no Text-quota
-consumption. The hosted worker, speech validation and live end-to-end evidence
+consumption. [MB-759](requirements-traceability/stories/mb-759.md) adds the separate,
+disabled Node worker with final Vietnamese STT, Journal-only generation and guarded
+TTS/interruption. Hosted deployment, speech validation and live end-to-end evidence
 remain subsequent delivery gates. Existing text
 and specialist consultation behavior is unchanged; these checkpoints do not
 establish live-provider readiness.
