@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.14.0
+  version: 1.15.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -27,6 +27,81 @@ tags:
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
+  /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    post:
+      operationId: generateAuthorizedVoiceTurn
+      summary: generateAuthorizedVoiceTurn
+      description: >-
+        Ephemeral final vi-VN STT only; validate trimmed nonempty text, language, finality, order, attempt/lease
+        and unique turn. Freshly verify BOTH consent streams, Consultation entitlement, remaining independent
+        voice usage and current approved pinned Bedrock route BEFORE EVERY generation and before publication. Do
+        not call persisted text send or consume text answers. Dedicated service identity; no client/worker user
+        selection. RAM-only recent4turnpairs/2000tokens; transcript2000chars/reply1000chars; no
+        transcript/prompt/provider output in idempotency snapshots/logs/traces. In-memory replay returns exact
+        reply only during live lease; after context loss, fail stale rather than regenerate/charge again.
+        Cancel/discard late responses after stop/withdrawal/lease expiry. No provider fallback, no
+        Care/financial/safety mutation.
+      security:
+        - VoiceWorkerToken: []
+      parameters:
+        - in: path
+          name: voiceSessionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: >-
+            Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent
+            returns409. Replays of live access still reauthorize; expired tokens are never replayed as
+            authority. Store HMAC key+safe intent hash/metadata only, never transcript.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceTurn"
+      responses:
+        "200":
+          description: Owner-authorized response
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+              description: >-
+                Required on success and errors. Never cache capabilities, connection tokens, transcripts or
+                owner decisions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceReply"
+        "401":
+          $ref: "#/components/responses/VoiceProblem401"
+        "403":
+          $ref: "#/components/responses/VoiceProblem403"
+        "404":
+          $ref: "#/components/responses/VoiceProblem404"
+        "409":
+          $ref: "#/components/responses/VoiceProblem409"
+        "410":
+          $ref: "#/components/responses/VoiceProblem410"
+        "422":
+          $ref: "#/components/responses/VoiceProblem422"
+        "429":
+          $ref: "#/components/responses/VoiceProblem429"
+        "503":
+          $ref: "#/components/responses/VoiceProblem503"
+        "504":
+          $ref: "#/components/responses/VoiceProblem504"
+      tags:
+        - AI Companion
   /api/v1/ai-companion/voice-sessions:
     x-mentalbridge-status: implemented
     x-mentalbridge-owner: journal-ai-service
@@ -1346,6 +1421,19 @@ components:
         type: string
       description: Correlation ID used in request logs.
   responses:
+    VoiceProblem504:
+      description: 'Stable sanitized errors: PROVIDER_TIMEOUT. No downstream payload or private identifiers.'
+      headers:
+        Cache-Control:
+          schema:
+            const: no-store
+          description: >-
+            Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner
+            decisions.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/VoiceProblem'
     VoiceProblem404:
       description: "Stable sanitized errors: SESSION_NOT_FOUND. No downstream payload or private identifiers."
       headers:
@@ -1503,6 +1591,74 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    VoiceTurn:
+      type: object
+      additionalProperties: false
+      required:
+        - attemptId
+        - leaseId
+        - turnId
+        - sequence
+        - language
+        - isFinal
+        - finalTranscript
+      properties:
+        attemptId:
+          type: string
+          format: uuid
+        leaseId:
+          type: string
+          format: uuid
+        turnId:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        language:
+          const: vi-VN
+        isFinal:
+          const: true
+        finalTranscript:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          pattern: \S
+          writeOnly: true
+    VoiceReply:
+      type: object
+      additionalProperties: false
+      required:
+        - voiceSessionId
+        - turnId
+        - replyId
+        - language
+        - spokenText
+        - expiresAt
+        - policyVersion
+      properties:
+        voiceSessionId:
+          type: string
+          format: uuid
+        turnId:
+          type: string
+          format: uuid
+        replyId:
+          type: string
+          format: uuid
+        language:
+          const: vi-VN
+        spokenText:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          pattern: \S
+        expiresAt:
+          type: string
+          format: date-time
+        policyVersion:
+          const: companion-voice-policy-v1
     VoiceSession:
       type: object
       additionalProperties: false

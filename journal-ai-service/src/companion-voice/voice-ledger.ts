@@ -852,6 +852,28 @@ export class MongoVoiceLedger {
     });
   }
 
+  async recordSpeechActivity(
+    voiceSessionId: string,
+    guard: Omit<VoiceGuard, "sequence">,
+    now: Date,
+  ): Promise<VoiceSession> {
+    return this.atomic(async (transaction) => {
+      const value = await this.load(voiceSessionId, transaction);
+      if (
+        value.attemptId !== guard.attemptId ||
+        value.leaseId !== guard.leaseId ||
+        value.capacityGeneration !== guard.generation
+      )
+        throw new VoiceLedgerError("STALE_ATTEMPT");
+      this.live(value, now);
+      if (value.state !== "ACTIVE")
+        throw new VoiceLedgerError("INVALID_SESSION_STATE");
+      value.lastActivityAt = now;
+      value.updatedAt = now;
+      return this.save(value, transaction);
+    });
+  }
+
   async renewLease(
     voiceSessionId: string,
     guard: VoiceGuard,

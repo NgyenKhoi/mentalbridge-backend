@@ -9,6 +9,8 @@ AI-only rooms and explicit named dispatch. Its deterministic transport tests
 exercise the real SDK against a local synthetic server; no Cloud credentials
 or real media are used. Public session/lifecycle integration is described in
 the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md).
+MB-758 adds guarded ephemeral voice turns using the existing Companion provider;
+see [turn evidence](../docs/story-mb-758-guarded-voice-turns.md).
 
 | Optional configuration                  | Meaning                                                                                                                                                                    |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,7 +31,8 @@ original session hard stop. Explicit participant revocation uses the Cloud API's
 Unix-second cutoff near current server time, followed by exact-room teardown.
 Token expiration alone is never used as proof of media cutoff or quota release.
 
-Public OpenAPI v1.14.0 adds the MB-757 session and worker lifecycle routes below;
+Public OpenAPI v1.15.0 adds the MB-758 internal turn route; v1.14.0 added
+the MB-757 session and worker lifecycle routes below;
 v1.13.0 introduced the MB-756 voice-eligibility read.
 The preceding v1.12.0 adds the MB-642 content-free exact Journal creation
 evidence read alongside MB-641 daily check-in evidence and retains MB-649
@@ -132,7 +135,8 @@ attempt, logical dispatch, lease and sequence. The worker must connect as
 loss of its ten-second lease must stop processing and clear RAM. MB-759 owns
 that worker implementation. A server-side `VoiceSessionsService.registerReply`
 hook lets MB-758 register opaque turn/reply evidence before publication; arbitrary
-worker reply IDs cannot commit usage. The inference turn endpoint remains planned.
+worker reply IDs cannot commit usage. The internal turn route is implemented
+below; the hosted worker remains MB-759 work.
 
 Migration [`014_companion_voice_media.cjs`](migrations/014_companion_voice_media.cjs)
 persists only bounded media progress, sequencing and keyed connection/end
@@ -151,6 +155,69 @@ refuses non-STOPPED media. Do not clear capacity manually or roll back 013 while
 an uncertain room may still run. See the [controlled-demo runbook](../docs/ai-voice-demo-runbook.md#mb-757-control-plane-checkpoint)
 for opt-in checks and the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md)
 for deterministic tests. No real Cloud/audio success is claimed by this story.
+
+### MB-758 guarded ephemeral Voice turns
+
+`POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns` accepts the
+frozen `VoiceTurn` body and UUID `Idempotency-Key`, with the same dedicated
+worker header as claim/control. It returns a closed `VoiceReply` with opaque
+stable reply ID, Vietnamese spoken text, policy and expiry, always `no-store`.
+There is no USER-selected owner, room, model, history or authority. Invalid final
+speech/instruction overrides fail 422, stale/conflicting work 409, expired
+authority 410, unknown/unapproved provider 503 and provider timeout 504.
+
+The turn adapter reuses `selectCompanionProviderRoute`, `RoutedChatProvider` and
+the normalized Companion validator without invoking persisted chat `send` or
+its context/quota repositories. The existing common 500-character response limit
+stays within Voice's 1,000-character ceiling. All inputs/context are untrusted
+data; ambiguous recognition requests a short clarification. No diagnosis,
+scoring, safety/eligibility decision, autonomous action or prior Journal/chat
+context is introduced. Both Care grants and current Consultation entitlement
+are checked before every generation and publication. Real Voice accepts only
+the current approved Claude Bedrock route, pins its model/approval/prompt/routing
+versions for the call and has no fallback. Fake routes are test/development
+only while live Voice is disabled. No new configuration key or provider signup
+is required; the existing provider timeout and route settings apply.
+
+Migration [`015_companion_voice_turn_fences.cjs`](migrations/015_companion_voice_turn_fences.cjs)
+must follow 014. It adds a content-free `turn` variant to the existing media
+command collection, retaining connection/end compatibility. Unique session/
+sequence and session/turn-ID claims precede provider work. Only the latest live
+RAM reply can replay exactly. Lost RAM or another context process returns stale
+rather than invoking the provider again. Demo operation therefore uses one
+Journal process or turn routing affinity to the original context process;
+replica failover/restart never restores dialogue. A fresh call needs a fresh
+authorized session, not an automatic generation retry.
+
+Recent context is at most four current-call pairs and a conservative 2,000-byte
+UTF-8 allowance, including the current recognized text and serialization margin.
+Older pairs are dropped first; speech that cannot fit returns 422 before a claim
+or provider call, even below the structural 2,000-character ceiling. This admits
+less history than a characters/4 token estimate for Vietnamese. Actual provider
+token usage and approximate route cost are content-free telemetry; missing usage
+is labelled ESTIMATED. No prompt-cache checkpoint, transcript/reply snapshot,
+recording, raw-content log or text quota mutation is added.
+
+HTTP disconnect, worker cancellation, stop, revoked authority, elapsed lease or
+provider failure abort/discard outstanding generation and clear RAM. Cancelling
+a pending turn ends that session safely; TTS-only INTERRUPTED control does not
+regenerate or bill another reply. Between turns, bounded RECONNECTING preserves
+RAM for the same session; only ACTIVE grants authorize another generation.
+Publication registers the reply with MB-757, but only trusted connected-audio
+playback commits first-reply usage. Generated/replayed text alone never does.
+
+Only a newly fenced, authorized final-speech turn records user conversational
+activity before generation, so speech near the idle cutoff remains active while
+the model responds. Replay/heartbeat never resets idle; this update neither
+consumes worker-control sequence nor extends the lease or absolute deadline.
+
+Shutdown/expiry clears RAM; the existing one-second lifecycle sweep removes
+expired command metadata. Fence expiry stays capped by the original session's
+30-day window. Disable admission, stop sessions/handlers and expire or separately
+review safe fence cleanup before rollback; 015 down refuses surviving turn rows
+and never drops the shared command collection. Hosted worker, Vietnamese speech,
+account quota/privacy and real-device gates remain in the
+[runbook](../docs/ai-voice-demo-runbook.md#mb-758-turn-checkpoint).
 
 The service provides:
 

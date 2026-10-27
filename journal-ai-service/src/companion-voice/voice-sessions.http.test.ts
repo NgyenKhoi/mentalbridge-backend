@@ -12,6 +12,7 @@ import { loadConfiguration } from "../configuration/configuration.js";
 import { VoiceAccessError, type VoiceAccessCode } from "./voice-access.js";
 import { VoiceLedgerError } from "./voice-ledger.js";
 import type { VoiceSessionOperations } from "./voice-session-boundary.js";
+import { VoiceTurnError } from "./voice-turn.js";
 
 interface ContractValidator {
   (value: unknown): boolean;
@@ -45,6 +46,7 @@ const responseSchemas = async () => {
     "VoiceAgentLease",
     "VoiceAgentControlResponse",
     "VoiceProblem",
+    "VoiceReply",
   ]) {
     const ajv = new Ajv2020({ strict: true, allErrors: true });
     ajv.addFormat("uuid", /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
@@ -77,6 +79,7 @@ void test("Voice public and worker REST separate identities, validate closed com
   const attemptId = randomUUID();
   const dispatchId = randomUUID();
   const leaseId = randomUUID();
+  const turnId = randomUUID();
   const now = new Date();
   const hardStop = new Date(now.getTime() + 300_000).toISOString();
   const key = randomUUID();
@@ -123,6 +126,8 @@ void test("Voice public and worker REST separate identities, validate closed com
   };
   let calls = 0;
   let failure: VoiceAccessCode | null = null;
+  let turnFailure: "PROVIDER_TIMEOUT" | "INVALID_FINAL_TRANSCRIPT" | null =
+    null;
   const checked = (account: string, sessionId: string = id) => {
     calls += 1;
     if (account !== owner || sessionId !== id)
@@ -202,7 +207,27 @@ void test("Voice public and worker REST separate identities, validate closed com
   };
   const app = await createApplication(loadConfiguration(environment), {
     readinessProbe: { check: () => Promise.resolve() },
-    companionVoice: { sessions: operations, maintenance: false },
+    companionVoice: {
+      sessions: operations,
+      maintenance: false,
+      turns: {
+        generate: (sessionId, acceptedKey, _input, _correlation, signal) => {
+          assert.equal(sessionId, id);
+          assert.equal(acceptedKey, key);
+          assert.equal(signal?.aborted, false);
+          if (turnFailure) throw new VoiceTurnError(turnFailure);
+          return Promise.resolve({
+            voiceSessionId: id,
+            turnId,
+            replyId: randomUUID(),
+            language: "vi-VN" as const,
+            spokenText: "Mình đang lắng nghe. Bạn có thể chia sẻ thêm không?",
+            expiresAt: new Date(now.getTime() + 10000).toISOString(),
+            policyVersion: "companion-voice-policy-v1" as const,
+          });
+        },
+      },
+    },
   });
   await app.init();
   const server = app.getHttpServer() as Server;
@@ -416,6 +441,53 @@ void test("Voice public and worker REST separate identities, validate closed com
         assertContract("VoiceAgentControlResponse", response.body);
       })
       .expect("Cache-Control", "no-store");
+    const turnBody = {
+      attemptId,
+      leaseId,
+      turnId,
+      sequence: 1,
+      language: "vi-VN",
+      isFinal: true,
+      finalTranscript: "Hôm nay tôi cảm thấy hơi lo",
+    };
+    await request(server)
+      .post(`${workerRoot}/turns`)
+      .set("Authorization", `Bearer ${token}`)
+      .send(turnBody)
+      .expect(401)
+      .expect("Cache-Control", "no-store");
+    const turnRequest = () =>
+      request(server)
+        .post(`${workerRoot}/turns`)
+        .set("X-MentalBridge-Voice-Worker-Token", worker)
+        .set("Idempotency-Key", key);
+    await turnRequest()
+      .send({ ...turnBody, ownerId: owner })
+      .expect(422);
+    await turnRequest()
+      .send({ ...turnBody, isFinal: false })
+      .expect(422);
+    await turnRequest()
+      .send({ ...turnBody, language: "en-US" })
+      .expect(422);
+    await turnRequest()
+      .send(turnBody)
+      .expect(200)
+      .expect("Cache-Control", "no-store")
+      .expect((response) => {
+        assertContract("VoiceReply", response.body);
+      });
+    for (const [code, status] of [
+      ["PROVIDER_TIMEOUT", 504],
+      ["INVALID_FINAL_TRANSCRIPT", 422],
+    ] as const) {
+      turnFailure = code;
+      const failed = await turnRequest()
+        .send(turnBody)
+        .expect(status)
+        .expect("Cache-Control", "no-store");
+      assertProblem(failed.body, code, status);
+    }
     const legacy = await request(server).get("/api/v1/journals").expect(401);
     assert.equal(
       (legacy.body as { code: string }).code,

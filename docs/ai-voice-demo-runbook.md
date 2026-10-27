@@ -15,7 +15,8 @@ Authority: [ADR 0046](adr/0046-ai-voice-companion-contract.md),
 
 The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
 now implements start/status/connection/end and internal worker claim/control.
-The inference-turn endpoint and hosted Node worker remain MB-758/759 work.
+MB-758 adds the internal inference-turn endpoint described below; the hosted
+Node worker remains MB-759 work.
 [MB-757 evidence](story-mb-757-livekit-sessions.md) covers local synthetic SDK
 transport, actual Nest HTTP and disposable Mongo replica-set checks. No Cloud
 deployment, quota check, live room, speech benchmark or paid call was run.
@@ -53,6 +54,45 @@ For a later authorized synthetic Cloud test, use this order:
    Only after every media record is STOPPED may 014 be rolled back. Expired
    unidentified media keeps the existing anonymous quarantine; do not clear it
    without independent provider-verified isolation.
+
+## MB-758 turn checkpoint
+
+The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
+v1.15.0 implements the frozen internal turn operation. The
+[turn evidence](story-mb-758-guarded-voice-turns.md) records synthetic provider,
+real Nest HTTP and disposable Mongo checks, not live Bedrock or speech success.
+
+Apply migration 015 after 014 before starting turn handlers. Keep live Voice
+disabled while MB-759/760/762 and the account/privacy gates remain pending.
+The current demo must use one Journal context process or route a session's turn
+requests consistently to its original process. Another replica or a restarted
+process must return stale without reconstructing content or regenerating a
+claimed turn. No Redis, database or provider cache may restore discarded dialogue.
+
+The worker must claim and maintain its five-second renewal/ten-second lease
+while the turn REST request is in flight. Send final vi-VN text only, increasing
+turn sequence, opaque turn ID and one retry key per intent. Keep returned text
+in RAM; start only authorized TTS and report its exact turn/reply IDs through
+PLAYBACK_STARTED. A generated/replayed reply is not proof that the user heard it.
+On a stale/expired/denied turn, STOP or failed lease renewal, stop processing and
+purge context. Disconnecting/cancelling a pending generation ends that session;
+normal TTS interruption uses INTERRUPTED and cannot regenerate or double-charge
+the reply. Reconnect between turns retains bounded RAM only inside the current
+session's grace/deadline and requires fresh ACTIVE authority before generation.
+
+There is no new account/key registration for MB-758. Reuse the approved Companion
+Claude Bedrock configuration and existing owner/worker credentials. The request
+contains no tools or prompt-cache checkpoint; explicit cache behavior is documented
+by [AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html).
+This payload check does not replace actual account invocation-logging/privacy
+review. Provider processing locations and metadata handling remain disclosed
+separately from the application's RAM-only policy.
+
+Rollback disables new admission first, ends active sessions and stops turn
+handlers. Keep replay fences until expiry or a separately reviewed cleanup after
+confirmed provider teardown; migration 015 down refuses surviving turn fences
+before restoring the old command validator. Do not delete fences to make a
+retry invoke the model again.
 
 ## Approved path and existing resources
 

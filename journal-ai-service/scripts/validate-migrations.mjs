@@ -216,6 +216,13 @@ assert.equal(
   mediaMigration.mediaValidator.$jsonSchema.properties.transcript,
   undefined,
 );
+const turnMigration = require("../migrations/015_companion_voice_turn_fences.cjs");
+assert.equal(typeof turnMigration.up, "function");
+assert.equal(typeof turnMigration.down, "function");
+assert.equal(
+  turnMigration.commandValidator.$jsonSchema.oneOf[1].additionalProperties,
+  false,
+);
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 014_companion_voice_media.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 015_companion_voice_turn_fences.cjs",
 );

@@ -258,6 +258,21 @@ stored. Connection replay reauthorizes instead of replaying a saved token; end
 is naturally terminal/idempotent. Retention is capped by the original session
 deadline, without extension. TTL removes bindings only.
 
+MB-758 migration 015 adds a closed `turn` variant within this same aggregate.
+It binds the keyed owner/turn intent to admitted session/attempt, unique opaque
+turn ID and ordered turn sequence, originating RAM-context UUID, keyed intent
+fingerprint and approved pinned route/version hash. Unique partial session/
+sequence and session/turn-ID indexes fence concurrent generation. It is written
+before the provider call; missing RAM or a different context process cannot
+regenerate an accepted turn. Only the latest live RAM reply is replayable.
+
+Turn fences contain no transcript, model reply, prompt, token or context content.
+Creation is turn admission; expiry remains capped by the original session's
+30-day window. Cancellation/end/revocation/expiry clears RAM without clearing
+the durable fence prematurely. Existing TTL/sweep applies, and 015 rollback
+refuses surviving turn fences before restoring the legacy command validator.
+This adds no new aggregate owner or Text-quota relationship.
+
 ## Realtime active model
 
 ### Conversation — ACTIVE
