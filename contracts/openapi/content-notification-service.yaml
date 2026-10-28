@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.10.0
+  version: 1.11.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -1350,6 +1350,49 @@ paths:
         "428": { $ref: "#/components/responses/PreferenceVersionRequired" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/v1/push-devices/{installationId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - name: installationId
+        in: path
+        required: true
+        description: App-generated installation UUID; it is not a hardware identifier.
+        schema: { type: string, format: uuid }
+    put:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification preferences]
+      summary: Idempotently register or rotate the authenticated owner's push device
+      operationId: registerPushDevice
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushDeviceRegistrationRequest" }
+      responses:
+        "200":
+          description: Current owner-scoped device registration without its provider token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushDeviceRegistration" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/PushDeviceRateLimited" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification preferences]
+      summary: Revoke an owned installation after sign-out or push opt-out
+      operationId: revokePushDevice
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Device registration is revoked or was already revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/PushDeviceRateLimited" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /api/v1/notifications:
     x-mentalbridge-status: implemented
     get:
@@ -1581,6 +1624,16 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
+    PushDeviceRateLimited:
+      description: The authenticated owner exceeded the bounded push-device command rate
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+          example:
+            type: https://mentalbridge.io/errors/PUSH_DEVICE_RATE_LIMITED
+            title: Push device request rate exceeded
+            status: 429
+            code: PUSH_DEVICE_RATE_LIMITED
     IdempotencyConflict:
       description: The actor reused an idempotency key with a different create payload
       content:
@@ -1700,6 +1753,7 @@ components:
           OPEN_JOURNAL,
           OPEN_MESSAGES,
           OPEN_APPOINTMENTS,
+          OPEN_APPOINTMENT,
           OPEN_SPECIALIST_APPOINTMENTS,
           OPEN_RESOURCES,
           OPEN_ASSESSMENTS,
@@ -1783,7 +1837,7 @@ components:
         email: { type: boolean }
         push:
           type: boolean
-          description: Persisted preference only; push delivery remains deferred until mobile device registration.
+          description: Owner opt-in; delivery also requires an active permitted registration and enabled provider worker.
     NotificationChannelsPatch:
       type: object
       additionalProperties: false
@@ -1939,6 +1993,35 @@ components:
         email: { $ref: "#/components/schemas/EmailPreferences" }
         version: { type: integer, format: int64, minimum: 0 }
         updatedAt: { type: string, format: date-time }
+    PushDeviceRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [platform, provider, providerToken, permissionStatus]
+      properties:
+        platform: { type: string, enum: [ANDROID, IOS] }
+        provider: { type: string, enum: [EXPO] }
+        providerToken:
+          type: string
+          minLength: 20
+          maxLength: 512
+          writeOnly: true
+          pattern: '^ExponentPushToken\[[A-Za-z0-9_-]+\]$'
+        permissionStatus: { type: string, enum: [GRANTED, DENIED] }
+        appVersion: { type: string, minLength: 1, maxLength: 32 }
+    PushDeviceRegistration:
+      type: object
+      additionalProperties: false
+      required:
+        [installationId, platform, provider, permissionStatus, status, appVersion, lastRegisteredAt, version]
+      properties:
+        installationId: { type: string, format: uuid }
+        platform: { type: string, enum: [ANDROID, IOS] }
+        provider: { type: string, enum: [EXPO] }
+        permissionStatus: { type: string, enum: [GRANTED, DENIED] }
+        status: { type: string, enum: [ACTIVE, DISABLED, REVOKED, INVALID] }
+        appVersion: { type: [string, "null"], maxLength: 32 }
+        lastRegisteredAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
     NotificationPreferencePatch:
       type: object
       additionalProperties: false

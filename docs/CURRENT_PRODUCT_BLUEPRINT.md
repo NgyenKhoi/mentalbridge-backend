@@ -12,8 +12,15 @@ minutes within ten daily minutes, and PREMIUM three sessions of up to ten
 minutes within thirty daily minutes. Voice uses independent quota, dual Care
 consent and isolated LiveKit agent rooms with no saved audio/transcript.
 Journal/AI owns voice authority; Consultation remains entitlement owner.
-These are approved targets, not implemented APIs or live-provider evidence;
-existing text and specialist consultation behavior is unchanged.
+[MB-756](requirements-traceability/stories/mb-756.md) delivers admission/quota and
+current owner authorization; [MB-757](requirements-traceability/stories/mb-757.md)
+adds disabled-by-default public sessions, isolated rooms, explicit dispatch and
+worker lifecycle control. [MB-758](requirements-traceability/stories/mb-758.md)
+adds guarded internal turns with bounded current-call RAM and no Text-quota
+consumption. The hosted worker, speech validation and live end-to-end evidence
+remain subsequent delivery gates. Existing text
+and specialist consultation behavior is unchanged; these checkpoints do not
+establish live-provider readiness.
 
 Community peer messaging has a separate **accepted target** in
 [ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and

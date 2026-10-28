@@ -1,11 +1,35 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.18.0
+  version: 1.19.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
+  /internal/v1/ai-companion/voice-entitlement-authorizations:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: consultation-service
+    post:
+      operationId: checkCurrentVoiceEntitlement
+      description: Dedicated Journal/AI service-authenticated read of the exact owner and opaque voice-session binding. Delegates current entitlement authority without financial writes or a shadow entitlement. Missing, expired and future grants resolve to FREE/DEFAULT_FREE; active PAID/DEMO grants require validUntil strictly after checkedAt. The session identifier is echoed for caller binding and grants no access by itself. User JWTs, worker credentials and client package claims cannot authorize this route. Does not enable voice sessions.
+      security: [{ journalVoiceEntitlementToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoiceOwnerCheck' }
+      responses:
+        '200':
+          description: Current owner entitlement decision
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoiceEntitlementDecision' }
+        '401': { $ref: '#/components/responses/VoiceUnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/VoiceForbiddenProblem' }
+        '422': { $ref: '#/components/responses/VoiceInvalidRequestProblem' }
+        '503': { $ref: '#/components/responses/VoiceEntitlementUnavailableProblem' }
   /api/v1/specialist/appointments/{appointmentId}/video-completion:
     x-mentalbridge-status: implemented
     post:
@@ -2081,6 +2105,11 @@ paths:
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
 components:
   securitySchemes:
+    journalVoiceEntitlementToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Voice-Entitlement-Token
+      description: Dedicated Journal-to-Consultation read-only voice credential. Not a user, worker, reminder or general internal token.
     liveKitWebhook:
       type: apiKey
       in: header
@@ -2190,6 +2219,57 @@ components:
       description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    VoiceOwnerCheck:
+      type: object
+      additionalProperties: false
+      required: [ownerId, voiceSessionId, purpose]
+      properties:
+        ownerId: { type: string, format: uuid }
+        voiceSessionId: { type: string, format: uuid }
+        purpose: { const: AI_COMPANION_VOICE }
+    VoiceEntitlementDecision:
+      type: object
+      additionalProperties: false
+      required: [ownerId, voiceSessionId, purpose, packageCode, source, entitlementVersion, checkedAt]
+      properties:
+        ownerId: { type: string, format: uuid }
+        voiceSessionId: { type: string, format: uuid }
+        purpose: { const: AI_COMPANION_VOICE }
+        packageCode: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        source: { type: string, enum: [DEFAULT_FREE, PAID, DEMO] }
+        entitlementVersion: { type: string, minLength: 1, maxLength: 128 }
+        checkedAt: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { packageCode: { const: FREE } }
+            required: [packageCode]
+          then:
+            properties: { source: { const: DEFAULT_FREE } }
+          else:
+            properties:
+              source: { type: string, enum: [PAID, DEMO] }
+              validUntil: { type: string, format: date-time }
+            required: [validUntil]
+    VoiceProblem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string, enum: [UNAUTHENTICATED, FORBIDDEN, INVALID_REQUEST, ENTITLEMENT_UNAVAILABLE] }
+        correlationId: { type: string, format: uuid }
+      allOf:
+        - if: { properties: { code: { const: UNAUTHENTICATED } }, required: [code] }
+          then: { properties: { status: { const: 401 } } }
+        - if: { properties: { code: { const: FORBIDDEN } }, required: [code] }
+          then: { properties: { status: { const: 403 } } }
+        - if: { properties: { code: { const: INVALID_REQUEST } }, required: [code] }
+          then: { properties: { status: { const: 422 } } }
+        - if: { properties: { code: { const: ENTITLEMENT_UNAVAILABLE } }, required: [code] }
+          then: { properties: { status: { const: 503 } } }
     VideoCompletion:
       type: object
       additionalProperties: false
@@ -4027,6 +4107,34 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    VoiceUnauthorizedProblem:
+      description: Missing, disabled or invalid dedicated Journal service authentication
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
+    VoiceForbiddenProblem:
+      description: Unsupported caller authentication context
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
+    VoiceInvalidRequestProblem:
+      description: Invalid, incomplete, overposted or unsupported request
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
+    VoiceEntitlementUnavailableProblem:
+      description: Current owner entitlement could not be resolved consistently
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
     AppointmentForbiddenProblem:
       description: USER role or a current PLUS/PREMIUM entitlement is required (PAID_PLAN_REQUIRED).
       content:

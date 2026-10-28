@@ -48,7 +48,9 @@ CREATE TABLE care.user_profile (
 CREATE TABLE care.consent_decision (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
-    consent_type varchar(40) NOT NULL,
+    consent_type varchar(40) NOT NULL CHECK (consent_type IN (
+        'PRIVACY_POLICY', 'AI_PROCESSING', 'AI_VOICE_PROCESSING', 'RESEARCH_DATA', 'MARKETING_NOTIFICATION'
+    )),
     policy_version varchar(64) NOT NULL,
     granted boolean NOT NULL,
     evidence jsonb NOT NULL,

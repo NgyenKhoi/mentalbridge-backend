@@ -45,6 +45,7 @@ import {
   UserNotificationDedupeConflictError,
   UserNotificationRepository,
 } from '../../user-notifications/user-notification.repository.js';
+import { PushDeviceRepository } from '../../push-delivery/push-device.repository.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +112,9 @@ describe('Database Integration', () => {
       '25_add_general_user_notification_producers.sql',
       '26_add_community_notice_delivery.sql',
       '27_plan_scoped_resource_bingo.sql',
+      '28_add_native_push_delivery.sql',
+      '29_harden_native_push_delivery.sql',
+      '30_add_appointment_push_reminders.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -199,6 +203,348 @@ describe('Database Integration', () => {
   afterAll(async () => {
     if (pool) await pool.end();
     if (container) await container.stop();
+  });
+
+  describe('native push device lifecycle', () => {
+    const database = (): DatabaseService =>
+      ({
+        query: (text: string, parameters?: never[]) => pool.query(text, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const result = await operation(client);
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+        },
+      }) as DatabaseService;
+
+    it('rotates one provider token to its latest owner and revokes idempotently', async () => {
+      const repository = new PushDeviceRepository(database());
+      const token = {
+        ciphertext: 'encrypted-token',
+        iv: 'synthetic-iv',
+        authTag: 'synthetic-tag',
+        hash: 'a'.repeat(64),
+      };
+      const firstOwner = randomUUID();
+      const secondOwner = randomUUID();
+      await repository.register(
+        firstOwner,
+        {
+          installationId: randomUUID(),
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        token,
+      );
+      const secondInstallation = randomUUID();
+      await repository.register(
+        secondOwner,
+        {
+          installationId: secondInstallation,
+          platform: 'IOS',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        token,
+      );
+
+      const states = await pool.query<{ owner_id: string; status: string }>(
+        `SELECT owner_id::text, status FROM push_device_registration
+         WHERE provider_token_hash = $1 ORDER BY created_at`,
+        [token.hash],
+      );
+      expect(states.rows).toEqual([
+        { owner_id: firstOwner, status: 'REVOKED' },
+        { owner_id: secondOwner, status: 'ACTIVE' },
+      ]);
+      await new NotificationPreferenceRepository(database()).getOrCreate(secondOwner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [secondOwner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, secondOwner, `push-test:${notificationId}`, 'b'.repeat(64)],
+      );
+      await expect(repository.materializeCandidates(10)).resolves.toBe(1);
+      expect(
+        (
+          await pool.query<{ state: string }>(
+            'SELECT state FROM push_delivery_attempt WHERE notification_id = $1',
+            [notificationId],
+          )
+        ).rows[0].state,
+      ).toBe('PENDING');
+      await expect(repository.revoke(secondOwner, secondInstallation)).resolves.toBe(true);
+      await repository.settleIneligible();
+      expect(
+        (
+          await pool.query<{ state: string; failure_code: string }>(
+            'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+            [notificationId],
+          )
+        ).rows[0],
+      ).toEqual({ state: 'SUPPRESSED', failure_code: 'DEVICE_DISABLED' });
+      await expect(repository.revoke(secondOwner, secondInstallation)).resolves.toBe(true);
+      await expect(repository.revoke(firstOwner, randomUUID())).resolves.toBe(false);
+    });
+
+    it('revokes the previous owner when one installation is reassigned with a new token', async () => {
+      const repository = new PushDeviceRepository(database());
+      const installationId = randomUUID();
+      const firstOwner = randomUUID();
+      const secondOwner = randomUUID();
+      await repository.register(
+        firstOwner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'first', iv: 'first-iv', authTag: 'first-tag', hash: 'c'.repeat(64) },
+      );
+      await repository.register(
+        secondOwner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'second', iv: 'second-iv', authTag: 'second-tag', hash: 'd'.repeat(64) },
+      );
+
+      const states = await pool.query<{ owner_id: string; status: string }>(
+        `SELECT owner_id::text, status
+         FROM push_device_registration
+         WHERE installation_id = $1
+         ORDER BY created_at`,
+        [installationId],
+      );
+      expect(states.rows).toEqual([
+        { owner_id: firstOwner, status: 'REVOKED' },
+        { owner_id: secondOwner, status: 'ACTIVE' },
+      ]);
+    });
+
+    it('keeps an identical PUT timestamp stable and does not skip a pending notification', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      const installationId = randomUUID();
+      const token = {
+        ciphertext: 'encrypted-token',
+        iv: 'synthetic-iv',
+        authTag: 'synthetic-tag',
+        hash: 'e'.repeat(64),
+      };
+      const input = {
+        installationId,
+        platform: 'ANDROID' as const,
+        provider: 'EXPO' as const,
+        providerToken: 'not-persisted-by-repository',
+        permissionStatus: 'GRANTED' as const,
+        appVersion: '1.0.0',
+      };
+      const first = await repository.register(owner, input, token);
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, owner, `push-noop:${notificationId}`, 'f'.repeat(64)],
+      );
+
+      const repeated = await repository.register(owner, input, {
+        ...token,
+        ciphertext: 'randomized-ciphertext-that-must-not-be-written',
+      });
+
+      expect(repeated.lastRegisteredAt).toBe(first.lastRegisteredAt);
+      expect(repeated.version).toBe(first.version);
+      await expect(repository.materializeCandidates(10)).resolves.toBe(1);
+      const persisted = await pool.query<{ provider_token_ciphertext: string }>(
+        `SELECT provider_token_ciphertext
+         FROM push_device_registration
+         WHERE owner_id = $1 AND installation_id = $2`,
+        [owner, installationId],
+      );
+      expect(persisted.rows[0].provider_token_ciphertext).toBe('encrypted-token');
+    });
+
+    it('does not claim expired or deleted notifications for provider delivery', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      const installationId = randomUUID();
+      await repository.register(
+        owner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'token', iv: 'iv', authTag: 'tag', hash: '1'.repeat(64) },
+      );
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, owner, `push-lifecycle:${notificationId}`, '2'.repeat(64)],
+      );
+      await repository.materializeCandidates(10);
+      await pool.query('UPDATE notification SET deleted_at = now() WHERE id = $1', [
+        notificationId,
+      ]);
+
+      const claims = await repository.claim(10);
+      expect(claims.some((claim) => claim.notificationId === notificationId)).toBe(false);
+      await repository.settleIneligible();
+      const attempt = await pool.query<{ state: string; failure_code: string }>(
+        'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+        [notificationId],
+      );
+      expect(attempt.rows[0]).toEqual({
+        state: 'SUPPRESSED',
+        failure_code: 'NOTIFICATION_DELETED',
+      });
+
+      const expiredNotificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version, created_at)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() - interval '1 hour', now() - interval '2 hours', 'CONTENT', $3, $4,
+                 'DELIVERED', 0, now() - interval '2 hours')`,
+        [expiredNotificationId, owner, `push-expired:${expiredNotificationId}`, '5'.repeat(64)],
+      );
+      await pool.query(
+        `INSERT INTO push_delivery_attempt (notification_id, device_registration_id)
+         SELECT $1, id
+         FROM push_device_registration
+         WHERE owner_id = $2 AND installation_id = $3`,
+        [expiredNotificationId, owner, installationId],
+      );
+
+      const expiredClaims = await repository.claim(10);
+      expect(expiredClaims.some((claim) => claim.notificationId === expiredNotificationId)).toBe(
+        false,
+      );
+      await repository.settleIneligible();
+      const expiredAttempt = await pool.query<{ state: string; failure_code: string }>(
+        'SELECT state, failure_code FROM push_delivery_attempt WHERE notification_id = $1',
+        [expiredNotificationId],
+      );
+      expect(expiredAttempt.rows[0]).toEqual({
+        state: 'SUPPRESSED',
+        failure_code: 'NOTIFICATION_EXPIRED',
+      });
+    });
+
+    it('enforces the configured owner command rate limit atomically', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+
+      await expect(repository.consumeCommandRateLimit(owner, 2, 60)).resolves.toBe(true);
+      await expect(repository.consumeCommandRateLimit(owner, 2, 60)).resolves.toBe(true);
+      await expect(repository.consumeCommandRateLimit(owner, 2, 60)).resolves.toBe(false);
+    });
+
+    it('persists delayed Expo receipt confirmation separately from ticket acceptance', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      const installationId = randomUUID();
+      await repository.register(
+        owner,
+        {
+          installationId,
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        {
+          ciphertext: 'receipt-token',
+          iv: 'receipt-iv',
+          authTag: 'receipt-tag',
+          hash: '3'.repeat(64),
+        },
+      );
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      const notificationId = randomUUID();
+      await pool.query(
+        `INSERT INTO notification
+           (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+            source, source_identity, request_fingerprint, delivery_state, version)
+         VALUES ($1, $2, 'SYSTEM_RESOURCE', 'MentalBridge', 'Generic inbox copy', 'NORMAL',
+                 now() + interval '1 day', now(), 'CONTENT', $3, $4, 'DELIVERED', 0)`,
+        [notificationId, owner, `push-receipt:${notificationId}`, '4'.repeat(64)],
+      );
+      await repository.materializeCandidates(100);
+      const claims = await repository.claim(100);
+      const claim = claims.find((candidate) => candidate.notificationId === notificationId);
+      expect(claim).toBeDefined();
+      await repository.accepted(claim!.id, 'ticket-receipt-1', 0);
+
+      const receiptClaims = await repository.claimReceipts(100, 60);
+      const receiptClaim = receiptClaims.find(
+        (candidate) => candidate.providerTicketId === 'ticket-receipt-1',
+      );
+      expect(receiptClaim).toBeDefined();
+      await repository.confirmReceipt(receiptClaim!.id);
+      const attempt = await pool.query<{
+        state: string;
+        receipt_attempt_count: number;
+        receipt_checked_at: Date;
+      }>(
+        `SELECT state, receipt_attempt_count, receipt_checked_at
+         FROM push_delivery_attempt
+         WHERE notification_id = $1`,
+        [notificationId],
+      );
+      expect(attempt.rows[0].state).toBe('CONFIRMED');
+      expect(attempt.rows[0].receipt_attempt_count).toBe(1);
+      expect(attempt.rows[0].receipt_checked_at).toBeInstanceOf(Date);
+    });
   });
 
   describe('resource engagement migration', () => {
@@ -1126,6 +1472,11 @@ describe('Database Integration', () => {
         [appointmentId],
       );
       expect(reminders.rows.every((row) => row.delivery_state === 'INVALIDATED')).toBe(true);
+      const pushReminders = await pool.query(
+        'SELECT state FROM appointment_push_reminder WHERE appointment_id=$1',
+        [appointmentId],
+      );
+      expect(pushReminders.rows.every((row) => row.state === 'INVALIDATED')).toBe(true);
     });
 
     it('deduplicates minimized specialist appointment notifications and honors preferences', async () => {
@@ -1193,11 +1544,200 @@ describe('Database Integration', () => {
         [replacementId],
       );
       expect(replacement.rows[0].count).toBe(1);
+      const replacementPush = await pool.query(
+        'SELECT count(*)::int AS count FROM appointment_push_reminder WHERE appointment_id=$1',
+        [replacementId],
+      );
+      expect(replacementPush.rows[0].count).toBe(1);
       const claimed = await Promise.all([
         repository.claimDue(new Date('2030-01-02T02:00:00.000Z'), 100),
         repository.claimDue(new Date('2030-01-02T02:00:00.000Z'), 100),
       ]);
       expect(claimed.flat().filter((row) => row.appointmentId === replacementId)).toHaveLength(1);
+      const claimedPush = await Promise.all([
+        repository.claimPushDue(new Date('2030-01-02T02:00:00.000Z'), 100),
+        repository.claimPushDue(new Date('2030-01-02T02:00:00.000Z'), 100),
+      ]);
+      expect(claimedPush.flat().filter((row) => row.appointmentId === replacementId)).toHaveLength(
+        1,
+      );
+    });
+
+    it('materializes one durable inbox fact and one attempt per active device', async () => {
+      const repository = reminderRepository();
+      const appointmentId = '24000000-0000-4000-8000-000000000030';
+      const ownerId = '24000000-0000-4000-8000-000000000003';
+      const observedAt = new Date('2030-01-01T00:00:00.000Z');
+      const dueAt = new Date('2030-01-02T02:00:00.000Z');
+      await new NotificationPreferenceRepository({
+        query: (sql: string, parameters?: unknown[]) => pool.query(sql, parameters),
+      } as DatabaseService).getOrCreate(ownerId, 'USER');
+      await pool.query(
+        `UPDATE notification_preference
+         SET notifications_enabled=true, channel_push_enabled=true,
+             group_appointment_message_enabled=true, quiet_hours_enabled=false
+         WHERE user_id=$1`,
+        [ownerId],
+      );
+      for (const suffix of ['31', '32']) {
+        await pool.query(
+          `INSERT INTO push_device_registration (
+             owner_id, installation_id, platform, provider,
+             provider_token_ciphertext, provider_token_iv, provider_token_auth_tag,
+             provider_token_hash, permission_status, status, last_registered_at,
+             delivery_eligible_from_at
+           ) VALUES ($1,$2,'ANDROID','EXPO',$3,$4,$5,$6,'GRANTED','ACTIVE',now(),
+                     now() - interval '1 minute')`,
+          [
+            ownerId,
+            `24000000-0000-4000-8000-0000000000${suffix}`,
+            `ciphertext-${suffix}`,
+            `iv-${suffix}`,
+            `tag-${suffix}`,
+            suffix.repeat(32),
+          ],
+        );
+      }
+
+      await repository.apply(statusEvent(appointmentId, 1, 'CONFIRMED'), observedAt);
+      const [claim] = await repository.claimPushDue(dueAt, 10);
+      expect(claim).toEqual(expect.objectContaining({ appointmentId }));
+      await expect(repository.materializePush(claim, dueAt)).resolves.toBe(true);
+      await expect(repository.materializePush(claim, dueAt)).resolves.toBe(false);
+
+      const notification = await pool.query<{
+        id: string;
+        title: string;
+        body: string;
+        action_type: string;
+        action_target_id: string;
+      }>(
+        `SELECT id, title, body, action_type, action_target_id
+         FROM notification
+         WHERE recipient_id=$1 AND source='CONSULTATION_APPOINTMENT_REMINDER_V1'
+           AND source_identity=$2`,
+        [ownerId, `${appointmentId}:1`],
+      );
+      expect(notification.rows).toEqual([
+        expect.objectContaining({
+          title: 'Sắp đến giờ hẹn của bạn',
+          body: 'Bạn có một lịch hẹn sắp bắt đầu trong MentalBridge.',
+          action_type: 'OPEN_APPOINTMENT',
+          action_target_id: appointmentId,
+        }),
+      ]);
+      expect(JSON.stringify(notification.rows)).not.toMatch(/journal|assessment|symptom|diagnos/i);
+
+      const database = {
+        query: (sql: string, parameters?: unknown[]) => pool.query(sql, parameters),
+        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) =>
+          operation(pool as unknown as DatabaseClient),
+      } as DatabaseService;
+      await new PushDeviceRepository(database).materializeCandidates(1000);
+      const attempts = await pool.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM push_delivery_attempt WHERE notification_id=$1`,
+        [notification.rows[0].id],
+      );
+      expect(attempts.rows[0].count).toBe(2);
+    });
+
+    it('ends the third deferred push claim instead of stranding PENDING', async () => {
+      const repository = reminderRepository();
+      const appointmentId = randomUUID();
+      await repository.apply(
+        statusEvent(appointmentId, 1, 'CONFIRMED'),
+        new Date('2030-01-01T00:00:00.000Z'),
+      );
+
+      for (const [claimAt, retryAt] of [
+        ['2030-01-02T02:00:00.000Z', '2030-01-02T02:01:00.000Z'],
+        ['2030-01-02T02:01:00.000Z', '2030-01-02T02:02:00.000Z'],
+        ['2030-01-02T02:02:00.000Z', '2030-01-02T02:30:00.000Z'],
+      ] as const) {
+        const claimTime = new Date(claimAt);
+        const reminder = (await repository.claimPushDue(claimTime, 100)).find(
+          (row) => row.appointmentId === appointmentId,
+        );
+        expect(reminder).toBeDefined();
+        await repository.retryPush(
+          reminder!.id,
+          new Date(retryAt),
+          'QUIET_HOURS_DEFERRED',
+          claimTime,
+        );
+      }
+
+      const result = await pool.query<{
+        state: string;
+        attempt_count: number;
+        failure_code: string;
+        next_attempt_at: Date | null;
+        terminal_at: Date | null;
+      }>(
+        `SELECT state, attempt_count, failure_code, next_attempt_at, terminal_at
+         FROM appointment_push_reminder WHERE appointment_id=$1`,
+        [appointmentId],
+      );
+      expect(result.rows).toEqual([
+        {
+          state: 'FAILED',
+          attempt_count: 3,
+          failure_code: 'RETRY_LIMIT_EXHAUSTED',
+          next_attempt_at: null,
+          terminal_at: new Date('2030-01-02T02:02:00.000Z'),
+        },
+      ]);
+      const next = await repository.claimPushDue(new Date('2030-01-02T02:31:00.000Z'), 100);
+      expect(next.some((row) => row.appointmentId === appointmentId)).toBe(false);
+    });
+
+    it('terminally reconciles a crashed final processing lease without another claim', async () => {
+      const repository = reminderRepository();
+      const appointmentId = '24000000-0000-4000-8000-000000000040';
+      await repository.apply(
+        statusEvent(appointmentId, 1, 'CONFIRMED'),
+        new Date('2030-01-01T00:00:00.000Z'),
+      );
+
+      for (const claimAt of [
+        '2030-01-02T02:00:00.000Z',
+        '2030-01-02T02:00:31.000Z',
+        '2030-01-02T02:01:02.000Z',
+      ]) {
+        const claims = await repository.claimPushDue(new Date(claimAt), 100);
+        expect(claims.some((row) => row.appointmentId === appointmentId)).toBe(true);
+      }
+
+      await expect(
+        repository.reconcilePushLeases(new Date('2030-01-02T02:01:31.000Z')),
+      ).resolves.toBe(0);
+      await expect(
+        repository.reconcilePushLeases(new Date('2030-01-02T02:01:33.000Z')),
+      ).resolves.toBeGreaterThanOrEqual(1);
+
+      const terminal = await pool.query<{
+        state: string;
+        attempt_count: number;
+        failure_code: string;
+        terminal_at: Date;
+      }>(
+        `SELECT state, attempt_count, failure_code, terminal_at
+         FROM appointment_push_reminder WHERE appointment_id=$1`,
+        [appointmentId],
+      );
+      expect(terminal.rows).toEqual([
+        {
+          state: 'FAILED',
+          attempt_count: 3,
+          failure_code: 'PROCESSING_LEASE_EXHAUSTED',
+          terminal_at: new Date('2030-01-02T02:01:33.000Z'),
+        },
+      ]);
+      const afterTerminal = await repository.claimPushDue(
+        new Date('2030-01-02T02:02:00.000Z'),
+        100,
+      );
+      expect(afterTerminal.some((row) => row.appointmentId === appointmentId)).toBe(false);
     });
 
     it('deduplicates one reminder per recipient, appointment and version', async () => {
@@ -1289,6 +1829,13 @@ describe('Database Integration', () => {
       // Claim due: must not claim terminal EXPIRED reminders (no provider send)
       const claimed = await repository.claimDue(new Date('2030-01-02T04:00:00.000Z'), 100);
       expect(claimed.some((row) => row.appointmentId === appointmentId)).toBe(false);
+      const pushReminder = await pool.query<{ state: string; failure_code: string }>(
+        'SELECT state, failure_code FROM appointment_push_reminder WHERE appointment_id=$1',
+        [appointmentId],
+      );
+      expect(pushReminder.rows).toEqual([{ state: 'EXPIRED', failure_code: 'LATE_CONFIRMATION' }]);
+      const claimedPush = await repository.claimPushDue(new Date('2030-01-02T04:00:00.000Z'), 100);
+      expect(claimedPush.some((row) => row.appointmentId === appointmentId)).toBe(false);
     });
   });
 

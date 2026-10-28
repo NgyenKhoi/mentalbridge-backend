@@ -15,6 +15,7 @@ import io.swagger.v3.oas.models.media.Schema;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"POST /internal/v1/ai-companion/voice-entitlement-authorizations",
 			"GET /api/v1/specialist-profile/documents",
 			"POST /api/v1/specialist-profile/documents",
 			"GET /api/v1/specialist-profile/documents/{documentId}/file",
@@ -104,6 +105,29 @@ class ConsultationOpenApiContractTests {
 			"POST /internal/v1/payouts/momo/ipn");
 
 	@Test
+	void voiceOwnerReadRetainsFrozenRequestDecisionAndClosedProblemSemantics() throws Exception {
+		var active = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var frozen = new com.fasterxml.jackson.databind.ObjectMapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "proposals", "companion-voice-v1.openapi.json")));
+		var schemas = active.path("components").path("schemas");
+		assertThat(schemas.path("VoiceOwnerCheck")).isEqualTo(frozen.path("components").path("schemas").path("OwnerCheck"));
+		assertThat(schemas.path("VoiceEntitlementDecision"))
+				.isEqualTo(frozen.path("components").path("schemas").path("EntitlementDecision"));
+		var problem = schemas.path("VoiceProblem");
+		assertThat(problem.path("additionalProperties").booleanValue()).isFalse();
+		assertThat(problem.path("required")).isEqualTo(frozen.path("components").path("schemas").path("Problem").path("required"));
+		var operation = active.path("paths").path("/internal/v1/ai-companion/voice-entitlement-authorizations").path("post");
+		var responseCodes = new HashSet<String>();
+		operation.path("responses").fieldNames().forEachRemaining(responseCodes::add);
+		assertThat(responseCodes).containsExactlyInAnyOrder("200", "401", "403", "422", "503");
+		assertThat(operation.path("responses").path("200").path("headers").path("Cache-Control")
+				.path("schema").path("const").asText()).isEqualTo("no-store");
+		assertThat(active.path("components").path("securitySchemes").path("journalVoiceEntitlementToken")
+				.path("name").asText()).isEqualTo("X-MentalBridge-Voice-Entitlement-Token");
+	}
+
+	@Test
 	void contractIsValidAndMatchesTheImplementedSurface() {
 		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toAbsolutePath();
 		var options = new ParseOptions();
@@ -120,6 +144,9 @@ class ConsultationOpenApiContractTests {
 				operations.add(method.name() + " " + path);
 				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")) {
 					assertThat(operation.getSecurity()).isEmpty();
+				}
+				else if (path.equals("/internal/v1/ai-companion/voice-entitlement-authorizations")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("journalVoiceEntitlementToken"));
 				}
 				else if (path.contains("notification-eligibility")) {
 					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));

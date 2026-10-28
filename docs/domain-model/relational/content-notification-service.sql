@@ -305,7 +305,8 @@ CREATE TABLE content.notification (
         ) AND action_target_id IS NULL)
         OR (action_type IN (
             'OPEN_RESOURCE', 'OPEN_COMMUNITY_POST', 'OPEN_SUPPORT_GUIDE',
-            'OPEN_COMMUNITY_CONVERSATION', 'OPEN_COMMUNITY_REQUEST', 'OPEN_COMMUNITY_INVITATION'
+            'OPEN_COMMUNITY_CONVERSATION', 'OPEN_COMMUNITY_REQUEST', 'OPEN_COMMUNITY_INVITATION',
+            'OPEN_APPOINTMENT'
         ) AND action_target_id IS NOT NULL)
     )
 );
@@ -353,6 +354,86 @@ CREATE TABLE content.appointment_email_reminder (
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     UNIQUE (recipient_id, appointment_id, appointment_version)
+);
+
+CREATE TABLE content.appointment_push_reminder (
+    id uuid PRIMARY KEY,
+    recipient_id uuid NOT NULL, -- external -> identity.account.id
+    appointment_id uuid NOT NULL, -- external -> consultation.appointment.id
+    appointment_version bigint NOT NULL,
+    modality varchar(24) NOT NULL,
+    scheduled_start_at timestamptz NOT NULL,
+    target_at timestamptz NOT NULL,
+    due_at timestamptz NOT NULL,
+    state varchar(20) NOT NULL,
+    attempt_count smallint NOT NULL,
+    first_attempt_at timestamptz,
+    last_attempt_at timestamptz,
+    next_attempt_at timestamptz,
+    notification_id uuid REFERENCES content.notification(id),
+    failure_code varchar(64),
+    invalidated_at timestamptz,
+    terminal_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (recipient_id, appointment_id, appointment_version)
+);
+
+CREATE TABLE content.push_device_registration (
+    id uuid PRIMARY KEY,
+    owner_id uuid NOT NULL, -- external -> identity.account.id
+    installation_id uuid NOT NULL,
+    platform varchar(16) NOT NULL,
+    provider varchar(16) NOT NULL,
+    provider_token_ciphertext text NOT NULL,
+    provider_token_iv varchar(32) NOT NULL,
+    provider_token_auth_tag varchar(32) NOT NULL,
+    provider_token_hash char(64) NOT NULL,
+    permission_status varchar(16) NOT NULL,
+    status varchar(16) NOT NULL,
+    app_version varchar(32),
+    last_registered_at timestamptz NOT NULL,
+    delivery_eligible_from_at timestamptz NOT NULL,
+    revoked_at timestamptz,
+    invalidated_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    version bigint NOT NULL,
+    UNIQUE (owner_id, installation_id)
+);
+
+CREATE UNIQUE INDEX uq_push_device_active_token
+    ON content.push_device_registration (provider, provider_token_hash)
+    WHERE status IN ('ACTIVE', 'DISABLED');
+
+CREATE UNIQUE INDEX uq_push_device_active_installation
+    ON content.push_device_registration (installation_id)
+    WHERE status IN ('ACTIVE', 'DISABLED');
+
+CREATE TABLE content.push_delivery_attempt (
+    id uuid PRIMARY KEY,
+    notification_id uuid NOT NULL REFERENCES content.notification(id),
+    device_registration_id uuid NOT NULL REFERENCES content.push_device_registration(id),
+    state varchar(20) NOT NULL,
+    attempt_count smallint NOT NULL,
+    available_at timestamptz NOT NULL,
+    claimed_at timestamptz,
+    provider_ticket_id varchar(160),
+    failure_code varchar(48),
+    last_attempt_at timestamptz,
+    accepted_at timestamptz,
+    receipt_attempt_count smallint NOT NULL,
+    receipt_checked_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (notification_id, device_registration_id)
+);
+
+CREATE TABLE content.push_device_command_rate_limit (
+    owner_id uuid PRIMARY KEY, -- external -> identity.account.id
+    window_started_at timestamptz NOT NULL,
+    request_count smallint NOT NULL,
+    updated_at timestamptz NOT NULL
 );
 
 CREATE TABLE content.appointment_reminder_checkpoint (

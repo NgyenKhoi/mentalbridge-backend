@@ -182,6 +182,47 @@ assert.equal(
   false,
 );
 
+const voiceMigration = require("../migrations/013_companion_voice_quota.cjs");
+assert.equal(typeof voiceMigration.up, "function");
+assert.equal(typeof voiceMigration.down, "function");
+assert.equal(
+  voiceMigration.sessionValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  voiceMigration.usageValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  voiceMigration.capacityValidator.$jsonSchema.properties.slots.maxItems,
+  2,
+);
+const mediaMigration = require("../migrations/014_companion_voice_media.cjs");
+assert.equal(typeof mediaMigration.up, "function");
+assert.equal(typeof mediaMigration.down, "function");
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  mediaMigration.commandValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.properties.participantToken,
+  undefined,
+);
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.properties.transcript,
+  undefined,
+);
+const turnMigration = require("../migrations/015_companion_voice_turn_fences.cjs");
+assert.equal(typeof turnMigration.up, "function");
+assert.equal(typeof turnMigration.down, "function");
+assert.equal(
+  turnMigration.commandValidator.$jsonSchema.oneOf[1].additionalProperties,
+  false,
+);
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 012_ai_companion_conversation_context.cjs",
+  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 015_companion_voice_turn_fences.cjs",
 );

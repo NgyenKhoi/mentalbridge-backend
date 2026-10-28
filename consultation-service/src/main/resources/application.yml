@@ -47,6 +47,8 @@ spring:
 
 mentalbridge:
   consultation:
+    voice:
+      journal-service-token: ${CONSULTATION_VOICE_JOURNAL_SERVICE_TOKEN:}
     credentials:
       cloudinary:
         enabled: ${CONSULTATION_CREDENTIAL_STORAGE_ENABLED:false}
