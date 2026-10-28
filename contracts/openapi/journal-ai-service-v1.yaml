@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.15.0
+  version: 1.16.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -2221,6 +2221,8 @@ components:
         - quota
         - checkedAt
         - voiceConsentVersion
+        - maxSessionSeconds
+        - availableSessionSeconds
       properties:
         policyVersion:
           const: companion-voice-policy-v1
@@ -2253,6 +2255,18 @@ components:
           format: date-time
         voiceConsentVersion:
           const: ai-voice-processing-capstone-v1
+        maxSessionSeconds:
+          type: integer
+          enum:
+            - 0
+            - 300
+            - 600
+          description: Current package policy ceiling in seconds. Not an admission or reservation.
+        availableSessionSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: Display-only min(maxSessionSeconds, unreserved daily remainingSeconds) when eligible; zero otherwise. Reauthorize and admit atomically on POST; never derive a deadline from this snapshot.
       allOf:
         - if:
             properties:
@@ -2269,10 +2283,54 @@ components:
                 enum:
                   - PLUS
                   - PREMIUM
+              availableSessionSeconds:
+                type: integer
+                minimum: 1
           else:
             properties:
               eligible:
                 const: false
+              availableSessionSeconds:
+                const: 0
+        - if:
+            properties:
+              packageCode:
+                const: FREE
+            required:
+              - packageCode
+          then:
+            properties:
+              maxSessionSeconds:
+                const: 0
+              availableSessionSeconds:
+                type: integer
+                maximum: 0
+        - if:
+            properties:
+              packageCode:
+                const: PLUS
+            required:
+              - packageCode
+          then:
+            properties:
+              maxSessionSeconds:
+                const: 300
+              availableSessionSeconds:
+                type: integer
+                maximum: 300
+        - if:
+            properties:
+              packageCode:
+                const: PREMIUM
+            required:
+              - packageCode
+          then:
+            properties:
+              maxSessionSeconds:
+                const: 600
+              availableSessionSeconds:
+                type: integer
+                maximum: 600
     VoiceQuota:
       type: object
       additionalProperties: false
