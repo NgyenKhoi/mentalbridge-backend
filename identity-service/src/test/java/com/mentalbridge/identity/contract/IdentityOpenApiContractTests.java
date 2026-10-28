@@ -45,7 +45,13 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/admin/platform-report-schedules",
 			"POST /api/v1/admin/platform-report-schedules",
 			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
-			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
+			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}",
+			"GET /api/v1/admin/retention/policies",
+			"POST /api/v1/admin/retention/policies/{policyId}/sweep",
+			"GET /api/v1/admin/retention/deletions",
+			"POST /api/v1/admin/retention/deletions/{requestId}/retry",
+			"POST /api/v1/admin/retention/deletions/{requestId}/holds",
+			"DELETE /api/v1/admin/retention/deletions/{requestId}/holds");
 
 	private static final Set<String> PLANNED_OPERATIONS = Set.of();
 	private static final Set<String> PROTECTED_OPERATIONS = Set.of(
@@ -70,7 +76,13 @@ class IdentityOpenApiContractTests {
 			"GET /api/v1/admin/platform-report-schedules",
 			"POST /api/v1/admin/platform-report-schedules",
 			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
-			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
+			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}",
+			"GET /api/v1/admin/retention/policies",
+			"POST /api/v1/admin/retention/policies/{policyId}/sweep",
+			"GET /api/v1/admin/retention/deletions",
+			"POST /api/v1/admin/retention/deletions/{requestId}/retry",
+			"POST /api/v1/admin/retention/deletions/{requestId}/holds",
+			"DELETE /api/v1/admin/retention/deletions/{requestId}/holds");
 	private static final Map<String, Set<String>> IMPLEMENTED_RESPONSES = Map.ofEntries(
 			Map.entry("POST /internal/v1/community-chat/account-authorizations", Set.of("200", "400", "401")),
 			Map.entry("POST /api/v1/auth/registrations", Set.of("201", "400", "409", "429")),
@@ -101,7 +113,13 @@ class IdentityOpenApiContractTests {
 			Map.entry("GET /api/v1/admin/platform-report-schedules", Set.of("200", "401", "403")),
 			Map.entry("POST /api/v1/admin/platform-report-schedules", Set.of("201", "400", "401", "403", "409")),
 			Map.entry("PUT /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("200", "400", "401", "403", "404", "412")),
-			Map.entry("DELETE /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("204", "400", "401", "403", "404", "412")));
+			Map.entry("DELETE /api/v1/admin/platform-report-schedules/{scheduleId}", Set.of("204", "400", "401", "403", "404", "412")),
+			Map.entry("GET /api/v1/admin/retention/policies", Set.of("200", "401", "403")),
+			Map.entry("POST /api/v1/admin/retention/policies/{policyId}/sweep", Set.of("200", "401", "403", "404", "409", "422")),
+			Map.entry("GET /api/v1/admin/retention/deletions", Set.of("200", "401", "403")),
+			Map.entry("POST /api/v1/admin/retention/deletions/{requestId}/retry", Set.of("200", "401", "403", "404", "409", "422")),
+			Map.entry("POST /api/v1/admin/retention/deletions/{requestId}/holds", Set.of("200", "400", "401", "403", "404")),
+			Map.entry("DELETE /api/v1/admin/retention/deletions/{requestId}/holds", Set.of("200", "400", "401", "403", "404")));
 
 	@Test
 	void identityContractIsValidAndFullyResolved() {
@@ -148,9 +166,47 @@ class IdentityOpenApiContractTests {
 				.getProperties().get("roles");
 		var registrationActor = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RegistrationRequest")
 				.getProperties().get("actorType");
+		var deletionHoldReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionHoldReason");
+		var deletionEvidenceReference = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionOwnerFact")
+				.getProperties().get("evidenceReference");
+		var retentionJobStatusSource = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("jobStatusSource");
+		var retentionJobStatus = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("jobStatus");
+		var manualHoldSupported = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("manualHoldSupported");
+		var manualEscalationRequired = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionPolicy")
+				.getProperties().get("manualEscalationRequired");
 		assertThat(summaryRoles.getMaxItems()).isEqualTo(1);
 		assertThat(detailRoles.getMaxItems()).isEqualTo(1);
 		assertThat(registrationActor.getEnum()).extracting(Object::toString).containsExactly("USER", "SPECIALIST");
+		assertThat(retentionJobStatusSource.getEnum()).extracting(Object::toString).containsExactly(
+				"IDENTITY_POLICY_CATALOG", "IDENTITY_EXECUTION_RECORD", "NO_AUTHORITATIVE_SIGNAL");
+		assertThat(retentionJobStatus.getDescription()).contains("does not by itself mean retries are exhausted");
+		assertThat(manualHoldSupported.getDescription()).contains("owner-level", "Identity coordinator Hold");
+		assertThat(manualEscalationRequired).isNotNull();
+		assertThat(manualEscalationRequired.getDescription()).contains("three consecutive failed or stale executions");
+		assertThat(deletionHoldReason.getEnum()).extracting(Object::toString).containsExactly(
+				"STATUTORY_INQUIRY",
+				"PENDING_DISPUTE",
+				"ACTIVE_SAFETY_REVIEW",
+				"SCHEDULED_APPOINTMENT_ACTIVE",
+				"USER_CONTESTED",
+				"AUDIT_COMPLIANCE_HOLD");
+		assertThat(deletionEvidenceReference.getPattern()).isEqualTo(
+				"^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+		assertThat(deletionEvidenceReference.getMaxLength()).isEqualTo(67);
+		assertThat(deletionEvidenceReference.getDescription())
+				.contains("committed authoritative Identity audit event");
+		var retentionFailureCode = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("RetentionFailureCode");
+		assertThat(retentionFailureCode.getEnum()).extracting(Object::toString).containsExactly(
+				"PRIOR_EXECUTION_STALE", "SWEEP_EXECUTION_FAILED");
+		var deletionFailureReason = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionFailureReason");
+		assertThat(deletionFailureReason.getEnum()).extracting(Object::toString).containsExactly(
+				"ACCOUNT_NOT_FOUND");
+		var deletionFailureCode = (Schema<?>) result.getOpenAPI().getComponents().getSchemas().get("DeletionFailureCode");
+		assertThat(deletionFailureCode.getEnum()).extracting(Object::toString).containsExactly(
+				"ACCOUNT_NOT_FOUND", "RETRY_LIMIT_EXHAUSTED");
 	}
 
 }

@@ -762,6 +762,178 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/retention/policies:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Retention governance]
+      operationId: getRetentionPolicies
+      summary: List approved retention and deletion policies across platform owners
+      description: Returns policy metadata, versions, owning services, execution status, and safe aggregate metrics.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of approved retention policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetentionPolicy'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/retention/policies/{policyId}/sweep:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Retention governance]
+      operationId: triggerRetentionSweep
+      summary: Trigger authoritative retention sweep for a supported owner policy
+      description: Purges expired artifacts (e.g. platform report export files) for supported owners (e.g. Identity). Fails closed for unsupported owners.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Retention sweep execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionExecutionRecord'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '422':
+          description: Capability unsupported by owner
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /api/v1/admin/retention/deletions:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Retention governance]
+      operationId: getDeletionRequests
+      summary: Browse traceable user deletion requests and owner completion facts
+      description: Minimized identifiers and per-owner completion facts. No cross-owner direct DB access.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING, IN_PROGRESS, HELD, COMPLETED, FAILED] }
+        - name: holdType
+          in: query
+          schema: { type: string, enum: [NONE, LEGAL_HOLD, OPERATIONAL_HOLD, DISPUTE_HOLD] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Deletion requests page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionRequestPage'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/retention/deletions/{requestId}/retry:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Retention governance]
+      operationId: retryDeletion
+      summary: Bounded retry of deletion coordination
+      description: Retries deletion coordination. Rejects if active hold applies (409) or max retries exceeded (409).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Updated deletion request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionRequest'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
+        '422':
+          description: Retry unsupported for external owners or invalid facts state
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /api/v1/admin/retention/deletions/{requestId}/holds:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Retention governance]
+      operationId: applyDeletionHold
+      summary: Apply legal, operational, or dispute hold to a deletion request
+      description: Applies an Identity coordinator hold (LEGAL_HOLD, OPERATIONAL_HOLD, or DISPUTE_HOLD) blocking deletion coordination and retry attempts within Identity until released by admin. Does not assert or claim enforcement in external owner databases unless an authoritative cross-service contract exists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyHoldRequest'
+      responses:
+        '200':
+          description: Deletion request with hold applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionRequest'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+    delete:
+      tags: [Retention governance]
+      operationId: releaseDeletionHold
+      summary: Release legal, operational, or dispute hold from a deletion request
+      description: Releases the Identity coordinator hold, permitting deletion coordination and retry attempts within Identity to resume. Does not mutate external owner facts or assert external enforcement.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Deletion request with hold released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionRequest'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
 components:
   securitySchemes:
     communityChatServiceToken:
@@ -1253,6 +1425,145 @@ components:
               field: { type: string }
               code: { type: string }
               message: { type: string }
+    RetentionPolicy:
+      type: object
+      additionalProperties: false
+      required: [policyId, name, version, ownerService, status, description, jobName, jobStatus, jobStatusSource, automatedExecutionSupported, manualHoldSupported, requiresManualReview]
+      properties:
+        policyId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        ownerService: { type: string, enum: [IDENTITY, CARE, CONSULTATION, JOURNAL_AI, COMMUNITY, CONTENT] }
+        status: { type: string, enum: [APPROVED, ENFORCED, PARTIALLY_SUPPORTED, UNAVAILABLE] }
+        description: { type: string }
+        retentionDays: { type: [integer, 'null'] }
+        jobName: { type: string }
+        jobStatus:
+          type: string
+          enum: [ACTIVE, IDLE, PARTIALLY_SUPPORTED, UNAVAILABLE, SUCCEEDED, FAILED, RUNNING, STALE]
+          description: Latest authoritative execution outcome when one exists; otherwise the catalog capability state. FAILED reports the latest failed execution and does not by itself mean retries are exhausted.
+        jobStatusSource: { type: string, enum: [IDENTITY_POLICY_CATALOG, IDENTITY_EXECUTION_RECORD, NO_AUTHORITATIVE_SIGNAL] }
+        automatedExecutionSupported: { type: boolean }
+        manualHoldSupported:
+          type: boolean
+          description: Whether the policy owner exposes an authoritative owner-level manual Hold contract. Identity coordinator Hold remains available through deletion-request Hold endpoints and does not imply enforcement by an external owner.
+        manualEscalationRequired:
+          type: boolean
+          description: True only after three consecutive failed or stale executions exhaust automated retry and require manual intervention.
+        requiresManualReview: { type: boolean }
+        unsupportedCapabilityNotice: { type: [string, 'null'] }
+        lastExecution:
+          anyOf:
+            - $ref: '#/components/schemas/RetentionExecutionRecord'
+            - type: 'null'
+    RetentionExecutionRecord:
+      type: object
+      additionalProperties: false
+      required: [executionId, policyId, ownerService, jobName, jobStatus, startedAt, itemsEvaluated, recordsPurged, tombstonesCreated, holdsHonored]
+      properties:
+        executionId: { type: string, format: uuid }
+        policyId: { type: string }
+        ownerService: { type: string }
+        jobName: { type: string }
+        jobStatus: { type: string }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        itemsEvaluated: { type: integer, minimum: 0 }
+        recordsPurged: { type: integer, minimum: 0 }
+        tombstonesCreated: { type: integer, minimum: 0 }
+        holdsHonored: { type: integer, minimum: 0 }
+        failureCode:
+          anyOf:
+            - $ref: '#/components/schemas/RetentionFailureCode'
+            - type: 'null'
+    DeletionOwnerFact:
+      type: object
+      additionalProperties: false
+      required: [ownerService, status]
+      properties:
+        ownerService: { type: string, enum: [IDENTITY, CARE, CONSULTATION, JOURNAL_AI, COMMUNITY, CONTENT] }
+        status: { type: string, enum: [PENDING, COMPLETED, HELD, FAILED, UNAVAILABLE] }
+        completedAt: { type: [string, 'null'], format: date-time }
+        evidenceReference:
+          type: [string, 'null']
+          maxLength: 67
+          pattern: '^audit:identity:account-deleted:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          description: Identity-only opaque reference whose UUID suffix identifies the committed authoritative Identity audit event for the successful account-deletion attempt. External owners remain null until an approved authoritative evidence contract exists.
+        failureReason:
+          anyOf:
+            - $ref: '#/components/schemas/DeletionFailureReason'
+            - type: 'null'
+    RetentionFailureCode:
+      type: string
+      enum:
+        - PRIOR_EXECUTION_STALE
+        - SWEEP_EXECUTION_FAILED
+    DeletionFailureReason:
+      type: string
+      enum:
+        - ACCOUNT_NOT_FOUND
+    DeletionFailureCode:
+      type: string
+      enum:
+        - ACCOUNT_NOT_FOUND
+        - RETRY_LIMIT_EXHAUSTED
+    DeletionHoldReason:
+      type: string
+      enum:
+        - STATUTORY_INQUIRY
+        - PENDING_DISPUTE
+        - ACTIVE_SAFETY_REVIEW
+        - SCHEDULED_APPOINTMENT_ACTIVE
+        - USER_CONTESTED
+        - AUDIT_COMPLIANCE_HOLD
+    DeletionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, subjectReference, status, holdType, retryCount, maxRetries, escalationState, requestedAt, scheduledExecutionAt, ownerFacts]
+      properties:
+        requestId: { type: string, format: uuid }
+        subjectReference: { type: string, pattern: '^tombstone:[0-9a-f]{64}$' }
+        accountStatus:
+          anyOf:
+            - $ref: '#/components/schemas/AccountStatus'
+            - type: 'null'
+        status: { type: string, enum: [PENDING, IN_PROGRESS, HELD, COMPLETED, FAILED] }
+        holdType: { type: string, enum: [NONE, LEGAL_HOLD, OPERATIONAL_HOLD, DISPUTE_HOLD] }
+        holdReason:
+          anyOf:
+            - $ref: '#/components/schemas/DeletionHoldReason'
+            - type: 'null'
+        retryCount: { type: integer, minimum: 0 }
+        maxRetries: { type: integer, minimum: 1 }
+        escalationState: { type: string, enum: [NONE, RETRY_EXHAUSTED, MANUAL_ESCALATION_REQUIRED] }
+        failureCode:
+          anyOf:
+            - $ref: '#/components/schemas/DeletionFailureCode'
+            - type: 'null'
+        requestedAt: { type: string, format: date-time }
+        scheduledExecutionAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        lastAttemptAt: { type: [string, 'null'], format: date-time }
+        ownerFacts:
+          type: array
+          items: { $ref: '#/components/schemas/DeletionOwnerFact' }
+    DeletionRequestPage:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DeletionRequest' }
+        total: { type: integer, minimum: 0 }
+        nextCursor: { type: [string, 'null'] }
+    ApplyHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [holdType, holdReason]
+      properties:
+        holdType: { type: string, enum: [LEGAL_HOLD, OPERATIONAL_HOLD, DISPUTE_HOLD] }
+        holdReason: { $ref: '#/components/schemas/DeletionHoldReason' }
   responses:
     GenericAccepted:
       description: Request accepted whether or not an eligible account exists

@@ -71,7 +71,13 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 			"GET /api/v1/admin/platform-report-schedules",
 			"POST /api/v1/admin/platform-report-schedules",
 			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
-			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
+			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}",
+			"GET /api/v1/admin/retention/policies",
+			"POST /api/v1/admin/retention/policies/{policyId}/sweep",
+			"GET /api/v1/admin/retention/deletions",
+			"POST /api/v1/admin/retention/deletions/{requestId}/retry",
+			"POST /api/v1/admin/retention/deletions/{requestId}/holds",
+			"DELETE /api/v1/admin/retention/deletions/{requestId}/holds");
 
 	@Autowired
 	private MockMvc mvc;

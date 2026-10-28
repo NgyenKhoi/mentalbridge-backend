@@ -2,6 +2,7 @@ package com.mentalbridge.identity.reporting;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -66,6 +67,16 @@ public class PlatformReportProcessor {
 	public long purgeExpiredArtifacts() {
 		return artifacts.deleteByRetainedUntilBefore(clock.instant());
 	}
+
+	@Transactional
+	public PurgeResult purgeExpiredArtifactsWithMetrics() {
+		Instant now = clock.instant();
+		long evaluated = artifacts.count();
+		long purged = artifacts.deleteByRetainedUntilBefore(now);
+		return new PurgeResult(evaluated, purged);
+	}
+
+	public record PurgeResult(long itemsEvaluated, long recordsPurged) {}
 
 	private byte[] generate(PlatformReportJobEntity job, java.time.Instant generatedAt) throws JsonProcessingException {
 		var start = job.periodStart().atStartOfDay().toInstant(ZoneOffset.UTC);
