@@ -17,6 +17,7 @@ import {
   type VoiceStartAttemptClaim,
 } from "./voice-ledger.js";
 import { VOICE_RETENTION_MS } from "./voice-policy.js";
+import { VoiceAccessService } from "./voice-access.js";
 
 const require = createRequire(import.meta.url);
 const migration = require("../../migrations/013_companion_voice_quota.cjs") as {
@@ -173,6 +174,81 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
       b: new MongoVoiceLedger(second, databaseName),
     };
   };
+
+  await t.test(
+    "display snapshots cannot reserve the final slot or bypass concurrent admission",
+    async () => {
+      const { a, b } = await fixture();
+      await a.reserve(input());
+      const requests = [input(), input()];
+      const requestAt = (index: number) => {
+        const request = requests[index];
+        assert.ok(request);
+        return request;
+      };
+      const access = [a, b].map(
+        (ledger, index) =>
+          new VoiceAccessService(
+            ledger,
+            {
+              check: (ownerId, voiceSessionId) =>
+                Promise.resolve({
+                  consent: {
+                    ownerId,
+                    voiceSessionId,
+                    purpose: "AI_COMPANION_VOICE",
+                    aiProcessingGranted: true,
+                    voiceProcessingGranted: true,
+                    voiceConsentVersion: "ai-voice-processing-capstone-v1",
+                    authorized: true,
+                    checkedAt: start.toISOString(),
+                  },
+                  entitlement: {
+                    ...requestAt(index).entitlement,
+                    ownerId,
+                    voiceSessionId,
+                    purpose: "AI_COMPANION_VOICE",
+                    checkedAt: start.toISOString(),
+                    validUntil:
+                      requestAt(index).entitlement.validUntil?.toISOString(),
+                  },
+                }),
+            },
+            Buffer.alloc(32, 18),
+            () => true,
+            () => start,
+          ),
+      );
+      const previews = await Promise.all(
+        access.map((service, index) =>
+          service.eligibility(requestAt(index).ownerId, randomUUID()),
+        ),
+      );
+      assert.deepEqual(
+        previews.map((value) => value.availableSessionSeconds),
+        [300, 300],
+      );
+      const admissions = await Promise.allSettled(
+        access.map((service, index) =>
+          service.reserve(requestAt(index).ownerId, randomUUID(), randomUUID()),
+        ),
+      );
+      assert.equal(
+        admissions.filter((value) => value.status === "fulfilled").length,
+        1,
+      );
+      assert.equal(
+        admissions.filter((value) => value.status === "rejected").length,
+        1,
+      );
+      for (const [index, service] of access.entries())
+        assert.equal(
+          (await service.eligibility(requestAt(index).ownerId, randomUUID()))
+            .availableSessionSeconds,
+          0,
+        );
+    },
+  );
 
   await t.test(
     "atomic capacity permits only two owners and one session per owner",

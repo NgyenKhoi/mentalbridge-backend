@@ -14,7 +14,11 @@ import {
   type VoiceOwnerAuthorizer,
   type VoiceOwnerDecision,
 } from "./voice-authorization.js";
-import { VOICE_POLICY_VERSION, VOICE_TIME_ZONE } from "./voice-policy.js";
+import {
+  VOICE_POLICY_VERSION,
+  VOICE_TIME_ZONE,
+  voiceLimits,
+} from "./voice-policy.js";
 
 export type VoiceAccessLedger = Pick<
   MongoVoiceLedger,
@@ -49,6 +53,8 @@ export interface VoiceEligibility {
   state: "ELIGIBLE" | VoiceAccessCode;
   eligible: boolean;
   packageCode: VoicePlan;
+  maxSessionSeconds: number;
+  availableSessionSeconds: number;
   quota: {
     policyVersion: string;
     quotaDay: string;
@@ -140,6 +146,14 @@ export class VoiceAccessService {
         state,
         eligible: state === "ELIGIBLE",
         packageCode: plan,
+        maxSessionSeconds: voiceLimits(plan).perSessionSeconds,
+        availableSessionSeconds:
+          state === "ELIGIBLE"
+            ? Math.min(
+                voiceLimits(plan).perSessionSeconds,
+                quota.remainingSeconds,
+              )
+            : 0,
         quota: {
           policyVersion: VOICE_POLICY_VERSION,
           quotaDay: quota.quotaDay,

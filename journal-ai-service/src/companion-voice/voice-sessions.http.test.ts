@@ -159,6 +159,8 @@ void test("Voice public and worker REST separate identities, validate closed com
       return Promise.resolve({
         voiceSessionId: id,
         transport: "LIVEKIT_CLOUD",
+        roomName: `ai-voice-${id}`,
+        agentIdentity: `va-${id}`,
         serverUrl: "wss://synthetic.livekit.cloud",
         participantToken: "synthetic-memory-only-token-not-recorded",
         tokenExpiresAt: new Date(now.getTime() + 60_000).toISOString(),

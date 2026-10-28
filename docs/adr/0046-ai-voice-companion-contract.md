@@ -253,3 +253,24 @@ provider privacy configuration, approved route/voice disclosure and consent,
 Vietnamese speech/latency benchmark evidence and explicit operational approval
 under the downstream stories. General text AI, deterministic safety entry and
 manual consultation paths remain available when voice is unavailable.
+
+## MB-782 additive Web prerequisite amendment — 2026-10-28
+
+The product owner approved quota-aware display-only pre-call duration fields
+and official `lk.agent.state` hints before MB-761. The Voice target is amended
+to `1.1.0`; active Journal OpenAPI is `1.16.0`. Connection responses identify
+the exact admitted room and Agent attempt for safe consumer filtering.
+See the [implementation and consumer contract](../story-mb-782-voice-web-prerequisite.md).
+
+The custom Node worker's Journal generation is outside AgentSession's LLM loop.
+Keep participant metadata permission denied and use one authorized LiveKit
+server API writer for fixed coarse media states. This avoids competing SDK
+state writes and adds no business request/reply channel. The existing media SDK
+exception applies only to provider media control; Journal REST remains the
+business authority. USER permissions, consent, entitlement, quota, accounting,
+retention and server lifecycle stay unchanged. There is no persisted migration.
+
+The expanded closed DTOs require consumer regeneration. Attribute failure or
+staleness only changes presentation; a consumer must bound its hint age and
+fall back on disconnect/unknown state. No live provider usage or enablement is
+approved by this amendment. MB-782 merges before the MB-761 consumer PR.

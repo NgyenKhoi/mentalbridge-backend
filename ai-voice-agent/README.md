@@ -12,6 +12,12 @@ limits supplement that authority; they are not a distributed quota counter.
 
 ## Build and verify without Cloud
 
+MB-782 adds the official `lk.agent.state` display hint through a single scoped
+server API writer. Agent and USER own-metadata permissions remain denied to
+avoid competing SDK writes; no content enters attributes. See the
+[Web consumer handoff](../docs/story-mb-782-voice-web-prerequisite.md)
+for transitions, exact identity/room filtering and bounded stale-state fallback.
+
 MB-760 adds [speech QA tooling](qa/README.md) for a scripted matrix, Unicode
 WER/CER, aggregate-only reports and a mock pilot. The first live benchmark remains
 `BLOCKED_ALLOWANCE`; no live provider or microphone command is added. QA source
