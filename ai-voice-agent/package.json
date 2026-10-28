@@ -26,6 +26,7 @@
     "@livekit/agents-plugin-silero": "1.9.4",
     "@livekit/protocol": "1.53.1",
     "@livekit/rtc-node": "1.2.1",
+    "livekit-server-sdk": "2.19.2",
     "zod": "4.6.7"
   },
   "overrides": {

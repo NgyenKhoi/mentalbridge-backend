@@ -204,6 +204,8 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
     ["attemptId", "dispatchId", "voiceSessionId"],
   );
   const connection = await provider.connection(ref, new Date());
+  assert.equal(connection.roomName, ref.roomName);
+  assert.equal(connection.agentIdentity, ref.agentIdentity);
   const claims = decodeJwt(connection.participantToken);
   assert.equal(claims.sub, ref.participantIdentity);
   assert.ok(claims.exp);

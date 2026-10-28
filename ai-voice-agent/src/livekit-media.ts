@@ -9,6 +9,7 @@ import {
   type JobContext,
 } from "@livekit/agents";
 import { VAD } from "@livekit/agents-plugin-silero";
+import { RoomServiceClient } from "livekit-server-sdk";
 import {
   ParticipantKind,
   RoomEvent,
@@ -19,7 +20,8 @@ import {
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
 import type { Dispatch } from "./contract.js";
-import type { MediaCallbacks, MediaPort } from "./voice-worker.js";
+import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
+import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
 
 export const sessionOptions = {
   turnHandling: {
@@ -151,6 +153,7 @@ export class LiveKitMedia implements MediaPort {
   private closed = false;
   private inputEnabled = false;
   private started = false;
+  private display: AgentStatePublisher | undefined;
   private readonly cleanup: (() => void)[] = [];
   constructor(
     private readonly context: JobContext,
@@ -207,6 +210,33 @@ export class LiveKitMedia implements MediaPort {
     await context.connect(undefined, AutoSubscribe.SUBSCRIBE_NONE);
     if (context.agent?.identity !== `va-${this.dispatch.attemptId}`)
       throw new AgentFailure("DISPATCH_INVALID");
+    const {
+      livekitUrl,
+      apiKey: stateKey,
+      apiSecret: stateSecret,
+    } = this.configuration;
+    if (!livekitUrl || !stateKey || !stateSecret)
+      throw new AgentFailure("CONFIGURATION_INVALID");
+    const rooms = new RoomServiceClient(livekitUrl, stateKey, stateSecret, {
+      requestTimeout: 2,
+      failover: false,
+    });
+    const roomName = context.room.name;
+    if (!roomName) throw new AgentFailure("DISPATCH_INVALID");
+    const identity = `va-${this.dispatch.attemptId}`;
+    this.display = new AgentStatePublisher(
+      () =>
+        isAdmittedAgent(this.dispatch, roomName, {
+          connected: context.room.isConnected,
+          room: context.room.name,
+          metadata: context.room.metadata,
+          identity: context.room.localParticipant?.identity,
+          agent: context.room.localParticipant?.kind === ParticipantKind.AGENT,
+        }),
+      (attributes) =>
+        rooms.updateParticipant(roomName, identity, { attributes }),
+    );
+    this.display.state("CONNECTING");
     guard();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const person = await Promise.race([
@@ -343,6 +373,9 @@ export class LiveKitMedia implements MediaPort {
       this.inputEnabled,
     );
   }
+  state(state: AgentState) {
+    this.display?.state(state);
+  }
   private isClosed() {
     return this.closed;
   }
@@ -390,6 +423,7 @@ export class LiveKitMedia implements MediaPort {
       this.interrupt();
       this.clearInput();
       for (const callback of this.cleanup.splice(0)) callback();
+      await this.display?.close();
       await this.session?.close();
     } finally {
       this.started = false;

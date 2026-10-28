@@ -33,6 +33,8 @@ export interface VoiceMediaReference {
 
 export interface VoiceConnection {
   voiceSessionId: string;
+  roomName: string;
+  agentIdentity: string;
   transport: "LIVEKIT_CLOUD";
   serverUrl: string;
   participantToken: string;
@@ -295,6 +297,8 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
         throw new VoiceMediaError();
       return {
         voiceSessionId: reference.voiceSessionId,
+        roomName: reference.roomName,
+        agentIdentity: reference.agentIdentity,
         transport: "LIVEKIT_CLOUD",
         serverUrl,
         participantToken,

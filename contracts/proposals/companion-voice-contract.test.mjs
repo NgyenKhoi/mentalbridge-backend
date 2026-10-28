@@ -103,6 +103,52 @@ test("Voice proposal resolves OpenAPI 3.1 and strict-compiles every component", 
     assert.equal(typeof component(name), "function");
 });
 
+test("Web duration previews enforce policy caps and fail closed on denied eligibility", () => {
+  const validate = component("Eligibility");
+  const value = positiveExample("Eligibility");
+  for (const [packageCode, maxSessionSeconds] of [
+    ["PLUS", 300],
+    ["PREMIUM", 600],
+  ]) {
+    const preview = {
+      ...value,
+      packageCode,
+      maxSessionSeconds,
+      availableSessionSeconds: 120,
+    };
+    assertValid(validate, preview, packageCode);
+    assert.equal(validate({ ...preview, maxSessionSeconds: 999 }), false);
+    assert.equal(
+      validate({ ...preview, availableSessionSeconds: maxSessionSeconds + 1 }),
+      false,
+    );
+    assert.equal(validate({ ...preview, availableSessionSeconds: 0 }), false);
+    const denied = {
+      ...preview,
+      state: "VOICE_CONSENT_REQUIRED",
+      eligible: false,
+      availableSessionSeconds: 0,
+    };
+    assertValid(validate, denied, "no positive denied allowance");
+    assert.equal(validate({ ...denied, availableSessionSeconds: 120 }), false);
+  }
+  assertValid(
+    validate,
+    {
+      ...value,
+      packageCode: "FREE",
+      state: "FREE_LOCKED",
+      eligible: false,
+      maxSessionSeconds: 0,
+      availableSessionSeconds: 0,
+    },
+    "FREE",
+  );
+  const missing = { ...value };
+  delete missing.availableSessionSeconds;
+  assert.equal(validate(missing), false);
+});
+
 test("worker and policy schemas strict-compile and the machine-readable policy validates", () => {
   assert.equal(typeof compile(workerSchema), "function");
   assertValid(compile(policySchema), policy, "Companion Voice policy");
@@ -546,6 +592,24 @@ test("connection tokens are output-only and require exact audio-only room access
   assert.equal(properties.audioOnly.const, true);
   assert.equal(properties.transport.const, "LIVEKIT_CLOUD");
   assert.equal(properties.serverUrl.pattern, "^wss://");
+  const validate = component("Connection");
+  const value = {
+    voiceSessionId: "11111111-1111-4111-8111-111111111111",
+    transport: "LIVEKIT_CLOUD",
+    serverUrl: "wss://synthetic.livekit.cloud",
+    participantToken: "synthetic-memory-only-token",
+    tokenExpiresAt: "2026-10-28T09:00:00Z",
+    hardStopAt: "2026-10-28T09:04:00Z",
+    audioOnly: true,
+    roomName: "ai-voice-11111111-1111-4111-8111-111111111111",
+    agentIdentity: "va-22222222-2222-4222-8222-222222222222",
+  };
+  assertValid(validate, value, "Exact admitted media binding");
+  assert.equal(validate({ ...value, roomName: "consultation-foreign" }), false);
+  assert.equal(validate({ ...value, agentIdentity: "vu-owner" }), false);
+  const missing = { ...value };
+  delete missing.agentIdentity;
+  assert.equal(validate(missing), false);
 });
 
 test("Care cannot report successful voice authorization with either required consent absent", () => {

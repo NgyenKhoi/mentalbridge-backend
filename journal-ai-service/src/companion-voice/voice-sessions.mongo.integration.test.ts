@@ -99,6 +99,8 @@ class SyntheticMedia implements VoiceMediaProvider {
     return {
       voiceSessionId: ref.voiceSessionId,
       transport: "LIVEKIT_CLOUD" as const,
+      roomName: ref.roomName,
+      agentIdentity: ref.agentIdentity,
       serverUrl: "wss://synthetic.livekit.cloud",
       participantToken: "synthetic-memory-only-participant-token",
       tokenExpiresAt: new Date(

@@ -173,6 +173,8 @@ for (const [label, change, state] of [
     const result = await service.eligibility(ownerId, key);
     assert.equal(result.state, state);
     assert.equal(result.eligible, false);
+    assert.equal(result.availableSessionSeconds, 0);
+    assert.equal(result.maxSessionSeconds, label === "FREE" ? 0 : 300);
     assert.equal(mutations, 0);
     await assert.rejects(
       service.reserve(ownerId, key, key),
@@ -207,6 +209,14 @@ void test("paid and DEMO PLUS/PREMIUM use current owner package and fresh check-
       await service.eligibility(ownerId, key);
       assert.equal(result.state, "ELIGIBLE");
       assert.equal(result.packageCode, packageCode);
+      assert.equal(
+        result.maxSessionSeconds,
+        packageCode === "PLUS" ? 300 : 600,
+      );
+      assert.equal(
+        result.availableSessionSeconds,
+        packageCode === "PLUS" ? 300 : 600,
+      );
       assert.notEqual(checks[0], checks[1]);
       assert.equal(JSON.stringify(result).includes("sourceReference"), false);
     }
@@ -227,7 +237,9 @@ for (const [label, patch, state] of [
       () => true,
       () => now,
     );
-    assert.equal((await service.eligibility(ownerId, key)).state, state);
+    const result = await service.eligibility(ownerId, key);
+    assert.equal(result.state, state);
+    assert.equal(result.availableSessionSeconds, 0);
   });
 }
 
@@ -264,6 +276,49 @@ void test("missing prerequisite or provider readiness fails closed", async () =>
         error instanceof VoiceAccessError && error.code === code,
     );
   }
+});
+
+void test("preview uses unreserved seconds once and stale snapshots do not authorize admission", async () => {
+  let remainingSeconds = 120;
+  let mutations = 0;
+  const d = decision();
+  const service = new VoiceAccessService(
+    ledger({
+      snapshot: () =>
+        Promise.resolve({ ...quota(), remainingSeconds, reservedSeconds: 300 }),
+      reserve: () => {
+        mutations += 1;
+        throw new VoiceLedgerError("SESSION_LIMIT");
+      },
+    }),
+    { check: () => Promise.resolve(d) },
+    secret,
+    () => true,
+    () => now,
+  );
+  const first = await service.eligibility(ownerId, key);
+  assert.equal(first.availableSessionSeconds, 120);
+  assert.equal(first.maxSessionSeconds, 300);
+  remainingSeconds = 60;
+  assert.equal(
+    (await service.eligibility(ownerId, key)).availableSessionSeconds,
+    60,
+  );
+  assert.equal(mutations, 0);
+  await assert.rejects(
+    service.reserve(ownerId, key, key),
+    (error: unknown) =>
+      error instanceof VoiceAccessError && error.code === "SESSION_LIMIT",
+  );
+  assert.equal(mutations, 1);
+  d.consent.voiceProcessingGranted = false;
+  await assert.rejects(
+    service.reserve(ownerId, key, key),
+    (error: unknown) =>
+      error instanceof VoiceAccessError &&
+      error.code === "VOICE_CONSENT_REQUIRED",
+  );
+  assert.equal(mutations, 1);
 });
 
 void test("admission binds the checked session, protects command keys and freezes authority lifetime", async () => {
