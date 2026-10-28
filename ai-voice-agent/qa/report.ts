@@ -18,7 +18,7 @@ export const trialSchema = z.strictObject({
   region: z.enum(regions),
   speakerToken: z.uuid(),
   consented: z.literal(true),
-  source: z.enum(["human_scripted", "tts_loopback"]),
+  source: z.enum(["human_scripted", "tts_loopback", "mock"]),
   denoise: z.enum(denoiseModes),
   finalTranscript: z.string().max(2000),
   sttFinalMs: milliseconds,
@@ -234,6 +234,7 @@ function buildReport(input: Input) {
     synthesizedLoopback: summarize(
       input.trials.filter((t) => t.source === "tts_loopback"),
     ),
+    simulatedOnly: summarize(input.trials.filter((t) => t.source === "mock")),
     groups: [...groups.values()].map((group) => ({
       dimensions: group.dimensions,
       ...summarize(group.trials),

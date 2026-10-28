@@ -9,6 +9,7 @@ existing worker CI lane. No live provider is called by tests or the default plan
 npm run speech:plan
 npm run qa:build
 node dist-qa/score.js score < /secure/temporary-measurements.json
+node dist-qa/mock.js --source-sha <exact-40-character-source-sha>
 ```
 
 The scorer reads bounded JSON from stdin and emits aggregate-only JSON to stdout.
@@ -35,7 +36,9 @@ region, source and denoise mode. `speakerToken` is a random per-participant UUID
 used only in RAM to count unique speakers; it is never in the report. No names,
 account IDs, API keys, real assessment answers or private URLs are accepted.
 
-Only `human_scripted` trials establish human coverage. `tts_loopback` is a
+Only `human_scripted` trials establish human coverage. `mock` fixtures are
+reported only under `simulatedOnly`, with zero actual device/provider evidence.
+`tts_loopback` is a
 separate provider smoke result and cannot establish pronunciation/accent quality
 or real device latency. Keep both STT models, laptop/Android, quiet/fan-AC/road/
 surrounding-speech and north/central/south separate. The 48 baseline cells are a
@@ -75,7 +78,41 @@ fail with a fixed safe error; input/provider payloads are never echoed. The tool
 never auto-enables Voice or approves a configuration. Operator review and the
 account/privacy/downstream device gates remain required.
 
-Live measurements, actual remaining allowance, costs and a justified choice of
-model/voice/denoise are still pending operator prerequisites. This scorer and its
-fixtures are not evidence of speech quality. See
+## Approved first-pilot status — 2026-10-28
+
+The operator reports Build Free, next invoice $0.00 and project Agent observability
+OFF. Remaining Inference credit is **NOT VERIFIED**; "No model usage yet" is not
+an allowance balance. Recording, egress and external content export are separately
+NOT VERIFIED. `pilot.ts` preserves this as `BLOCKED_ALLOWANCE`, with the privacy
+blockers also listed. The current CLI has **no live execution command**, reads no
+credentials and contains no network/provider adapter. Changing a status snapshot
+cannot enable a provider. No account registration, upgrade or new key is needed
+for this mock delivery.
+
+The approved ceiling is shared by the **whole first benchmark**, across all
+models, devices, failures and reruns: $0.50 free credit, 600 seconds STT and 3,000
+TTS input characters. Stop all components when any ceiling is reached. No
+Bedrock/Claude, paid billing or plan upgrade. `PilotBudget` tests cumulative
+reservations, second rounding, conservative integer-microdollar estimates and
+failures without refunds. The mock report labels these as simulated reservations;
+actual calls and spend are zero. This in-memory simulator is not a durable
+multi-process spending authority. A future authorized live executor must carry
+forward one protected campaign ledger, reserve before calls, include failed/
+unknown attempts and stop on restart if prior usage is unknown; a fresh CLI run
+must never reset the real approved allowance.
+
+The checked public Build/Ship rate snapshot is Nova-3 monolingual $0.0048/min,
+Nova-2 $0.0058/min and pinned Sonic 3 $50/million input characters, from
+[LiveKit pricing](https://livekit.com/pricing/inference). Full ceilings at the
+higher STT rate imply about $0.058 STT + $0.15 TTS = $0.208, excluding hosting,
+WebRTC and optional isolation. This is an indicative upper input-cost estimate,
+not an invoice or proof that free credit remains. Recheck rates/billing units and
+allowances immediately before any future live run. Optional isolation remains
+off/unpriced, not a zero-cost assumption.
+
+Planned devices are laptop and Android. Actually measured devices: **0**; verified
+consenting readers: **0**; measured dialects: **0/3**. No microphone is opened by
+these commands. Live measurements, exact voice selection and a justified final
+configuration remain gated. This scorer and its fixtures are not evidence of
+speech quality. See
 [the implementation record](../../docs/story-mb-760-vietnamese-speech-benchmark.md).
