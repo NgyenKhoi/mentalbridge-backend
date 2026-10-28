@@ -40,6 +40,7 @@ function fixture() {
   const turns: Turn[] = [];
   const played: string[] = [];
   const states: string[] = [];
+  const mediaStates: string[] = [];
   let callbacks: MediaCallbacks | undefined;
   let input = false;
   let closes = 0;
@@ -134,6 +135,9 @@ function fixture() {
     },
   };
   const media: MediaPort = {
+    state: (state) => {
+      mediaStates.push(state);
+    },
     start: (value) => {
       callbacks = value;
       callbacks.muted(false);
@@ -183,6 +187,7 @@ function fixture() {
     turns,
     played,
     states,
+    mediaStates,
     dispatch,
     media,
     start: () => worker.start(),
@@ -308,6 +313,50 @@ void test("barge-in before publication acknowledgement still reports one interru
   assert.equal(f.signals.filter((s) => s.kind === "INTERRUPTED").length, 1);
   assert.equal(f.turns.length, 1);
   await f.worker.stop("USER_ENDED");
+});
+
+void test("media hints follow accepted turns and actual publication, without becoming quota evidence", async () => {
+  const f = fixture();
+  const generation = hold();
+  const acknowledgement = hold();
+  const playback = hold();
+  await f.start();
+  f.generation(generation.wait);
+  f.publication(acknowledgement.wait);
+  f.play(playback.wait);
+  f.emit("Tôi muốn nói thêm");
+  f.advance(1500);
+  const turn = f.tick();
+  await flush();
+  assert.equal(f.mediaStates.at(-1), "WAITING_FOR_REPLY");
+  assert.equal(
+    f.signals.some((signal) => signal.kind === "PLAYBACK_STARTED"),
+    false,
+  );
+  generation.release();
+  await flush();
+  assert.equal(f.mediaStates.includes("SPEAKING"), false);
+  acknowledgement.release();
+  await flush();
+  assert.equal(f.mediaStates.at(-1), "SPEAKING");
+  f.mute(true);
+  playback.release();
+  await turn;
+  assert.equal(f.mediaStates.at(-1), "MUTED");
+  f.connection(false);
+  await flush();
+  assert.equal(f.mediaStates.at(-1), "DISCONNECTED");
+  f.connection(true);
+  await flush();
+  assert.equal(f.mediaStates.at(-1), "MUTED");
+  f.media.state = () => {
+    throw new Error("DISPLAY_ONLY_FAILURE");
+  };
+  f.mute(false);
+  await flush();
+  assert.equal(f.worker.state, "LISTENING");
+  await f.worker.stop("USER_ENDED");
+  assert.equal(f.worker.state, "ENDED");
 });
 
 void test("late reconnect is rejected even before the periodic deadline check", async () => {

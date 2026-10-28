@@ -592,6 +592,24 @@ test("connection tokens are output-only and require exact audio-only room access
   assert.equal(properties.audioOnly.const, true);
   assert.equal(properties.transport.const, "LIVEKIT_CLOUD");
   assert.equal(properties.serverUrl.pattern, "^wss://");
+  const validate = component("Connection");
+  const value = {
+    voiceSessionId: "11111111-1111-4111-8111-111111111111",
+    transport: "LIVEKIT_CLOUD",
+    serverUrl: "wss://synthetic.livekit.cloud",
+    participantToken: "synthetic-memory-only-token",
+    tokenExpiresAt: "2026-10-28T09:00:00Z",
+    hardStopAt: "2026-10-28T09:04:00Z",
+    audioOnly: true,
+    roomName: "ai-voice-11111111-1111-4111-8111-111111111111",
+    agentIdentity: "va-22222222-2222-4222-8222-222222222222",
+  };
+  assertValid(validate, value, "Exact admitted media binding");
+  assert.equal(validate({ ...value, roomName: "consultation-foreign" }), false);
+  assert.equal(validate({ ...value, agentIdentity: "vu-owner" }), false);
+  const missing = { ...value };
+  delete missing.agentIdentity;
+  assert.equal(validate(missing), false);
 });
 
 test("Care cannot report successful voice authorization with either required consent absent", () => {

@@ -29,6 +29,7 @@ export interface MediaCallbacks {
   failed: () => void;
 }
 export interface MediaPort {
+  state(state: AgentState): void;
   start(callbacks: MediaCallbacks): Promise<void>;
   input(enabled: boolean): void;
   clearInput(): void;
@@ -92,6 +93,12 @@ export class VoiceWorker {
   }
   private setState(state: AgentState) {
     this.state = state;
+    try {
+      this.media.state(state);
+    } catch {
+      this.outcome(state);
+      return;
+    }
     this.outcome(state);
   }
   private live() {
@@ -351,7 +358,9 @@ export class VoiceWorker {
     this.media.interrupt();
     this.interrupted = true;
     this.playback.abort();
-    this.setState("INTERRUPTED");
+    this.setState(
+      this.muted ? "MUTED" : this.connected ? "INTERRUPTED" : "DISCONNECTED",
+    );
     if (this.playbackStarted) {
       this.playbackStarted = false;
       try {
@@ -371,7 +380,9 @@ export class VoiceWorker {
     this.media.input(this.ready && this.live() && this.connected && !value);
     if (value && this.speaking) await this.bargeIn();
     if (this.ready && !this.life.signal.aborted)
-      this.setState(value ? "MUTED" : "LISTENING");
+      this.setState(
+        !this.connected ? "DISCONNECTED" : this.muted ? "MUTED" : "LISTENING",
+      );
   }
   private async connection(value: boolean) {
     if (this.life.signal.aborted || value === this.connected) return;

@@ -1736,6 +1736,8 @@ components:
         - tokenExpiresAt
         - hardStopAt
         - audioOnly
+        - roomName
+        - agentIdentity
       properties:
         voiceSessionId:
           type: string
@@ -1760,6 +1762,14 @@ components:
           format: date-time
         audioOnly:
           const: true
+        roomName:
+          type: string
+          pattern: ^ai-voice-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          description: Exact admitted room for this connection. Compare the connected SDK room name before reading Agent hints.
+        agentIdentity:
+          type: string
+          pattern: ^va-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          description: Exact admitted Agent attempt identity. Require ParticipantKind.AGENT in roomName; never select a participant from its attributes.
     VoiceEmptyCommand:
       type: object
       additionalProperties: false
