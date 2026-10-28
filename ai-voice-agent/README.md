@@ -12,6 +12,11 @@ limits supplement that authority; they are not a distributed quota counter.
 
 ## Build and verify without Cloud
 
+MB-760 adds [speech QA tooling](qa/README.md) for a scripted matrix, Unicode
+WER/CER, aggregate-only reports and a mock pilot. The first live benchmark remains
+`BLOCKED_ALLOWANCE`; no live provider or microphone command is added. QA source
+is excluded from the runtime image and runs through the existing worker CI lane.
+
 ```sh
 npm ci
 npm run format:check

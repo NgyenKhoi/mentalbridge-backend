@@ -56,6 +56,37 @@ For a later authorized synthetic Cloud test, use this order:
    unidentified media keeps the existing anonymous quarantine; do not clear it
    without independent provider-verified isolation.
 
+## MB-760 mock pilot checkpoint
+
+On 2026-10-28 the owner approved a **single first-campaign** budget of at most $0.50 free
+Inference credit, 600 seconds total STT and 3,000 total TTS input characters,
+including models, failures and reruns. Stop every component once any ceiling is
+reached. No Bedrock/Claude call, plan upgrade or paid usage is authorized.
+
+Owner-reported project check: Build Free, next invoice $0.00, Agent observability
+OFF; Inference credit remaining **NOT VERIFIED**, and independent recording,
+egress and external export **NOT VERIFIED**. "No model usage yet" cannot prove
+an untouched balance. Live benchmark status is **BLOCKED_ALLOWANCE**. This is
+operator-reported evidence, not an automated authenticated account inspection.
+
+The [QA guide](../ai-voice-agent/qa/README.md) and
+[pilot record](story-mb-760-vietnamese-speech-benchmark.md) provide the reproducible
+matrix, scorer, mock runner, cost snapshot and device checklist. The
+[aggregate mock evidence](evidence/mb-760-mock-pilot-summary.json) records zero
+provider calls/spend, zero actually measured devices, zero consenting readers and
+zero measured dialects. Laptop/Android are planned devices only. Mock fixtures
+and synthetic TTS loopback never establish human speech quality. No final voice
+is approved, no runtime model/turn setting is changed and both Voice flags stay
+off. Current tooling has no live execution command.
+
+Before a later live pilot, independently verify remaining allowance and content
+recording/export, select a reviewed default voice, arrange consenting readers,
+and protect one cumulative campaign ledger across processes/restarts. Stop if
+prior usage is unknown. Do not turn a fresh local simulator into a new budget.
+Keep component STT/TTS timings separate from Journal/Claude end-to-end latency;
+this pilot authorizes no Claude inference. No new provider account is required
+for the mock tooling; existing LiveKit Inference credentials remain the target.
+
 ## MB-759 worker checkpoint
 
 [Worker README](../ai-voice-agent/README.md) documents the separate Node 22 package,
