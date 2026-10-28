@@ -203,6 +203,8 @@ void test("Voice HTTP boundary isolates JWT/USER checks, no-store and current-ow
     const eligibility = result.body as VoiceEligibility;
     assert.equal(eligibility.state, "ELIGIBLE");
     assert.equal(eligibility.packageCode, "PLUS");
+    assert.equal(eligibility.maxSessionSeconds, 300);
+    assert.equal(eligibility.availableSessionSeconds, 300);
     assert.deepEqual(checkedOwners, [ownerId]);
     voiceGranted = false;
     const denied = await get()
@@ -214,6 +216,7 @@ void test("Voice HTTP boundary isolates JWT/USER checks, no-store and current-ow
       "VOICE_CONSENT_REQUIRED",
     );
     assert.equal((denied.body as VoiceEligibility).eligible, false);
+    assert.equal((denied.body as VoiceEligibility).availableSessionSeconds, 0);
     voiceGranted = true;
     plan = "FREE";
     const free = await get()

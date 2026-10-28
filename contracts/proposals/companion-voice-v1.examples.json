@@ -557,7 +557,9 @@
           "reservedSeconds": 0
         },
         "checkedAt": "2026-10-23T14:00:00Z",
-        "voiceConsentVersion": "ai-voice-processing-capstone-v1"
+        "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+        "maxSessionSeconds": 300,
+        "availableSessionSeconds": 300
       }
     },
     {
@@ -580,7 +582,9 @@
           "reservedSeconds": 0
         },
         "checkedAt": "2026-10-23T14:00:00Z",
-        "voiceConsentVersion": "ai-voice-processing-capstone-v1"
+        "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+        "maxSessionSeconds": 0,
+        "availableSessionSeconds": 0
       }
     },
     {
@@ -603,7 +607,9 @@
           "reservedSeconds": 0
         },
         "checkedAt": "2026-10-23T14:00:00Z",
-        "voiceConsentVersion": "ai-voice-processing-capstone-v1"
+        "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+        "maxSessionSeconds": 300,
+        "availableSessionSeconds": 300
       }
     },
     {

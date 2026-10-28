@@ -17,10 +17,15 @@ current owner authorization; [MB-757](requirements-traceability/stories/mb-757.m
 adds disabled-by-default public sessions, isolated rooms, explicit dispatch and
 worker lifecycle control. [MB-758](requirements-traceability/stories/mb-758.md)
 adds guarded internal turns with bounded current-call RAM and no Text-quota
-consumption. The hosted worker, speech validation and live end-to-end evidence
+consumption. [MB-759](requirements-traceability/stories/mb-759.md) adds the separate,
+disabled Node worker with final Vietnamese STT, Journal-only generation and guarded
+TTS/interruption. Hosted deployment, speech validation and live end-to-end evidence
 remain subsequent delivery gates. Existing text
-and specialist consultation behavior is unchanged; these checkpoints do not
-establish live-provider readiness.
+and specialist consultation behavior is unchanged. The
+[MB-760 mock pilot](requirements-traceability/stories/mb-760.md) supplies speech
+measurement tooling and explicit missing coverage; its live benchmark remains
+`BLOCKED_ALLOWANCE`, with no measured devices/readers/dialects or approved voice.
+These checkpoints do not establish live-provider readiness.
 
 Community peer messaging has a separate **accepted target** in
 [ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and
