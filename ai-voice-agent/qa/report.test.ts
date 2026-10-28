@@ -28,7 +28,7 @@ const trial = (extra: Partial<Trial> = {}): Trial => ({
 const input = (trials: Trial[]) => ({
   sourceSha: "a".repeat(40),
   measuredAt: "2026-10-28T08:00:00Z",
-  voiceId: null,
+  voiceId: "dfed1480-7849-40a9-994e-37923e5873eb",
   trials,
 });
 void test("aggregate report excludes all human transcript and speaker identity while preserving weighted error counts", () => {
@@ -77,6 +77,18 @@ void test("agent isolation alone cannot silently stand in for the WebRTC baselin
   const report = aggregate(input([trial({ denoise: "agent_isolation_only" })]));
   assert.equal(report.coverage.missingCells.length, 48);
   assert.ok(report.coverage.missingScripts.length > 0);
+});
+void test("real TTS latency or listening ratings require exact voice provenance, while STT-only data may omit voice", () => {
+  assert.throws(
+    () => aggregate({ ...input([trial()]), voiceId: null }),
+    BenchmarkFailure,
+  );
+  const sttOnly = aggregate({
+    ...input([trial({ ttsFirstFrameMs: null })]),
+    voiceId: null,
+  });
+  assert.equal(sttOnly.voiceId, null);
+  assert.equal(sttOnly.humanScripted.ttsFirstFrameLatency.samples, 0);
 });
 void test("unknown fields, oversized text, missing consent and a speaker re-labelled across dialects are rejected", () => {
   const a = trial();

@@ -146,6 +146,15 @@ function buildReport(input: Input) {
       (trial.source !== "human_scripted" && trial.firstAudibleMs !== null)
     )
       throw new BenchmarkFailure("INVALID_INPUT");
+    if (
+      trial.source !== "mock" &&
+      input.voiceId === null &&
+      (trial.ttsFirstFrameMs !== null ||
+        trial.firstAudibleMs !== null ||
+        trial.naturalness !== null ||
+        trial.intelligibility !== null)
+    )
+      throw new BenchmarkFailure("INVALID_INPUT");
     if (trial.source === "human_scripted") {
       const priorRegion = speakers.get(trial.speakerToken);
       if (priorRegion && priorRegion !== trial.region)

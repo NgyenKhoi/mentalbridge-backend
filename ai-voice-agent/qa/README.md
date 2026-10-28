@@ -51,6 +51,7 @@ Every non-text observation is explicitly nullable: premature end, high-impact
 phrase correctness, barge-in outcome, naturalness/intelligibility (1–5), STT final
 latency, TTS first-frame latency and device first-audible latency. Null means
 **not measured**, never zero or success. TTS first frame is not an audible reply;
+real TTS latency/listening ratings require the exact voice UUID in the report.
 full Journal/Bedrock/WebRTC latency needs a real device measurement. No benchmark
 LLM substitutes for Journal authorization or safety decisions.
 
