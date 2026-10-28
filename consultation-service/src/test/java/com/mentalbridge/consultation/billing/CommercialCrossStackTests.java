@@ -85,6 +85,8 @@ class CommercialCrossStackTests extends ConsultationTestProperties {
 					case "/fixture/bootstrap" -> Map.of("tokens", tokens, "specialistId", specialistId,
 							"start", clock.instant().plusSeconds(2 * 86_400L).toString());
 					case "/fixture/confirm" -> confirm(UUID.fromString(input.get("paymentId").asText()));
+						case "/fixture/financial-state" -> financialState(UUID.fromString(input.get("paymentId").asText()),
+								UUID.fromString(input.get("subscriptionId").asText()));
 					case "/fixture/settle" -> complete(UUID.fromString(input.get("appointmentId").asText()));
 					case "/fixture/mature" -> { clock.now.set(clock.instant().plusSeconds(7 * 86_400L + 1)); yield Map.of("advancedHold", true); }
 					default -> throw new IllegalArgumentException("Unknown fixture action");
@@ -158,6 +160,29 @@ class CommercialCrossStackTests extends ConsultationTestProperties {
 		node.put("signature", HexFormat.of().formatHex(mac.doFinal(raw.getBytes(StandardCharsets.UTF_8))));
 		for (int replay = 0; replay < 2; replay++) send("/internal/v1/payments/momo/ipn", null, node, 204);
 		return Map.of("verified", true, "duplicateAcknowledged", true);
+	}
+
+	private Map<String, Object> financialState(UUID paymentId, UUID subscriptionId) {
+		var status = jdbc.sql("select status from payment_transaction where id=:id and subscription_id=:subscriptionId")
+				.param("id", paymentId).param("subscriptionId", subscriptionId).query(String.class).single();
+		var credits = jdbc.sql("""
+				select count(*) from service_credit c join service_credit_period p on p.id=c.period_id
+				where p.source='PAID' and p.source_reference=:subscriptionId
+				""").param("subscriptionId", subscriptionId.toString()).query(Long.class).single();
+		var consumed = jdbc.sql("""
+				select count(*) from service_credit c join service_credit_period p on p.id=c.period_id
+				where p.source='PAID' and p.source_reference=:subscriptionId and c.state='CONSUMED'
+				""").param("subscriptionId", subscriptionId.toString()).query(Long.class).single();
+		var earnings = jdbc.sql("select count(*) from specialist_earning where specialist_account_id=:id")
+				.param("id", specialistId).query(Long.class).single();
+		var payouts = jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
+				.param("id", specialistId).query(Long.class).single();
+		var payoutItems = jdbc.sql("""
+				select count(*) from specialist_payout_item i join specialist_payout p on p.id=i.payout_id
+				where p.specialist_account_id=:id
+				""").param("id", specialistId).query(Long.class).single();
+		return Map.of("paymentStatus", status, "creditCount", credits, "consumedCreditCount", consumed,
+				"earningCount", earnings, "payoutCount", payouts, "payoutItemCount", payoutItems);
 	}
 
 	private Map<String, Object> complete(UUID appointmentId) throws Exception {
