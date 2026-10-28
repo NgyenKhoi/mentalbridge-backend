@@ -5,7 +5,8 @@ MB-755 itself delivered no runtime. This runbook documents implementation and
 opt-in demo gates. It does not enable a
 feature, create an agent, modify a provider account, or approve a paid call.
 Public documentation was checked on 2026-10-23; account-specific evidence below
-has **not** been collected. The MB-759 Node.js worker does not exist yet.
+has **not** been collected. The disabled MB-759 Node.js worker is now implemented;
+its checkpoint below does not establish live-provider readiness.
 
 Authority: [ADR 0046](adr/0046-ai-voice-companion-contract.md),
 [Companion Voice policy v1](policies/companion-voice-policy-v1.md), and the
@@ -16,7 +17,7 @@ Authority: [ADR 0046](adr/0046-ai-voice-companion-contract.md),
 The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
 now implements start/status/connection/end and internal worker claim/control.
 MB-758 adds the internal inference-turn endpoint described below; the hosted
-Node worker remains MB-759 work.
+Node worker is delivered by the MB-759 checkpoint below.
 [MB-757 evidence](story-mb-757-livekit-sessions.md) covers local synthetic SDK
 transport, actual Nest HTTP and disposable Mongo replica-set checks. No Cloud
 deployment, quota check, live room, speech benchmark or paid call was run.
@@ -55,6 +56,32 @@ For a later authorized synthetic Cloud test, use this order:
    unidentified media keeps the existing anonymous quarantine; do not clear it
    without independent provider-verified isolation.
 
+## MB-759 worker checkpoint
+
+[Worker README](../ai-voice-agent/README.md) documents the separate Node 22 package,
+locked SDK, server-only environment, Docker build/start/stop and dependency gates.
+[Acceptance evidence](story-mb-759-voice-agent.md) maps synthetic HTTP/media tests
+to final Vietnamese STT, approved-text-only TTS, first-frame publication,
+interruption, mute, expiry and reconnect behavior. Recording/content logs,
+transcription output, SDK LLM/history and direct reasoning-provider credentials
+are disabled. No account registration or new VPS is needed for implementation.
+
+Keep `AI_VOICE_AGENT_ENABLED=false` and Journal's Voice flag off until the
+account/privacy/benchmark/QA gates below are approved. Choose the reviewed
+default voice UUID in MB-760 and inject credentials only at runtime. CI tests
+and Docker builds contain no Cloud credentials and never call a speech provider.
+Use explicit named dispatch only; worker startup never auto-joins consultation
+rooms. Journal remains the shared two-call authority across worker processes.
+Neither local SDK load limits nor a worker's FINISHED signal prove capacity is
+free: Journal must verify provider room/agent teardown before reuse.
+
+Local tests do not establish Vietnamese pronunciation/noise quality or a real
+spoken reply. The opt-in QA story records exact SHA, approved provider/model/voice,
+device/microphone/headphone modes, echo cancellation/noise suppression and
+interrupt/stop behavior without recording or attaching conversation content.
+If speech is uncertain or unavailable, end safely and offer explicit text/manual
+push-to-talk in the client; MB-759 does not implement client controls.
+
 ## MB-758 turn checkpoint
 
 The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
@@ -63,7 +90,7 @@ v1.15.0 implements the frozen internal turn operation. The
 real Nest HTTP and disposable Mongo checks, not live Bedrock or speech success.
 
 Apply migration 015 after 014 before starting turn handlers. Keep live Voice
-disabled while MB-759/760/762 and the account/privacy gates remain pending.
+disabled while MB-760/762, hosted deployment and account/privacy gates remain pending.
 The current demo must use one Journal context process or route a session's turn
 requests consistently to its original process. Another replica or a restarted
 process must return stale without reconstructing content or regenerating a
@@ -272,11 +299,11 @@ can retain model inputs and outputs, so its default-disabled status does not
 replace the account check. Application RAM deletion does not establish a claim
 about every provider's processing location or non-content operational metadata.
 
-## Future deployment commands: not runnable for MB-755
+## Opt-in deployment commands: not executed
 
-The agent source directory, dependency lock, Dockerfile, secret schema and
-authenticated Journal/AI voice endpoint are MB-759/owner implementation work.
-Do not run a generic starter against the existing project while those are absent.
+MB-759 now supplies the agent source, lockfile, Dockerfile and secret schema;
+MB-757/758 supply authenticated Journal/AI endpoints. These artifacts do not
+authorize deployment. Complete the account/privacy/benchmark gates first.
 Do not reuse the persisted AI Companion messages endpoint to make a demo work.
 
 After those stories pass, the operator can follow the official
@@ -303,8 +330,9 @@ for rollback; preserve the existing consultation-video configuration.
 
 ## Product limits and acceptance evidence
 
-These are the **accepted application target**, not a statement that enforcement
-exists today. They are independent of provider allowances:
+These are the **accepted application target**, enforced in the MB-756/757 owner
+ledger and independent of provider allowances; live end-to-end evidence remains
+an enablement gate:
 
 | Rule             | Target                                                                             |
 | ---------------- | ---------------------------------------------------------------------------------- |
@@ -341,11 +369,11 @@ belong in ordinary CI.
 
 ## Delivery handoff and current evidence
 
-MB-756 owns the later Journal/AI Mongo metadata ledger, admission and quota
-implementation. MB-759 owns the missing hosted Node worker, and MB-760/MB-762
-must establish their provider benchmark and enablement gates. The remaining
-MB-757 through MB-764 work follows its approved task contracts for owner APIs,
-lifecycle, clients and controlled E2E delivery; this runbook does not reassign it.
+MB-756/757 implement Journal/AI metadata, admission, quota and lifecycle;
+MB-758 adds guarded turns; MB-759 supplies the disabled Node worker.
+MB-760/MB-762 must establish provider benchmarks and enablement gates. Remaining
+client and controlled E2E work follows its approved task contracts; this runbook
+does not reassign it.
 Freeze speech choices only after the applicable Vietnamese benchmark.
 Each story must publish its exact implementation source SHA and applicable
 tests; this runbook is not acceptance evidence for those stories.
