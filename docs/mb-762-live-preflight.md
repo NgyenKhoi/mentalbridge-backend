@@ -1,6 +1,6 @@
 # MB-762 real-provider preflight
 
-Authority: MB-762 comments 10243–10255, 2026-10-29, and the owner's direct
+Authority: MB-762 comments 10243–10256, 2026-10-29, and the owner's direct
 instruction to run Local Real E2E before staging. Comment 10251 supersedes the
 Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not create
 another mock-only delivery milestone. Tests verify production changes without
@@ -42,8 +42,8 @@ making provider calls before approval.
 
 ## Actual preflight observations
 
-- Read all twelve Jira comments, including the local fixture authorization and
-  account-evidence reconciliation (10254/10255).
+- Read all thirteen Jira comments, including fixture authorization, account
+  reconciliation and the narrow CountTokens-only exception (10254–10256).
   AWS Free-plan balance USD 131.02 and expiry 2027-03-08 are owner-supplied
   evidence in comment 10248. Specific Bedrock Applicable Products/credit offset
   remains a separate check, not inferred from that balance or a runtime key.
@@ -76,7 +76,7 @@ making provider calls before approval.
   counted before Converse; over 1,900 input tokens, counting failure or unknown
   outcome denies inference without retry. AWS Mantle counting uses Tokyo because
   Singapore does not offer Mantle; actual inference remains Singapore/global
-  Sonnet. Account `bedrock-mantle:CountTokens` permission is not yet live-tested.
+  Sonnet. The actual CountTokens-only permission check is recorded below.
   See [AWS token counting](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html)
   and [endpoint availability](https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints-region-availability.html).
 - Agent pilot pins Nova-3/vi and Sonic 3/vi/Xia. It reserves at most 1,200 TTS
@@ -158,6 +158,41 @@ explicit `LIVE_APPROVED`. Actual named registration/dispatch, counting permissio
 speech compatibility/latency and provider cleanup must be verified in that
 authorized run; disabled preparation cannot claim those runtime observations.
 
-Status is **PREFLIGHT_IN_PROGRESS**. No inference, real microphone, paid use,
-Hosted Agent deployment or LIVE_APPROVED action is claimed yet. Local PASS will
-not establish staging/Hosted PASS or all task acceptance scenarios.
+## Authorized CountTokens-only result — 2026-10-29
+
+PO comment 10256 explicitly permitted one small synthetic CountTokens-only
+request before live approval, without any model inference, STT/TTS or microphone.
+The actual result was:
+
+| Field | Observed result |
+| --- | --- |
+| Endpoint | AWS Mantle Tokyo `ap-northeast-1`, `/anthropic/v1/messages/count_tokens` |
+| Model ID | `anthropic.claude-sonnet-4-6` |
+| HTTP | **403** |
+| Provider error type | `permission_error` |
+| `input_tokens` | Not returned; do not invent a count |
+| Access | **COUNT_TOKENS_UNAVAILABLE / permission blocked** |
+| Retries | Zero; stopped on authorization rejection as instructed |
+| Inference / STT / TTS / microphone | Zero requests / not used |
+| Voice admission / Agent enabled | Both OFF |
+
+A separate read-only model-metadata GET returned 200; that does not establish
+CountTokens permission or exact Sonnet support. Neither check proves billing
+coverage or actual inference residency. The existing Singapore/global Sonnet
+inference route remains unchanged, and the runtime budget guard fails closed.
+
+The AWS owner must verify `bedrock-mantle:CountTokens` for the existing principal
+and Tokyo default project, plus any API-key/project/account restriction. Use the
+[official CountTokens authorization guidance](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html).
+Its project resource shape is
+`arn:aws:bedrock-mantle:ap-northeast-1:<account-id>:project/default`.
+This is not an instruction to grant wildcard inference permission, subscribe to
+another model, upgrade a plan or purchase credits. No IAM change was attempted.
+After the owner fixes access, an explicitly authorized CountTokens-only recheck
+must succeed before reconsidering live approval; do not use paid inference as
+a substitute check.
+
+Status is **LOCAL_PREFLIGHT_BLOCKED_COUNT_TOKENS**, not READY_FOR_LOCAL_LIVE.
+No inference, real microphone, paid use, Hosted Agent deployment or LIVE_APPROVED
+action is claimed. Local preparation does not establish staging/Hosted PASS or
+all task acceptance scenarios; MB-762 is not Done.
