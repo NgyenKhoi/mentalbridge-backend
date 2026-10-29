@@ -21,6 +21,7 @@ const optional = (schema: z.ZodType) =>
 const secret = z.string().regex(/^[\x21-\x7e]{32,256}$/);
 const environmentSchema = z.object({
   AI_VOICE_AGENT_ENABLED: z.enum(["true", "false"]).default("false"),
+  AI_VOICE_PILOT: z.enum(["true", "false"]).default("false"),
   AI_VOICE_AGENT_APPROVAL_VERSION: optional(
     z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/),
   ),
@@ -67,6 +68,7 @@ const environmentSchema = z.object({
   AI_VOICE_TTS_VOICE_ID: optional(z.uuid()),
 });
 export interface AgentConfiguration {
+  pilot?: boolean;
   enabled: boolean;
   approvalVersion: string | null;
   livekitUrl: string | null;
@@ -88,6 +90,7 @@ export function loadConfiguration(
   const optionalString = (input: unknown): string | null =>
     typeof input === "string" ? input : null;
   const configuration: AgentConfiguration = {
+    pilot: value.AI_VOICE_PILOT === "true",
     enabled,
     approvalVersion: optionalString(value.AI_VOICE_AGENT_APPROVAL_VERSION),
     livekitUrl: optionalString(value.LIVEKIT_URL),
@@ -99,6 +102,12 @@ export function loadConfiguration(
     ttsModel: value.AI_VOICE_TTS_MODEL,
     voiceId: optionalString(value.AI_VOICE_TTS_VOICE_ID),
   };
+  if (
+    configuration.pilot &&
+    (configuration.sttModel !== "deepgram/nova-3" ||
+      configuration.voiceId !== "b8cd71e3-bc14-4538-a530-d6314731c036")
+  )
+    throw new AgentFailure("CONFIGURATION_INVALID");
   if (
     configuration.journalToken &&
     configuration.journalToken === configuration.apiSecret

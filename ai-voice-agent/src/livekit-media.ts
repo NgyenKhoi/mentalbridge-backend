@@ -19,6 +19,7 @@ import {
   type RemoteTrackPublication,
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
+import { PilotSpeechBudget } from "./pilot-speech-budget.js";
 import type { Dispatch } from "./contract.js";
 import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
 import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
@@ -145,6 +146,7 @@ async function verifyPublication(
   else if (!signal.aborted) throw new AgentFailure("PROVIDER_FAILED");
 }
 export class LiveKitMedia implements MediaPort {
+  private readonly pilotSpeechBudget = new PilotSpeechBudget();
   private session: voice.AgentSession | undefined;
   private agent: voice.Agent | undefined;
   private speech: voice.SpeechHandle | undefined;
@@ -386,6 +388,7 @@ export class LiveKitMedia implements MediaPort {
     const session = this.session;
     if (!session || this.closed || signal.aborted)
       throw new AgentFailure("AUTHORITY_EXPIRED");
+    if (this.configuration.pilot) this.pilotSpeechBudget.reserve(text);
     const output = session.output.audio;
     if (!output) throw new AgentFailure("PROVIDER_FAILED");
     try {
