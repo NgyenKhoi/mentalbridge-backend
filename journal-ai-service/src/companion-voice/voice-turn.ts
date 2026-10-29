@@ -12,6 +12,7 @@ import { VoiceLedgerError } from "./voice-ledger.js";
 import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
+import { selectVoiceProviderRoute } from "./voice-provider.js";
 
 export const voiceTurnSchema = z
   .object({
@@ -383,7 +384,7 @@ export class VoiceTurnService {
 
   private route(plan: "FREE" | "PLUS" | "PREMIUM") {
     try {
-      const route = selectCompanionProviderRoute(this.configuration, plan);
+      const route = selectVoiceProviderRoute(this.configuration, plan);
       const fake =
         route.provider === "DETERMINISTIC_FAKE" &&
         this.configuration.NODE_ENV !== "production" &&
@@ -408,9 +409,10 @@ export class VoiceTurnService {
     )
       return;
     const rate =
-      plan === "PREMIUM"
+      this.configuration.VOICE_BEDROCK_ROUTE ??
+      (plan === "PREMIUM"
         ? this.configuration.PREMIUM_ROUTE
-        : this.configuration.FREE_PLUS_ROUTE;
+        : this.configuration.FREE_PLUS_ROUTE);
     this.telemetry({
       outcome: "GENERATED",
       inputTokens: reply.inputTokens,

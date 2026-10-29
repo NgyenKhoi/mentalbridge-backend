@@ -22,10 +22,8 @@ import {
 } from "./voice-media-provider.js";
 import { MongoVoiceMediaStore } from "./voice-media-store.js";
 import { VoiceSessionsService } from "./voice-sessions.js";
-import {
-  RoutedChatProvider,
-  type ChatProvider,
-} from "../companion-chat/companion-chat.js";
+import { type ChatProvider } from "../companion-chat/companion-chat.js";
+import { createVoiceProvider } from "./voice-provider.js";
 import { VoiceTurnService, type VoiceTurnMetric } from "./voice-turn.js";
 import { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import {
@@ -159,7 +157,7 @@ export const registerCompanionVoiceModule = (
   const turns = new VoiceTurnService(
     sessions,
     new MongoVoiceTurnStore(client, configuration.MONGODB_DATABASE),
-    dependencies.turnProvider ?? new RoutedChatProvider(configuration),
+    dependencies.turnProvider ?? createVoiceProvider(configuration),
     configuration,
     dependencies.clock,
     dependencies.turnTelemetry ??

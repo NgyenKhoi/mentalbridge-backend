@@ -2,6 +2,19 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-762 scoped Voice provider
+
+Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
+`ap-southeast-1` using `JOURNAL_AI_VOICE_PROVIDER_MODE=APPROVED_BEDROCK`,
+`JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION` and the existing
+`AWS_BEARER_TOKEN_BEDROCK`. The model and region are validated by the dedicated
+`JOURNAL_AI_VOICE_BEDROCK_MODEL` / `JOURNAL_AI_VOICE_BEDROCK_REGION` keys.
+This configuration does not change AI Text, benchmark selection, consent,
+entitlement or admission. `JOURNAL_AI_VOICE_ENABLED` remains false until the
+[real preflight](../docs/mb-762-live-preflight.md) and LIVE_APPROVED gate pass.
+Live Voice cannot fall back to fake, Gemini, Opus or another region. Existing
+nonproduction deterministic tests remain available only while Voice is disabled.
+
 ## Current scope
 
 MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for
