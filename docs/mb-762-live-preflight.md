@@ -42,8 +42,9 @@ making provider calls before approval.
 
 ## Actual preflight observations
 
-- Read all thirteen Jira comments, including fixture authorization, account
-  reconciliation and the narrow CountTokens-only exception (10254–10256).
+- Read all fifteen Jira comments, including fixture authorization, account
+  reconciliation, the narrow CountTokens-only exception and its endpoint
+  correction and one-request Runtime approval (10254–10258).
   AWS Free-plan balance USD 131.02 and expiry 2027-03-08 are owner-supplied
   evidence in comment 10248. Specific Bedrock Applicable Products/credit offset
   remains a separate check, not inferred from that balance or a runtime key.
@@ -74,11 +75,13 @@ making provider calls before approval.
   first-reply charging, ACTIVE-only accounting and teardown remain in force.
 - Four Claude turns/admission, 300 output tokens/turn. The full prompt/schema is
   counted before Converse; over 1,900 input tokens, counting failure or unknown
-  outcome denies inference without retry. AWS Mantle counting uses Tokyo because
-  Singapore does not offer Mantle; actual inference remains Singapore/global
-  Sonnet. The actual CountTokens-only permission check is recorded below.
+  outcome denies inference without retry. The corrected request uses Bedrock
+  Runtime Singapore with base model `anthropic.claude-sonnet-4-6`, independently
+  from the global inference profile. The single authenticated Runtime check
+  authorized by PO 10258 returned HTTP 403; no token count was returned.
+  Actual inference remains Singapore/global Sonnet.
   See [AWS token counting](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html)
-  and [endpoint availability](https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints-region-availability.html).
+  and the [Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html).
 - Agent pilot pins Nova-3/vi and Sonic 3/vi/Xia. It reserves at most 1,200 TTS
   characters before synthesis per attempt, including interrupted/failed work.
   Two admissions bound campaign TTS to 2,400. Unknown outcomes cannot be retried
@@ -171,7 +174,7 @@ The actual result was:
 | HTTP | **403** |
 | Provider error type | `permission_error` |
 | `input_tokens` | Not returned; do not invent a count |
-| Access | **COUNT_TOKENS_UNAVAILABLE / permission blocked** |
+| Result | **COUNT_TOKENS_UNAVAILABLE**; this 403 alone does not establish the IAM cause |
 | Retries | Zero; stopped on authorization rejection as instructed |
 | Inference / STT / TTS / microphone | Zero requests / not used |
 | Voice admission / Agent enabled | Both OFF |
@@ -181,18 +184,68 @@ CountTokens permission or exact Sonnet support. Neither check proves billing
 coverage or actual inference residency. The existing Singapore/global Sonnet
 inference route remains unchanged, and the runtime budget guard fails closed.
 
-The AWS owner must verify `bedrock-mantle:CountTokens` for the existing principal
-and Tokyo default project, plus any API-key/project/account restriction. Use the
-[official CountTokens authorization guidance](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html).
-Its project resource shape is
-`arn:aws:bedrock-mantle:ap-northeast-1:<account-id>:project/default`.
-This is not an instruction to grant wildcard inference permission, subscribe to
-another model, upgrade a plan or purchase credits. No IAM change was attempted.
-After the owner fixes access, an explicitly authorized CountTokens-only recheck
-must succeed before reconsidering live approval; do not use paid inference as
-a substitute check.
+### Correction and proposed Runtime-only preflight — PO 10257
 
-Status is **LOCAL_PREFLIGHT_BLOCKED_COUNT_TOKENS**, not READY_FOR_LOCAL_LIVE.
+The [specific AWS Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+lists Runtime CountTokens as supported and Mantle as unsupported. The earlier
+generic-guide assumption was wrong; the 403 does not prove that adding Mantle
+permissions would help. The prior instruction to change Mantle IAM is withdrawn.
+Do not retry that endpoint, rotate keys or broaden IAM from that result.
+
+The [Runtime CountTokens API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_CountTokens.html)
+accepts a foundation model identifier and `input.converse` system/messages and
+returns `inputTokens`. It is separate from the global-profile Converse inference
+route. The [CountTokens guide](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html)
+identifies `bedrock:CountTokens` as the needed action and documents no charge.
+[API-key authorization](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)
+uses `Authorization: Bearer` and the existing `bedrock:CallWithBearerToken`
+permission. No IAM/key change is requested or attempted. Documentation establishes
+the model feature and request form, not actual regional/account access.
+
+Scope subsequently approved by PO 10258 and executed exactly once:
+
+- One POST to `https://bedrock-runtime.ap-southeast-1.amazonaws.com/model/anthropic.claude-sonnet-4-6/count-tokens`.
+- `input.converse` contains a synthetic system instruction and one synthetic
+  Vietnamese user message; complete JSON payload is 188 UTF-8 bytes. No user,
+  Journal, chat, audio or microphone data is included.
+- Existing Journal-only key outside the repository; 10-second timeout, redirect
+  rejection and zero retries. No profile/model/region switching or inference
+  substitute if the check fails. Neither Voice flag is enabled.
+- Report only HTTP status, public model ID, `inputTokens` when valid, elapsed
+  milliseconds and sanitized error type/action. No headers, key, account ID,
+  raw error message or prompt is logged.
+- A failure is `COUNT_TOKENS_UNAVAILABLE`. Existing bounded context, 300 output
+  tokens, four turns and 90-second/two-admission limits remain in force. An
+  unverified input budget denies inference; a byte/character estimate never
+  substitutes for actual token authorization in this candidate. Keep admission
+  OFF while deciding any alternative conservative-budget policy.
+
+Local dry-run verified the request shape and both OFF flags without network.
+Approval of this CountTokens-only check is separate from `LIVE_APPROVED`.
+
+### Authorized Runtime CountTokens-only result — PO 10258
+
+| Field | Observed result |
+| --- | --- |
+| HTTP status | **403** |
+| Model | `anthropic.claude-sonnet-4-6` |
+| `inputTokens` | Not returned |
+| Client-observed elapsed time | **370 ms**, measured for this single HTTP operation |
+| Result | **COUNT_TOKENS_UNAVAILABLE** |
+
+The request used exactly the approved 188-byte payload, Runtime Singapore and
+existing Bearer authentication. There were no retries, redirects, model/region
+changes, IAM/key changes or inference substitutes. A local exclusive attempt
+lock prevents accidentally rerunning this one-request authorization. The report
+contains no usable error type or denied action; the root cause of this 403 is
+not established. Do not infer from this result that the base model/region is
+supported for this account or that any particular IAM grant will fix it.
+
+Stop here for review of the unavailable capability. No additional AWS request
+is authorized by PO 10258. The fail-closed input-budget guard continues to deny
+inference; Voice and Agent remain OFF and `LIVE_APPROVED` remains false.
+
+Status is **COUNT_TOKENS_UNAVAILABLE**, not READY_FOR_LOCAL_LIVE.
 No inference, real microphone, paid use, Hosted Agent deployment or LIVE_APPROVED
 action is claimed. Local preparation does not establish staging/Hosted PASS or
 all task acceptance scenarios; MB-762 is not Done.
