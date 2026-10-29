@@ -12,8 +12,30 @@ Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
 This configuration does not change AI Text, benchmark selection, consent,
 entitlement or admission. `JOURNAL_AI_VOICE_ENABLED` remains false until the
 [real preflight](../docs/mb-762-live-preflight.md) and LIVE_APPROVED gate pass.
-Live Voice cannot fall back to fake, Gemini, Opus or another region. Existing
+Live Voice inference cannot fall back to fake, Gemini, Opus or another region. Existing
 nonproduction deterministic tests remain available only while Voice is disabled.
+
+For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
+`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Never change
+the window to retry this campaign. Existing retained session rows count every
+admission in the window, including failed or refunded calls, in the same Mongo
+transaction as the global capacity write. Replays do not allocate again. The
+90-second deadline is frozen at admission and also bounded by the window end;
+daily Text/Voice policy and financial credits are unchanged. No new collection
+or migration is introduced.
+
+Pilot Voice uses the same safety schema/validator with the schema included in
+the system prompt, and omits provider-side `outputConfig` so the complete input
+can be counted before inference. AWS Mantle Sonnet token counting in Tokyo
+must succeed with at most 1,900 tokens (100-token headroom under the per-turn
+2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
+to the approved global profile and caps output at 300 tokens; four turns per
+call/two calls bound output to 2,400. This capability/permission needs an actual
+authorized runtime check and `bedrock-mantle:CountTokens` access; unit tests do
+not establish account access. Singapore does not offer Mantle; counting uses
+Tokyo under the disclosed AWS cross-region processing, while inference stays on
+the approved Singapore Converse endpoint. There is
+no fallback or retry when counting/inference fails. Text requests are unchanged.
 
 ## Current scope
 

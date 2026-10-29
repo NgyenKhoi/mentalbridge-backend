@@ -97,6 +97,7 @@ export const registerCompanionVoiceModule = (
   const coreLedger = new MongoVoiceLedger(
     client,
     configuration.MONGODB_DATABASE,
+    configuration.VOICE_PILOT,
   );
   const ledger = dependencies.ledger ?? coreLedger;
   const logger = createLogger(configuration);
@@ -129,6 +130,7 @@ export const registerCompanionVoiceModule = (
         )),
     dependencies.clock,
     telemetry,
+    configuration.VOICE_PILOT,
   );
   const disabled = () => Promise.reject(new VoiceMediaError());
   const mediaConfiguration = configuration.VOICE_MEDIA;

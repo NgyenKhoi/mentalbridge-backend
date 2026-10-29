@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { voicePilotAllows, type VoicePilot } from "./voice-pilot.js";
 import { z } from "zod";
 
 import {
@@ -115,6 +116,7 @@ export class VoiceAccessService {
     private readonly providerReady: (plan: VoicePlan) => boolean = () => false,
     private readonly clock: () => Date = () => new Date(),
     private readonly telemetry: (outcome: string) => void = () => undefined,
+    private readonly pilot?: VoicePilot,
   ) {}
 
   async eligibility(
@@ -133,6 +135,9 @@ export class VoiceAccessService {
       const state =
         accessDenial(decision, now) ??
         (!this.providerReady(plan) ? "PROVIDER_UNAVAILABLE" : null) ??
+        (this.pilot && !voicePilotAllows(this.pilot, ownerId, now)
+          ? "PROVIDER_UNAVAILABLE"
+          : null) ??
         (quota.ownerActive ? "SESSION_LIMIT" : null) ??
         (quota.globalAvailable === 0 ? "GLOBAL_CAPACITY_FULL" : null) ??
         (quota.remainingSessions === 0 || quota.remainingSeconds === 0
@@ -152,6 +157,12 @@ export class VoiceAccessService {
             ? Math.min(
                 voiceLimits(plan).perSessionSeconds,
                 quota.remainingSeconds,
+                this.pilot ? 90 : Number.POSITIVE_INFINITY,
+                this.pilot
+                  ? Math.floor(
+                      (this.pilot.endsAt.getTime() - now.getTime()) / 1000,
+                    )
+                  : Number.POSITIVE_INFINITY,
               )
             : 0,
         quota: {

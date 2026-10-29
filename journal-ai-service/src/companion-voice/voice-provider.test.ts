@@ -134,3 +134,59 @@ void test("A production Voice route never falls back to fake or the Text provide
     ),
   );
 });
+
+void test("pilot counts the exact prompt before Converse, caps output and never invokes after count denial", async () => {
+  const original = globalThis.fetch;
+  const config = loadConfiguration({
+    ...approved,
+    JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+      startsAt: "2026-10-29T00:00:00.000Z",
+      endsAt: "2026-10-30T00:00:00.000Z",
+      ownerIds: ["00000000-0000-4000-8000-000000000001"],
+    }),
+  });
+  let countSystem = "";
+  let invocations = 0;
+  let deny = false;
+  globalThis.fetch = (url, options) => {
+    const endpoint = url instanceof Request ? new URL(url.url) : new URL(url);
+    assert.ok(typeof options?.body === "string");
+    const body = JSON.parse(options.body) as {
+      system: string | { text: string }[];
+      inferenceConfig?: { maxTokens: number };
+    };
+    if (endpoint.pathname.endsWith("/count_tokens")) {
+      assert.ok(typeof body.system === "string");
+      countSystem = body.system;
+      return Promise.resolve(
+        Response.json({ input_tokens: deny ? 1901 : 800 }),
+      );
+    }
+    invocations++;
+    assert.ok(Array.isArray(body.system));
+    assert.equal(body.system[0]?.text, countSystem);
+    assert.equal(body.inferenceConfig?.maxTokens, 300);
+    assert.equal(Object.hasOwn(body, "outputConfig"), false);
+    assert.match(countSystem, /Required JSON schema/);
+    return Promise.resolve(new Response(null, { status: 503 }));
+  };
+  try {
+    const provider = createVoiceProvider(config);
+    const route = selectVoiceProviderRoute(config, "PLUS");
+    await assert.rejects(
+      provider.reply("synthetic", { kinds: [], prompt: "" }, route, {
+        voice: true,
+      }),
+    );
+    assert.equal(invocations, 1);
+    deny = true;
+    await assert.rejects(
+      provider.reply("synthetic", { kinds: [], prompt: "" }, route, {
+        voice: true,
+      }),
+    );
+    assert.equal(invocations, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

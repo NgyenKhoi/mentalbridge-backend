@@ -171,6 +171,11 @@ export class VoiceTurnService {
       input.leaseId,
       correlationId,
     );
+    if (this.configuration.VOICE_PILOT && input.sequence > 4) {
+      await this.sessions.failTurn(id);
+      this.discard(id);
+      throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+    }
     let route: ReturnType<typeof selectCompanionProviderRoute>;
     try {
       route = this.route(entitlement.packageCode);

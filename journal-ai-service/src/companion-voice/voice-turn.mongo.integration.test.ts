@@ -95,7 +95,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     }
   });
   let count = 0;
-  const fixture = async () => {
+  const fixture = async (pilot = false) => {
     const name = `voice_turn_verify_${String(Date.now())}_${String(count++)}`;
     assert.match(name, /^voice_turn_verify_\d+_\d+$/);
     const db = client.db(name);
@@ -148,6 +148,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     };
     const token = "synthetic-worker-voice-turn-credential-32-characters";
+    const owner = randomUUID();
     const configuration = loadConfiguration({
       NODE_ENV: "test",
       CI: "true",
@@ -159,6 +160,15 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       JOURNAL_AI_MONGODB_DATABASE: name,
       JOURNAL_AI_LOG_LEVEL: "silent",
       JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: token,
+      ...(pilot
+        ? {
+            JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+              startsAt: new Date(now.getTime() - 1000).toISOString(),
+              endsAt: new Date(now.getTime() + 3600000).toISOString(),
+              ownerIds: [owner],
+            }),
+          }
+        : {}),
     });
     const config: ServiceConfiguration = {
       ...configuration,
@@ -221,7 +231,6 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     };
     const left = await build();
     const right = await build();
-    const owner = randomUUID();
     const start = async () => {
       const started = await left.sessions.start(
         owner,
@@ -321,6 +330,17 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     };
   };
+
+  await t.test(
+    "pilot rejects the fifth turn before any provider work and tears down authority",
+    async () => {
+      const f = await fixture(true);
+      await assert.rejects(f.generate(f.input(5)), rejected("QUOTA_EXHAUSTED"));
+      assert.equal(f.calls(), 0);
+      await assert.rejects(f.generate(f.input(1)));
+      assert.equal(f.calls(), 0);
+    },
+  );
 
   await t.test(
     "five ordered Vietnamese turns use bounded recent context; exact live replay returns one stable reply without Text quota",
