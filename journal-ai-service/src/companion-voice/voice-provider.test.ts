@@ -154,14 +154,30 @@ void test("pilot counts the exact prompt before Converse, caps output and never 
     const body = JSON.parse(options.body) as {
       system: string | { text: string }[];
       inferenceConfig?: { maxTokens: number };
+      input?: {
+        converse: {
+          system: { text: string }[];
+          messages: { role: string; content: { text: string }[] }[];
+        };
+      };
     };
-    if (endpoint.pathname.endsWith("/count_tokens")) {
-      assert.ok(typeof body.system === "string");
-      countSystem = body.system;
-      return Promise.resolve(
-        Response.json({ input_tokens: deny ? 1901 : 800 }),
+    if (endpoint.pathname.endsWith("/count-tokens")) {
+      assert.equal(
+        endpoint.origin,
+        "https://bedrock-runtime.ap-southeast-1.amazonaws.com",
       );
+      assert.equal(
+        endpoint.pathname,
+        "/model/anthropic.claude-sonnet-4-6/count-tokens",
+      );
+      assert.ok(body.input?.converse.system[0]?.text);
+      countSystem = body.input.converse.system[0].text;
+      return Promise.resolve(Response.json({ inputTokens: deny ? 1901 : 800 }));
     }
+    assert.equal(
+      endpoint.pathname,
+      "/model/global.anthropic.claude-sonnet-4-6/converse",
+    );
     invocations++;
     assert.ok(Array.isArray(body.system));
     assert.equal(body.system[0]?.text, countSystem);

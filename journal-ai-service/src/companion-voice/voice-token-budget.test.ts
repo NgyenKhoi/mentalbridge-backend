@@ -9,29 +9,50 @@ void test("pilot input counting fails closed on overflow, permission, malformed 
   let calls = 0;
   try {
     for (const response of [
-      Response.json({ input_tokens: 1900 }),
-      Response.json({ input_tokens: 1901 }),
-      Response.json({ input_tokens: "12" }),
+      Response.json({ inputTokens: 1900 }),
+      Response.json({ inputTokens: 1901 }),
+      Response.json({ inputTokens: "12" }),
+      Response.json({ input_tokens: 12 }),
       new Response(null, { status: 403 }),
       new Response(null, { status: 429 }),
     ]) {
       globalThis.fetch = (url, options) => {
         calls++;
+        assert.ok(options);
         assert.equal(
           (url instanceof Request ? new URL(url.url) : new URL(url)).href,
-          "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic/v1/messages/count_tokens",
+          "https://bedrock-runtime.ap-southeast-1.amazonaws.com/model/anthropic.claude-sonnet-4-6/count-tokens",
         );
         assert.equal(
-          new Headers(options?.headers).get("x-api-key"),
-          "synthetic",
+          new Headers(options.headers).get("authorization"),
+          "Bearer synthetic",
         );
-        assert.ok(typeof options?.body === "string");
+        assert.equal(new Headers(options.headers).has("x-api-key"), false);
+        assert.equal(
+          new Headers(options.headers).has("anthropic-version"),
+          false,
+        );
+        assert.equal(options.method, "POST");
+        assert.equal(options.redirect, "error");
+        assert.ok(typeof options.body === "string");
         const body = JSON.parse(options.body) as {
-          model: string;
-          system: string;
+          input: {
+            converse: {
+              system: { text: string }[];
+              messages: { role: string; content: { text: string }[] }[];
+            };
+          };
         };
-        assert.equal(body.model, "anthropic.claude-sonnet-4-6");
-        assert.equal(body.system, "synthetic system plus full schema");
+        assert.deepEqual(body, {
+          input: {
+            converse: {
+              system: [{ text: "synthetic system plus full schema" }],
+              messages: [
+                { role: "user", content: [{ text: "synthetic user" }] },
+              ],
+            },
+          },
+        });
         return Promise.resolve(response);
       };
       const work = authorizeVoiceInput(
@@ -43,7 +64,7 @@ void test("pilot input counting fails closed on overflow, permission, malformed 
       if (calls === 1) await work;
       else await assert.rejects(work);
     }
-    assert.equal(calls, 5);
+    assert.equal(calls, 6);
   } finally {
     globalThis.fetch = original;
   }

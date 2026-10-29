@@ -26,15 +26,21 @@ or migration is introduced.
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
-can be counted before inference. AWS Mantle Sonnet token counting in Tokyo
-must succeed with at most 1,900 tokens (100-token headroom under the per-turn
+can be counted before inference. Bedrock Runtime token counting at the Singapore
+endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
+most 1,900 tokens (100-token headroom under the per-turn
 2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
 to the approved global profile and caps output at 300 tokens; four turns per
 call/two calls bound output to 2,400. This capability/permission needs an actual
-authorized runtime check and `bedrock-mantle:CountTokens` access; unit tests do
-not establish account access. Singapore does not offer Mantle; counting uses
-Tokyo under the disclosed AWS cross-region processing, while inference stays on
-the approved Singapore Converse endpoint. There is
+authorized runtime check and `bedrock:CountTokens` access, plus the existing
+Bearer-use authorization; unit tests do not establish account access. The
+[Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+supports Runtime CountTokens and explicitly excludes Mantle. The prior Mantle
+403 does not prove an IAM deficiency. PO 10258 approved exactly one Runtime
+CountTokens-only check: it returned HTTP 403 with no `inputTokens` in 370 ms.
+Counting remains unavailable, admission remains OFF and no further request or
+IAM/key change is authorized by that approval. Actual inference stays on the approved Singapore Converse
+endpoint with the global profile, separately from the counting model ID. There is
 no fallback or retry when counting/inference fails. Text requests are unchanged.
 
 ## Current scope
