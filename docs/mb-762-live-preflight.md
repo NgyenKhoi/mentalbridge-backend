@@ -96,11 +96,23 @@ The script authorized in Jira 10255 verified local Docker named pipe, task label
 volume, loopback port and BOTH effective database identities before writing.
 It created one synthetic ADMIN bootstrap and two DEMO PLUS/PREMIUM grants in
 `mb762_identity` / `mb762_consultation`, with two authentic Identity USER logins.
-No purchase/payment/credit/financial ledger writes occurred. Current owner REST
-checks return the correct plans; both missing Care consents deny admission with
+No purchase/payment/credit/financial ledger writes occurred. Owner REST
+checks return the correct plans; initially missing Care consents denied admission with
 `CONSENT_REQUIRED`, and invalid scoped service credentials are rejected.
 Care's disclosure is reachable. These are real local service checks, not proof
 of live microphone/STT/TTS/Claude execution or paid entitlement verification.
+
+Subsequently, both synthetic USERs created a minimal Care profile through the
+authenticated public owner API (display name only, no DOB/health data). The
+actual Web UI displayed each current disclosure and recorded independent
+AI_PROCESSING (201) and AI_VOICE_PROCESSING (200) decisions for PLUS/PREMIUM.
+Both current owner grants are now true. The dialog then showed unavailable
+because admission is OFF; zero session-creation or microphone requests occurred.
+This is controlled fixture consent, not a claim that human audio was tested.
+Journal was restarted from the current build with the validated private pilot
+window and flags OFF. The frontend's observed login fallback leak was fixed
+with native POST and a no-JavaScript browser regression; temporary fixture
+passwords were rotated and old refresh sessions revoked.
 
 Cleanup was verified in transactions ending with ROLLBACK: removing only the two
 DEMO grants, revoking only the bootstrap ADMIN's refresh sessions and disabling
