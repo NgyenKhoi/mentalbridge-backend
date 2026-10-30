@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MentalBridge AI Voice Companion approved target",
-    "version": "1.0.0",
-    "description": "MB-755 contract-first only. All operations planned. Journal/AI owns voice; Care owns independent dual consent; Consultation remains entitlement authority. Does not activate runtime, replace text APIs or authorize joining specialist rooms."
+    "version": "1.1.0",
+    "description": "MB-755 contract-first only. All operations planned. Journal/AI owns voice; Care owns independent dual consent; Consultation remains entitlement authority. Does not activate runtime, replace text APIs or authorize joining specialist rooms. MB-782 additive Web preview and exact admitted Agent identity amendment; existing policy unchanged."
   },
   "servers": [
     {
@@ -1378,7 +1378,9 @@
           "packageCode",
           "quota",
           "checkedAt",
-          "voiceConsentVersion"
+          "voiceConsentVersion",
+          "maxSessionSeconds",
+          "availableSessionSeconds"
         ],
         "properties": {
           "policyVersion": {
@@ -1416,6 +1418,17 @@
           },
           "voiceConsentVersion": {
             "const": "ai-voice-processing-capstone-v1"
+          },
+          "maxSessionSeconds": {
+            "type": "integer",
+            "enum": [0, 300, 600],
+            "description": "Current package policy ceiling in seconds. Not an admission or reservation."
+          },
+          "availableSessionSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600,
+            "description": "Display-only min(maxSessionSeconds, unreserved daily remainingSeconds) when eligible; zero otherwise. Reauthorize and admit atomically on POST; never derive a deadline from this snapshot."
           }
         },
         "allOf": [
@@ -1436,6 +1449,10 @@
                 "packageCode": {
                   "type": "string",
                   "enum": ["PLUS", "PREMIUM"]
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "minimum": 1
                 }
               }
             },
@@ -1443,6 +1460,72 @@
               "properties": {
                 "eligible": {
                   "const": false
+                },
+                "availableSessionSeconds": {
+                  "const": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "FREE"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "maxSessionSeconds": {
+                  "const": 0
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "maximum": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "PLUS"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "maxSessionSeconds": {
+                  "const": 300
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "maximum": 300
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "PREMIUM"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "maxSessionSeconds": {
+                  "const": 600
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "maximum": 600
                 }
               }
             }
@@ -1541,7 +1624,9 @@
           "participantToken",
           "tokenExpiresAt",
           "hardStopAt",
-          "audioOnly"
+          "audioOnly",
+          "roomName",
+          "agentIdentity"
         ],
         "properties": {
           "voiceSessionId": {
@@ -1573,6 +1658,16 @@
           },
           "audioOnly": {
             "const": true
+          },
+          "roomName": {
+            "type": "string",
+            "pattern": "^ai-voice-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "Exact admitted room for this connection. Compare the connected SDK room name before reading Agent hints."
+          },
+          "agentIdentity": {
+            "type": "string",
+            "pattern": "^va-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "Exact admitted Agent attempt identity. Require ParticipantKind.AGENT in roomName; never select a participant from its attributes."
           }
         }
       },

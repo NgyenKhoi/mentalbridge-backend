@@ -11,6 +11,12 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-782 amends the accepted Voice target to `1.1.0` and active Journal OpenAPI
+to `1.16.0`: display-only quota-aware duration previews and exact admitted
+room/Agent connection bindings. The [Web handoff](../docs/story-mb-782-voice-web-prerequisite.md)
+defines official `lk.agent.state` hints and consumer fallback. Existing Voice
+policy, worker control envelope and business lifecycle versions remain unchanged.
+
 MB-755 freezes the accepted [AI Voice target](proposals/companion-voice-v1.openapi.json)
 under [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md). Journal/AI voice,
 Care's separate voice consent and narrow owner authorization reads are all

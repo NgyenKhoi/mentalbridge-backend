@@ -23,7 +23,14 @@ import {
 import { MongoVoiceMediaStore } from "./voice-media-store.js";
 import { VoiceSessionsService } from "./voice-sessions.js";
 import {
+  RoutedChatProvider,
+  type ChatProvider,
+} from "../companion-chat/companion-chat.js";
+import { VoiceTurnService, type VoiceTurnMetric } from "./voice-turn.js";
+import { MongoVoiceTurnStore } from "./voice-turn-store.js";
+import {
   VOICE_SESSIONS,
+  VOICE_TURNS,
   VoiceUserController,
   VoiceWorkerController,
   VoiceUserGuard,
@@ -67,6 +74,9 @@ export interface CompanionVoiceDependencies {
   readonly ledger?: VoiceAccessLedger;
   readonly media?: VoiceMediaProvider;
   readonly sessions?: VoiceSessionOperations;
+  readonly turns?: Pick<VoiceTurnService, "generate">;
+  readonly turnProvider?: ChatProvider;
+  readonly turnTelemetry?: (metric: VoiceTurnMetric) => void;
   readonly authorizer?: VoiceOwnerAuthorizer;
   readonly clock?: () => Date;
   readonly providerReady?: (plan: VoicePlan) => boolean;
@@ -146,6 +156,17 @@ export const registerCompanionVoiceModule = (
     dependencies.clock,
     telemetry,
   );
+  const turns = new VoiceTurnService(
+    sessions,
+    new MongoVoiceTurnStore(client, configuration.MONGODB_DATABASE),
+    dependencies.turnProvider ?? new RoutedChatProvider(configuration),
+    configuration,
+    dependencies.clock,
+    dependencies.turnTelemetry ??
+      ((metric) => {
+        logger.info({ event: "voice_turn", ...metric });
+      }),
+  );
   return {
     module: CompanionVoiceModule,
     controllers: [VoiceUserController, VoiceWorkerController],
@@ -155,21 +176,31 @@ export const registerCompanionVoiceModule = (
       VoiceUserGuard,
       VoiceWorkerGuard,
       { provide: VOICE_SESSIONS, useValue: dependencies.sessions ?? sessions },
+      { provide: VOICE_TURNS, useValue: dependencies.turns ?? turns },
+      { provide: VoiceTurnService, useValue: turns },
       { provide: VoiceSessionsService, useValue: sessions },
       { provide: VoiceAccessService, useValue: service },
       {
         provide: VoiceMaintenance,
         useValue: new VoiceMaintenance(
-          sessions,
+          {
+            reconcile: async () => {
+              await sessions.reconcile();
+              await turns.reconcile();
+            },
+          },
           dependencies.maintenance ??
             configuration.VOICE_OWNER_TOKENS !== undefined,
           () => {
             telemetry("RECONCILIATION_UNAVAILABLE");
           },
-          () => client.close(),
+          () => {
+            turns.close();
+            return client.close();
+          },
         ),
       },
     ],
-    exports: [VoiceAccessService, VoiceSessionsService],
+    exports: [VoiceAccessService, VoiceSessionsService, VoiceTurnService],
   };
 };

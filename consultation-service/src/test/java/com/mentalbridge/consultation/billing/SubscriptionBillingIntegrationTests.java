@@ -211,12 +211,16 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 		postIpn(failed, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("FAILED");
 		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
+		assertThat(jdbc.sql("select count(*) from service_credit_period where source='PAID' and source_reference=:id")
+				.param("id", payment.subscriptionId().toString()).query(Long.class).single()).isZero();
 
 		var lateSuccess = fixture(payment.paymentId(), 0, base + 2, 810003);
 		sign(lateSuccess);
 		postIpn(lateSuccess, 204);
 		assertThat(billing.payment(userId, payment.paymentId()).status()).isEqualTo("FAILED");
 		assertServiceCreditAccess(userId, "FREE", "DEFAULT_FREE", false);
+		assertThat(jdbc.sql("select count(*) from service_credit_period where source='PAID' and source_reference=:id")
+				.param("id", payment.subscriptionId().toString()).query(Long.class).single()).isZero();
 		assertThat(jdbc.sql("select failure_code from momo_payment_ipn where trans_id=810003")
 				.query(String.class).single()).isEqualTo("PAYMENT_ALREADY_FINAL");
 	}
@@ -313,6 +317,35 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 				.param("id", userId).query(Long.class).single()).isEqualTo(2);
 		assertThat(jdbc.sql("select package_code from service_credit_period where account_id=:id and plan_version=:version")
 				.param("id", userId).param("version", PLUS.toString()).query(String.class).single()).isEqualTo("PLUS");
+		for (var payment : new PaymentResponse[] {plus, upgrade}) {
+			var periodStart = jdbc.sql("""
+					select p.period_start from service_credit_period p
+					join user_subscription s on s.user_id=p.account_id and s.id::text=p.source_reference
+					join payment_transaction pt on pt.subscription_id=s.id and pt.target_plan_version_id::text=p.plan_version
+					where pt.id=:paymentId and p.period_start=pt.paid_at
+					""").param("paymentId", payment.paymentId()).query(java.sql.Timestamp.class).single().toInstant();
+			assertThat(periodStart).isEqualTo(now);
+		}
+		var purchaseResult = mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", plus.paymentId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.credits.length()").value(4))
+				.andReturn();
+		var upgradeResult = mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("paymentId", upgrade.paymentId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.credits.length()").value(10))
+				.andReturn();
+		var purchaseIds = new java.util.HashSet<String>();
+		json.readTree(purchaseResult.getResponse().getContentAsByteArray()).path("credits")
+				.forEach(credit -> purchaseIds.add(credit.path("creditId").asText()));
+		var upgradeIds = new java.util.HashSet<String>();
+		json.readTree(upgradeResult.getResponse().getContentAsByteArray()).path("credits")
+				.forEach(credit -> upgradeIds.add(credit.path("creditId").asText()));
+		assertThat(purchaseIds).hasSize(4);
+		assertThat(upgradeIds).hasSize(10).doesNotContainAnyElementsOf(purchaseIds);
 	}
 
 	@Test

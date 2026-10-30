@@ -186,7 +186,7 @@ export function documentationFailures(repositoryRoot, input = {}) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   let stdin = '';
   for await (const chunk of process.stdin) stdin += chunk;
-  const input = stdin.trim() ? JSON.parse(stdin) : {};
+  const input = stdin.trim() ? JSON.parse(stdin.replace(/^\uFEFF/, '')) : {};
   const failures = documentationFailures(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), input);
   if (process.argv.includes('--json')) {
     process.stdout.write(JSON.stringify({ failures }));

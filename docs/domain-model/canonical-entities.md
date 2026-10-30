@@ -16,6 +16,11 @@ versioned configuration), and nullable occurrence provenance on ACTIVE
 one immutable `platform_report_artifact`; the unique schedule/UTC occurrence
 pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 
+MB-673 adds ACTIVE `deletion_request`, `deletion_owner_fact`, and
+`retention_execution_record` for fail-closed Identity coordination and truthful
+owner-scoped execution evidence. These rows do not authorize cross-owner data
+access or fabricate external owner completion.
+
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `role` | identity-service | PostgreSQL | ACTIVE | Physical one-to-many to `account` through `account.role_code`. |
@@ -25,6 +30,9 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `idempotency_record` | identity-service | PostgreSQL | ACTIVE | Optional physical reference to `account`; owns encrypted replay result metadata. |
 | `outbox_event` | identity-service | PostgreSQL | ACTIVE | Logical aggregate ID; no cross-service foreign key. |
 | `security_audit_event` | identity-service | PostgreSQL | ACTIVE | Optional physical subject/actor references to `account`. |
+| `deletion_request` | identity-service | PostgreSQL | ACTIVE | Identity-coordinated workflow for one account reference and privacy-minimized subject tombstone; no cascading account FK or cross-owner storage access. |
+| `deletion_owner_fact` | identity-service | PostgreSQL | ACTIVE | Physical child of `deletion_request`; one minimized state per required owner, with completion accepted only from an authoritative producer. |
+| `retention_execution_record` | identity-service | PostgreSQL | ACTIVE | Immutable owner-scoped retention attempt evidence, including failed, stale, and unavailable outcomes. |
 | `account_role` | identity-service | PostgreSQL | HISTORICAL | Removed by migration 002 after `account.role_code` became the single authoritative role. |
 
 ## Care — PostgreSQL

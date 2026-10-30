@@ -84,6 +84,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - service: ai-voice-agent
+            node-version: '22'
+            integration: false
+            runner: ubuntu-latest
           - service: journal-ai-service
             node-version: '22'
             integration: true
@@ -138,6 +142,15 @@ jobs:
       - name: Build
         working-directory: ${{ matrix.service }}
         run: npm run build
+      - name: Build voice worker image without Cloud credentials
+        if: matrix.service == 'ai-voice-agent'
+        run: docker build -t mentalbridge-ai-voice-agent:ci ai-voice-agent
+      - name: Verify packaged VAD without network or credentials
+        if: matrix.service == 'ai-voice-agent'
+        run: >-
+          docker run --rm --network none mentalbridge-ai-voice-agent:ci
+          node --input-type=module -e
+          'import { VAD } from "@livekit/agents-plugin-silero"; const vad = await VAD.load({forceCPU:true}); await vad.close(); console.log("VAD_PACKAGE_OK");'
 
   community-notification-recovery:
     name: Cross-service / Community notification recovery

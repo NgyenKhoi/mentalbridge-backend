@@ -29,7 +29,7 @@
 
 /* ========================================================================== */
 /* ACTIVE — identity-service / mentalbridge_identity                          */
-/* Evidence: identity Liquibase changesets 001-002.                           */
+/* Evidence: identity Liquibase changesets 001-008.                           */
 /* ========================================================================== */
 
 CREATE TABLE identity.role (
@@ -178,4 +178,53 @@ CREATE TABLE identity.platform_report_artifact (
     content_length bigint NOT NULL,
     generated_at timestamptz NOT NULL,
     retained_until timestamptz NOT NULL
+);
+
+CREATE TABLE identity.deletion_request (
+    id uuid PRIMARY KEY,
+    account_id uuid NOT NULL, -- retained coordinator reference; no cascading account FK
+    subject_reference_hash char(64) NOT NULL,
+    status varchar(32) NOT NULL,
+    previous_status varchar(32) CHECK (previous_status IS NULL OR previous_status IN ('PENDING', 'IN_PROGRESS', 'FAILED')),
+    hold_type varchar(32) NOT NULL,
+    hold_reason varchar(64),
+    retry_count integer NOT NULL,
+    max_retries integer NOT NULL,
+    escalation_state varchar(32) NOT NULL,
+    failure_code varchar(64),
+    requested_at timestamptz NOT NULL,
+    scheduled_execution_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    last_attempt_at timestamptz,
+    version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE identity.deletion_owner_fact (
+    id uuid PRIMARY KEY,
+    deletion_request_id uuid NOT NULL REFERENCES identity.deletion_request(id) ON DELETE CASCADE,
+    owner_service varchar(32) NOT NULL,
+    status varchar(32) NOT NULL,
+    completed_at timestamptz,
+    evidence_reference varchar(128),
+    failure_reason varchar(64),
+    updated_at timestamptz NOT NULL,
+    UNIQUE (deletion_request_id, owner_service)
+);
+
+CREATE TABLE identity.retention_execution_record (
+    id uuid PRIMARY KEY,
+    policy_id varchar(64) NOT NULL,
+    owner_service varchar(32) NOT NULL,
+    job_name varchar(64) NOT NULL,
+    job_status varchar(32) NOT NULL CHECK (job_status IN ('SUCCEEDED', 'FAILED', 'RUNNING', 'STALE', 'UNAVAILABLE')),
+    started_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    items_evaluated integer NOT NULL,
+    records_purged integer NOT NULL,
+    tombstones_created integer NOT NULL,
+    holds_honored integer NOT NULL,
+    failure_code varchar(64),
+    created_at timestamptz NOT NULL
 );

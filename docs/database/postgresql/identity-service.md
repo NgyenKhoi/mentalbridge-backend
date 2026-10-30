@@ -161,6 +161,74 @@ Immutable, bounded-retention aggregate artifact for one completed platform repor
 | `content_sha256`, `content_length` | Integrity digest and bounded byte size. |
 | `generated_at`, `retained_until` | Immutable generation provenance and exclusive download deadline. |
 
+### `public.deletion_request`
+
+Identity-coordinated deletion workflow state. The row coordinates owner facts
+without granting Identity access to another service's storage or treating a
+missing external fact as completion.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID identifying the deletion workflow in ADMIN APIs and local owner facts. |
+| `account_id` | Identity account UUID being coordinated; retained as an external workflow reference without a cascading account foreign key. |
+| `subject_reference_hash` | Required lowercase SHA-256 tombstone reference used after identifying account data is removed. |
+| `status` | Authoritative coordinator state `PENDING`, `IN_PROGRESS`, `HELD`, `COMPLETED`, or `FAILED`; completion requires every required authoritative owner fact. |
+| `previous_status` | Nullable pre-hold resumable state (`PENDING`, `IN_PROGRESS`, or `FAILED`) restored when an ADMIN releases the hold. |
+| `hold_type`, `hold_reason` | Closed hold category and optional policy-approved reason code; neither field accepts sensitive free text. |
+| `retry_count`, `max_retries` | Persisted bounded-attempt counters; exhaustion escalates instead of fabricating completion. |
+| `escalation_state` | Closed escalation result `NONE`, `RETRY_EXHAUSTED`, or `MANUAL_ESCALATION_REQUIRED`. |
+| `failure_code` | Nullable minimized machine-readable failure reason without owner payload or user content. |
+| `requested_at` | Immutable UTC instant when the deletion workflow was requested. |
+| `scheduled_execution_at` | UTC instant at or after which the next eligible coordinator attempt may run. |
+| `completed_at` | UTC instant of verified terminal completion; null until every required owner fact is complete. |
+| `last_attempt_at` | UTC instant of the latest coordinator attempt; null before the first attempt. |
+| `version` | Optimistic-lock revision incremented on workflow mutation. |
+| `created_at`, `updated_at` | UTC insertion and latest persisted business-change instants. |
+
+Indexes on `(status, scheduled_execution_at)`, `subject_reference_hash`, and
+`account_id` support bounded due-work, tombstone, and account lookups.
+
+### `public.deletion_owner_fact`
+
+One minimized authoritative completion state per required data owner in a
+deletion workflow. External owners remain unavailable until an approved
+producer/consumer contract supplies their fact.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID identifying the owner fact row. |
+| `deletion_request_id` | Physical parent workflow; deleting the coordinator row removes its subordinate facts. |
+| `owner_service` | Closed authority code `IDENTITY`, `CARE`, `CONSULTATION`, `JOURNAL_AI`, `COMMUNITY`, or `CONTENT`; unique within one request. |
+| `status` | Owner-reported state `PENDING`, `COMPLETED`, `HELD`, `FAILED`, or `UNAVAILABLE`; only authoritative `COMPLETED` contributes to workflow completion. |
+| `completed_at` | UTC instant asserted by an authoritative completion fact; null for every non-completed state. |
+| `evidence_reference` | Nullable bounded safe reference allowed only when an approved producer contract exists; external owners currently retain null. |
+| `failure_reason` | Nullable stable owner failure code without raw error, token, or user content. |
+| `updated_at` | UTC instant of the latest accepted authoritative owner state. |
+
+### `public.retention_execution_record`
+
+Immutable execution evidence for one owner-scoped retention policy run. A
+failed or stale transaction records its truthful outcome independently; it is
+never rewritten into success.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable UUID identifying one execution attempt. |
+| `policy_id` | Stable approved retention policy code evaluated by the attempt. |
+| `owner_service` | Closed data-owner code whose local retention capability was invoked. |
+| `job_name` | Stable bounded worker name used for operational correlation. |
+| `job_status` | Terminal or in-flight state `SUCCEEDED`, `FAILED`, `RUNNING`, `STALE`, or `UNAVAILABLE`. |
+| `started_at`, `completed_at` | UTC attempt start and nullable terminal completion instants. |
+| `items_evaluated` | Nonnegative number of eligible local records evaluated. |
+| `records_purged` | Nonnegative number of owner-authorized records actually removed. |
+| `tombstones_created` | Nonnegative number of privacy-minimized tombstones created. |
+| `holds_honored` | Nonnegative number of deletion/retention holds that prevented removal. |
+| `failure_code` | Nullable stable failure code without raw exception or sensitive payload. |
+| `created_at` | Immutable UTC insertion instant for the execution evidence. |
+
+The `(policy_id, started_at DESC)` index supports bounded policy history and
+stale-attempt review.
+
 ### `public.security_audit_event`
 
 Privacy-minimized local security record for authentication, recovery, replay, and account-administration decisions. It contains stable facts, never credentials, provider payloads, or free text.
