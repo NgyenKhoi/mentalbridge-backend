@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { FailureCode } from "./diagnostics.js";
 
 export class AgentFailure extends Error {
   constructor(
@@ -9,6 +10,7 @@ export class AgentFailure extends Error {
       | "AUTHORITY_EXPIRED"
       | "INVALID_RESPONSE"
       | "PROVIDER_FAILED",
+    readonly failure?: FailureCode,
   ) {
     super(code);
   }

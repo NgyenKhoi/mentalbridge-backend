@@ -13,10 +13,12 @@ import { policyVersion } from "./contract.js";
 import type { JournalClient } from "./journal-client.js";
 import {
   VoiceWorker,
+  startWorkerTimer,
   type MediaCallbacks,
   type MediaPort,
   type Transcript,
 } from "./voice-worker.js";
+import { agentDiagnostics, type AgentDiagnostic } from "./diagnostics.js";
 const hold = () => {
   let release: () => void = () => undefined;
   const wait = new Promise<void>((resolve) => {
@@ -41,6 +43,7 @@ function fixture() {
   const played: string[] = [];
   const states: string[] = [];
   const mediaStates: string[] = [];
+  const diagnostics: AgentDiagnostic[] = [];
   let callbacks: MediaCallbacks | undefined;
   let input = false;
   let closes = 0;
@@ -180,6 +183,7 @@ function fixture() {
     media,
     () => now,
     (state) => states.push(state),
+    (value) => diagnostics.push(value),
   );
   return {
     worker,
@@ -188,6 +192,7 @@ function fixture() {
     played,
     states,
     mediaStates,
+    diagnostics,
     dispatch,
     media,
     start: () => worker.start(),
@@ -245,6 +250,131 @@ function fixture() {
     },
   };
 }
+
+void test("production timer ticks every 250 ms, catches failures and stops scheduling", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let ticks = 0;
+  let failures = 0;
+  const stop = startWorkerTimer({
+    tick: () => {
+      ticks++;
+      return Promise.reject(new Error("PRIVATE"));
+    },
+    fail: () => {
+      failures++;
+      return Promise.resolve();
+    },
+  });
+  t.mock.timers.tick(750);
+  await Promise.resolve();
+  assert.equal(ticks, 3);
+  assert.equal(failures, 3);
+  stop();
+  t.mock.timers.tick(1000);
+  assert.equal(ticks, 3);
+});
+
+void test("first heartbeat follows claim/readiness deadlines; jitter and slow queued acknowledgement cannot resurrect expired leases", async () => {
+  const f = fixture();
+  const gate = hold();
+  f.readiness(gate.wait);
+  const startup = f.start();
+  await flush();
+  f.advance(2000);
+  await f.tick();
+  assert.equal(f.signals.length, 1);
+  gate.release();
+  await startup;
+  assert.equal(
+    f.diagnostics.findLast((d) => d.phase === "next_heartbeat_due")?.delayMs,
+    5000,
+  );
+  f.advance(4999);
+  await f.tick();
+  assert.equal(f.signals.length, 1);
+  f.advance(251);
+  await f.tick();
+  assert.equal(f.signals.at(-1)?.kind, "HEARTBEAT");
+  assert.equal(
+    f.diagnostics.filter((d) => d.phase === "heartbeat_ack").length,
+    1,
+  );
+  await f.worker.stop("USER_ENDED");
+
+  const slow = fixture();
+  const acknowledgement = hold();
+  slow.readiness(acknowledgement.wait);
+  const slowStart = slow.start();
+  await flush();
+  slow.advance(6000);
+  acknowledgement.release();
+  await slowStart;
+  assert.equal(
+    slow.diagnostics.findLast((d) => d.phase === "next_heartbeat_due")?.delayMs,
+    1000,
+  );
+  slow.advance(1000);
+  await slow.tick();
+  assert.equal(slow.signals.at(-1)?.kind, "HEARTBEAT");
+  await slow.worker.stop("USER_ENDED");
+
+  const g = fixture();
+  const delayed = hold();
+  g.readiness(delayed.wait);
+  const lateStart = g.start();
+  await flush();
+  g.advance(10001);
+  const expiredTick = g.tick();
+  delayed.release();
+  await Promise.all([lateStart, expiredTick]);
+  assert.equal(g.worker.state, "ENDED");
+  assert.equal(g.input(), false);
+  assert.ok(g.diagnostics.some((d) => d.phase === "lease_expired"));
+  assert.equal(g.signals.filter((s) => s.kind === "HEARTBEAT").length, 0);
+});
+
+void test("heartbeat queue serializes slow publication and one renewal while ticks overlap", async () => {
+  const f = fixture();
+  await f.start();
+  const gate = hold();
+  f.publication(gate.wait);
+  f.emit("Synthetic Vietnamese test");
+  f.advance(1500);
+  const turn = f.tick();
+  await flush();
+  f.advance(3500);
+  const first = f.tick();
+  const second = f.tick();
+  assert.equal(f.signals.filter((s) => s.kind === "HEARTBEAT").length, 0);
+  gate.release();
+  await Promise.all([turn, first, second]);
+  assert.deepEqual(
+    f.signals.map((s) => s.sequence),
+    [1, 2, 3],
+  );
+  assert.equal(f.signals.filter((s) => s.kind === "HEARTBEAT").length, 1);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("diagnostic records are bounded, monotonic and contain no conversation or credentials", () => {
+  const records: object[] = [];
+  let now = 10;
+  const report = agentDiagnostics(
+    randomUUID(),
+    (r) => records.push(r),
+    () => now++,
+  );
+  for (let i = 0; i < 600; i++) report({ phase: "heartbeat_ack" });
+  assert.equal(records.length, 512);
+  assert.deepEqual(Object.keys(records[0] ?? {}).sort(), [
+    "attemptId",
+    "elapsedMs",
+    "event",
+    "phase",
+    "sequence",
+  ]);
+  assert.equal(JSON.stringify(records).includes("PRIVATE"), false);
+});
 
 void test("claims before audio and aggregates final Vietnamese segments, ignoring interim/duplicates", async () => {
   const f = fixture();

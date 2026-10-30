@@ -7,7 +7,8 @@ import { loadConfiguration } from "./configuration.js";
 import { parseDispatch } from "./contract.js";
 import { JournalClient } from "./journal-client.js";
 import { LiveKitMedia } from "./livekit-media.js";
-import { VoiceWorker } from "./voice-worker.js";
+import { VoiceWorker, startWorkerTimer } from "./voice-worker.js";
+import { agentDiagnostics } from "./diagnostics.js";
 export default defineAgent({
   entry: async (context: JobContext) => {
     initializeLogger({ pretty: false, level: "silent" });
@@ -17,7 +18,7 @@ export default defineAgent({
       return;
     }
     let worker: VoiceWorker | undefined;
-    let timer: ReturnType<typeof setInterval> | undefined;
+    let stopTimer: (() => void) | undefined;
     try {
       const dispatch = parseDispatch({
         agentName: context.job.agentName,
@@ -30,19 +31,19 @@ export default defineAgent({
         dispatch,
         new JournalClient(configuration),
         new LiveKitMedia(context, dispatch, configuration),
+        Date.now,
+        undefined,
+        agentDiagnostics(dispatch.attemptId),
       );
       const active = worker;
       context.addShutdownCallback(() => active.stop("AGENT_FAILURE"));
-      timer = setInterval(() => {
-        void active.tick().catch(() => active.fail());
-      }, 250);
-      timer.unref();
+      stopTimer = startWorkerTimer(active);
       await active.start();
       await active.finished;
     } catch {
       await worker?.stop("AGENT_FAILURE");
     } finally {
-      if (timer) clearInterval(timer);
+      stopTimer?.();
       context.shutdown("VOICE_FINISHED");
     }
   },

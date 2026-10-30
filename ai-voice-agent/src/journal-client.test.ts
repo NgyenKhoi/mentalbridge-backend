@@ -98,6 +98,46 @@ void test("configuration is disabled by default and never leaks unsafe setup val
   ])
     assert.throws(() => loadConfiguration({ ...accepted, ...additional }));
 });
+
+void test("Journal diagnostic failures distinguish HTTP class, invalid body, cancellation and transport without raw payload", async () => {
+  for (const [response, expected] of [
+    [new Response("PRIVATE", { status: 403 }), "HTTP_4XX"],
+    [new Response("PRIVATE", { status: 503 }), "HTTP_5XX"],
+    [
+      new Response("PRIVATE", {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+      }),
+      "INVALID_RESPONSE",
+    ],
+  ] as const) {
+    const client = new JournalClient(configuration(), () =>
+      Promise.resolve(response),
+    );
+    await assert.rejects(
+      client.claim(dispatch),
+      (error) =>
+        error instanceof AgentFailure &&
+        error.failure === expected &&
+        !JSON.stringify(error).includes("PRIVATE"),
+    );
+  }
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const client = new JournalClient(configuration(), () =>
+    Promise.reject(new Error("PRIVATE")),
+  );
+  await assert.rejects(
+    client.claim(dispatch, cancelled.signal),
+    (error) => error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  await assert.rejects(
+    client.claim(dispatch),
+    (error) => error instanceof AgentFailure && error.failure === "TRANSPORT",
+  );
+});
 void test("only exact opaque Journal AI dispatches are accepted", () => {
   const value = {
     agentName,
