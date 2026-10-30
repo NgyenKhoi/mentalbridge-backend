@@ -23,7 +23,83 @@ making provider calls before approval.
 - Keep live admission disabled until preflight is complete and the owner
   explicitly confirms `LIVE_APPROVED`.
 
-## Current status: BLOCKED_CONTRACT — 2026-10-30, PO 10297
+## Current status: LIVE_FAILED_CAMPAIGN_STOPPED — 2026-10-30
+
+The real local pilot under PO **10297** did not produce an audible AI reply.
+[Jira post-run report 10299](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10299)
+records the sanitized evidence. **The campaign is exhausted at 2/2 admissions;
+no further live attempt or PREMIUM call is allowed.** Voice and Agent flags are
+OFF, Journal was restarted OFF and the local Agent process tree is stopped.
+The original window, counters and session rows remain intact. No PR merge,
+staging deployment, paid upgrade or fallback occurred.
+
+Execution used backend `8dc44bdb` and Web `d6b2755`, both quality-gate SUCCESS.
+The pre-admission compatibility issue below had been corrected before either
+admission. Provider/Agent source at execution matched the originally reviewed
+runtime; configuration remained Sonnet 4.6 Singapore/global, Nova-3 `vi`, pinned
+Sonic 3 `vi` and Xia. This configuration proof is separate from successful
+inference or audible voice proof.
+
+| Attempt | Observed local time | Result |
+| --- | --- | --- |
+| PLUS 1 | Admitted 14:58:03.551; settled 14:58:25.972 | Agent claimed, ACTIVE observed, then EXPIRED / `AUTHORIZATION_EXPIRED`; delivered false, charged 0; media and dispatch STOPPED. |
+| PLUS 2, same owner | Admitted 14:58:41.459; settled 14:59:02.308 | One accepted final-turn fence reached Journal; FAILED / `PROVIDER_FAILURE`; delivered false, charged 0; media and dispatch STOPPED. PO reported no audible reply. |
+| Later admission request | 14:59:34.022 | HTTP 429 `QUOTA_EXHAUSTED`; no third admission. |
+
+The second admission's initiating action is unknown. The assistant did not
+invoke a create-session API, and static review found no automatic new-admission
+loop in Web polling, reconnect, failure or BFF transport. The server did lack
+the approved **one historical admission per owner/window** constraint: its
+global two-admission counter and concurrent owner slot check allowed the same
+owner again after settlement/refund. This concrete guard gap is corrected in
+the existing reserve transaction, counting failed/refunded sessions as well.
+Idempotent replay remains ahead of the guard; the second distinct owner can
+use the remaining slot in a future separately approved campaign. No existing
+row/counter is changed by the fix.
+
+Correction checks passed without provider calls: Journal lint/format/build,
+197 unit tests and 26 ledger integration checks against disposable
+`voice_ledger_verify_*` databases on the local replica set. The pilot database
+and its two consumed admissions were preserved. The real-Mongo regression
+proves daily-quota refund, replay after ledger restart, same-owner denial and
+the unused other owner's admission path; it does not reopen this campaign.
+
+Post-run metadata audit confirms:
+
+- Both sessions terminal and settled, media/dispatch STOPPED; zero open
+  sessions, LiveKit rooms and active Egress. Agent process absent.
+- Product quota refunded correctly before first acknowledged AI audio: PLUS
+  2 sessions/600 seconds, PREMIUM unchanged 3/1,800; no reserved quota. Campaign
+  admissions remain consumed at 2, both for PLUS.
+- Attempt 1 has worker sequence 1 and no later heartbeat HTTP request before
+  its lease expires. The exact reason heartbeat did not continue is unresolved;
+  do not label this an IAM fault or a proven lease algorithm bug.
+- Attempt 2 has one final-turn fence and one FAILED metric; its turn HTTP
+  connection closed after about 4,001 ms. The local provider timeout is 30,000
+  ms. Failure stage and actual Bedrock usage are unknown; no successful
+  GENERATED/token metric was recorded. Do not infer zero inference cost.
+- No first published audio was acknowledged for either call. Xia synthesis
+  and audible playback are **not PASS**. Exact STT billable seconds and TTS
+  characters are not exposed by current content-free telemetry. Combined
+  admission-to-settlement wall time is 43.270 seconds, not a provider meter.
+- Inspected `ai_voice_*` Mongo collections have operational/fence fields only,
+  with no audio/transcript content fields. No newly created audio/caption files
+  were found in the private run and Agent root directories. Recording/export
+  settings stayed OFF. This is scoped inspection, not proof about arbitrary
+  external account integrations.
+
+For conservative budget reporting, retain the approved ceilings rather than
+claim exact spend: 180 STT seconds, 2,400 TTS characters and 16,000 input/2,400
+output tokens. Existing free-plan protections apply; no extra verification
+inference or synthetic CountTokens request was made. Existing CountTokens PASS
+10295 is unchanged. The pilot is **not E2E PASS and MB-762 is not Done**.
+
+Before any new real campaign: review the per-owner admission correction and
+its real-Mongo regression, diagnose heartbeat/cancellation with sanitized
+failure-stage metrics, and obtain explicit PO approval for a new bounded
+campaign/window. Never reset or extend this exhausted campaign to retry.
+
+## Historical pre-admission BLOCKED_CONTRACT — 2026-10-30, PO 10297
 
 The live preview was halted before admission: the Web consumer required
 `availableSessionSeconds` to equal the package/daily minimum and rejected a
@@ -50,7 +126,7 @@ gain another campaign. Any subsequent live run still requires explicit
 ## Historical READY_FOR_LOCAL_LIVE snapshot — 2026-10-30
 
 This earlier control-plane snapshot is superseded by the current
-**BLOCKED_CONTRACT** status under PO 10297. Its observations are retained as
+**LIVE_FAILED_CAMPAIGN_STOPPED** status under PO 10297. Its observations are retained as
 historical evidence, not current readiness or live approval. Execution was
 still **BLOCKED by `LIVE_APPROVED=false`**: both Voice and Agent switches remained
 OFF. Publication also requires `quality-gate` SUCCESS on the final head of
