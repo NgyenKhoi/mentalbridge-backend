@@ -24,10 +24,11 @@ public class IdentityAccountStatusVerifier {
 	public boolean isActive(UUID accountId, UUID correlationId) {
 		if (properties.serviceToken().length() < 32) throw new IdentityAccountStatusUnavailableException();
 		try {
-			var result = breaker.executeSupplier(() -> client.authorize(accountId, "consultation-service",
-					properties.serviceToken(), correlationId.toString()));
-			if (result == null || result.active() == null) throw new IdentityAccountStatusUnavailableException();
-			return result.active();
+			return breaker.executeSupplier(() -> {
+				var result = client.authorize(accountId, "consultation-service", properties.serviceToken(), correlationId.toString());
+				if (result == null || result.active() == null) throw new IdentityAccountStatusUnavailableException();
+				return result.active();
+			});
 		}
 		catch (RuntimeException exception) { throw new IdentityAccountStatusUnavailableException(); }
 	}

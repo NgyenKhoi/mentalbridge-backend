@@ -27,12 +27,13 @@ public class IdentityAccountStatusVerifier {
 			throw new IdentityAccountStatusUnavailableException();
 		}
 		try {
-			var result = breaker.executeSupplier(() -> client.authorize(accountId, "community-service",
-					properties.serviceToken(), correlationId.toString()));
-			if (result == null || result.active() == null) {
-				throw new IdentityAccountStatusUnavailableException();
-			}
-			return result.active();
+			return breaker.executeSupplier(() -> {
+				var result = client.authorize(accountId, "community-service", properties.serviceToken(), correlationId.toString());
+				if (result == null || result.active() == null) {
+					throw new IdentityAccountStatusUnavailableException();
+				}
+				return result.active();
+			});
 		}
 		catch (RuntimeException exception) {
 			throw new IdentityAccountStatusUnavailableException();

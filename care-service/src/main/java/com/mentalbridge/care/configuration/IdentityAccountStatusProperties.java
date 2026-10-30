@@ -2,6 +2,7 @@ package com.mentalbridge.care.configuration;
 
 import java.time.Duration;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -15,6 +16,13 @@ public record IdentityAccountStatusProperties(String baseUrl,
 	public IdentityAccountStatusProperties {
 		baseUrl = baseUrl == null ? "" : baseUrl;
 		serviceToken = serviceToken == null ? "" : serviceToken;
+	}
+
+	@AssertTrue(message = "account-status timeouts must be at least 1ms")
+	public boolean isTimeoutConfigurationValid() {
+		return connectTimeout != null && readTimeout != null
+				&& connectTimeout.compareTo(Duration.ofMillis(1)) >= 0
+				&& readTimeout.compareTo(Duration.ofMillis(1)) >= 0;
 	}
 
 	@Override public String toString() { return "IdentityAccountStatusProperties[serviceToken=REDACTED]"; }
