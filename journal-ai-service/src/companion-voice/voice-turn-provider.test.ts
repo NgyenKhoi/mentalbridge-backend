@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
+import {
+  VoiceProviderFailure,
+  type VoiceProviderObservation,
+} from "../llm-providers/voice-diagnostics.js";
 import {
   RoutedChatProvider,
   selectCompanionProviderRoute,
@@ -25,6 +30,115 @@ const route: ChatRoute = {
   provider: "BEDROCK",
   model: "global.anthropic.claude-sonnet-4-6",
 };
+
+void test("pilot phases identify counting rejection before inference and preserve real usage on invalid Bedrock output", async () => {
+  const original = globalThis.fetch;
+  const pilot = {
+    startsAt: new Date(),
+    endsAt: new Date(Date.now() + 60000),
+    ownerIds: [randomUUID()],
+  };
+  const provider = new RoutedChatProvider({
+    ...configuration,
+    BEDROCK_API_KEY: "PRIVATE_KEY",
+    VOICE_PILOT: pilot,
+  });
+  try {
+    for (const [response, code] of [
+      [new Response("PRIVATE_BODY", { status: 403 }), "HTTP_4XX"],
+      [new Response("PRIVATE_BODY", { status: 503 }), "HTTP_5XX"],
+      [Response.json({ inputTokens: 1901 }), "INPUT_BUDGET_EXCEEDED"],
+      [Response.json({ inputTokens: "PRIVATE_BODY" }), "INVALID_RESPONSE"],
+    ] as const) {
+      const observations: VoiceProviderObservation[] = [];
+      let calls = 0;
+      globalThis.fetch = () => {
+        calls++;
+        return Promise.resolve(response);
+      };
+      await assert.rejects(
+        provider.reply(
+          "PRIVATE_SPEECH",
+          { kinds: [], prompt: "PRIVATE_CONTEXT" },
+          route,
+          { voice: true, voiceObserver: (value) => observations.push(value) },
+        ),
+        (error) => error instanceof VoiceProviderFailure && error.code === code,
+      );
+      assert.equal(calls, 1);
+      assert.deepEqual(observations, [{ phase: "token_count_requested" }]);
+    }
+    for (const mode of ["http", "invalid-json", "invalid-output", "valid"]) {
+      const observations: VoiceProviderObservation[] = [];
+      let calls = 0;
+      globalThis.fetch = () => {
+        calls++;
+        if (calls === 1)
+          return Promise.resolve(Response.json({ inputTokens: 1500 }));
+        return Promise.resolve(
+          mode === "http"
+            ? new Response("PRIVATE_BODY", { status: 429 })
+            : mode === "invalid-json"
+              ? new Response("PRIVATE_BODY")
+              : Response.json({
+                  output: {
+                    message: {
+                      content: [
+                        {
+                          text:
+                            mode === "valid"
+                              ? JSON.stringify({
+                                  message: "Mình đang lắng nghe.",
+                                  language: "vi",
+                                  authority: "SUPPORT_ONLY",
+                                  clinicalAssessment: "NONE",
+                                  safetyDecision: "NONE",
+                                  eligibilityDecision: "NONE",
+                                  businessAction: "NONE",
+                                  thirdPartyAction: "NONE",
+                                })
+                              : "PRIVATE_BAD_OUTPUT",
+                        },
+                      ],
+                    },
+                  },
+                  usage: { inputTokens: 1500, outputTokens: 30 },
+                }),
+        );
+      };
+      const work = provider.reply(
+        "PRIVATE_SPEECH",
+        { kinds: [], prompt: "PRIVATE_CONTEXT" },
+        route,
+        { voice: true, voiceObserver: (value) => observations.push(value) },
+      );
+      if (mode === "valid") await work;
+      else await assert.rejects(work);
+      assert.equal(calls, 2);
+      assert.deepEqual(observations.slice(0, 3), [
+        { phase: "token_count_requested" },
+        { phase: "token_count_authorized", countedInputTokens: 1500 },
+        { phase: "bedrock_requested" },
+      ]);
+      assert.equal(
+        observations.some((v) => v.phase === "bedrock_response_validated"),
+        mode === "valid",
+      );
+      const usage = observations.find((v) => v.phase === "provider_usage");
+      if (mode === "valid" || mode === "invalid-output")
+        assert.deepEqual(usage, {
+          phase: "provider_usage",
+          inputTokens: 1500,
+          outputTokens: 30,
+          usageSource: "PROVIDER",
+        });
+      else assert.equal(usage, undefined);
+      assert.equal(JSON.stringify(observations).includes("PRIVATE"), false);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 
 void test("voice reuses the Companion Bedrock schema/prompt/validator without tools or prompt cache", async () => {
   const original = globalThis.fetch;

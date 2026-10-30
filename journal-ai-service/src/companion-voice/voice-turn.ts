@@ -13,6 +13,11 @@ import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import { selectVoiceProviderRoute } from "./voice-provider.js";
+import {
+  VoiceProviderFailure,
+  type VoiceFailureCode,
+  type VoiceProviderPhase,
+} from "../llm-providers/voice-diagnostics.js";
 
 export const voiceTurnSchema = z
   .object({
@@ -56,7 +61,21 @@ interface Context {
   latest: { keyHash: string; fingerprint: string; response: VoiceReply } | null;
 }
 export interface VoiceTurnMetric {
-  outcome: "GENERATED" | "FAILED";
+  outcome: "GENERATED" | "FAILED" | "PHASE" | "PROVIDER_USAGE";
+  attemptId?: string;
+  turnId?: string;
+  correlationId?: string;
+  phase?:
+    | VoiceProviderPhase
+    | "turn_authorized"
+    | "output_validated"
+    | "publication_authorized"
+    | "turn_state_rechecked"
+    | "reply_registered";
+  code?: VoiceFailureCode;
+  countedInputTokens?: number;
+  sequence?: number;
+  elapsedMs?: number;
   inputTokens?: number;
   outputTokens?: number;
   usageSource?: "PROVIDER" | "ESTIMATED";
@@ -158,6 +177,23 @@ export class VoiceTurnService {
     )
       throw new VoiceLedgerError("INVALID_REQUEST");
     const input = parsed.data;
+    let phase: NonNullable<VoiceTurnMetric["phase"]> = "turn_authorized";
+    let diagnosticSequence = 0;
+    const diagnosticStart = performance.now();
+    const report = (value: VoiceTurnMetric) => {
+      this.telemetry({
+        ...value,
+        attemptId: input.attemptId,
+        turnId: input.turnId,
+        ...(z.uuid().safeParse(correlationId).success ? { correlationId } : {}),
+        sequence: ++diagnosticSequence,
+        elapsedMs: Math.max(0, Math.floor(performance.now() - diagnosticStart)),
+      });
+    };
+    const stage = (value: NonNullable<VoiceTurnMetric["phase"]>) => {
+      phase = value;
+      report({ outcome: "PHASE", phase });
+    };
     if (
       !/\p{L}/u.test(input.finalTranscript) ||
       hasControlCharacters(input.finalTranscript) ||
@@ -171,6 +207,7 @@ export class VoiceTurnService {
       input.leaseId,
       correlationId,
     );
+    stage("turn_authorized");
     if (this.configuration.VOICE_PILOT && input.sequence > 4) {
       await this.sessions.failTurn(id);
       this.discard(id);
@@ -233,6 +270,7 @@ export class VoiceTurnService {
     let claimed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
     let timeout: AbortSignal | undefined;
+    const usage = { recorded: false };
     const abort = () => {
       this.discard(id);
     };
@@ -294,21 +332,56 @@ export class VoiceTurnService {
             input.finalTranscript,
             { kinds: [], prompt: JSON.stringify(recent) },
             route,
-            { voice: true, signal: requestSignal },
+            {
+              voice: true,
+              signal: requestSignal,
+              voiceObserver: (observation) => {
+                phase = observation.phase;
+                if (observation.phase === "provider_usage") {
+                  if (
+                    !usage.recorded &&
+                    observation.inputTokens !== undefined &&
+                    observation.outputTokens !== undefined
+                  ) {
+                    usage.recorded = true;
+                    this.usage(
+                      {
+                        message: "",
+                        inputTokens: observation.inputTokens,
+                        outputTokens: observation.outputTokens,
+                        usageSource: "PROVIDER",
+                      },
+                      entitlement.packageCode,
+                      (metric) => {
+                        report({ ...metric, outcome: "PROVIDER_USAGE", phase });
+                      },
+                    );
+                  }
+                } else report({ outcome: "PHASE", ...observation });
+              },
+            },
           ),
           cancelled,
         ]);
       } finally {
         requestSignal.removeEventListener("abort", rejectAbort);
       }
+      if (!usage.recorded) {
+        this.usage(reply, entitlement.packageCode, (metric) => {
+          report({ ...metric, outcome: "PROVIDER_USAGE", phase });
+        });
+        usage.recorded = true;
+      }
       const spokenText = validatedAssistantMessage(reply.message);
       if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
+      stage("output_validated");
       const publication = await this.sessions.authorizeTurn(
         id,
         input.attemptId,
         input.leaseId,
         correlationId,
       );
+      stage("publication_authorized");
       if (
         requestSignal.aborted ||
         this.contexts.get(id) !== active ||
@@ -325,11 +398,13 @@ export class VoiceTurnService {
         replyId,
         correlationId,
       );
+      stage("reply_registered");
       const latest = await this.sessions.turnState(
         id,
         input.attemptId,
         input.leaseId,
       );
+      stage("turn_state_rechecked");
       if (this.isAborted(requestSignal) || this.contexts.get(id) !== active)
         throw new VoiceLedgerError("SESSION_EXPIRED");
       const expiresAt = new Date(
@@ -355,17 +430,32 @@ export class VoiceTurnService {
         { user: input.finalTranscript, assistant: spokenText },
       ]);
       context.latest = { keyHash, fingerprint, response: result };
-      this.usage(reply, entitlement.packageCode);
+      report({ outcome: "GENERATED", phase });
       return result;
     } catch (error) {
       const timedOut = timeout !== undefined && this.isAborted(timeout);
+      const authorityAborted = active.controller.signal.aborted;
       this.discard(id);
       if (claimed) {
-        this.telemetry({ outcome: "FAILED" });
+        report({
+          outcome: "FAILED",
+          phase,
+          code: timedOut
+            ? "TIMEOUT"
+            : signal?.aborted
+              ? "ABORTED"
+              : error instanceof VoiceProviderFailure
+                ? error.code
+                : error instanceof VoiceLedgerError ||
+                    error instanceof VoiceAccessError ||
+                    authorityAborted
+                  ? "AUTHORITY_OR_STATE"
+                  : "INVALID_RESPONSE",
+        });
         try {
           await this.sessions.failTurn(id);
         } catch {
-          this.telemetry({ outcome: "FAILED" });
+          report({ outcome: "FAILED", phase, code: "INTERNAL" });
         }
       }
       if (timedOut) throw new VoiceTurnError("PROVIDER_TIMEOUT");
@@ -406,7 +496,11 @@ export class VoiceTurnService {
       throw new VoiceMediaError();
     }
   }
-  private usage(reply: ProviderReply, plan: "FREE" | "PLUS" | "PREMIUM") {
+  private usage(
+    reply: ProviderReply,
+    plan: "FREE" | "PLUS" | "PREMIUM",
+    report: (metric: VoiceTurnMetric) => void,
+  ) {
     if (
       ![reply.inputTokens, reply.outputTokens].every(
         (n) => Number.isSafeInteger(n) && n >= 0,
@@ -418,7 +512,7 @@ export class VoiceTurnService {
       (plan === "PREMIUM"
         ? this.configuration.PREMIUM_ROUTE
         : this.configuration.FREE_PLUS_ROUTE);
-    this.telemetry({
+    report({
       outcome: "GENERATED",
       inputTokens: reply.inputTokens,
       outputTokens: reply.outputTokens,

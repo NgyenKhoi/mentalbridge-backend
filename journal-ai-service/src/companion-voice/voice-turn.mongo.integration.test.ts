@@ -7,6 +7,7 @@ import type { INestApplication } from "@nestjs/common";
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
+import type { VoiceObserver } from "../llm-providers/voice-diagnostics.js";
 import { exportSPKI, generateKeyPair } from "jose";
 import { createApplication } from "../application.js";
 import {
@@ -132,7 +133,8 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     let calls = 0;
     let cancelled = 0;
     const contexts: string[] = [];
-    let respond: () => Promise<ProviderReply> = () => Promise.resolve(reply());
+    let respond: (observe?: VoiceObserver) => Promise<ProviderReply> = () =>
+      Promise.resolve(reply());
     const provider: ChatProvider = {
       reply: (_text, context, _route, options) => {
         calls++;
@@ -144,7 +146,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           },
           { once: true },
         );
-        return respond();
+        return respond(options?.voiceObserver);
       },
     };
     const token = "synthetic-worker-voice-turn-credential-32-characters";
@@ -313,7 +315,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
       calls: () => calls,
       cancelled: () => cancelled,
-      respond: (fn: () => Promise<ProviderReply>) => {
+      respond: (fn: (observe?: VoiceObserver) => Promise<ProviderReply>) => {
         respond = fn;
       },
       advance: (ms: number) => {
@@ -401,7 +403,15 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await assert.rejects(turnMigration.down(f.db), /safely purged/u);
       assert.equal(JSON.stringify(f.metrics).includes(text), false);
       assert.equal(JSON.stringify(f.metrics).includes(reply().message), false);
-      assert.equal(f.metrics.length, 5);
+      assert.equal(
+        f.metrics.filter((metric) => metric.outcome === "GENERATED").length,
+        5,
+      );
+      assert.equal(
+        f.metrics.filter((metric) => metric.outcome === "PROVIDER_USAGE")
+          .length,
+        5,
+      );
       const savedFence = await f.db
         .collection<RawRecord>("ai_voice_media_commands")
         .findOne({ operation: "turn" });
@@ -436,6 +446,55 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await assert.rejects(f.generate(input, key), rejected("STALE_ATTEMPT"));
       await assert.rejects(f.generate(f.input(2)), rejected("STALE_ATTEMPT"));
       assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "provider usage survives validation failure and consent withdrawal without publication or duplicate counting",
+    async () => {
+      for (const mode of [
+        "invalid-output",
+        "revoked",
+        "provider-parse-failure",
+      ]) {
+        const f = await fixture();
+        f.respond((observe) => {
+          observe?.({ phase: "bedrock_requested" });
+          observe?.({
+            phase: "provider_usage",
+            inputTokens: 90,
+            outputTokens: 25,
+            usageSource: "PROVIDER",
+          });
+          if (mode === "revoked") f.revoke();
+          if (mode === "provider-parse-failure")
+            return Promise.reject(new Error("PRIVATE_RAW_PROVIDER"));
+          return Promise.resolve({
+            ...reply(),
+            ...(mode === "invalid-output"
+              ? { message: "PRIVATE_BAD_OUTPUT" }
+              : {}),
+          });
+        });
+        await assert.rejects(f.generate(f.input()));
+        const usage = f.metrics.filter(
+          (metric) => metric.outcome === "PROVIDER_USAGE",
+        );
+        assert.equal(usage.length, 1);
+        assert.equal(usage[0]?.inputTokens, 90);
+        assert.equal(usage[0].outputTokens, 25);
+        assert.equal(
+          f.metrics.some((metric) => metric.outcome === "GENERATED"),
+          false,
+        );
+        assert.equal(
+          f.metrics.some((metric) => metric.phase === "reply_registered"),
+          false,
+        );
+        assert.equal(JSON.stringify(f.metrics).includes("PRIVATE"), false);
+        for (let index = 0; index < f.metrics.length; index++)
+          assert.equal(f.metrics[index]?.sequence, index + 1);
+      }
     },
   );
 
@@ -769,6 +828,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await waitFor(() =>
         f.metrics.some((metric) => metric.outcome === "FAILED"),
       );
+      assert.ok(
+        f.metrics.some(
+          (metric) => metric.outcome === "FAILED" && metric.code === "ABORTED",
+        ),
+      );
       assert.equal(f.calls(), 1);
     },
   );
@@ -787,8 +851,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         outputCostMicroUsdPerMillionTokens: 15000000,
       };
       await f.generate(f.input());
-      assert.equal(f.metrics[0]?.usageSource, "PROVIDER");
-      assert.equal(f.metrics[0].costMicroUsd, 645);
+      const usage = f.metrics.find(
+        (metric) => metric.outcome === "PROVIDER_USAGE",
+      );
+      assert.equal(usage?.usageSource, "PROVIDER");
+      assert.equal(usage.costMicroUsd, 645);
       f.config.FREE_PLUS_ROUTE = {
         ...f.config.FREE_PLUS_ROUTE,
         model: "global.anthropic.claude-opus-4-6-v1",

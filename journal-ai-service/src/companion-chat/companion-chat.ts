@@ -31,6 +31,11 @@ import {
   randomUUID,
 } from "node:crypto";
 import { z } from "zod";
+import {
+  VoiceProviderFailure,
+  providerUsage,
+  type VoiceObserver,
+} from "../llm-providers/voice-diagnostics.js";
 import { authorizeVoiceInput } from "../llm-providers/bedrock-voice-token-budget.js";
 
 import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
@@ -277,7 +282,11 @@ export interface ChatProvider {
     userMessage: string,
     context: MinimizedContext,
     route: Pick<ChatRoute, "provider" | "model">,
-    options?: { signal?: AbortSignal; voice?: boolean },
+    options?: {
+      signal?: AbortSignal;
+      voice?: boolean;
+      voiceObserver?: VoiceObserver;
+    },
   ): Promise<ProviderReply>;
 }
 
@@ -1178,7 +1187,11 @@ export class RoutedChatProvider implements ChatProvider {
     userMessage: string,
     context: MinimizedContext,
     route: Pick<ChatRoute, "provider" | "model">,
-    options?: { signal?: AbortSignal; voice?: boolean },
+    options?: {
+      signal?: AbortSignal;
+      voice?: boolean;
+      voiceObserver?: VoiceObserver;
+    },
   ) {
     options?.signal?.throwIfAborted();
     if (route.provider === "DETERMINISTIC_FAKE") {
@@ -1291,6 +1304,7 @@ export class RoutedChatProvider implements ChatProvider {
             system,
             userMessage,
             requestSignal,
+            options.voiceObserver,
           );
         }
         const request = bedrockConverseRequest(
@@ -1301,6 +1315,7 @@ export class RoutedChatProvider implements ChatProvider {
           pilot ? 300 : companionMaxOutputTokens,
         );
         const { outputConfig, ...plainRequest } = request;
+        options?.voiceObserver?.({ phase: "bedrock_requested" });
         response = await fetch(
           bedrockConverseUrl(this.configuration.BEDROCK_REGION, route.model),
           {
@@ -1318,19 +1333,35 @@ export class RoutedChatProvider implements ChatProvider {
       } else {
         throw new Error("Unsupported AI provider");
       }
-    } catch {
+    } catch (error) {
+      if (options?.voice)
+        throw error instanceof VoiceProviderFailure
+          ? error
+          : new VoiceProviderFailure(
+              options.signal?.aborted
+                ? "ABORTED"
+                : error instanceof Error && error.name === "TimeoutError"
+                  ? "TIMEOUT"
+                  : "TRANSPORT",
+            );
       throw new ChatProblem(
         503,
         "CHAT_PROVIDER_UNAVAILABLE",
         "AI provider is unavailable",
       );
     }
+    if (!response.ok && options?.voice)
+      throw new VoiceProviderFailure(
+        response.status >= 500 ? "HTTP_5XX" : "HTTP_4XX",
+      );
     if (!response.ok)
       throw new ChatProblem(
         503,
         "CHAT_PROVIDER_UNAVAILABLE",
         "AI provider is unavailable",
       );
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({ phase: "bedrock_response_received" });
     let body: unknown;
     try {
       body = await response.json();
@@ -1341,6 +1372,11 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     }
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({
+        phase: "provider_usage",
+        ...providerUsage(body),
+      });
     let message: string | undefined;
     let inputTokens: number | null = null;
     let outputTokens: number | null = null;
@@ -1414,6 +1450,8 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     const normalized = validatedAssistantMessage(parsedOutput.data.message);
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({ phase: "bedrock_response_validated" });
     return {
       message: normalized,
       inputTokens:

@@ -7,7 +7,7 @@ import {
 import { MongoClient } from "mongodb";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { createLogger } from "../observability/logger.js";
-import { CONFIGURATION_TOKEN } from "../observability/tokens.js";
+import { CONFIGURATION_TOKEN, LOGGER_TOKEN } from "../observability/tokens.js";
 import { IdentityJwtVerifier } from "../security/identity-jwt-verifier.js";
 import {
   CurrentVoiceOwnerAuthorizer,
@@ -172,6 +172,7 @@ export const registerCompanionVoiceModule = (
     controllers: [VoiceUserController, VoiceWorkerController],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
+      { provide: LOGGER_TOKEN, useValue: logger },
       IdentityJwtVerifier,
       VoiceUserGuard,
       VoiceWorkerGuard,
