@@ -88,15 +88,21 @@ class IdentityAccountStatusVerifierHttpTests {
 	}
 
 	@Test
-	void finiteReadDeadlineRejectsSlowIdentity() {
+	void finiteReadDeadlineRejectsSlowIdentity() throws Exception {
 		responseDelayMillis = 750;
 		var properties = properties(Duration.ofMillis(250), Duration.ofMillis(100));
 		var options = new IdentityAccountStatusHttpClient.Configuration().identityAccountStatusDeadlines(properties);
 		assertThat(options.connectTimeoutMillis()).isEqualTo(250);
 		assertThat(options.readTimeoutMillis()).isEqualTo(100);
 		var verifier = verifier(properties);
-		assertThatThrownBy(() -> verifier.isActive(UUID.randomUUID(), UUID.randomUUID()))
-				.isInstanceOf(IdentityAccountStatusVerifier.IdentityAccountStatusUnavailableException.class);
+		var jwt = Jwt.withTokenValue("token").header("alg", "RS256").subject(UUID.randomUUID().toString())
+				.issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).build();
+		SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+		var response = new MockHttpServletResponse();
+		var filter = new AccountStatusEnforcementFilter(verifier, new SecurityProblemSupport(mapper));
+		filter.doFilterInternal(new MockHttpServletRequest("GET", "/protected"), response, new MockFilterChain());
+		assertThat(response.getStatus()).isEqualTo(503);
+		assertThat(response.getContentAsString()).contains("authentication_dependency_unavailable");
 	}
 
 	@Test
@@ -110,9 +116,43 @@ class IdentityAccountStatusVerifierHttpTests {
 					"mentalbridge.care.identity-account-status.read-timeout=" + invalid)
 					.run(context -> assertThat(context).hasFailed());
 		}
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.251S",
+				"mentalbridge.care.identity-account-status.read-timeout=PT0.75S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.250000001S",
+				"mentalbridge.care.identity-account-status.read-timeout=PT0.75S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.25S",
+				"mentalbridge.care.identity-account-status.read-timeout=PT0.751S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.25S",
+				"mentalbridge.care.identity-account-status.read-timeout=PT0.750000001S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT999999999999S",
+				"mentalbridge.care.identity-account-status.read-timeout=PT0.75S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.read-timeout=PT0.75S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.25S")
+				.run(context -> assertThat(context).hasFailed());
+		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.001S",
+				"mentalbridge.care.identity-account-status.read-timeout=PT0.001S")
+				.run(context -> {
+					assertThat(context).hasNotFailed();
+					var options = new IdentityAccountStatusHttpClient.Configuration()
+							.identityAccountStatusDeadlines(context.getBean(IdentityAccountStatusProperties.class));
+					assertThat(options.connectTimeoutMillis()).isEqualTo(1);
+					assertThat(options.readTimeoutMillis()).isEqualTo(1);
+				});
 		runner.withPropertyValues("mentalbridge.care.identity-account-status.connect-timeout=PT0.25S",
 				"mentalbridge.care.identity-account-status.read-timeout=PT0.75S")
-				.run(context -> assertThat(context).hasNotFailed());
+				.run(context -> {
+					assertThat(context).hasNotFailed();
+					var options = new IdentityAccountStatusHttpClient.Configuration()
+							.identityAccountStatusDeadlines(context.getBean(IdentityAccountStatusProperties.class));
+					assertThat(options.connectTimeoutMillis()).isEqualTo(250);
+					assertThat(options.readTimeoutMillis()).isEqualTo(750);
+				});
 	}
 
 	private void assertMalformedResponseOpensBreaker(String body) throws Exception {
