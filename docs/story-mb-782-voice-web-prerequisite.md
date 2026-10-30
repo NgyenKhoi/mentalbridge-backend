@@ -32,11 +32,16 @@ additive `1.1.0` MB-782 amendment. The policy remains
 `companion-voice-policy-v1`. Older strict consumers must regenerate their DTOs
 before consuming the expanded closed responses.
 
-`maxSessionSeconds` is the existing package cap. `availableSessionSeconds` is
-`min(maxSessionSeconds, quota.remainingSeconds)` only for `ELIGIBLE`, otherwise
-zero. The ledger already subtracts reservations from `remainingSeconds`; do not
-subtract them again. Unknown owner/dependency decisions return the existing
-sanitized error, never a positive fallback. `checkedAt` and `no-store` remain.
+`maxSessionSeconds` is the existing package cap: PLUS 300 seconds and PREMIUM
+600 seconds. For `ELIGIBLE`, `availableSessionSeconds` is a positive server-derived
+duration no greater than `min(maxSessionSeconds, quota.remainingSeconds)`;
+additional operational caps or the remaining operational window may reduce it
+further. It is zero otherwise. For example, a 90-second pilot cap can return 90
+with the full PLUS daily balance of 600 seconds. This does not reduce the package
+cap or change product quota. The ledger already subtracts reservations from
+`remainingSeconds`; do not subtract them again. Unknown owner/dependency decisions
+return the existing sanitized error, never a positive fallback. `checkedAt` and
+`no-store` remain.
 POST rechecks owners and reserves atomically; even a fresh positive GET grants
 no slot, duration or deadline. The server's admitted seconds/hard stop remain
 authoritative.
@@ -87,7 +92,8 @@ not transported through these attributes.
 | State | Expected display data | Must not imply |
 | --- | --- | --- |
 | PLUS / PREMIUM eligible | Cap 300 / 600; available bounded by daily balance | Reserved slot or guaranteed call |
-| Daily balance 120 seconds | Available 120 | Full package cap is usable |
+| Daily balance 120 seconds, no lower operational cap | Available 120 | Full package cap is usable |
+| Pilot cap 90 seconds, full PLUS daily balance | Available 90; package cap remains 300 | Available must equal the package/daily minimum |
 | FREE, consent denied, quota/capacity/provider denied | Available 0 | Call enabled |
 | Concurrent positive previews | One atomic final-slot admission | Multiple capacity reservations |
 | Waiting for Journal | `thinking` from exact admitted agent | Successful AI reply or charged usage |
