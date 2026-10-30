@@ -1,5 +1,10 @@
 # Consultation Service
 
+MB-779 rechecks authenticated JWT subjects against Identity before protected
+requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated
+`CONSULTATION_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN`; the read uses 250 ms
+connect and 750 ms response defaults, no retry, no ACTIVE cache, and fails closed.
+
 ## Voice entitlement prerequisite (MB-756)
 
 `POST /internal/v1/ai-companion/voice-entitlement-authorizations` is a narrow

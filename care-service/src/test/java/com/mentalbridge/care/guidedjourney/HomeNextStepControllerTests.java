@@ -140,7 +140,7 @@ class HomeNextStepControllerTests extends CareTestProperties {
 	void malformedSubjectAndCorrelationAreRejectedBeforeTheService() throws Exception {
 		mvc.perform(get("/api/v1/home-next-step").with(jwt().jwt(token -> token.subject("invalid-subject"))
 				.authorities(new SimpleGrantedAuthority("ROLE_USER"))))
-				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("invalid_token"));
 		mvc.perform(get("/api/v1/home-next-step").with(user(UUID.randomUUID()))
 				.header("X-Correlation-Id", "invalid-correlation"))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));

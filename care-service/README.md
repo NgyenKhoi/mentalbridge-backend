@@ -1,5 +1,10 @@
 # Care Service
 
+MB-779 rechecks authenticated JWT subjects against Identity before protected
+requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated
+`CARE_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN`; the read uses 250 ms connect and
+750 ms response defaults, no retry, no ACTIVE cache, and fails closed.
+
 ## MB-756 independent voice consent prerequisite
 
 Care implements four operations from the accepted

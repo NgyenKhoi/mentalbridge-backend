@@ -488,7 +488,9 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(status().isNotFound());
 		mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText()).with(user(user)).header("If-Match", "\"0\""))
 				.andExpect(status().isPreconditionFailed());
-		mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText()).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+		mvc.perform(get("/api/v2/support-plans/{id}/adaptive-review", plan.path("supportPlanId").asText())
+				.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
 				.andExpect(status().isForbidden());
 	}
 

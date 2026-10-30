@@ -1,18 +1,33 @@
 package com.mentalbridge.consultation;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.mentalbridge.consultation.configuration.IdentityAccountStatusVerifier;
 
 public abstract class ConsultationTestProperties {
 
 	protected static final String EVIDENCE_SERVICE_TOKEN = "test-consultation-evidence-token-32-characters";
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+
+	@MockitoBean
+	protected IdentityAccountStatusVerifier accountStatusVerifier;
+
+	@BeforeEach
+	protected void defaultActiveAccountStatus() {
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
+	}
 
 	static {
 		System.setProperty("user.timezone", "UTC");
@@ -25,6 +40,8 @@ public abstract class ConsultationTestProperties {
 		properties.add("mentalbridge.consultation.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.consultation.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.consultation.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.consultation.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.consultation.evidence-service-token", () -> EVIDENCE_SERVICE_TOKEN);
 		properties.add("mentalbridge.consultation.account-lifecycle.enabled", () -> "false");
 		properties.add("mentalbridge.consultation.video.demo-immediate-access-enabled", () -> "false");

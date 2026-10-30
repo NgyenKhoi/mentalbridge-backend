@@ -7,6 +7,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 import com.mentalbridge.care.analytics.ConsultationActivityHttpClient;
+import com.mentalbridge.care.configuration.IdentityAccountStatusHttpClient;
 import com.mentalbridge.care.analytics.JournalActivityHttpClient;
 import com.mentalbridge.care.entitlement.ConsultationEntitlementHttpClient;
 import com.mentalbridge.care.consultationbrief.ConsultationAppointmentHttpClient;
@@ -30,7 +31,7 @@ import com.mentalbridge.care.supportplan.ResourceEvidenceHttpClient;
 		JournalActivityHttpClient.class, ConsultationActivityHttpClient.class,
 		ConsultationResourceProposalHttpClient.class, JournalConsultationBriefDraftHttpClient.class,
 		EmotionCheckInEvidenceHttpClient.class, JournalSupportPlanCompanionHttpClient.class,
-		JournalEntryEvidenceHttpClient.class, ResourceEvidenceHttpClient.class })
+		JournalEntryEvidenceHttpClient.class, ResourceEvidenceHttpClient.class, IdentityAccountStatusHttpClient.class })
 public class CareServiceApplication {
 
 	public static void main(String[] args) {

@@ -1,15 +1,30 @@
 package com.mentalbridge.care;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.mentalbridge.care.configuration.IdentityAccountStatusVerifier;
 
 public abstract class CareTestProperties {
 
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+
+	@MockitoBean
+	protected IdentityAccountStatusVerifier accountStatusVerifier;
+
+	@BeforeEach
+	protected void defaultActiveAccountStatus() {
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
+	}
 
 	@DynamicPropertySource
 	static void careProperties(DynamicPropertyRegistry properties) {
@@ -17,6 +32,8 @@ public abstract class CareTestProperties {
 		properties.add("mentalbridge.care.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.care.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.care.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.care.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.care.assessment.anonymous-session-ttl", () -> "PT30M");
 		properties.add("mentalbridge.care.assessment.anonymous-session-maximum-lifetime", () -> "PT2H");
 		properties.add("mentalbridge.care.assessment.phq9-safety-policy-version",

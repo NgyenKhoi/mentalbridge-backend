@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 
 import com.mentalbridge.consultation.entitlement.VoiceEntitlementAuthenticationFilter;
@@ -55,7 +56,7 @@ public class SecurityConfiguration {
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
 			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-			SecurityProblemSupport securityProblems) throws Exception {
+			SecurityProblemSupport securityProblems, IdentityAccountStatusVerifier accountStatus) throws Exception {
 		http.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
@@ -95,7 +96,12 @@ public class SecurityConfiguration {
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))
 				.oauth2ResourceServer(resourceServer -> resourceServer
-						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+				.addFilterAfter(new AccountStatusEnforcementFilter(accountStatus, securityProblems,
+						"/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**",
+						"/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn",
+						"/internal/v1/video/livekit/webhook", "/internal/v1/appointments/*/notification-eligibility"),
+						BearerTokenAuthenticationFilter.class);
 		return http.build();
 	}
 

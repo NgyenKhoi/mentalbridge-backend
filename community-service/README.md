@@ -1,5 +1,10 @@
 # Community Service
 
+MB-779 rechecks authenticated JWT subjects against Identity before protected
+requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated
+`COMMUNITY_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN`; the read uses 250 ms connect
+and 750 ms response defaults, no retry, no ACTIVE cache, and fails closed.
+
 `community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, MB-576 adds bounded owner-only image and short-video upload lifecycle operations, MB-578 adds reports, personal hide/block controls, and auditable administration, MB-579 adds supportive reactions and owner-private bookmarks, MB-580 publishes minimized interaction facts through a transactional outbox, MB-614 adds one optional stable Content-owned Resource reference per post, MB-615 adds one explicit non-clinical sensitive-content warning per post, and MB-616 adds an owner-private saved-post collection.
 
 ## Runtime

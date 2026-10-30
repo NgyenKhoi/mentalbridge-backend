@@ -102,6 +102,9 @@ services:
       IDENTITY_BREVO_SENDER_NAME: ${IDENTITY_BREVO_SENDER_NAME:-MentalBridge}
       IDENTITY_NOTIFICATION_SERVICE_TOKEN: ${IDENTITY_NOTIFICATION_SERVICE_TOKEN:?Set a shared notification service token of at least 32 characters in .env}
       IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN: ${IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN:-}
+      IDENTITY_ACCOUNT_STATUS_CARE_SERVICE_TOKEN: ${IDENTITY_ACCOUNT_STATUS_CARE_SERVICE_TOKEN:?Set the dedicated Care account-status token in .env}
+      IDENTITY_ACCOUNT_STATUS_COMMUNITY_SERVICE_TOKEN: ${IDENTITY_ACCOUNT_STATUS_COMMUNITY_SERVICE_TOKEN:?Set the dedicated Community account-status token in .env}
+      IDENTITY_ACCOUNT_STATUS_CONSULTATION_SERVICE_TOKEN: ${IDENTITY_ACCOUNT_STATUS_CONSULTATION_SERVICE_TOKEN:?Set the dedicated Consultation account-status token in .env}
       IDENTITY_VERIFICATION_URL: ${IDENTITY_VERIFICATION_URL:-http://localhost:3000/verify-email}
       IDENTITY_LOCAL_VERIFICATION_DIRECTORY: /var/lib/mentalbridge/identity-verification
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -160,6 +163,8 @@ services:
       CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME:-PT2H}
       CARE_PHQ9_SAFETY_POLICY_VERSION: ${CARE_PHQ9_SAFETY_POLICY_VERSION:-MB-SAFETY-PHQ9-001/1.0-capstone}
       CARE_IDEMPOTENCY_HMAC_KEY: ${CARE_IDEMPOTENCY_HMAC_KEY:?Set a random CARE_IDEMPOTENCY_HMAC_KEY of at least 32 characters in .env}
+      IDENTITY_SERVICE_BASE_URL: http://identity:8080
+      CARE_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN: ${IDENTITY_ACCOUNT_STATUS_CARE_SERVICE_TOKEN:?Set the dedicated Care account-status token in .env}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CARE_USER_NOTIFICATION_RELAY_ENABLED: ${CARE_USER_NOTIFICATION_RELAY_ENABLED:-true}
       CONTENT_RESOURCE_ELIGIBILITY_BASE_URL: http://content-notification:3003
@@ -181,6 +186,8 @@ services:
       care-migrate:
         condition: service_completed_successfully
       consultation:
+        condition: service_healthy
+      identity:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -234,6 +241,8 @@ services:
       CONSULTATION_CLOUDINARY_API_SECRET: ${CONSULTATION_CLOUDINARY_API_SECRET:-}
       CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS: ${CONSULTATION_CLOUDINARY_TIMEOUT_SECONDS:-5}
       CONSULTATION_EVIDENCE_SERVICE_TOKEN: ${CONSULTATION_EVIDENCE_SERVICE_TOKEN:?Set a shared Consultation evidence service token of at least 32 characters in .env}
+      IDENTITY_SERVICE_BASE_URL: http://identity:8080
+      CONSULTATION_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN: ${IDENTITY_ACCOUNT_STATUS_CONSULTATION_SERVICE_TOKEN:?Set the dedicated Consultation account-status token in .env}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:-true}
       CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED: "true"
@@ -255,6 +264,8 @@ services:
     depends_on:
       consultation-migrate:
         condition: service_completed_successfully
+      identity:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8082/actuator/health"]
       interval: 10s
@@ -302,6 +313,8 @@ services:
       COMMUNITY_CHAT_IDENTITY_BASE_URL: ${COMMUNITY_CHAT_IDENTITY_BASE_URL:-http://identity:8080}
       COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT: ${COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT:-PT0.5S}
       COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT: ${COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT:-PT1.5S}
+      IDENTITY_SERVICE_BASE_URL: http://identity:8080
+      COMMUNITY_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN: ${IDENTITY_ACCOUNT_STATUS_COMMUNITY_SERVICE_TOKEN:?Set the dedicated Community account-status token in .env}
       COMMUNITY_CHAT_ENCRYPTION_KEY: ${COMMUNITY_CHAT_ENCRYPTION_KEY:-}
       COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION: ${COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION:-v1}
       COMMUNITY_CHAT_DECRYPTION_KEYS: ${COMMUNITY_CHAT_DECRYPTION_KEYS:-{}}
@@ -323,6 +336,8 @@ services:
     depends_on:
       community-migrate:
         condition: service_completed_successfully
+      identity:
+        condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
     healthcheck:
