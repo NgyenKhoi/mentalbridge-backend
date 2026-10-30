@@ -25,7 +25,9 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
+import com.mentalbridge.identity.account.AccountStatusAuthorizationService;
 import com.mentalbridge.identity.authentication.JwtTokenService;
 import com.mentalbridge.identity.shared.SecurityProblemSupport;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -39,13 +41,14 @@ public class SecurityConfiguration {
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
 			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-			SecurityProblemSupport securityProblems) throws Exception {
+			SecurityProblemSupport securityProblems, AccountStatusAuthorizationService accountStatus) throws Exception {
 		http.csrf(csrf -> csrf.disable()).sessionManagement(session -> session
 				.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 				.requestMatchers("/internal/v1/notification-delivery-contacts/**").permitAll()
 				.requestMatchers("/internal/v1/accounts/*/verified-email").permitAll()
 				.requestMatchers("/internal/v1/community-chat/account-authorizations").permitAll()
+				.requestMatchers("/internal/v1/accounts/*/authorization").permitAll()
 				.requestMatchers("/api/v1/auth/registrations", "/api/v1/auth/email-verifications",
 						"/api/v1/auth/email-verification-requests", "/api/v1/auth/login", "/api/v1/auth/refresh",
 						"/api/v1/auth/password-recovery-requests", "/api/v1/auth/password-resets")
@@ -53,7 +56,9 @@ public class SecurityConfiguration {
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))
 				.oauth2ResourceServer(resourceServer -> resourceServer
-						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+				.addFilterAfter(new LocalAccountStatusEnforcementFilter(accountStatus, securityProblems),
+						BearerTokenAuthenticationFilter.class);
 		return http.build();
 	}
 

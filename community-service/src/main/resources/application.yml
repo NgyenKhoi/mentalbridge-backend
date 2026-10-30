@@ -35,6 +35,11 @@ spring:
 
 mentalbridge:
   community:
+    identity-account-status:
+      base-url: ${IDENTITY_SERVICE_BASE_URL:}
+      service-token: ${COMMUNITY_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN:}
+      connect-timeout: ${IDENTITY_ACCOUNT_STATUS_CONNECT_TIMEOUT:PT0.25S}
+      read-timeout: ${IDENTITY_ACCOUNT_STATUS_READ_TIMEOUT:PT0.75S}
     chat-notification:
       enabled: ${COMMUNITY_CHAT_NOTIFICATION_ENABLED:false}
       public-key: ${CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY:}

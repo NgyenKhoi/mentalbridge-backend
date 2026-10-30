@@ -19,6 +19,41 @@ tags:
   - name: Account administration
   - name: Platform reporting
 paths:
+  /internal/v1/accounts/{accountId}/authorization:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Account]
+      operationId: authorizeActiveAccount
+      summary: Resolve whether an account is currently ACTIVE
+      description: >-
+        Current, non-cacheable authorization check for authenticated Care,
+        Community, and Consultation callers. Unknown and every non-ACTIVE status
+        return active false without exposing role, status, or account metadata.
+      security: [{ accountStatusServiceToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: X-MentalBridge-Service-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [care-service, community-service, consultation-service]
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Minimized current account authorization result
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [active]
+                properties:
+                  active: { type: boolean }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
   /internal/v1/community-chat/account-authorizations:
     x-mentalbridge-status: implemented
     post:
@@ -936,6 +971,11 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
 components:
   securitySchemes:
+    accountStatusServiceToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Service-Token
+      description: Dedicated per-calling-service account-status credential; never exposed to browsers.
     communityChatServiceToken:
       type: apiKey
       in: header

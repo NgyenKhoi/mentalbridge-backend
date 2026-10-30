@@ -1,5 +1,10 @@
 # Identity Service
 
+MB-779 adds a non-cacheable internal ACTIVE-account authorization read for Care,
+Community, and Consultation. Each caller uses its own 32–512 character service
+credential (`IDENTITY_ACCOUNT_STATUS_*_SERVICE_TOKEN`). Identity checks its local
+account repository; protected Identity requests never call Identity over HTTP.
+
 MB-685 adds `POST /internal/v1/community-chat/account-authorizations`, a read-only
 Community-only account eligibility query. Set `IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN`
 to a dedicated 32–512 character service credential in Identity and Community;

@@ -38,6 +38,11 @@ spring:
 
 mentalbridge:
   care:
+    identity-account-status:
+      base-url: ${IDENTITY_SERVICE_BASE_URL:}
+      service-token: ${CARE_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN:}
+      connect-timeout: ${IDENTITY_ACCOUNT_STATUS_CONNECT_TIMEOUT:PT0.25S}
+      read-timeout: ${IDENTITY_ACCOUNT_STATUS_READ_TIMEOUT:PT0.75S}
     voice-consent:
       journal-service-token: ${CARE_VOICE_JOURNAL_SERVICE_TOKEN:}
       idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
