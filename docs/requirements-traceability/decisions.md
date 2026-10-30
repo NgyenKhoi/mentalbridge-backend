@@ -102,6 +102,12 @@ Records retain the wording and recorded order of the original traceability docum
 - 2026-08-21: select MoMo as the sole production provider for subscription
   payment and specialist payout. ADR 0017 removes the FX option: real enablement
   requires VND prices, fixed `creditAllocation`, and credentials.
+- 2026-10-30: [ADR 0047](../adr/0047-payos-active-gateway-momo-dormant.md)
+  prospectively selects PayOS for staging-only pay-in using the unchanged
+  5,000/10,000 VND test catalogue and full-price/zero-offset upgrade policy.
+  MoMo remains dormant; synthetic earnings cannot enter real payout. Production
+  stays blocked. Fully matched authenticated reconciliation is accepted
+  alongside signed webhooks. Nullable `terminalReason` preserves ledger states.
 
 ## Record 70
 
