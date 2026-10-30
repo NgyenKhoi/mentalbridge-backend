@@ -466,6 +466,14 @@ export class MongoVoiceLedger {
       if (this.pilot) {
         if (!voicePilotAllows(this.pilot, input.ownerId, input.now))
           throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+        const ownerAdmission = await this.sessions.findOne(
+          {
+            ownerId: input.ownerId,
+            createdAt: { $gte: this.pilot.startsAt, $lt: this.pilot.endsAt },
+          },
+          { session: transaction },
+        );
+        if (ownerAdmission) throw new VoiceLedgerError("QUOTA_EXHAUSTED");
         const admissions = await this.sessions.countDocuments(
           { createdAt: { $gte: this.pilot.startsAt, $lt: this.pilot.endsAt } },
           { session: transaction },

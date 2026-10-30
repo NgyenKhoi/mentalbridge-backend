@@ -19,7 +19,9 @@ For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
 `endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Never change
 the window to retry this campaign. Existing retained session rows count every
 admission in the window, including failed or refunded calls, in the same Mongo
-transaction as the global capacity write. Replays do not allocate again. The
+transaction as the global capacity write. Each allowlisted owner has at most
+one admission in that window even after a refund; the campaign still has two
+total admissions. Replays do not allocate again. The
 90-second deadline is frozen at admission and also bounded by the window end;
 daily Text/Voice policy and financial credits are unchanged. No new collection
 or migration is introduced.
