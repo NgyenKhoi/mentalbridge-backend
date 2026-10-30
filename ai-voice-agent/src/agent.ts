@@ -27,13 +27,14 @@ export default defineAgent({
         roomMetadata: context.job.room?.metadata ?? "",
         recording: context.job.room?.activeRecording ?? false,
       });
+      const diagnostic = agentDiagnostics(dispatch.attemptId);
       worker = new VoiceWorker(
         dispatch,
         new JournalClient(configuration),
-        new LiveKitMedia(context, dispatch, configuration),
+        new LiveKitMedia(context, dispatch, configuration, diagnostic),
         Date.now,
         undefined,
-        agentDiagnostics(dispatch.attemptId),
+        diagnostic,
       );
       const active = worker;
       context.addShutdownCallback(() => active.stop("AGENT_FAILURE"));

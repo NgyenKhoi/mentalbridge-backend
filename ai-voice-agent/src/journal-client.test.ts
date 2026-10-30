@@ -47,7 +47,9 @@ void test("Journal HTTP timeout/refusal/malformed responses fail closed without 
         client.claim(dispatch),
         (error) =>
           error instanceof AgentFailure &&
-          error.message === "JOURNAL_UNAVAILABLE",
+          error.message === "JOURNAL_UNAVAILABLE" &&
+          error.failure ===
+            (next === "timeout" ? "TIMEOUT" : "INVALID_RESPONSE"),
       );
     }
     assert.equal(calls, 3);

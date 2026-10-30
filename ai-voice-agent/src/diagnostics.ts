@@ -13,6 +13,7 @@ export type FailureCode =
 export interface AgentDiagnostic {
   phase:
     | "agent_claim_ok"
+    | "startup_failed"
     | "media_ready_ack"
     | "next_heartbeat_due"
     | "heartbeat_attempt"
@@ -23,11 +24,16 @@ export interface AgentDiagnostic {
     | "turn_failed"
     | "tts_begin"
     | "playout_first_audio"
+    | "speech_usage"
     | "agent_stopped";
   code?: FailureCode;
   remainingMs?: number;
   delayMs?: number;
   reason?: StopReason;
+  component?: "STT" | "TTS";
+  audioDurationMs?: number;
+  charactersCount?: number;
+  cancelled?: boolean;
 }
 export function agentDiagnostics(
   attemptId: string,

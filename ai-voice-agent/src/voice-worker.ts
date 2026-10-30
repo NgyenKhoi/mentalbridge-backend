@@ -142,7 +142,14 @@ export class VoiceWorker {
       this.setState(
         this.connected ? (this.muted ? "MUTED" : "LISTENING") : "DISCONNECTED",
       );
-    } catch {
+    } catch (error) {
+      this.diagnostic({
+        phase: "startup_failed",
+        code:
+          error instanceof AgentFailure
+            ? (error.failure ?? "INVALID_RESPONSE")
+            : "TRANSPORT",
+      });
       await this.fail();
     }
   }

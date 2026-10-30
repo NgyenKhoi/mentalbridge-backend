@@ -356,6 +356,22 @@ void test("heartbeat queue serializes slow publication and one renewal while tic
   await f.worker.stop("USER_ENDED");
 });
 
+void test("backward wall-clock adjustment does not fabricate a heartbeat and a forward expiry cuts media without renewal", async () => {
+  const f = fixture();
+  await f.start();
+  f.advance(-500);
+  await f.tick();
+  assert.equal(f.signals.length, 1);
+  f.advance(5500);
+  await f.tick();
+  assert.equal(f.signals.at(-1)?.kind, "HEARTBEAT");
+  f.advance(10001);
+  await f.tick();
+  assert.equal(f.worker.state, "ENDED");
+  assert.equal(f.signals.filter((s) => s.kind === "HEARTBEAT").length, 1);
+  assert.equal(f.input(), false);
+});
+
 void test("diagnostic records are bounded, monotonic and contain no conversation or credentials", () => {
   const records: object[] = [];
   let now = 10;
