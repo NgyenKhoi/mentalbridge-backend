@@ -99,6 +99,55 @@ its real-Mongo regression, diagnose heartbeat/cancellation with sanitized
 failure-stage metrics, and obtain explicit PO approval for a new bounded
 campaign/window. Never reset or extend this exhausted campaign to retry.
 
+## Offline corrective review — 2026-10-30
+
+Authority: [PR review 5709828727](https://github.com/NgyenKhoi/mentalbridge-backend/pull/240#pullrequestreview-5709828727)
+and the owner's explicit stop instruction. This is debugging of the failed real
+pilot, not a new mock delivery milestone. No inference, CountTokens, STT/TTS,
+microphone, Agent registration, staging or new campaign was run for this review.
+`LIVE_APPROVED=false`; both external flags remain OFF. The original two session
+rows, exhausted window and counters are unchanged.
+
+| Boundary | Proven offline / historical evidence | Remaining uncertainty |
+| --- | --- | --- |
+| PLUS 1 heartbeat | Old ready control took 1,860 ms, close to the unchanged 2,000 ms control timeout. There is no later heartbeat HTTP request. The worker previously scheduled five seconds after ACK regardless of remaining lease. A delayed ACK leaving four seconds therefore scheduled renewal after expiry; a deterministic regression reproduces this defect. Renewal now schedules at the earlier of five seconds or three seconds before the actual lease deadline. ACK after the previous lease expires cannot restore authority. | The recorded 1,860 ms alone does not prove timeout or reproduce the exact first pilot failure. The old silent Agent log has no tick/queue/error evidence. Whether that worker timed out, stalled or failed media remains unresolved. |
+| PLUS 2 turn | One final STT turn was accepted; the HTTP connection closed after 4,001 ms despite a 30,000 ms provider timeout. Offline tests cover counting rejection before inference, provider HTTP class, invalid output, client disconnect, consent cancellation, publication rejection and retained usage. | Historical CountTokens, Bedrock HTTP/body, cancellation source and publication stage were not recorded. No AWS, LiveKit or worker root cause is established for this attempt. |
+| Second admission | Existing Web logs show two separate successful `POST /api/ai-companion/voice/sessions` commands and a later 429. Journal's corresponding successful request IDs are `b333a550-e126-4614-a50e-78c2a54cc75a` and `0db180a1-f611-407b-b4b9-4e6f34776a87`. The already-fixed historical-per-owner guard denied neither at execution; regression still proves refund/restart cannot restore an admission and the other owner remains eligible in an unused test campaign. | These logs identify the authenticated Web BFF → Journal START command path, not the person, browser tab or gesture. There is no old client-action audit to reconstruct that attribution. No automatic creator was found in polling/reconnect code; do not assign blame from that absence. |
+| Metering | Provider-reported Bedrock token pairs are now captured once before output validation/publication. Filtered SDK STT duration and TTS duration/character/cancelled metrics are captured separately. Failure/cancellation regressions preserve known usage. | Old exact token, speech usage and dollar charges remain UNKNOWN. Missing metrics are never zero; SDK counters and configured price estimates are not billing/credit-offset receipts. No Cloud inference was requested to estimate old charges. |
+
+Agent diagnostics use only opaque attempt ID, bounded phase enums, monotonically
+increasing sequence/elapsed milliseconds, bounded lease timing and safe failure
+codes. They distinguish claim, startup failure, ready ACK, heartbeat due/attempt/
+ACK/failure, lease expiry, turn request/failure, TTS begin, actual first playout
+and stop. At most 512 records are emitted per attempt. SDK logging stays silent;
+recording, transcript output and content export remain disabled.
+
+Journal emits `turn_authorized`, `token_count_requested`,
+`token_count_authorized`, `bedrock_requested`, `bedrock_response_received`,
+`bedrock_response_validated`, output/publication authorization, reply registration
+and final state recheck. `FAILED` includes the last phase and safe category:
+timeout, abort, HTTP 4xx/5xx, transport, invalid response, input budget, authority/
+state or internal cleanup. `PROVIDER_USAGE` carries numeric counters separately
+from `GENERATED`, so a rejected output cannot erase usage or double count it.
+Counting tokens are authorization evidence, not charged inference tokens.
+
+The admission command audit uses a validated short-lived correlation UUID and
+fixed source/command/outcome only. It does not log owner/session identity,
+idempotency keys, credentials, request bodies or conversation content. Retain
+operational diagnostics under the existing 30-day-from-creation ceiling; do not
+enable SDK observability/export to collect them. No collection, persisted field,
+public API, consent, quota, model, lease limit or provider retry policy changes.
+
+Offline verification: Journal 198 unit/HTTP tests, 17 real-Mongo turn checks and
+26 ledger checks PASS; Agent 53 full-suite tests and 30 focused checks after the
+last diagnostic/test additions PASS. Format, lint, typecheck/build and contract/
+migration checks pass; Windows Agent formatting uses the existing
+`--end-of-line auto` check for baseline CRLF files. Disposable databases use only
+`voice_turn_verify_*` / `voice_ledger_verify_*`; the pilot database remains intact.
+Exact-head CI is required before handoff. PR remains Draft, MB-762 In Progress,
+and neither old audio failure is relabelled PASS. A new live window is not
+requested or authorized by this offline evidence.
+
 ## Historical pre-admission BLOCKED_CONTRACT — 2026-10-30, PO 10297
 
 The live preview was halted before admission: the Web consumer required
