@@ -19,9 +19,46 @@ import {
   type RemoteTrackPublication,
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
+import { PilotSpeechBudget } from "./pilot-speech-budget.js";
 import type { Dispatch } from "./contract.js";
 import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
 import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
+import type { AgentDiagnostic } from "./diagnostics.js";
+
+export function speechUsage(metrics: {
+  type: string;
+  audioDurationMs?: number;
+  charactersCount?: number;
+  cancelled?: boolean;
+}): AgentDiagnostic | null {
+  if (
+    !["stt_metrics", "tts_metrics"].includes(metrics.type) ||
+    typeof metrics.audioDurationMs !== "number" ||
+    !Number.isFinite(metrics.audioDurationMs) ||
+    metrics.audioDurationMs < 0
+  )
+    return null;
+  if (metrics.type === "stt_metrics")
+    return {
+      phase: "speech_usage",
+      component: "STT",
+      audioDurationMs: metrics.audioDurationMs,
+    };
+  if (
+    typeof metrics.charactersCount !== "number" ||
+    !Number.isSafeInteger(metrics.charactersCount) ||
+    metrics.charactersCount < 0 ||
+    typeof metrics.cancelled !== "boolean"
+  )
+    return null;
+  return {
+    phase: "speech_usage",
+    component: "TTS",
+    audioDurationMs: metrics.audioDurationMs,
+    charactersCount: metrics.charactersCount,
+    cancelled: metrics.cancelled,
+  };
+}
 
 export const sessionOptions = {
   turnHandling: {
@@ -145,6 +182,7 @@ async function verifyPublication(
   else if (!signal.aborted) throw new AgentFailure("PROVIDER_FAILED");
 }
 export class LiveKitMedia implements MediaPort {
+  private readonly pilotSpeechBudget = new PilotSpeechBudget();
   private session: voice.AgentSession | undefined;
   private agent: voice.Agent | undefined;
   private speech: voice.SpeechHandle | undefined;
@@ -159,6 +197,8 @@ export class LiveKitMedia implements MediaPort {
     private readonly context: JobContext,
     private readonly dispatch: Dispatch,
     private readonly configuration: AgentConfiguration,
+    private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
+      undefined,
   ) {}
   async start(callbacks: MediaCallbacks) {
     initializeLogger({ pretty: false, level: "silent" });
@@ -289,6 +329,13 @@ export class LiveKitMedia implements MediaPort {
       stt: sttModel,
       tts: ttsModel,
     });
+    this.session.on(
+      voice.AgentSessionEventTypes.MetricsCollected,
+      ({ metrics }) => {
+        const filtered = speechUsage(metrics);
+        if (filtered) this.diagnostic(filtered);
+      },
+    );
     this.session.input.setAudioEnabled(false);
     this.agent = voice.Agent.create({
       instructions: "",
@@ -386,6 +433,7 @@ export class LiveKitMedia implements MediaPort {
     const session = this.session;
     if (!session || this.closed || signal.aborted)
       throw new AgentFailure("AUTHORITY_EXPIRED");
+    if (this.configuration.pilot) this.pilotSpeechBudget.reserve(text);
     const output = session.output.audio;
     if (!output) throw new AgentFailure("PROVIDER_FAILED");
     try {

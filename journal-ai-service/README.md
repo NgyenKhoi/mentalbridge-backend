@@ -2,6 +2,50 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-762 scoped Voice provider
+
+Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
+`ap-southeast-1` using `JOURNAL_AI_VOICE_PROVIDER_MODE=APPROVED_BEDROCK`,
+`JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION` and the existing
+`AWS_BEARER_TOKEN_BEDROCK`. The model and region are validated by the dedicated
+`JOURNAL_AI_VOICE_BEDROCK_MODEL` / `JOURNAL_AI_VOICE_BEDROCK_REGION` keys.
+This configuration does not change AI Text, benchmark selection, consent,
+entitlement or admission. `JOURNAL_AI_VOICE_ENABLED` remains false until the
+[real preflight](../docs/mb-762-live-preflight.md) and LIVE_APPROVED gate pass.
+Live Voice inference cannot fall back to fake, Gemini, Opus or another region. Existing
+nonproduction deterministic tests remain available only while Voice is disabled.
+
+For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
+`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Never change
+the window to retry this campaign. Existing retained session rows count every
+admission in the window, including failed or refunded calls, in the same Mongo
+transaction as the global capacity write. Each allowlisted owner has at most
+one admission in that window even after a refund; the campaign still has two
+total admissions. Replays do not allocate again. The
+90-second deadline is frozen at admission and also bounded by the window end;
+daily Text/Voice policy and financial credits are unchanged. No new collection
+or migration is introduced.
+
+Pilot Voice uses the same safety schema/validator with the schema included in
+the system prompt, and omits provider-side `outputConfig` so the complete input
+can be counted before inference. Bedrock Runtime token counting at the Singapore
+endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
+most 1,900 tokens (100-token headroom under the per-turn
+2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
+to the approved global profile and caps output at 300 tokens; four turns per
+call/two calls bound output to 2,400. This capability/permission needs an actual
+authorized runtime check and `bedrock:CountTokens` access, plus the existing
+Bearer-use authorization; unit tests do not establish account access. The
+[Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+supports Runtime CountTokens and explicitly excludes Mantle. The prior Mantle
+403 did not establish an IAM deficiency. After the owner applied the scoped IAM
+policy, the separately approved recheck in Jira 10295 returned HTTP 200,
+`inputTokens: 53`, in 440 ms on 2026-10-30. This supersedes the earlier unavailable
+result; do not repeat IAM or synthetic CountTokens checks during preparation.
+Admission and Agent remain OFF pending explicit `LIVE_APPROVED`. Actual inference stays on the approved Singapore Converse
+endpoint with the global profile, separately from the counting model ID. There is
+no fallback or retry when counting/inference fails. Text requests are unchanged.
+
 ## Current scope
 
 MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for

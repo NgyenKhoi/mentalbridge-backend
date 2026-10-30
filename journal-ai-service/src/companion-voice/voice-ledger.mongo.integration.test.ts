@@ -176,6 +176,121 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
   };
 
   await t.test(
+    "pilot serializes two lifetime admissions, never refunds attempts and freezes 90 seconds",
+    async () => {
+      const { databaseName, database } = await fixture();
+      const owners = [randomUUID(), randomUUID()];
+      const first = clients[0];
+      const second = clients[1];
+      assert.ok(first && second);
+      const pilot = {
+        startsAt: at(-1000),
+        endsAt: at(3600000),
+        ownerIds: owners,
+      };
+      const a = new MongoVoiceLedger(first, databaseName, pilot);
+      const b = new MongoVoiceLedger(second, databaseName, pilot);
+      const requests = owners.map((owner) => input(owner));
+      const results = await Promise.all(
+        requests.map((request, index) => (index ? b : a).reserve(request)),
+      );
+      for (const session of results) {
+        assert.equal(session.admittedSeconds, 90);
+        assert.equal(session.hardStopAt.getTime(), start.getTime() + 90000);
+        await a.requestEnd(
+          session.ownerId,
+          session.voiceSessionId,
+          "PROVIDER_FAILURE",
+          at(100),
+        );
+        await a.settle(
+          session.voiceSessionId,
+          null,
+          "NEVER_DISPATCHED",
+          at(100),
+        );
+      }
+      const request = requests[0];
+      const owner = owners[0];
+      assert.ok(request && owner);
+      assert.equal(
+        (await b.reserve(request)).voiceSessionId,
+        results[0]?.voiceSessionId,
+      );
+      await assert.rejects(
+        new MongoVoiceLedger(first, databaseName, pilot).reserve(
+          input(owner, at(200)),
+        ),
+        code("QUOTA_EXHAUSTED"),
+      );
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments(),
+        2,
+      );
+      await assert.rejects(
+        a.reserve(input(randomUUID())),
+        code("QUOTA_EXHAUSTED"),
+      );
+      await assert.rejects(
+        a.reserve(input(owner, pilot.endsAt)),
+        code("QUOTA_EXHAUSTED"),
+      );
+    },
+  );
+
+  await t.test(
+    "pilot does not restore an owner's admission after failed delivery refunds daily quota",
+    async () => {
+      const { databaseName, database } = await fixture();
+      const owner = randomUUID();
+      const other = randomUUID();
+      const first = clients[0];
+      const second = clients[1];
+      assert.ok(first && second);
+      const pilot = {
+        startsAt: at(-1000),
+        endsAt: at(3600000),
+        ownerIds: [owner, other],
+      };
+      const a = new MongoVoiceLedger(first, databaseName, pilot);
+      const request = input(owner);
+      const admitted = await a.reserve(request);
+      await a.requestEnd(
+        owner,
+        admitted.voiceSessionId,
+        "PROVIDER_FAILURE",
+        at(100),
+      );
+      await a.settle(
+        admitted.voiceSessionId,
+        null,
+        "NEVER_DISPATCHED",
+        at(100),
+      );
+      const quota = await a.snapshot(owner, "PLUS", at(200));
+      assert.equal(quota.remainingSessions, 2);
+      assert.equal(quota.remainingSeconds, 600);
+      assert.equal(quota.reservedSessions, 0);
+      const restarted = new MongoVoiceLedger(second, databaseName, pilot);
+      await assert.rejects(
+        restarted.reserve(input(owner, at(200))),
+        code("QUOTA_EXHAUSTED"),
+      );
+      assert.equal(
+        (await restarted.reserve(request)).voiceSessionId,
+        admitted.voiceSessionId,
+      );
+      const next = await restarted.reserve(input(other, at(200)));
+      assert.equal(next.ownerId, other);
+      assert.equal(next.admittedSeconds, 90);
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments(),
+        2,
+      );
+    },
+  );
+
+  await t.test(
     "display snapshots cannot reserve the final slot or bypass concurrent admission",
     async () => {
       const { a, b } = await fixture();

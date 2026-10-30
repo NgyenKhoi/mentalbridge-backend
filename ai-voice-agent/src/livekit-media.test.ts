@@ -10,6 +10,7 @@ import {
   transcriptFilter,
   sessionOptions,
   startOptions,
+  speechUsage,
 } from "./livekit-media.js";
 import { DispatchAdmission, run } from "./main.js";
 import { agentName } from "./contract.js";
@@ -17,6 +18,35 @@ import { Room as RtcRoom, TrackKind, TrackSource } from "@livekit/rtc-node";
 import { initializeLogger } from "@livekit/agents";
 import { microphoneSubscriptions } from "./livekit-media.js";
 import type { Transcript } from "./voice-worker.js";
+
+void test("speech metrics retain only numeric usage even when cancelled, never provider identifiers or content", () => {
+  const raw = {
+    type: "tts_metrics",
+    audioDurationMs: 1200,
+    charactersCount: 40,
+    cancelled: true,
+    text: "PRIVATE",
+    requestId: "PRIVATE",
+    metadata: { private: "PRIVATE" },
+  };
+  const filtered = speechUsage(raw);
+  assert.deepEqual(filtered, {
+    phase: "speech_usage",
+    component: "TTS",
+    audioDurationMs: 1200,
+    charactersCount: 40,
+    cancelled: true,
+  });
+  assert.deepEqual(speechUsage({ ...raw, type: "stt_metrics" }), {
+    phase: "speech_usage",
+    component: "STT",
+    audioDurationMs: 1200,
+  });
+  assert.equal(speechUsage({ ...raw, audioDurationMs: Number.NaN }), null);
+  assert.equal(speechUsage({ ...raw, charactersCount: -1 }), null);
+  assert.equal(speechUsage({ type: "llm_metrics" }), null);
+  assert.equal(JSON.stringify(filtered).includes("PRIVATE"), false);
+});
 
 void test("pinned SDK creates an input while detached, then subscribes only the authorized microphone", async () => {
   initializeLogger({ pretty: false, level: "silent" });

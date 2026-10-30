@@ -20,9 +20,10 @@ import {
 } from "@nestjs/common";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import type { Logger } from "pino";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { ProblemDetailsFilter } from "../http/problem-details.filter.js";
-import { CONFIGURATION_TOKEN } from "../observability/tokens.js";
+import { CONFIGURATION_TOKEN, LOGGER_TOKEN } from "../observability/tokens.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
 import { IdentityJwtVerifier } from "../security/identity-jwt-verifier.js";
 import { Public } from "../security/public.decorator.js";
@@ -241,6 +242,7 @@ export class VoiceUserController {
   constructor(
     private readonly access: VoiceAccessService,
     @Inject(VOICE_SESSIONS) private readonly sessions: VoiceSessionOperations,
+    @Inject(LOGGER_TOKEN) private readonly logger: Logger,
   ) {}
   @Get("voice-eligibility")
   eligibility(@Req() request: VoiceRequest) {
@@ -251,13 +253,38 @@ export class VoiceUserController {
   }
   @Post("voice-sessions")
   @HttpCode(202)
-  start(@Req() request: VoiceRequest, @Body() body: unknown) {
+  async start(@Req() request: VoiceRequest, @Body() body: unknown) {
     const key = empty(request, body);
-    return this.sessions.start(
-      subject(request),
-      key,
-      request.id ?? randomUUID(),
-    );
+    const owner = subject(request);
+    const parsedId = z.uuid().safeParse(request.id);
+    const correlationId = parsedId.success ? parsedId.data : randomUUID();
+    this.logger.info({
+      event: "voice_admission_command",
+      source: "AUTHENTICATED_USER_REST",
+      command: "START",
+      correlationId,
+      outcome: "RECEIVED",
+    });
+    try {
+      const result = await this.sessions.start(owner, key, correlationId);
+      this.logger.info({
+        event: "voice_admission_command",
+        source: "AUTHENTICATED_USER_REST",
+        command: "START",
+        correlationId,
+        outcome: "ACKNOWLEDGED",
+      });
+      return result;
+    } catch (error) {
+      this.logger.info({
+        event: "voice_admission_command",
+        source: "AUTHENTICATED_USER_REST",
+        command: "START",
+        correlationId,
+        outcome: "REJECTED",
+      });
+      throw error;
+    }
   }
   @Get("voice-sessions/:voiceSessionId")
   status(@Req() request: VoiceRequest, @Param("voiceSessionId") id: string) {

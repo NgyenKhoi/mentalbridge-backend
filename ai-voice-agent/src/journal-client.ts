@@ -26,6 +26,8 @@ export class JournalClient {
   ): Promise<T> {
     if (!this.configuration.journalToken)
       throw new AgentFailure("JOURNAL_UNAVAILABLE");
+    const timeout = AbortSignal.timeout(path === "turns" ? 30000 : 2000);
+    let received = false;
     try {
       const response = await this.transport(
         new URL(
@@ -44,14 +46,16 @@ export class JournalClient {
             ...(key ? { "Idempotency-Key": key } : {}),
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.any([
-            AbortSignal.timeout(path === "turns" ? 30000 : 2000),
-            ...(signal ? [signal] : []),
-          ]),
+          signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
         },
       );
+      received = true;
+      if (!response.ok)
+        throw new AgentFailure(
+          "JOURNAL_UNAVAILABLE",
+          response.status >= 500 ? "HTTP_5XX" : "HTTP_4XX",
+        );
       if (
-        !response.ok ||
         response.headers.get("cache-control") !== "no-store" ||
         !response.headers.get("content-type")?.startsWith("application/json")
       )
@@ -75,8 +79,19 @@ export class JournalClient {
         reader.releaseLock();
       }
       return schema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-    } catch {
-      throw new AgentFailure("JOURNAL_UNAVAILABLE");
+    } catch (error) {
+      throw new AgentFailure(
+        "JOURNAL_UNAVAILABLE",
+        signal?.aborted
+          ? "ABORTED"
+          : timeout.aborted
+            ? "TIMEOUT"
+            : error instanceof AgentFailure && error.failure
+              ? error.failure
+              : received
+                ? "INVALID_RESPONSE"
+                : "TRANSPORT",
+      );
     }
   }
   async claim(dispatch: Dispatch, signal?: AbortSignal): Promise<Lease> {

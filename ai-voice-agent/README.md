@@ -10,6 +10,22 @@ global two-call limit, one active call per user, consent, entitlement, usage,
 30-day minimized metadata and provider-verified teardown. Local admission/load
 limits supplement that authority; they are not a distributed quota counter.
 
+## MB-762 local real pilot
+
+The first authorized real pilot runs this worker locally against LiveKit Cloud,
+with Journal on verified loopback HTTP. No Hosted Agent or staging deployment is
+needed for this checkpoint. Keep `AI_VOICE_AGENT_ENABLED=false` until preflight
+and explicit `LIVE_APPROVED`; registration, named dispatch and real media remain
+unverified while disabled.
+
+Set `AI_VOICE_PILOT=true` in the external private env for the approved run. It
+pins Nova-3 and Xia `b8cd71e3-bc14-4538-a530-d6314731c036`, and reserves at most
+1,200 TTS input characters per worker attempt before synthesis, including failed
+or interrupted speech. Never restart/re-dispatch an unknown attempt. Journal's
+pilot window bounds the campaign to two admissions and 90 seconds each, with
+four Claude turns per admission. Existing no-retry, no-recording and no-export
+controls still apply. See [preflight evidence](../docs/mb-762-live-preflight.md).
+
 ## Build and verify without Cloud
 
 MB-782 adds the official `lk.agent.state` display hint through a single scoped

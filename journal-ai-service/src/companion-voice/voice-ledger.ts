@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { voicePilotAllows, type VoicePilot } from "./voice-pilot.js";
 import {
   MongoClient,
   MongoServerError,
@@ -327,6 +328,7 @@ export class MongoVoiceLedger {
   constructor(
     private readonly client: MongoClient,
     databaseName: string,
+    private readonly pilot?: VoicePilot,
   ) {
     const database = client.db(databaseName);
     this.sessions = database.collection("ai_voice_sessions");
@@ -461,6 +463,23 @@ export class MongoVoiceLedger {
         return publicSession(prior);
       }
       if (prior) throw new VoiceLedgerError("SESSION_EXPIRED");
+      if (this.pilot) {
+        if (!voicePilotAllows(this.pilot, input.ownerId, input.now))
+          throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+        const ownerAdmission = await this.sessions.findOne(
+          {
+            ownerId: input.ownerId,
+            createdAt: { $gte: this.pilot.startsAt, $lt: this.pilot.endsAt },
+          },
+          { session: transaction },
+        );
+        if (ownerAdmission) throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+        const admissions = await this.sessions.countDocuments(
+          { createdAt: { $gte: this.pilot.startsAt, $lt: this.pilot.endsAt } },
+          { session: transaction },
+        );
+        if (admissions >= 2) throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+      }
       if (input.claimExpiresAt) {
         assertDate(input.claimExpiresAt);
         const claim = await this.usage.findOne(
@@ -502,7 +521,17 @@ export class MongoVoiceLedger {
         seconds <= 0
       )
         throw new VoiceLedgerError("QUOTA_EXHAUSTED");
-      const admittedSeconds = Math.min(limits.perSessionSeconds, seconds);
+      const admittedSeconds = Math.min(
+        limits.perSessionSeconds,
+        seconds,
+        this.pilot ? 90 : Number.POSITIVE_INFINITY,
+        this.pilot
+          ? Math.floor(
+              (this.pilot.endsAt.getTime() - input.now.getTime()) / 1000,
+            )
+          : Number.POSITIVE_INFINITY,
+      );
+      if (admittedSeconds <= 0) throw new VoiceLedgerError("QUOTA_EXHAUSTED");
       const authorityExpiresAt = new Date(
         Math.min(
           input.now.getTime() + VOICE_LEASE_MS,
