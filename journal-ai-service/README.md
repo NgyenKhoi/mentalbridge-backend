@@ -36,10 +36,11 @@ authorized runtime check and `bedrock:CountTokens` access, plus the existing
 Bearer-use authorization; unit tests do not establish account access. The
 [Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
 supports Runtime CountTokens and explicitly excludes Mantle. The prior Mantle
-403 does not prove an IAM deficiency. PO 10258 approved exactly one Runtime
-CountTokens-only check: it returned HTTP 403 with no `inputTokens` in 370 ms.
-Counting remains unavailable, admission remains OFF and no further request or
-IAM/key change is authorized by that approval. Actual inference stays on the approved Singapore Converse
+403 did not establish an IAM deficiency. After the owner applied the scoped IAM
+policy, the separately approved recheck in Jira 10295 returned HTTP 200,
+`inputTokens: 53`, in 440 ms on 2026-10-30. This supersedes the earlier unavailable
+result; do not repeat IAM or synthetic CountTokens checks during preparation.
+Admission and Agent remain OFF pending explicit `LIVE_APPROVED`. Actual inference stays on the approved Singapore Converse
 endpoint with the global profile, separately from the counting model ID. There is
 no fallback or retry when counting/inference fails. Text requests are unchanged.
 

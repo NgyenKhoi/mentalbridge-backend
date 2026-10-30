@@ -1,7 +1,7 @@
 # MB-762 real-provider preflight
 
-Authority: MB-762 comments 10243–10256, 2026-10-29, and the owner's direct
-instruction to run Local Real E2E before staging. Comment 10251 supersedes the
+Authority: MB-762 comments 10243–10259, 10294–10295 and the owner's direct
+2026-10-30 instruction to finish Local Real E2E preparation. Comment 10251 supersedes the
 Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not create
 another mock-only delivery milestone. Tests verify production changes without
 making provider calls before approval.
@@ -23,6 +23,68 @@ making provider calls before approval.
 - Keep live admission disabled until preflight is complete and the owner
   explicitly confirms `LIVE_APPROVED`.
 
+## READY_FOR_LOCAL_LIVE — 2026-10-30
+
+Technical preflight is ready for the first controlled local call. Execution is
+still **BLOCKED by `LIVE_APPROVED=false`**: both Voice and Agent switches remain
+OFF. Publication also requires `quality-gate` SUCCESS on the final head of
+[backend PR 240](https://github.com/NgyenKhoi/mentalbridge-backend/pull/240) and
+[Web PR 247](https://github.com/NgyenKhoi/mentalbridge-frontend/pull/247); their
+checks and PR descriptions record the exact published SHA and CI result.
+This is preparation for real providers; no additional mock milestone is claimed.
+
+Observed 13:20–13:30 Asia/Ho_Chi_Minh:
+
+| Condition | Status and evidence |
+| --- | --- |
+| Current baseline | PASS: backend integrated dev `189f41de` (current-account JWT enforcement); Web integrated dev `1f8b5ed`. Normal merges, no history rewrite. |
+| Local control stack | PASS: Web `39000`, Journal `39002`, Identity `39080`, Care `39081`, Consultation `39082` all HTTP 200. Three Java artifacts were rebuilt from refreshed dev, with distinct local account-status service tokens. |
+| Databases | PASS: isolated Docker PostgreSQL `39040`, writable Mongo replica set `mb762` at `39017`, Redis `39079`. Existing volumes retained; no cloud database or financial write. |
+| Real Web path | PASS: both DEMO USERs logged in through real Web/Identity and opened the unavailable Voice preview with HTTP 200 eligibility. No API response mocks, admission requests or microphone attempts. |
+| Entitlements/consent | PASS: owner REST returns PLUS/PREMIUM source `DEMO`, unexpired; both current Care consents true, Voice version `ai-voice-processing-capstone-v1`. Authenticated disclosure HTTP 200. |
+| Daily quota | PASS: PLUS remaining 2 sessions/600 seconds; PREMIUM 3/1,800. No reserved sessions/seconds. Product per-session caps remain 300/600 seconds; disabled eligibility correctly exposes zero available seconds. |
+| Pilot availability | PASS: both pilot configurations present, two allowed owners, 0 campaign admissions and 0 open sessions. Fixed window still open; its end is **2026-10-30 15:48:09.404 Asia/Ho_Chi_Minh**. Do not reset it to gain another campaign. |
+| Hard limits | PASS review: 2 admissions including failures/refunds, 90 seconds/call, 4 turns/call; full input counted ≤1,900 tokens/turn, output ≤300; TTS reserved ≤1,200 characters/attempt. No retry after unknown provider outcome. |
+| Provider route | PASS configuration: Journal-only `global.anthropic.claude-sonnet-4-6`, `ap-southeast-1`; worker `deepgram/nova-3`/`vi`, `cartesia/sonic-3-2026-01-12`/`vi`, Xia `b8cd71e3-bc14-4538-a530-d6314731c036`. AI Text unchanged; Agent has no Bedrock key. |
+| CountTokens | PASS, existing Jira **10295**: HTTP 200, 53 input tokens, 440 ms. No IAM or CountTokens synthetic request was repeated in this preparation. |
+| Agent → Journal | PASS: exact loopback URL and matching scoped token; authorized malformed claim reaches 422 validation, wrong token gets 401. |
+| LiveKit registration | PASS: real official SDK registration under `mentalbridge-ai-voice-v1`, local health HTTP 200. Production Agent stays OFF; the short-lived probe has zero idle processes and rejects every job. |
+| Named routing | PASS: an actual explicit dispatch in an empty, non-business preflight room reached the local probe with matching name/room/metadata. Three scheduler offers were all rejected; **zero accepted jobs, room participants or model requests**. No AgentSession or media connection was created. |
+| Control-plane teardown | PASS: matching dispatch removed, empty room deleted and confirmed absent, probe worker closed with zero active jobs. Subsequent room/Egress lists both empty. |
+| Application privacy | PASS: `record:false`, text/video/transcription publication OFF, silent logging, no configured content exporter, SDK session-report/audio upload disabled by recording options. Owner evidence already establishes project observability OFF; preflight room `activeRecording=false`. This does not assert arbitrary account integrations are impossible. |
+| Fixture cleanup | PASS rollback dry-run: only the two DEMO grants and synthetic ADMIN are targeted, with zero financial writes; fixtures remain for the pilot. |
+| Free-credit protection | PASS under the existing owner-verified Build Free/AWS Free plan conditions below; no upgrade or paid-only action. Unknown numeric remaining credit is an availability risk, not an observed zero balance. |
+
+Funding uses the reconciliation already supplied in Jira 10254, without asking
+for the same screenshots again. [LiveKit Build allowance is a hard cap](https://docs.livekit.io/deploy/admin/quotas-and-limits/):
+insufficient free allowance rejects work without overage. At the published
+[Nova-3 mono and Sonic 3 rates](https://livekit.com/pricing/inference), the approved
+3 STT minutes and 2,400 TTS characters estimate **USD 0.1344**, below the USD 0.50
+ceiling. The exact remaining monthly dollar balance is still not exposed.
+
+The owner evidence shows AWS **Free account plan**, USD 131.02 as of October 29,
+with stated expiry March 8, 2027. [AWS documents no charges on that plan](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html),
+closure on depletion/expiry, and restrictions on paid-only services. Keep it
+Free: no Organizations/Control Tower or other automatic-upgrade action. This is
+the no-cash protection permitted by Jira 10254; it does not invent an Applicable
+Products entry or invoice-level credit offset. If a provider rejects an
+unavailable/uncovered service, stop without upgrading, changing route or retrying.
+The AWS campaign ceiling remains USD 0.50 from existing credit only.
+
+After explicit local `LIVE_APPROVED`, start the reviewed production worker and
+enable Journal admission using only the private env files, preserving owners,
+window and every pilot limit. Verify worker registration, then the PO can grant
+microphone access for harmless Vietnamese phrases in the Web UI. Abort at any
+provider/budget/privacy/authority uncertainty. At stop: disable admission, stop
+audio and pending work, verify provider/room teardown, then stop the worker.
+
+Only live execution can verify actual speech/voice quality, full Sonnet response,
+media interruption/reconnect and active-audio teardown. Those acceptance rows
+remain NOT_RUN under the current approval gate; local preparation does not
+establish staging/Hosted or full MB-762 completion. If approval arrives after
+the fixed window expires, stop for an explicit schedule decision; do not silently
+reset the campaign. No new service registration or staging restart is needed.
+
 ## Ordered implementation slices
 
 1. Make Voice routing independently pin the approved Sonnet profile/region
@@ -42,9 +104,9 @@ making provider calls before approval.
 
 ## Actual preflight observations
 
-- Read all fifteen Jira comments, including fixture authorization, account
-  reconciliation, the narrow CountTokens-only exception and its endpoint
-  correction and one-request Runtime approval (10254–10258).
+- Read the current Jira decisions, including fixture authorization, account
+  reconciliation, endpoint correction and post-policy CountTokens PASS
+  (10254–10259, 10294–10295).
   AWS Free-plan balance USD 131.02 and expiry 2027-03-08 are owner-supplied
   evidence in comment 10248. Specific Bedrock Applicable Products/credit offset
   remains a separate check, not inferred from that balance or a runtime key.
@@ -77,8 +139,9 @@ making provider calls before approval.
   counted before Converse; over 1,900 input tokens, counting failure or unknown
   outcome denies inference without retry. The corrected request uses Bedrock
   Runtime Singapore with base model `anthropic.claude-sonnet-4-6`, independently
-  from the global inference profile. The single authenticated Runtime check
-  authorized by PO 10258 returned HTTP 403; no token count was returned.
+  from the global inference profile. The initial check under PO 10258 returned
+  HTTP 403; the separately approved post-policy check in 10295 returned HTTP 200
+  and 53 input tokens. Neither was repeated during this preparation.
   Actual inference remains Singapore/global Sonnet.
   See [AWS token counting](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html)
   and the [Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html).
@@ -154,12 +217,11 @@ plans provide a separate possible no-cash bound:
   specific Bedrock Applicable Products entry. Owner credit evidence expires
   2027-03-08; service availability may still reject a request.
 
-Before a live run: accept both current Care disclosures in the product for the
-controlled accounts, finish recording/Egress/export audit, verify the named
-local Agent configuration, record the reviewed funding protection and obtain
-explicit `LIVE_APPROVED`. Actual named registration/dispatch, counting permission,
-speech compatibility/latency and provider cleanup must be verified in that
-authorized run; disabled preparation cannot claim those runtime observations.
+Both current Care disclosures, application recording/export, named local routing,
+the funding guard and CountTokens are now verified as recorded above. Obtain
+explicit `LIVE_APPROVED` before starting production Agent/admission. Speech
+compatibility/latency and active-media cleanup remain acceptance work for that
+authorized run; control-plane preparation does not establish those observations.
 
 ## Authorized CountTokens-only result — 2026-10-29
 
@@ -245,7 +307,8 @@ Stop here for review of the unavailable capability. No additional AWS request
 is authorized by PO 10258. The fail-closed input-budget guard continues to deny
 inference; Voice and Agent remain OFF and `LIVE_APPROVED` remains false.
 
-Status is **COUNT_TOKENS_UNAVAILABLE**, not READY_FOR_LOCAL_LIVE.
-No inference, real microphone, paid use, Hosted Agent deployment or LIVE_APPROVED
-action is claimed. Local preparation does not establish staging/Hosted PASS or
-all task acceptance scenarios; MB-762 is not Done.
+This historical `COUNT_TOKENS_UNAVAILABLE` result is superseded by Jira **10295**:
+the separately approved post-policy request returned HTTP 200, 53 input tokens,
+440 ms. See the current `READY_FOR_LOCAL_LIVE` report above. No inference, real
+microphone, paid use, Hosted deployment or `LIVE_APPROVED` action is claimed;
+MB-762 remains In Progress until its real-provider acceptance work passes.
