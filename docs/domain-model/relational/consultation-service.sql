@@ -198,9 +198,12 @@ CREATE TABLE consultation.payment_transaction (
     subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
     target_plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
     payment_provider varchar(16) NOT NULL,
-    momo_order_id varchar(128) NOT NULL,
-    momo_request_id varchar(128) NOT NULL,
+    momo_order_id varchar(128),
+    momo_request_id varchar(128),
     momo_trans_id bigint,
+    order_code bigint,
+    payos_payment_link_id varchar(128) UNIQUE,
+    payos_reference varchar(128) UNIQUE,
     amount_minor bigint NOT NULL,
     currency char(3) NOT NULL,
     status varchar(16) NOT NULL,
@@ -215,12 +218,28 @@ CREATE TABLE consultation.payment_transaction (
     expires_at timestamptz NOT NULL,
     checkout_url varchar(2048),
     qr_code_url varchar(2048),
+    qr_code text,
+    bank_bin varchar(16),
+    bank_account_number varchar(64),
+    bank_account_name varchar(256),
+    payment_description varchar(9),
+    terminal_reason varchar(24),
+    reconciliation_next_at timestamptz,
+    reconciliation_failures integer NOT NULL DEFAULT 0,
+    reconciliation_failure_code varchar(64),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
     UNIQUE (payment_provider, momo_order_id),
     UNIQUE (payment_provider, momo_request_id),
     UNIQUE (payment_provider, momo_trans_id),
+    UNIQUE (payment_provider, order_code),
+    CHECK (payment_provider IN ('FAKE', 'MOMO', 'PAYOS')),
+    CHECK ((payment_provider IN ('FAKE', 'MOMO') AND momo_order_id IS NOT NULL AND momo_request_id IS NOT NULL)
+        OR (payment_provider = 'PAYOS' AND order_code IS NOT NULL
+            AND momo_order_id IS NULL AND momo_request_id IS NULL AND momo_trans_id IS NULL)),
+    CHECK (order_code BETWEEN 1 AND 9007199254740991),
+    CHECK (terminal_reason IS NULL OR (status = 'FAILED' AND terminal_reason IN ('EXPIRED', 'CANCELLED', 'PROVIDER_FAILED'))),
     CHECK (checkout_url IS NOT NULL OR qr_code_url IS NULL),
     UNIQUE (subscription_id, idempotency_key)
 );
@@ -249,6 +268,28 @@ CREATE TABLE consultation.momo_payment_ipn (
     signature_key_version varchar(32) NOT NULL,
     signature_verified_at timestamptz NOT NULL,
     processing_status varchar(32) NOT NULL,
+    failure_code varchar(64),
+    received_at timestamptz NOT NULL,
+    processed_at timestamptz,
+    acknowledged_at timestamptz
+);
+
+CREATE TABLE consultation.payos_payment_webhook (
+    id uuid PRIMARY KEY,
+    payment_id uuid REFERENCES consultation.payment_transaction(id),
+    contract_version varchar(32) NOT NULL,
+    source varchar(24) NOT NULL CHECK (source IN ('WEBHOOK', 'RECONCILIATION')),
+    deduplication_key char(64) NOT NULL UNIQUE,
+    order_code bigint NOT NULL,
+    amount_minor bigint NOT NULL CHECK (amount_minor >= 0),
+    payment_link_id varchar(128) NOT NULL,
+    reference varchar(128) NOT NULL,
+    code varchar(32),
+    success boolean,
+    payload_sha256 char(64) NOT NULL,
+    signature_key_version varchar(32) NOT NULL,
+    signature_verified_at timestamptz NOT NULL,
+    processing_status varchar(32) NOT NULL CHECK (processing_status IN ('RECEIVED', 'PROCESSED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED')),
     failure_code varchar(64),
     received_at timestamptz NOT NULL,
     processed_at timestamptz,
@@ -327,7 +368,7 @@ CREATE TABLE consultation.service_credit (
 
 CREATE TABLE consultation.subscription_upgrade_credit (
     upgrade_id uuid NOT NULL REFERENCES consultation.subscription_upgrade(id),
-    credit_id uuid NOT NULL UNIQUE REFERENCES consultation.service_credit(id),
+    credit_id uuid NOT NULL REFERENCES consultation.service_credit(id),
     allocated_value_minor bigint NOT NULL,
     PRIMARY KEY (upgrade_id, credit_id)
 );
