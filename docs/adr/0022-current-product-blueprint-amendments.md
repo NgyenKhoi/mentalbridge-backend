@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-24
 - Decision ID: `MB-SCOPE-V2-002`
+- Provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`), preserving the per-credit earning basis and readiness/reconciliation gates.
 - Amends: [ADR 0017](0017-product-scope-v2.md), [ADR 0020 service-plan consultation credits](0020-service-plan-consultation-credits.md), and the reassessment interpretation recorded by [ADR 0021 SupportPlan engagement](0021-support-plan-engagement.md)
 - Delivery tracking: MB-558, MB-559, MB-560 and the affected consultation/reassessment stories
 
@@ -103,7 +104,7 @@ Increasing monthly credits changes commercial capacity and platform liability, n
 
 Each issued paid credit still snapshots a fixed VND `creditAllocation`. An evidence-backed `COMPLETED` appointment consumes exactly one held credit and creates a specialist earning equal to 70% of that credit's `creditAllocation`, never 70% of package price.
 
-Real payment/payout remains VND + MoMo only and remains disabled until approved price, `creditAllocation`, credentials, provider contract, and reconciliation requirements are configured.
+Real payment/payout remains VND, with approved price, `creditAllocation`, credentials, provider contract and reconciliation requirements. [ADR 0047](0047-payos-active-gateway-momo-dormant.md) prospectively replaces the sole-MoMo collect rule: PayOS may charge the unchanged 5,000/10,000 VND test catalogue on staging only, MoMo is dormant, and production/real payout remain blocked pending separate approval. Per-credit earning and synthetic/non-redeemable fixture provenance are unchanged.
 
 ## Authority and compatibility
 
