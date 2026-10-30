@@ -1,6 +1,6 @@
 # MB-762 real-provider preflight
 
-Authority: MB-762 comments 10243–10259, 10294–10295 and the owner's direct
+Authority: MB-762 comments 10243–10259, 10294–10295, 10297 and the owner's direct
 2026-10-30 instruction to finish Local Real E2E preparation. Comment 10251 supersedes the
 Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not create
 another mock-only delivery milestone. Tests verify production changes without
@@ -23,10 +23,36 @@ making provider calls before approval.
 - Keep live admission disabled until preflight is complete and the owner
   explicitly confirms `LIVE_APPROVED`.
 
-## READY_FOR_LOCAL_LIVE — 2026-10-30
+## Current status: BLOCKED_CONTRACT — 2026-10-30, PO 10297
 
-Technical preflight is ready for the first controlled local call. Execution is
-still **BLOCKED by `LIVE_APPROVED=false`**: both Voice and Agent switches remain
+The live preview was halted before admission: the Web consumer required
+`availableSessionSeconds` to equal the package/daily minimum and rejected a
+valid server-derived pilot limit of 90 seconds with the full PLUS daily balance
+of 600 seconds. `maxSessionSeconds` remains the product cap of 300 seconds for
+PLUS and 600 for PREMIUM. Operational limits can reduce availability below that
+minimum without changing consent, entitlement, product quota or final admission.
+
+The active/proposal description is clarified together: eligible availability is
+positive and at most the package/daily minimum, with additional operational caps
+or a remaining window allowed to reduce it. No response field, schema constraint,
+authorization or admission behavior changes. The Web consumer correction,
+regenerated contract artifacts and their checks must pass before the current
+status can return to READY_FOR_LOCAL_LIVE.
+
+At the halt there were **0 campaign admissions, 0 model requests, 0 rooms and
+0 active Egress**. Both Voice and Agent switches are OFF, the Agent is stopped
+and no microphone or real provider call was started. Existing CountTokens PASS
+from Jira 10295 remains valid; do not repeat AWS IAM or synthetic token checks.
+Preserve the fixed pilot window and admission history; do not reset either to
+gain another campaign. Any subsequent live run still requires explicit
+`LIVE_APPROVED` and a valid remaining pilot window.
+
+## Historical READY_FOR_LOCAL_LIVE snapshot — 2026-10-30
+
+This earlier control-plane snapshot is superseded by the current
+**BLOCKED_CONTRACT** status under PO 10297. Its observations are retained as
+historical evidence, not current readiness or live approval. Execution was
+still **BLOCKED by `LIVE_APPROVED=false`**: both Voice and Agent switches remained
 OFF. Publication also requires `quality-gate` SUCCESS on the final head of
 [backend PR 240](https://github.com/NgyenKhoi/mentalbridge-backend/pull/240) and
 [Web PR 247](https://github.com/NgyenKhoi/mentalbridge-frontend/pull/247); their
@@ -309,6 +335,6 @@ inference; Voice and Agent remain OFF and `LIVE_APPROVED` remains false.
 
 This historical `COUNT_TOKENS_UNAVAILABLE` result is superseded by Jira **10295**:
 the separately approved post-policy request returned HTTP 200, 53 input tokens,
-440 ms. See the current `READY_FOR_LOCAL_LIVE` report above. No inference, real
+440 ms. See the current `BLOCKED_CONTRACT` report above. No inference, real
 microphone, paid use, Hosted deployment or `LIVE_APPROVED` action is claimed;
 MB-762 remains In Progress until its real-provider acceptance work passes.
