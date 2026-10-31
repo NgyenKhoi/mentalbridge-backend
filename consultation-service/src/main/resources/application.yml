@@ -113,6 +113,13 @@ mentalbridge:
       momo-base-url: ${MOMO_PAYMENT_BASE_URL:https://test-payment.momo.vn}
       momo-ipn-url: ${MOMO_PAYMENT_IPN_URL:}
       momo-redirect-url: ${MOMO_PAYMENT_REDIRECT_URL:}
+      payos-client-id: ${PAYOS_PAYMENT_CLIENT_ID:}
+      payos-api-key: ${PAYOS_PAYMENT_API_KEY:}
+      payos-checksum-key: ${PAYOS_PAYMENT_CHECKSUM_KEY:}
+      payos-base-url: ${PAYOS_PAYMENT_BASE_URL:https://api-merchant.payos.vn}
+      payos-webhook-url: ${PAYOS_PAYMENT_WEBHOOK_URL:}
+      payos-return-url: ${PAYOS_PAYMENT_RETURN_URL:}
+      payos-cancel-url: ${PAYOS_PAYMENT_CANCEL_URL:}
 
 eureka:
   client:

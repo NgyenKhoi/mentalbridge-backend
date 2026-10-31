@@ -45,6 +45,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/payments",
 			"GET /api/v1/payments/{paymentId}",
 			"POST /internal/v1/payments/momo/ipn",
+			"POST /internal/v1/payments/payos/webhook",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
@@ -142,7 +143,8 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")) {
+				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")
+						|| path.equals("/internal/v1/payments/payos/webhook")) {
 					assertThat(operation.getSecurity()).isEmpty();
 				}
 				else if (path.equals("/internal/v1/ai-companion/voice-entitlement-authorizations")) {
@@ -160,6 +162,64 @@ class ConsultationOpenApiContractTests {
 			});
 		});
 		assertThat(operations).isEqualTo(OPERATIONS);
+	}
+
+	@Test
+	void payosQrContractPreservesLedgerAndLegacyNullableFields() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var payment = schemas.path("PlanPayment");
+		var properties = payment.path("properties");
+		assertThat(properties.path("status").path("enum").toString())
+				.isEqualTo("[\"PENDING\",\"SUCCEEDED\",\"FAILED\",\"CHARGEBACK\"]");
+		assertThat(properties.path("provider").path("enum").toString()).isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+		assertThat(schemas.path("ServicePlanCatalogue").path("properties").path("paymentProvider").path("enum"))
+				.isEqualTo(properties.path("provider").path("enum"));
+		assertThat(schemas.path("AdminPayment").path("properties").path("provider").path("enum"))
+				.isEqualTo(properties.path("provider").path("enum"));
+		assertThat(properties.path("terminalReason").path("enum").toString())
+				.isEqualTo("[\"EXPIRED\",\"CANCELLED\",\"PROVIDER_FAILED\",null]");
+		for (var field : Set.of("qrCode", "bin", "accountNumber", "accountName", "description", "amount",
+				"expiredAt", "terminalReason", "checkoutUrl", "qrCodeUrl")) {
+			assertThat(properties.has(field)).as(field).isTrue();
+			assertThat(properties.path(field).path("type").toString()).as(field).contains("\"null\"");
+			assertThat(payment.path("required").toString()).as(field).doesNotContain("\"" + field + "\"");
+		}
+		assertThat(properties.path("amount").path("minimum").asInt()).isEqualTo(1);
+		assertThat(properties.path("expiredAt").path("format").asText()).isEqualTo("date-time");
+		assertThat(properties.path("checkoutUrl").path("pattern").asText()).isEqualTo("^https://");
+		var confirmed = payment.path("examples").get(0);
+		assertThat(confirmed.path("amount")).isEqualTo(confirmed.path("amountVnd"));
+		assertThat(confirmed.path("expiredAt")).isEqualTo(confirmed.path("expiresAt"));
+		assertThat(confirmed.path("qrCode").asText()).isNotBlank().doesNotStartWith("http");
+		assertThat(schemas.path("SpecialistPayout").path("properties").path("provider").path("enum").toString())
+				.doesNotContain("PAYOS");
+	}
+
+	@Test
+	void payosWebhookPreservesSignedFieldsAndPublicSafeAcknowledgement() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var path = api.path("paths").path("/internal/v1/payments/payos/webhook");
+		assertThat(path.path("x-mentalbridge-status").asText()).isEqualTo("implemented");
+		var operation = path.path("post");
+		assertThat(operation.path("security").isArray()).isTrue();
+		assertThat(operation.path("security").isEmpty()).isTrue();
+		var codes = new HashSet<String>();
+		operation.path("responses").fieldNames().forEachRemaining(codes::add);
+		assertThat(codes).containsExactlyInAnyOrder("204", "400", "401", "503");
+		assertThat(operation.path("description").asText()).contains("VERIFIED_UNMATCHED", "unexpired", "unique reference");
+		var webhook = api.path("components").path("schemas").path("PayosPaymentWebhook");
+		assertThat(webhook.path("required").toString()).isEqualTo("[\"code\",\"desc\",\"success\",\"data\",\"signature\"]");
+		assertThat(webhook.path("additionalProperties").asBoolean()).isTrue();
+		var data = webhook.path("properties").path("data");
+		assertThat(data.path("additionalProperties").asBoolean()).isTrue();
+		assertThat(data.path("required").toString())
+				.isEqualTo("[\"orderCode\",\"amount\",\"description\",\"accountNumber\",\"reference\",\"transactionDateTime\",\"currency\",\"paymentLinkId\",\"code\",\"desc\"]");
+		assertThat(data.path("properties").path("orderCode").path("maximum").asLong()).isEqualTo(9007199254740991L);
+		assertThat(data.path("properties").has("transactionDateTime")).isTrue();
+		assertThat(data.path("properties").has("counterAccountNumber")).isTrue();
 	}
 
 	@Test

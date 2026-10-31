@@ -38,6 +38,7 @@ public class AdminCommercialReconciliationController {
 	@Transactional(readOnly = true)
 	public AdminCommercialDiscrepancyResponse discrepancies() {
 		var webhooks = jdbc.sql("""
+				select * from (
 				select p1.id, p1.order_id, 'MOMO' as provider, p1.trans_id, p1.processing_status, p1.failure_code, p1.received_at,
 				 case when p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id) then 'DUPLICATE_TRANS_ID'
 				      when p1.failure_code = 'PAYMENT_ALREADY_FINAL' or exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code) then 'DUPLICATE_DELIVERY'
@@ -50,12 +51,22 @@ public class AdminCommercialReconciliationController {
 				   or (p1.failure_code in ('PAYMENT_ALREADY_FINAL', 'MOMO_PAYMENT_FAILED', 'PAYMENT_EXPIRED'))
 				   or (p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id))
 				   or (exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code))
-				order by p1.received_at desc, p1.id desc limit 50
+				union all
+				select p1.id, p1.order_code::text as order_id, 'PAYOS' as provider, null::bigint as trans_id,
+				 p1.processing_status, p1.failure_code, p1.received_at,
+				 case when p1.failure_code = 'REFERENCE_CONFLICT' then 'DUPLICATE_TRANS_ID'
+				      when p1.processing_status = 'RECEIVED' then 'PENDING_PROCESSING'
+				      when p1.processing_status = 'VERIFIED_UNMATCHED' then 'VERIFIED_UNMATCHED'
+				      when p1.processing_status = 'PROCESSING_FAILED' then 'PROCESSING_FAILED'
+				      else 'DISCREPANCY' end as discrepancy_type
+				from payos_payment_webhook p1
+				where p1.processing_status in ('RECEIVED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED')
+				) receipts order by received_at desc, id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.WebhookDiscrepancy(
 						row.getObject("id", UUID.class),
 						row.getString("order_id"),
 						row.getString("provider"),
-						row.getLong("trans_id"),
+						row.getObject("trans_id", Long.class),
 						row.getString("discrepancy_type"),
 						row.getString("processing_status"),
 						row.getString("failure_code"),
@@ -119,11 +130,13 @@ public class AdminCommercialReconciliationController {
 				.list();
 
 		int totalWebhooks = jdbc.sql("""
-				select count(*) from momo_payment_ipn p1
+				select (select count(*) from momo_payment_ipn p1
 				where (p1.processing_status in ('RECEIVED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED'))
 				   or (p1.failure_code in ('PAYMENT_ALREADY_FINAL', 'MOMO_PAYMENT_FAILED', 'PAYMENT_EXPIRED'))
 				   or (p1.trans_id > 0 and exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.trans_id = p1.trans_id and p2.order_id <> p1.order_id))
-				   or (exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code))
+				   or (exists (select 1 from momo_payment_ipn p2 where p2.id <> p1.id and p2.order_id = p1.order_id and p2.request_id = p1.request_id and p2.result_code = p1.result_code)))
+				 + (select count(*) from payos_payment_webhook
+				    where processing_status in ('RECEIVED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED'))
 				""").query(Integer.class).single();
 
 		int totalPayouts = jdbc.sql("""
