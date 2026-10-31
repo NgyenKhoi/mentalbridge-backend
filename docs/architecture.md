@@ -56,15 +56,17 @@ PUSH provider/device delivery remain downstream.
 
 The core deployable business services are fixed as Spring Boot `identity-service`, `care-service`, `consultation-service`, and `community-service`, plus NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack. ADR 0027 adds Community without granting it access to Care or Journal/AI data. ADR 0011 defers Python `phobert-worker` as an optional future benchmark baseline; it is not a current runtime or release dependency. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
-ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
+ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, provider payments/verified receipts, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations and provider payout reconciliation. [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md) makes PayOS collect active on staging only and retains dormant MoMo. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
 ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. ADR 0013 freezes immutable SupportPlan template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
 ADR 0017, as prospectively amended by ADR 0022, defines scope v2 across these owners: canonical packages are `FREE`,
 `PLUS`, and `PREMIUM`; every package receives a one-time Support Guide while
 only paid packages receive the durable Care-owned SupportPlan; new
-consultations use in-app chat/video only; and real payment/payout is VND through
-MoMo after its price, allocation, and credential gates pass.
+consultations use in-app chat/video only; and real payment/payout uses VND with
+price, allocation and credential gates. ADR 0047 permits the unchanged
+5,000/10,000 VND test catalogue through PayOS collect on staging only; production
+and real payout remain separately gated and fixture earnings non-redeemable.
 
 The Support Guide is a persisted immutable historical snapshot for one
 screening context, not ephemeral data and not a lifecycle aggregate. New

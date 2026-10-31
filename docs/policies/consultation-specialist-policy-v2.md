@@ -334,6 +334,13 @@ Changing period quantities from historical `1/3` to target `4/10` changes
 commercial capacity and liability but does not change the per-credit earning
 formula.
 
-Real payment and payout are VND + MoMo only and remain disabled until approved
-plan prices, `creditAllocation`, provider contracts, reconciliation rules, and
-credentials are configured and verified.
+Real payment and payout use VND and require approved plan prices,
+`creditAllocation`, provider contracts, reconciliation rules and credentials.
+[ADR 0047](../adr/0047-payos-active-gateway-momo-dormant.md) prospectively permits
+PayOS pay-in on staging only using the unchanged 5,000/10,000 VND test catalogue
+and full-price/zero-offset upgrade policy. MoMo remains dormant. Production and
+real payout remain separately blocked; synthetic fixture earnings stay
+non-redeemable. Settlement requires a fully matched verified webhook or
+authenticated signed-response-verified PayOS reconciliation through the same
+atomic settlement path. Purchase/upgrade, no refunds, immutable history and
+per-credit earning semantics remain unchanged.

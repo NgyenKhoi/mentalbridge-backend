@@ -57,3 +57,7 @@ databaseChangeLog:
       file: db/changelog/changes/027-immediate-appointment-booking.sql
   - include:
       file: db/changelog/changes/028-consultation-admin-audit-outbox.sql
+  - include:
+      file: db/changelog/changes/20261030102032-payos-payin.sql
+  - include:
+      file: db/changelog/changes/20261030110000-subscription-upgrade-credit-retry.sql

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.19.0
+  version: 1.20.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
@@ -659,7 +659,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: listActiveServicePlanVersions
-      description: Returns the authoritative active VND catalogue. Price, credits, concurrent-reservation capacity, credit allocation, AI quota, SupportPlan entitlement, effective date, and allowed upgrades are immutable version facts; clients must not derive them from plan names. MoMo checkout remains gated independently.
+      description: Returns the authoritative active VND catalogue and configured active collect provider. Price, credits, concurrent-reservation capacity, credit allocation, AI quota, SupportPlan entitlement, effective date, and allowed upgrades are immutable version facts; clients must not derive them from plan names. Checkout readiness is gated independently. PayOS real money is restricted to the approved staging deployment and test catalogue.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -673,7 +673,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       operationId: createPlanCheckout
-      description: Creates one idempotent MoMo purchase for FREE to PLUS/PREMIUM or upgrade for PLUS to PREMIUM. The server resolves the exact active version and amount. There is no downgrade or user-refund operation.
+      description: Creates one idempotent purchase for FREE to PLUS/PREMIUM or upgrade for PLUS to PREMIUM using the configured collect provider. The server resolves the exact active version and amount. Confirmed PAYOS and FAKE checkout returns in-app QR transfer details; an uncertain create remains PENDING with nullable QR details and replay never creates a second charge. checkoutUrl is an optional HTTPS fallback only. There is no downgrade or user-refund operation.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -684,7 +684,7 @@ paths:
             schema: { $ref: '#/components/schemas/CreatePlanCheckout' }
       responses:
         '201':
-          description: Pending payment and provider-controlled HTTPS checkout destinations
+          description: Pending payment with confirmed in-app QR details or nullable details while provider creation is unconfirmed
           headers:
             Location:
               schema: { type: string }
@@ -715,7 +715,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getOwnPlanPayment
-      description: Returns one authenticated-owner payment attempt and its stable current state.
+      description: Returns one authenticated-owner payment attempt and its stable current state, with bounded authenticated PayOS status reconciliation for pending attempts. A return or cancel URL is never settlement evidence. A verified exact PAID query and webhook share the same atomic settlement path; terminal outcomes are never reopened.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: paymentId
@@ -747,6 +747,34 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /internal/v1/payments/payos/webhook:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: receivePayosPlanPaymentWebhook
+      description: Verifies the original complete payload through the official PayOS SDK before business parsing. Settlement additionally requires successful envelope and data codes, exact PAYOS provider, orderCode, paymentLinkId, amount and unique reference on a pending unexpired payment. An authenticated exact event or query may bind a previously unknown paymentLinkId after uncertain creation; a known link must match. Exact redeliveries are idempotent. Signed unmatched, underpaid, reused-reference, terminal or unknown confirmation samples are acknowledged as VERIFIED_UNMATCHED without activation. Raw payloads, signatures and bank account identifiers are not returned or retained as receipt evidence.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayosPaymentWebhook' }
+      responses:
+        '204': { description: 'Verified callback acknowledged, including duplicate, unmatched and confirm-webhook sample events' }
+        '400':
+          description: Malformed payload (PAYOS_WEBHOOK_INVALID), with safe problem details and no financial mutation.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Invalid signature (PAYOS_SIGNATURE_INVALID), with no signature, raw payload or secret in the response.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503':
+          description: Verification credentials unavailable (PAYOS_WEBHOOK_UNAVAILABLE); no unverified event is accepted.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /internal/v1/entitlements/current:
     x-mentalbridge-status: implemented
     get:
@@ -2362,7 +2390,7 @@ components:
           maxItems: 3
           items: { $ref: '#/components/schemas/ServicePlanVersion' }
         checkoutEnabled: { type: boolean }
-        paymentProvider: { type: string, const: MOMO }
+        paymentProvider: { type: string, enum: [FAKE, MOMO, PAYOS], description: Configured collect adapter; checkoutEnabled independently reports readiness. FAKE is simulated and never requests a bank transfer. }
         generatedAt: { type: string, format: date-time }
     ServicePlanVersion:
       type: object
@@ -2394,7 +2422,7 @@ components:
     CommercialPricingPolicy:
       type: string
       enum: [upgrade-offset-v1, sandbox-full-price-v1]
-      description: Additive owner policy provenance. sandbox-full-price-v1 is synthetic/test pricing only, charging the full target price without an offset; it does not enable production payment or payout. Historical responses may omit this field and retain upgrade-offset-v1 behavior.
+      description: Additive owner policy provenance. sandbox-full-price-v1 uses test prices and charges the full target price without an offset; ADR 0047 permits the unchanged 5000/10000 VND catalogue through PayOS on staging only, with synthetic non-redeemable earnings. It does not enable production payment or payout. Historical responses may omit this field and retain upgrade-offset-v1 behavior.
     CreatePlanCheckout:
       type: object
       additionalProperties: false
@@ -2404,7 +2432,8 @@ components:
     PlanPayment:
       type: object
       additionalProperties: false
-      required: [paymentId, subscriptionId, planVersionId, planCode, planVersion, purpose, provider, status, amountVnd, currency, checkoutUrl, qrCodeUrl, expiresAt, createdAt, paidAt, failedAt]
+      description: Authoritative payment state. Fresh confirmed PAYOS and FAKE checkout carries all QR transfer fields; they may be absent or null for legacy, non-QR or unconfirmed attempts. amount equals amountVnd and expiredAt equals expiresAt as an RFC3339 instant. Hosted URLs are optional fallbacks and are not required for an in-app QR flow.
+      required: [paymentId, subscriptionId, planVersionId, planCode, planVersion, purpose, provider, status, amountVnd, currency, expiresAt, createdAt, paidAt, failedAt]
       properties:
         paymentId: { type: string, format: uuid }
         subscriptionId: { type: string, format: uuid }
@@ -2413,20 +2442,57 @@ components:
         planVersion: { type: string, minLength: 1, maxLength: 64 }
         pricingPolicyVersion: { $ref: '#/components/schemas/CommercialPricingPolicy' }
         purpose: { type: string, enum: [PURCHASE, UPGRADE] }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
+        terminalReason:
+          type: [string, 'null']
+          enum: [EXPIRED, CANCELLED, PROVIDER_FAILED, null]
+          description: Additive reason for a FAILED ledger state, persisted from server expiry or a verified provider result. Legacy failed rows may be null or omit it. PENDING, SUCCEEDED and CHARGEBACK have no terminalReason. Never inferred from return or cancel URLs.
         amountVnd: { type: integer, format: int64, minimum: 1 }
         currency: { type: string, const: VND }
         checkoutUrl:
           type: [string, 'null']
           format: uri
           pattern: '^https://'
-          description: Null while provider checkout creation is unconfirmed. The canonical pending payment remains auditable; do not redirect or automatically resend a charge. Verified IPN remains authoritative even when checkout creation times out.
+          description: Optional provider-controlled HTTPS fallback. PAYOS URLs must use the approved PayOS checkout host and MoMo URLs the configured MoMo host. Null or absent when no hosted URL exists or provider creation is unconfirmed; never automatically resend a charge. Verified webhook or fully matched authenticated reconciliation remains authoritative when creation times out.
         qrCodeUrl: { type: [string, 'null'], format: uri, pattern: '^https://' }
+        qrCode: { type: [string, 'null'], minLength: 1, description: VietQR payload for in-app rendering, not a URL. FAKE uses a deterministic simulated payload. }
+        bin: { type: [string, 'null'], minLength: 1, description: Transfer bank BIN returned by the collect adapter. }
+        accountNumber: { type: [string, 'null'], minLength: 1 }
+        accountName: { type: [string, 'null'], minLength: 1 }
+        description: { type: [string, 'null'], minLength: 1, maxLength: 9, description: Exact bank transfer description. }
+        amount: { type: [integer, 'null'], format: int64, minimum: 1, description: Integer VND transfer amount; when present equals amountVnd. }
+        expiredAt: { type: [string, 'null'], format: date-time, description: Chosen server expiry as RFC3339; when present equals expiresAt. }
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
         paidAt: { type: [string, 'null'], format: date-time }
         failedAt: { type: [string, 'null'], format: date-time }
+      examples:
+        - paymentId: 00000000-0000-4000-8000-000000000786
+          subscriptionId: 00000000-0000-4000-8000-000000000787
+          planVersionId: 00000000-0000-4000-8000-000000000788
+          planCode: PLUS
+          planVersion: sandbox-plus-v1
+          pricingPolicyVersion: sandbox-full-price-v1
+          purpose: PURCHASE
+          provider: PAYOS
+          status: PENDING
+          terminalReason: null
+          amountVnd: 5000
+          currency: VND
+          checkoutUrl: null
+          qrCodeUrl: null
+          qrCode: '00020101021238540010A00000072701240006970422011000000007860208QRIBFTTA5303704540450005802VN62120808MB0007866304A1E7'
+          bin: '970422'
+          accountNumber: '0000000786'
+          accountName: MENTALBRIDGE TEST
+          description: MB000786
+          amount: 5000
+          expiredAt: '2026-10-30T10:15:00Z'
+          expiresAt: '2026-10-30T10:15:00Z'
+          createdAt: '2026-10-30T10:00:00Z'
+          paidAt: null
+          failedAt: null
     PlanPaymentHistory:
       type: object
       additionalProperties: false
@@ -2438,6 +2504,53 @@ components:
           items: { $ref: '#/components/schemas/PlanPayment' }
         count: { type: integer, minimum: 0, maximum: 50 }
         generatedAt: { type: string, format: date-time }
+    PayosPaymentWebhook:
+      type: object
+      additionalProperties: true
+      description: Complete PayOS webhook envelope. Preserve unknown envelope and signed data fields unchanged for official SDK verification; do not coerce or discard fields before verification. Invalid payloads or signatures cannot mutate financial state.
+      required: [code, desc, success, data, signature]
+      properties:
+        code: { type: string, minLength: 1, description: Successful envelope code is 00. }
+        desc: { type: string }
+        success: { type: boolean }
+        signature: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+        data:
+          type: object
+          additionalProperties: true
+          required: [orderCode, amount, description, accountNumber, reference, transactionDateTime, currency, paymentLinkId, code, desc]
+          properties:
+            orderCode: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+            amount: { type: integer, format: int64, minimum: 0 }
+            paymentLinkId: { type: string, minLength: 1 }
+            reference: { type: string, minLength: 1 }
+            code: { type: string, description: Successful signed transaction code is 00. }
+            desc: { type: string }
+            description: { type: string }
+            accountNumber: { type: string }
+            transactionDateTime: { type: string, description: Provider transaction timestamp preserved verbatim for signature verification. }
+            currency: { type: string }
+            counterAccountBankId: { type: [string, 'null'] }
+            counterAccountBankName: { type: [string, 'null'] }
+            counterAccountName: { type: [string, 'null'] }
+            counterAccountNumber: { type: [string, 'null'] }
+            virtualAccountName: { type: [string, 'null'] }
+            virtualAccountNumber: { type: [string, 'null'] }
+      examples:
+        - code: '00'
+          desc: success
+          success: true
+          data:
+            orderCode: 786
+            amount: 5000
+            paymentLinkId: fixture-link-786
+            reference: fixture-reference-786
+            code: '00'
+            desc: success
+            description: MB000786
+            accountNumber: '0000000786'
+            transactionDateTime: '2026-10-30 17:01:00'
+            currency: VND
+          signature: '0000000000000000000000000000000000000000000000000000000000000000'
     MomoPaymentIpn:
       type: object
       required: [partnerCode, orderId, requestId, amount, orderInfo, orderType, transId, resultCode, message, payType, responseTime, extraData, signature]
@@ -3165,7 +3278,7 @@ components:
         planCode: { type: string, enum: [PLUS, PREMIUM] }
         pricingPolicyVersion: { $ref: '#/components/schemas/CommercialPricingPolicy' }
         purpose: { type: string, enum: [PURCHASE, UPGRADE] }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
         amountVnd: { type: integer, format: int64, minimum: 1 }
         currency: { type: string, const: VND }
@@ -3300,7 +3413,7 @@ components:
             properties:
               id: { type: string, format: uuid }
               orderId: { type: string }
-              provider: { type: string }
+              provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
               transId: { type: [integer, 'null'], format: int64 }
               discrepancyType: { type: string }
               status: { type: string }

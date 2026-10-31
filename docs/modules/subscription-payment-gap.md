@@ -30,9 +30,11 @@ approved `sandbox-full-price-v1`: upgrade charges the full 10,000 VND with zero
 offset while preserving the nominal held-credit value as audit evidence.
 Allocations/earnings are synthetic values, never cash redeemable from the test
 purchase. See the [ADR 0032 amendment](../adr/0032-payment-and-specialist-payout-baseline.md).
-Production MoMo remains disabled until
-the independent configuration, credential, callback, and operational approval
-gates pass. Tests never call the provider or use a second production method.
+[ADR 0047](../adr/0047-payos-active-gateway-momo-dormant.md) expressly permits
+this unchanged test catalogue and zero-offset policy through real PayOS collect
+on staging only (`https://staging.mentalbridge.online`). Production remains
+disabled, MoMo stays dormant, and synthetic allocations/earnings cannot enter
+real provider payout. Local/CI uses deterministic adapters without provider calls.
 The credit quantities are the approved `consultation-credit-v2` runtime target.
 The MB-377 `consultation-credit-v1` ledger remains `FREE=0`, `PLUS=1`,
 `PREMIUM=3`; existing periods and ledger facts keep that exact provenance and
@@ -57,15 +59,40 @@ token, rate, abuse, cost, and fair-use limits still apply.
 1. The server, never the client, resolves plan price/currency from a published plan version.
 2. A new `PLUS`/`PREMIUM` purchase or `PLUS`-to-`PREMIUM` upgrade creates
    idempotent pending subscription/payment state.
-3. Only a verified, deduplicated provider webhook may activate a period and grant credits.
-4. The selected MoMo One-Time Payment contract does not create a provider-owned recurring subscription. MentalBridge owns paid periods; each purchase or upgrade creates a separate MoMo checkout/payment row and grants credits exactly once after verified success. Available credits expire at period end and do not roll over.
+3. Only a verified, deduplicated provider webhook or fully matched authenticated, signed-response-verified PayOS status reconciliation may activate a period and grant credits through the same locked atomic settlement path.
+4. PayOS collect and the retained MoMo One-Time Payment contract do not create a provider-owned recurring subscription. MentalBridge owns paid periods; each purchase or upgrade creates a separate provider checkout/payment row and grants credits exactly once after verified success. Available credits expire at period end and do not roll over.
 5. The v2 user-facing commercial API supports only new purchase and upgrade.
    It exposes no downgrade or user-initiated refund operation. Provider
    chargebacks remain immutable external reconciliation facts.
 
 ## Payment webhook/IPN contracts
 
-MoMo is the only production payment provider. Local/CI may use a deterministic fake that implements the same MoMo-shaped contract; it is not a second payment method. The versioned IPN DTO is never deserialized directly into `payment_transaction`. The receiver validates the complete request in memory, verifies its signature, creates `momo_payment_ipn`, and only then locks and updates the matched payment. Raw payloads, signatures, decoded `orderInfo`/`extraData`, and wallet identifiers are discarded after hashing/verification.
+PayOS is the active staging-only collect provider under ADR 0047; MoMo remains dormant and its IPN/storage contracts are retained. Local/CI uses deterministic FAKE with simulated in-app QR details and no real bank transfer. Provider payloads are never deserialized directly into `payment_transaction`. The receiver verifies the complete original request in memory before business coercion, records minimized verified receipt evidence and then locks/updates the matched payment. Raw payloads, signatures, decoded `orderInfo`/`extraData` and account identifiers are discarded after hashing/verification.
+
+### PayOS webhook and authenticated reconciliation
+
+Use official `vn.payos:payos-java:2.0.1` for create/get/cancel and webhook
+verify/confirm. Confirmed PAYOS/FAKE checkout returns VietQR payload, bank BIN,
+account number/name, amount/description and chosen expiry for in-app rendering;
+a hosted HTTPS link is an optional fallback. The chosen expiry survives a null
+provider expiry. Replay an uncertain create as the original pending command,
+without automatically sending a second create.
+
+The public `/internal/v1/payments/payos/webhook` preserves complete signed data
+for SDK verification, then requires successful envelope/data codes, exact
+provider/order/link/amount and a unique usable transaction reference on a
+pending unexpired payment. A previously unknown link may bind from the first
+authenticated exact event/query; a known link must match. Exact redelivery is
+idempotent. Signed unknown confirmation samples, mismatches, reused references
+and terminal late success remain `VERIFIED_UNMATCHED` for admin handling.
+
+Bounded pending reads/expiry work may reconcile authenticated signed-response
+SDK queries, with exact successful transaction identity/reference and amount
+checks. UNDERPAID, pending states and outages never activate. Expiry cancels
+the provider link while preserving local finality and upgrade-held credit
+restoration. No database transaction spans provider calls. Return/cancel URLs
+are not payment evidence. Nullable `terminalReason` records EXPIRED, CANCELLED
+or PROVIDER_FAILED on FAILED only; legacy null remains supported.
 
 ### MoMo One-Time Payment v2 IPN
 
@@ -143,15 +170,16 @@ retain their exact prior provenance, without reprovisioning.
 - A logical payout fixes its destination, currency, amount, and earning items. Each provider call is a numbered attempt: a definite `FAILED` attempt may be retried with a new provider idempotency key, while `UNKNOWN` is queried and blocks another transfer attempt. The payout becomes `SUCCEEDED` only after verified provider confirmation/status reconciliation.
 - Real MoMo payment and payout remain disabled until separate production
   approval and credentials are configured. Runtime FX conversion is prohibited.
-- Checkout uses One-Time E-Wallet `requestType=captureWallet`. Local/CI uses the
-  deterministic MoMo-shaped fake and never depends on MoMo availability.
+- Dormant MoMo checkout uses One-Time E-Wallet `requestType=captureWallet`.
+  PayOS pay-in uses in-app VietQR. Local/CI uses deterministic FAKE and never
+  depends on either provider's availability.
 
 ## Required contracts and verification
 
 - OpenAPI: catalogue, purchase checkout/status/history, upgrade
   quote/checkout/status, credit balance/history, booking, and earnings/payout
   views; no downgrade or user-refund endpoint.
-- Provider webhook schema: the complete MoMo required-field contract above, full signature verification, partner/order/request/amount checks, replay, status lookup, chargeback, and safe failure handling.
+- Provider webhook schemas: the complete retained MoMo contract and complete PayOS signed envelope/data, full SDK signature verification and provider-specific identity/amount checks, duplicate/late/terminal receipts, authenticated status reconciliation, chargeback and safe failure handling.
 - Kafka facts, only where ADR 0016 criteria require them: minimized
   subscription, appointment, and earning status changes through the
   transactional outbox.

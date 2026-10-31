@@ -541,17 +541,29 @@ Append-only timeline of subscription status transitions.
 
 ### `consultation.payment_transaction`
 
-MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may exercise the same MoMo-shaped contract in local/CI; it is not a second production payment method. The MVP creates no refund transaction.
+Provider-snapshotted payment attempt and current externally confirmed outcome.
+PayOS is the active collect adapter on staging only; MoMo data/IPN support stays
+dormant and retains its original provider. `FAKE` exercises simulated QR checkout
+in local/CI. The additive MB-786 migration preserves historical rows and nullable
+legacy terminal reasons; no refund transaction or production enablement is added.
+`payment_order_code_seq` reserves positive numeric checkout order codes through
+9,007,199,254,740,991 without cycling; a reserved code is never regenerated on
+command replay. Exact provider/order identity, PayOS link identity and settled
+PayOS transaction references are unique. A pending provider-create timeout keeps
+nullable QR/link metadata and cannot authorize another charge attempt.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable payment UUID exposed in bounded payment history. |
 | `subscription_id` | Paid subscription receiving an initial purchase or upgrade. |
 | `target_plan_version_id` | Exact immutable plan version whose price and rights were used to create this attempt. |
-| `payment_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` in local/CI; no other production provider is supported. |
-| `momo_order_id` | Merchant-generated MoMo `orderId`, unique per provider and used as the primary IPN correlation key. |
-| `momo_request_id` | Merchant-generated MoMo `requestId`, unique per provider and matched exactly on IPN. |
+| `payment_provider` | Immutable `PAYOS`, `MOMO` or `FAKE` namespace. PAYOS real collection is staging-only under ADR 0047; switching configuration never relabels or resends an existing attempt. |
+| `momo_order_id` | Required merchant-generated MoMo/legacy FAKE `orderId`, unique per provider and the IPN correlation key; null for PAYOS. |
+| `momo_request_id` | Required merchant-generated MoMo/legacy FAKE `requestId`, unique per provider and matched exactly on IPN; null for PAYOS. |
 | `momo_trans_id` | Positive MoMo transaction ID when issued. Zero/unusable values are not copied from a failed IPN; positive values are unique. |
+| `order_code` | Sequence-reserved positive integer within the SDK safe-integer range; required for PAYOS and used by new FAKE QR checkout, nullable on legacy/MOMO rows. Unique within the immutable provider namespace. |
+| `payos_payment_link_id` | Nullable opaque PayOS link identity confirmed by SDK create/query, then matched exactly during settlement. Unique across payments; absent until a provider-create response is confirmed. |
+| `payos_reference` | Nullable exact authenticated successful transaction reference. Unique across payments so a reused reference cannot grant rights twice; other signed occurrences remain reviewable receipts. |
 | `amount_minor` | Exact positive amount requested/confirmed in currency minor units. |
 | `currency` | ISO 4217 currency validated against the plan/upgrade quote. |
 | `status` | `PENDING`, `SUCCEEDED`, `FAILED`, or externally reported `CHARGEBACK`; refund states are unsupported. |
@@ -560,12 +572,21 @@ MoMo-backed payment attempt and current externally confirmed outcome. `FAKE` may
 | `momo_pay_type` | Verified MoMo `payType`, such as QR or app payment. |
 | `idempotency_key` | Subscription-scoped payment retry key preventing duplicate attempts. |
 | `momo_response_time_epoch_ms` | Exact verified MoMo millisecond timestamp retained for signature/reconciliation evidence. |
-| `provider_occurred_at` | UTC instant parsed from verified MoMo `responseTime`; null while checkout is pending. |
+| `provider_occurred_at` | UTC occurrence instant parsed from verified provider evidence; null while checkout is pending or no provider instant was supplied. |
 | `paid_at` | Provider-confirmed UTC success instant; null until successful. |
 | `failed_at` | UTC terminal failure instant; null unless failed. |
 | `expires_at` | UTC deadline after which the pending attempt can no longer activate rights. |
 | `checkout_url` | Nullable safe provider redirect. Null while durable checkout preparation is awaiting an unconfirmed provider response (including timeout); no redirect or automatic charge resend. Verified callback may finalize the payment even when null. Historical URLs are unchanged. Never authorization evidence. |
 | `qr_code_url` | Optional safe MoMo QR URL returned with checkout. |
+| `qr_code` | Nullable provider VietQR payload, or deterministic FAKE payload, rendered inside the application; never treated as a hosted URL. Missing for legacy/non-QR/unconfirmed attempts. |
+| `bank_bin` | Nullable destination bank BIN returned with confirmed QR details. Stored to reproduce transfer instructions, not a user's bank identity. |
+| `bank_account_number` | Nullable merchant collection account returned with confirmed QR details; exposed only with the owner's payment and never copied from a payer's transaction details. |
+| `bank_account_name` | Nullable merchant account-holder display text returned with confirmed QR details; no payer name is retained. |
+| `payment_description` | Nullable provider transfer description of at most nine characters, with no patient content. Persisted with QR details for exact instruction replay. |
+| `terminal_reason` | Nullable server-authoritative `EXPIRED`, `CANCELLED` or `PROVIDER_FAILED` supplementing ledger status FAILED; legacy rows may stay null. Never inferred from browser return/cancel URLs; committed terminal payments never reopen. |
+| `reconciliation_next_at` | Nullable UTC earliest next SDK status query or expiry-cancellation retry, atomically claimed to bound polling. Local expiry commits pending cancellation and its 30-second retry deadline together, so a process stop before or during provider cancellation remains recoverable. Null means no cadence has been scheduled or cancellation completed. Normal queries use a 30-second cadence; failures back off to at most 300 seconds. Provider HTTP runs after the claim commits. |
+| `reconciliation_failures` | Non-negative consecutive provider-query or expiry-cancellation failure counter used for bounded backoff. A local transition to EXPIRED resets the counter before its first cancel attempt, giving cancellation a separate six-attempt budget. Success resets it; six failed cancel attempts require administrator review and stop automatic retries. |
+| `reconciliation_failure_code` | Nullable stable safe query/cancellation code: PAYOS_STATUS_UNAVAILABLE preserves pending uncertainty; PAYOS_CANCEL_PENDING is durable provider-cancellation intent committed atomically with local expiry; PAYOS_CANCEL_UNAVAILABLE retains that intent after a caught provider failure; PAYOS_CANCEL_REQUIRES_REVIEW marks exhaustion of six cancel attempts. The scheduler consumes pending/unavailable intent even after a process restart; successful cancellation clears it and its retry deadline. Query results cannot clear concurrent cancellation intent. No provider response body, account information or credentials is stored. |
 | `created_at` | Immutable UTC attempt creation instant. |
 | `updated_at` | UTC instant of the latest verified payment-state change. |
 | `version` | Optimistic-lock counter preventing conflicting webhook/status application. |
@@ -604,6 +625,41 @@ Verified, deduplicated receipt of the selected MoMo One-Time Payment v2 IPN cont
 | `processed_at` | UTC instant business effects committed; null while unprocessed. |
 | `acknowledged_at` | Best-effort UTC evidence that HTTP 204 was emitted; latency metrics remain authoritative for the 15-second SLA. |
 
+### `consultation.payos_payment_webhook`
+
+Minimal durable evidence of SDK-verified PayOS webhook or authenticated status
+reconciliation. Invalid signatures do not persist attacker-controlled fields.
+The table retains identity, amount, result class and one-way hashes; raw bodies,
+signatures, payer bank accounts/names, descriptions and credentials are discarded.
+Exact redelivery deduplicates, while distinct signed reused-reference/late/
+unmatched events remain separate `VERIFIED_UNMATCHED` receipts for admin review.
+Unknown signed webhook-confirmation samples are acknowledged without activation.
+Receipt references intentionally are not unique; the unique settled reference
+on `payment_transaction` protects financial use. Settlement locks the payment and
+uses the same atomic credit/upgrade path for both receipt sources.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Internal immutable receipt UUID shown only in bounded admin reconciliation. |
+| `payment_id` | Nullable matched Consultation payment foreign key; unknown sample/order evidence has no owning payment. |
+| `contract_version` | Required receipt normalization/SDK verification-policy version retained for historical interpretation. |
+| `source` | Required `WEBHOOK` or `RECONCILIATION` provenance; distinguishes verified push from authenticated SDK query evidence without changing settlement rules. |
+| `deduplication_key` | Required unique SHA-256 of the source and normalized verified event identity, so exact delivery/query replay has no second business effect. |
+| `order_code` | Verified numeric external order identity, matched exactly with the PAYOS payment's reserved order code; unknown identities never activate rights. |
+| `amount_minor` | Required non-negative verified integer VND amount; must equal frozen payment amount before settlement. Signed underpayment remains evidence, not success. |
+| `payment_link_id` | Required verified opaque PayOS link identity; compared exactly to the locally confirmed link. |
+| `reference` | Required verified opaque bank transaction reference; reused references may be retained on multiple unmatched receipts and cannot be settled on another payment. |
+| `code` | Nullable bounded provider result code for safe classification; not a payment authorization by itself. |
+| `success` | Nullable provider envelope success flag; never sufficient to settle without SDK verification and all identity/amount matches. |
+| `payload_sha256` | Required one-way integrity hash of verified provider evidence; cannot reconstruct discarded sensitive payloads. |
+| `signature_key_version` | Required non-secret configuration/verification policy label used to verify the receipt. |
+| `signature_verified_at` | Required UTC instant SDK signature verification or authenticated query verification completed. |
+| `processing_status` | Required `RECEIVED`, `PROCESSED`, `VERIFIED_UNMATCHED` or `PROCESSING_FAILED`; Consultation owns transitions and terminal review classifications. |
+| `failure_code` | Nullable safe stable reason for mismatch/failure, with no raw provider text. |
+| `received_at` | Required immutable UTC receipt ingestion instant. |
+| `processed_at` | Nullable UTC instant processing and any financial effects committed. |
+| `acknowledged_at` | Nullable best-effort UTC webhook HTTP acknowledgement evidence; reconciliation has no inbound webhook acknowledgement. |
+
 ### `consultation.subscription_upgrade`
 
 Immutable calculation snapshot and workflow for the only supported v2
@@ -638,12 +694,17 @@ rows retain their original plan-version provenance.
 
 ### `consultation.subscription_upgrade_credit`
 
-Exact old credits held and valued by one upgrade quote.
+Exact old credits held and valued by each upgrade quote. The `(upgrade_id,
+credit_id)` primary key prevents a duplicate snapshot inside one quote. A credit
+restored after a failed or expired upgrade may appear in a later quote while all
+earlier allocation snapshots remain unchanged for audit. Checkout serialization,
+the unique pending-upgrade index per subscription and the credit's
+`UPGRADE_HELD` state prevent simultaneous pending upgrades from sharing it.
 
 | Field | Purpose |
 | --- | --- |
-| `upgrade_id` | Upgrade whose offset includes the credit. |
-| `credit_id` | Unique credit held by at most one upgrade; reserved/consumed credits cannot appear. |
+| `upgrade_id` | Upgrade whose quote includes the credit; part of the immutable snapshot's composite key. |
+| `credit_id` | Local credit captured once per upgrade quote. Its identifier may recur across historical and later quotes after restoration; only an available credit can be newly held. |
 | `allocated_value_minor` | Allocation snapshot included in the quote, retained for deterministic reconciliation. |
 
 ## Conceptual owner `consultation` (`mentalbridge_consultation.public`)

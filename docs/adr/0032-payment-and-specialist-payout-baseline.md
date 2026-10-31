@@ -3,6 +3,7 @@
 - Decision ID: `MB-PAYMENT-PAYOUT-BASELINE-001`
 - Status: Accepted
 - Date: 2026-10-06
+- Fixture-provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`) explicitly permits unchanged 5,000/10,000 VND test prices through PayOS on staging only; synthetic earnings remain non-redeemable.
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md),
   [ADR 0017](0017-product-scope-v2.md), and
   [ADR 0022](0022-current-product-blueprint-amendments.md)
@@ -76,8 +77,11 @@ introduced.
 New immutable sandbox plan versions replace the old offers. Historical prices,
 periods, financial facts and `upgrade-offset-v1` calculations are not rewritten.
 Mixed historical/sandbox upgrades fail closed. The sandbox catalogue is allowed
-only with FAKE checkout or the explicitly configured MoMo test origin; it must
-not be charged by the production origin. Sandbox earnings cannot enter a real
+only with FAKE checkout or the explicitly configured MoMo test origin, with the
+explicit owner-approved [ADR 0047](0047-payos-active-gateway-momo-dormant.md)
+exception permitting the same 5,000/10,000 VND test catalogue and zero-offset
+upgrade policy through real PayOS collect on staging only. It must not be
+charged by a production deployment. Sandbox earnings cannot enter a real
 provider payout, even if production credentials are subsequently enabled.
 
 This amendment does not enable production payment/payout or change ordinary

@@ -248,9 +248,12 @@ For new target periods governed by `consultation-credit-v2`:
   for `PREMIUM`; both allocate 300,000 VND per consumed credit and therefore
   create a 210,000 VND specialist earning. Planned values are documentation and
   design only; runtime continues to use the explicit 5,000/10,000 VND fixtures.
-- Real payment and payout use MoMo only and remain disabled until exact VND
-  prices, fixed `creditAllocation` values, provider/reconciliation contracts,
-  and credentials are approved.
+- [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md) permits PayOS collect
+  on staging only using the unchanged 5,000/10,000 VND test catalogue and
+  full-price/zero-offset upgrade policy. MoMo remains dormant. Production and
+  real payout require separate approval; fixture earnings stay non-redeemable.
+  Settlement requires fully matched verified webhook or authenticated PayOS
+  reconciliation through the same atomic path.
 - Resources have no package-specific count limit. AI token/request quota,
   capability entitlement, credits, and reservation capacity are the commercial controls.
 
@@ -521,6 +524,8 @@ payment/payout remains disabled until explicit production approval, credentials,
 retention, and operational reconciliation readiness exist. ADR 0032 fixes the
 planned VND design values and the current 0/5,000/10,000 VND integration-test
 catalogue without turning either into permission for real-money production.
+ADR 0047's explicit staging-only PayOS exception permits the unchanged test
+catalogue without production enablement or redeemable fixture earnings.
 
 ## 6. Open product decisions
 
@@ -543,7 +548,7 @@ open where explicitly stated.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
 7. Chat/video duration and the separation of `SESSION_ENDED` from completion are fixed. Video signaling/provider, presence evidence, recording prohibition, reconnect/failure behavior, and exact completion evidence remain open contract work.
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
-9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND `PLUS`/`PREMIUM` prices, fixed `creditAllocation`, chargeback reconciliation, and financial retention. Runtime FX, downgrade, user refund, and credit rollover remain unsupported.
+9. Production provider enablement, credential/key rotation, payout onboarding, chargeback reconciliation and financial retention. ADR 0032 fixes planned VND prices/allocation/settlement hold; ADR 0047 fixes staging-only PayOS pay-in and the unchanged test-catalogue exception. PayOS payout remains MB-787 work after the channel/keys exist. Runtime FX, downgrade, user refund and credit rollover remain unsupported.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
 
 The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md) as amended by [ADR 0022](adr/0022-current-product-blueprint-amendments.md).

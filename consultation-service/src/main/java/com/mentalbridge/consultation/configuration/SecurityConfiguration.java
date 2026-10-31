@@ -62,7 +62,7 @@ public class SecurityConfiguration {
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
-						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn").permitAll()
+						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn", "/internal/v1/payments/payos/webhook").permitAll()
 						.requestMatchers("/internal/v1/video/livekit/webhook").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
@@ -99,7 +99,7 @@ public class SecurityConfiguration {
 						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
 				.addFilterAfter(new AccountStatusEnforcementFilter(accountStatus, securityProblems,
 						"/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**",
-						"/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn",
+						"/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn", "/internal/v1/payments/payos/webhook",
 						"/internal/v1/video/livekit/webhook", "/internal/v1/appointments/*/notification-eligibility"),
 						BearerTokenAuthenticationFilter.class);
 		return http.build();

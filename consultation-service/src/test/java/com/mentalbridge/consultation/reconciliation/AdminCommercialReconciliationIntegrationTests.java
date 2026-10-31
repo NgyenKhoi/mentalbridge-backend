@@ -156,6 +156,57 @@ class AdminCommercialReconciliationIntegrationTests extends ConsultationTestProp
 	}
 
 	@Test
+	void mixedProviderReceiptsKeepTheirProviderAndContributeToTheSameBoundedCount() throws Exception {
+		var before = mvc.perform(get("/api/v1/admin/commercial/discrepancies")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN"))).andExpect(status().isOk()).andReturn();
+		var baseline = json.readTree(before.getResponse().getContentAsByteArray()).get("totalDiscrepancies").asInt();
+		var momoId = UUID.randomUUID();
+		jdbc.sql("""
+				insert into momo_payment_ipn (id,contract_version,deduplication_key,partner_code,order_id,request_id,
+				 amount_minor,currency,order_info_sha256,order_type,trans_id,result_code,result_message,pay_type,
+				 response_time_epoch_ms,extra_data_sha256,provider_occurred_at,payload_sha256,signature_key_version,
+				 signature_verified_at,processing_status,failure_code,received_at)
+				values (:id,'momo-v2',:dedupe,'test-partner',:orderId,:requestId,5000,'VND',:hash,'momo_wallet',
+				 :transId,0,'Success','qr',1,:hash,now(),:hash,'test-v1',now(),'VERIFIED_UNMATCHED','ORDER_NOT_FOUND',now())
+				""").param("id", momoId).param("dedupe", UUID.randomUUID().toString().replace("-", "").repeat(2))
+				.param("orderId", "order-" + momoId).param("requestId", "request-" + momoId)
+				.param("transId", UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE)
+				.param("hash", "a".repeat(64)).update();
+		var unmatched = insertPayosReceipt("WEBHOOK", "VERIFIED_UNMATCHED", "AMOUNT_MISMATCH");
+		var reused = insertPayosReceipt("RECONCILIATION", "VERIFIED_UNMATCHED", "REFERENCE_CONFLICT");
+		var processed = insertPayosReceipt("WEBHOOK", "PROCESSED", null);
+		var result = mvc.perform(get("/api/v1/admin/commercial/discrepancies")
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN"))).andExpect(status().isOk()).andReturn();
+		var body = json.readTree(result.getResponse().getContentAsByteArray());
+		assertThat(body.get("totalDiscrepancies").asInt()).isEqualTo(baseline + 3);
+		var receipts = new java.util.HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+		body.get("webhooks").forEach(receipt -> receipts.put(receipt.get("id").asText(), receipt));
+		assertThat(receipts.get(momoId.toString()).get("provider").asText()).isEqualTo("MOMO");
+		assertThat(receipts.get(unmatched.toString()).get("provider").asText()).isEqualTo("PAYOS");
+		assertThat(receipts.get(unmatched.toString()).get("orderId").asText()).isEqualTo("123");
+		assertThat(receipts.get(unmatched.toString()).get("transId").isNull()).isTrue();
+		assertThat(receipts.get(unmatched.toString()).get("discrepancyType").asText()).isEqualTo("VERIFIED_UNMATCHED");
+		assertThat(receipts.get(reused.toString()).get("discrepancyType").asText()).isEqualTo("DUPLICATE_TRANS_ID");
+		assertThat(receipts).doesNotContainKey(processed.toString());
+		assertThat(result.getResponse().getContentAsString()).doesNotContain("private-reference-", "payload_sha256", "payment_link_id");
+	}
+
+	private UUID insertPayosReceipt(String source, String status, String failureCode) {
+		var id = UUID.randomUUID();
+		jdbc.sql("""
+				insert into payos_payment_webhook (id,contract_version,source,deduplication_key,order_code,amount_minor,
+				 payment_link_id,reference,payload_sha256,signature_key_version,signature_verified_at,
+				 processing_status,failure_code,received_at)
+				values (:id,'payos-v2',:source,:dedupe,123,5000,'sample-link',:reference,:hash,'test-v1',now(),
+				 :status,:failure,now())
+				""").param("id", id).param("source", source)
+				.param("dedupe", UUID.randomUUID().toString().replace("-", "").repeat(2))
+				.param("reference", "private-reference-" + id).param("hash", "b".repeat(64))
+				.param("status", status).param("failure", failureCode).update();
+		return id;
+	}
+
+	@Test
 	void adminCanTraceProvenanceAcrossPaymentSubscription() throws Exception {
 		var userId = UUID.randomUUID();
 		var checkout = billing.checkout(userId, PLUS, "trace-test-" + UUID.randomUUID());

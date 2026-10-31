@@ -65,7 +65,7 @@ class ConsultationLiquibaseMigrationTests extends ConsultationTestProperties {
 				"service_credit_ledger", "appointment", "appointment_status_history", "appointment_chat_evidence",
 				"session_summary", "agreed_next_step", "agreed_next_step_state", "session_summary_reuse_consent",
 				"appointment_dispute", "subscription_plan", "subscription_plan_version", "user_subscription",
-				"payment_transaction", "momo_payment_ipn", "subscription_upgrade", "subscription_upgrade_credit");
+				"payment_transaction", "momo_payment_ipn", "payos_payment_webhook", "subscription_upgrade", "subscription_upgrade_credit");
 	}
 
 	@Test
