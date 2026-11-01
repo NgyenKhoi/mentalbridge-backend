@@ -134,6 +134,13 @@ clock rollback, stale decisions and missing authority continue to fail closed.
 closed rejection/catch-up reason, bounded elapsed/age and optional HTTP status;
 no response body, headers, error text, owner ID or token is recorded.
 
+The Voice Bedrock decoder accepts a single whole-response JSON code fence as
+an encoding wrapper. The same exact object schema, Vietnamese language,
+authority and message-safety validators still run; surrounding prose, trailing
+objects, incomplete fences and unsafe fields remain rejected. Pilot prompts
+explicitly request JSON without fences. No provider retry or Text change is
+introduced by this Voice-only decoding rule.
+
 Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
 owns the three closed, content-free MongoDB collections described in the
 [database documentation](../docs/database/mongodb.md#ai-companion-voice-admission-and-usage-collections).

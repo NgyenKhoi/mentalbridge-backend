@@ -196,6 +196,71 @@ void test("voice reuses the Companion Bedrock schema/prompt/validator without to
   }
 });
 
+void test("voice decodes one fenced Bedrock JSON object without relaxing schema or message safety", async () => {
+  const original = globalThis.fetch;
+  const valid = JSON.stringify({
+    message: "Xin chào, mình đang lắng nghe bạn.",
+    language: "vi",
+    authority: "SUPPORT_ONLY",
+    clinicalAssessment: "NONE",
+    safetyDecision: "NONE",
+    eligibilityDecision: "NONE",
+    businessAction: "NONE",
+    thirdPartyAction: "NONE",
+  });
+  try {
+    for (const [text, accepted] of [
+      [valid, true],
+      ["```json\n" + valid + "\n```", true],
+      ["```\r\n" + valid + "\r\n```", true],
+      ["Prose\n```json\n" + valid + "\n```", false],
+      ["```json\n" + valid + "\n```\nProse", false],
+      ["```json\n" + valid, false],
+      ["```json\n" + valid + "{}\n```", false],
+      ["```json\n" + valid.replace("SUPPORT_ONLY", "NONE") + "\n```", false],
+      [
+        "```json\n" +
+          valid.replace('"language":"vi"', '"language":"en"') +
+          "\n```",
+        false,
+      ],
+      [
+        "```json\n" +
+          valid.replace(
+            "Xin chào, mình đang lắng nghe bạn.",
+            "Tôi chẩn đoán bạn đang mắc trầm cảm",
+          ) +
+          "\n```",
+        false,
+      ],
+    ] as const) {
+      let calls = 0;
+      globalThis.fetch = () => {
+        calls++;
+        return Promise.resolve(
+          Response.json({
+            output: { message: { content: [{ text }] } },
+            usage: { inputTokens: 120, outputTokens: 30 },
+          }),
+        );
+      };
+      const result = new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "synthetic",
+      }).reply("Xin chào", { kinds: [], prompt: "" }, route, { voice: true });
+      if (accepted)
+        assert.equal(
+          (await result).message,
+          "Xin chào, mình đang lắng nghe bạn.",
+        );
+      else await assert.rejects(result);
+      assert.equal(calls, 1);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 void test("worker cancellation reaches the existing Bedrock fetch and blocks late publication", async () => {
   const original = globalThis.fetch;
   let calls = 0;

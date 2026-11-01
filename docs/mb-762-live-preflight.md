@@ -40,6 +40,15 @@ current consents, provider pins, content-free diagnostics and teardown. No PR
 merge or staging deployment is authorized. The following earlier status is
 retained as historical evidence.
 
+The subsequent authorized synthetic Web/LiveKit diagnostic reached the real
+Nova-3 final, Journal turn and Sonnet response (471 input/143 output tokens),
+then failed output parsing before TTS. A separate bounded structural diagnostic
+proved HTTP 200 with a valid Converse envelope and a complete JSON code fence,
+not truncation (490 input/123 output tokens); no content was persisted. The
+Voice decoder now unwraps one whole-response JSON fence and retains the same
+strict object/safety checks. Additional prose, extra objects and malformed or
+unsafe output still fail. This is not a provider fallback or automatic retry.
+
 ## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)

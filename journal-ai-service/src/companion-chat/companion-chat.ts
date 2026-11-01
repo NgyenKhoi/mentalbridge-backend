@@ -1298,7 +1298,7 @@ export class RoutedChatProvider implements ChatProvider {
         if (pilot) {
           if (route.model !== "global.anthropic.claude-sonnet-4-6")
             throw new Error("Voice pilot route unavailable");
-          system += `\nFor this pilot, keep the message to one short Vietnamese sentence of at most 160 characters.\nRequired JSON schema:\n${JSON.stringify(providerOutputJsonSchema)}`;
+          system += `\nFor this pilot, keep the message to one short Vietnamese sentence of at most 160 characters. Return the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(providerOutputJsonSchema)}`;
           await authorizeVoiceInput(
             this.configuration.BEDROCK_API_KEY,
             system,
@@ -1434,6 +1434,12 @@ export class RoutedChatProvider implements ChatProvider {
     }
     let output: unknown;
     try {
+      if (options?.voice && responseProvider === "BEDROCK" && message) {
+        const fenced = /^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/iu.exec(
+          message.trim(),
+        );
+        if (fenced) message = fenced[1];
+      }
       output = message ? JSON.parse(message) : undefined;
     } catch {
       throw new ChatProblem(
