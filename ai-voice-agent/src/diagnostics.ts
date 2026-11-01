@@ -22,6 +22,7 @@ export interface MediaFailure {
   source: MediaFailureSource;
   component?: "STT" | "TTS" | "OTHER";
   code?: FailureCode;
+  statusCode?: number;
   recoverable?: boolean;
 }
 export type TranscriptRejection =
@@ -54,9 +55,9 @@ export function mediaFailure(
       : {}),
     ...(typeof status === "number" && Number.isInteger(status)
       ? status >= 400 && status < 500
-        ? { code: "HTTP_4XX" as const }
+        ? { code: "HTTP_4XX" as const, statusCode: status }
         : status >= 500 && status < 600
-          ? { code: "HTTP_5XX" as const }
+          ? { code: "HTTP_5XX" as const, statusCode: status }
           : {}
       : {}),
   };
@@ -80,6 +81,7 @@ export interface AgentDiagnostic {
     | "media_failed"
     | "agent_stopped";
   code?: FailureCode;
+  statusCode?: number;
   remainingMs?: number;
   delayMs?: number;
   reason?: StopReason;

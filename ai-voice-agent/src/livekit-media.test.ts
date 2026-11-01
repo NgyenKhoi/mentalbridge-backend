@@ -3,7 +3,13 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { ReadableStream } from "node:stream/web";
 import test from "node:test";
-import { asLanguageCode, stt, voice, type JobRequest } from "@livekit/agents";
+import {
+  asLanguageCode,
+  stt,
+  voice,
+  type JobRequest,
+  type JobContext,
+} from "@livekit/agents";
 import { Job, Room } from "@livekit/protocol";
 import {
   approvedPlayback,
@@ -12,7 +18,10 @@ import {
   startOptions,
   speechUsage,
   recognitionLanguage,
+  sttModelOptions,
+  LiveKitMedia,
 } from "./livekit-media.js";
+import { loadConfiguration } from "./configuration.js";
 import { DispatchAdmission, run } from "./main.js";
 import { agentName, policyVersion, type Dispatch } from "./contract.js";
 import { Room as RtcRoom, TrackKind, TrackSource } from "@livekit/rtc-node";
@@ -226,7 +235,6 @@ void test("pinned SDK wire validation, transcript processing and worker preserve
           return Promise.resolve();
         },
         input: () => undefined,
-        clearInput: () => undefined,
         speak: async (_text, started) => {
           spoken++;
           await started();
@@ -371,13 +379,19 @@ void test("SDK failure metadata excludes messages, provider bodies, raw language
     component: "STT",
     recoverable: false,
     code: "HTTP_4XX",
+    statusCode: 429,
   });
   assert.equal(JSON.stringify(safe).includes("PRIVATE"), false);
   assert.deepEqual(
     mediaFailure("SDK_CLOSE", {
       error: { type: "tts_error", error: { statusCode: 503 } },
     }),
-    { source: "SDK_CLOSE", component: "TTS", code: "HTTP_5XX" },
+    {
+      source: "SDK_CLOSE",
+      component: "TTS",
+      code: "HTTP_5XX",
+      statusCode: 503,
+    },
   );
   assert.deepEqual(
     mediaFailure("ROOM_DISCONNECTED", {
@@ -389,6 +403,80 @@ void test("SDK failure metadata excludes messages, provider bodies, raw language
     }),
     { source: "ROOM_DISCONNECTED", component: "OTHER" },
   );
+  for (const statusCode of [399, 600, 2007, -1, Number.NaN, 429.5, "429"]) {
+    const failure = mediaFailure("SDK_ERROR", {
+      error: { type: "stt_error", error: { statusCode } },
+    });
+    assert.equal(Object.hasOwn(failure, "statusCode"), false);
+    assert.equal(Object.hasOwn(failure, "code"), false);
+  }
+});
+
+void test("normal playback keeps the pinned SDK STT lifecycle intact until explicit close", async (t) => {
+  initializeLogger({ pretty: false, level: "silent" });
+  const session = new voice.AgentSession(sessionOptions);
+  const output = new EventEmitter();
+  Reflect.set(session.output, "_audioSink", output);
+  const clears = t.mock.method(session, "clearUserTurn", () => undefined);
+  const closes = t.mock.method(session, "close", () => Promise.resolve());
+  const utterances = t.mock.method(session, "say", () => {
+    queueMicrotask(() => output.emit(voice.AudioOutput.EVENT_PLAYBACK_STARTED));
+    return {
+      waitForPlayout: () => Promise.resolve(),
+      exception: () => null,
+      interrupt: () => undefined,
+    } as unknown as voice.SpeechHandle;
+  });
+  let disconnected = 0;
+  const context = {
+    room: {
+      remoteParticipants: new Map(),
+      disconnect: () => {
+        disconnected++;
+        return Promise.resolve();
+      },
+    },
+  } as unknown as JobContext;
+  const media = new LiveKitMedia(
+    context,
+    {
+      voiceSessionId: randomUUID(),
+      attemptId: randomUUID(),
+      dispatchId: randomUUID(),
+    },
+    loadConfiguration({}),
+  );
+  Reflect.set(media, "session", session);
+  Reflect.set(media, "started", true);
+  let published = 0;
+  for (let turn = 0; turn < 2; turn++) {
+    await media.speak(
+      "Synthetic response",
+      () => {
+        published++;
+        return Promise.resolve();
+      },
+      new AbortController().signal,
+    );
+    assert.equal(clears.mock.callCount(), 0);
+    assert.equal(closes.mock.callCount(), 0);
+    assert.equal(session.output.audio, output);
+  }
+  assert.equal(published, 2);
+  assert.equal(utterances.mock.callCount(), 2);
+  assert.deepEqual(utterances.mock.calls[0]?.arguments[1], {
+    allowInterruptions: true,
+    addToChatCtx: false,
+  });
+  await media.close();
+  assert.equal(clears.mock.callCount(), 0);
+  assert.equal(closes.mock.callCount(), 1);
+  assert.equal(disconnected, 1);
+  assert.deepEqual(sttModelOptions, {
+    endpointing: 500,
+    interim_results: true,
+    punctuate: true,
+  });
 });
 
 void test("speech metrics retain only numeric usage even when cancelled, never provider identifiers or content", () => {

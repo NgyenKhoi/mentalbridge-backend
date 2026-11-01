@@ -91,6 +91,11 @@ export const startOptions = {
     syncTranscription: false,
   },
 };
+export const sttModelOptions = {
+  endpointing: 500,
+  interim_results: true,
+  punctuate: true,
+};
 export function microphoneSubscriptions(
   publications: Iterable<
     Pick<RemoteTrackPublication, "kind" | "source" | "setSubscribed">
@@ -198,7 +203,6 @@ export class LiveKitMedia implements MediaPort {
   private owner: string | undefined;
   private closed = false;
   private inputEnabled = false;
-  private started = false;
   private display: AgentStatePublisher | undefined;
   private readonly cleanup: (() => void)[] = [];
   constructor(
@@ -316,11 +320,7 @@ export class LiveKitMedia implements MediaPort {
       language: "vi",
       apiKey,
       apiSecret,
-      modelOptions: {
-        endpointing: 1500,
-        interim_results: true,
-        punctuate: true,
-      },
+      modelOptions: sttModelOptions,
       connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
     });
     const ttsModel = new inference.TTS({
@@ -415,7 +415,6 @@ export class LiveKitMedia implements MediaPort {
       await this.session.close();
       throw new AgentFailure("AUTHORITY_EXPIRED");
     }
-    this.started = true;
     callbacks.muted(
       [...person.trackPublications.values()].some((t) => t.muted),
     );
@@ -436,9 +435,6 @@ export class LiveKitMedia implements MediaPort {
   }
   private isClosed() {
     return this.closed;
-  }
-  clearInput() {
-    if (this.started) this.session?.clearUserTurn();
   }
   async speak(text: string, started: () => Promise<void>, signal: AbortSignal) {
     const session = this.session;
@@ -468,7 +464,6 @@ export class LiveKitMedia implements MediaPort {
       );
     } finally {
       this.speech = undefined;
-      this.clearInput();
     }
   }
   interrupt() {
@@ -480,12 +475,10 @@ export class LiveKitMedia implements MediaPort {
     try {
       this.input(false);
       this.interrupt();
-      this.clearInput();
       for (const callback of this.cleanup.splice(0)) callback();
       await this.display?.close();
       await this.session?.close();
     } finally {
-      this.started = false;
       this.session = undefined;
       this.agent = undefined;
       this.callbacks = undefined;

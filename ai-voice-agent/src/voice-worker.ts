@@ -37,7 +37,6 @@ export interface MediaPort {
   state(state: AgentState): void;
   start(callbacks: MediaCallbacks): Promise<void>;
   input(enabled: boolean): void;
-  clearInput(): void;
   speak(
     text: string,
     started: () => Promise<void>,
@@ -361,7 +360,6 @@ export class VoiceWorker {
     if (!this.live() || !this.lease) return;
     this.busy = true;
     this.setState("WAITING_FOR_REPLY");
-    this.media.clearInput();
     try {
       this.diagnostic({ phase: "turn_requested" });
       const reply = await this.journal.turn(
@@ -469,7 +467,6 @@ export class VoiceWorker {
   private async mute(value: boolean) {
     this.muted = value;
     this.pending = "";
-    this.media.clearInput();
     this.media.input(this.ready && this.live() && this.connected && !value);
     if (value && this.speaking) await this.bargeIn();
     if (this.ready && !this.life.signal.aborted)
@@ -486,7 +483,6 @@ export class VoiceWorker {
     this.connected = value;
     this.pending = "";
     this.media.input(false);
-    this.media.clearInput();
     if (!value) {
       this.reconnectUntil = this.clock() + 30000;
       if (this.busy) {

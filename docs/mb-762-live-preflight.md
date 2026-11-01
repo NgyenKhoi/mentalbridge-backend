@@ -60,6 +60,22 @@ authority locally. Expired/denied controls still stop playback. Authority expiry
 is diagnosed explicitly rather than labelled an invalid response. These changes
 retain the same consent, quota, duration, provider and no-retry limits.
 
+The owner then confirmed hearing Xia on a real microphone call. That call had
+two generated Sonnet replies and two first-audio events, but stopped around29s
+after a nonrecoverable STT HTTP4xx. It did not reach the90s cap; subsequent
+watchdog/frontend cleanup can record USER_ENDED without a user end gesture.
+The exact numeric4xx was not retained, so its historical cause remains open.
+
+The pinned SDK shows a separate lifecycle defect: `clearUserTurn()` closes and
+recreates STT. Calling it at every turn/playback could interrupt recognition and
+churn provider connections despite zero automatic retries. Normal turns now
+preserve the recognition stream, while local pending buffers, mute/end and
+privacy cleanup remain enforced. Nova-3 endpointing is reduced from1500ms to
+500ms; the worker retains1500ms final aggregation. A numeric400–599 diagnostic
+will distinguish future provider errors without exposing messages or content.
+Regression checks cover consecutive turns and actual SDK-session lifecycle;
+longer real-provider stability remains to be verified on this correction.
+
 ## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)

@@ -168,6 +168,13 @@ and checks the reply against its acknowledged lease. A reply never renews that
 lease. An expired or denied control prevents TTS, and authority expiry has an
 explicit diagnostic category.
 
+Ordinary turns and playback preserve the same recognition stream. Coordinator
+pending text is cleared locally; SDK `clearUserTurn()` is not used because it
+restarts recognition in the pinned SDK. Microphone mute/end still disable input,
+and terminal cleanup closes the session. Nova-3 endpointing is 500ms; the worker
+retains 1500ms aggregation for adjacent finals. Diagnostic HTTP status is limited
+to numeric 400–599, without raw SDK messages or payloads.
+
 The caller must enable acoustic echo cancellation and browser/device noise
 suppression. Exact normalized recent TTS echoes are additionally suppressed.
 This guard is not proof of acoustic noise rejection: speakers, headphones,

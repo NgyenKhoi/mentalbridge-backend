@@ -48,6 +48,7 @@ function fixture() {
   const states: string[] = [];
   const mediaStates: string[] = [];
   const diagnostics: AgentDiagnostic[] = [];
+  const inputChanges: boolean[] = [];
   let callbacks: MediaCallbacks | undefined;
   let input = false;
   let closes = 0;
@@ -156,8 +157,8 @@ function fixture() {
     },
     input: (value) => {
       input = value;
+      inputChanges.push(value);
     },
-    clearInput: () => undefined,
     speak: async (text, started, signal) => {
       played.push(text);
       await started();
@@ -201,6 +202,7 @@ function fixture() {
     states,
     mediaStates,
     diagnostics,
+    inputChanges,
     dispatch,
     media,
     start: () => worker.start(),
@@ -529,6 +531,53 @@ void test("initial unmuted event cannot enable input or accept STT before MEDIA_
   await startup;
   assert.equal(f.input(), true);
   await f.worker.stop("USER_ENDED");
+});
+
+void test("consecutive turns retain the live input stream while mute and end discard pending speech and stop input", async () => {
+  const f = fixture();
+  await f.start();
+  const initialInputChanges = [...f.inputChanges];
+  for (const text of [
+    "First synthetic question",
+    "Second synthetic question",
+  ]) {
+    f.emit(text);
+    f.advance(1500);
+    await f.tick();
+    assert.equal(f.input(), true);
+    assert.equal(f.worker.state, "LISTENING");
+    assert.deepEqual(f.inputChanges, initialInputChanges);
+  }
+  assert.equal(f.turns.length, 2);
+  assert.equal(f.played.length, 2);
+  assert.equal(f.closes(), 0);
+  f.emit("Discard this pending question");
+  f.mute(true);
+  await flush();
+  assert.equal(f.input(), false);
+  f.emit("Ignore speech while muted");
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 2);
+  f.mute(false);
+  await flush();
+  await f.tick();
+  assert.equal(f.input(), true);
+  assert.equal(f.turns.length, 2);
+  f.emit("Third synthetic question");
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 3);
+  assert.equal(f.played.length, 3);
+  f.emit("Discard pending speech on end");
+  await f.worker.stop("USER_ENDED");
+  f.emit("Ignore speech after end");
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.input(), false);
+  assert.equal(f.closes(), 1);
+  assert.equal(f.turns.length, 3);
+  assert.equal(f.worker.state, "ENDED");
 });
 
 void test("barge-in before publication acknowledgement still reports one interruption after the trusted start", async () => {
