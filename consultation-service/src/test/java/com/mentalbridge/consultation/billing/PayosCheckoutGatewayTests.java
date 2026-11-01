@@ -44,6 +44,8 @@ class PayosCheckoutGatewayTests {
 		var body = webhook(client, data);
 		assertThat(gateway.verify(json.writeValueAsString(body))).isEqualTo(
 				new PayosCheckoutGateway.VerifiedWebhook(123, 5000, "synthetic-link", "synthetic-reference", true));
+		body.remove("success");
+		assertThat(gateway.verify(json.writeValueAsString(body)).successful()).isTrue();
 		body.put("success", false);
 		assertThat(gateway.verify(json.writeValueAsString(body)).successful()).isFalse();
 		body.put("success", true);
