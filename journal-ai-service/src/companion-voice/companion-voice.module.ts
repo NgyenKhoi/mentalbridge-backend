@@ -109,12 +109,20 @@ export const registerCompanionVoiceModule = (
   const service = new VoiceAccessService(
     ledger,
     dependencies.authorizer ??
-      new CurrentVoiceOwnerAuthorizer({
-        careBaseUrl: configuration.CARE_BASE_URL,
-        consultationBaseUrl: configuration.CONSULTATION_BASE_URL,
-        careToken: configuration.VOICE_OWNER_TOKENS?.care ?? null,
-        entitlementToken: configuration.VOICE_OWNER_TOKENS?.entitlement ?? null,
-      }),
+      new CurrentVoiceOwnerAuthorizer(
+        {
+          careBaseUrl: configuration.CARE_BASE_URL,
+          consultationBaseUrl: configuration.CONSULTATION_BASE_URL,
+          careToken: configuration.VOICE_OWNER_TOKENS?.care ?? null,
+          entitlementToken:
+            configuration.VOICE_OWNER_TOKENS?.entitlement ?? null,
+        },
+        undefined,
+        undefined,
+        (diagnostic) => {
+          logger.info({ event: "voice_owner_authorization", ...diagnostic });
+        },
+      ),
     configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
     dependencies.providerReady ??
       (() =>

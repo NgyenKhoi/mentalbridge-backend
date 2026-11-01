@@ -123,6 +123,17 @@ redirects, malformed/stale responses and mismatched owner/session/purpose, and
 require `no-store`. They do not forward or persist the user's bearer, replicate
 grants, query another owner's database or retry a stale positive decision.
 
+Java and Node wall clocks can differ by a few milliseconds even on the same
+Windows host. A response at most 25 ms ahead may wait for the client's clock
+to reach its original `checkedAt`, within the same two-second read deadline.
+It is never accepted while future-dated, and no REST request is repeated.
+Both owner decisions are checked again at the common return time: age must be
+0..2,000 ms and a paid entitlement must still be unexpired. Large clock skew,
+clock rollback, stale decisions and missing authority continue to fail closed.
+`voice_owner_authorization` diagnostics expose only the owner-service enum,
+closed rejection/catch-up reason, bounded elapsed/age and optional HTTP status;
+no response body, headers, error text, owner ID or token is recorded.
+
 Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
 owns the three closed, content-free MongoDB collections described in the
 [database documentation](../docs/database/mongodb.md#ai-companion-voice-admission-and-usage-collections).

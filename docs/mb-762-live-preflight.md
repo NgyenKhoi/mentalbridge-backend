@@ -6,7 +6,41 @@ Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not c
 another mock-only delivery milestone. Tests verify production changes without
 making provider calls before approval.
 
-## Current status: STT correction under review — 2026-11-01
+## Current status: owner authorization correction — 2026-11-01
+
+Campaign PO 10364 consumed its one admission and failed before Agent claim:
+Journal recorded ADMITTED followed by ENTITLEMENT_UNAVAILABLE, returning START
+503 and settling OWNER_UNAVAILABLE. No STT, Journal turn, Claude or TTS phase
+was reached. The old campaign and its data remain closed; this failure does not
+demonstrate whether the STT correction works with real audio.
+
+Following the owner's direct instruction to continue debugging, a separate
+authorization worktree preserves the closed runtime. Diagnostic instrumentation
+at the exact existing validation branch reproduced a real local failure after
+30 successful reads: Consultation's `checkedAt` was 1 ms ahead of Node, yielding
+FUTURE_DECISION in 7 ms. The previous external response wrapper performed extra
+parsing before validation and could hide this narrow timing defect. The exact
+October/10364 historical response was not retained, so this reproduction proves
+the defect, not the unique cause of every earlier failure.
+
+The correction waits at most 25 ms for a slightly ahead decision's original
+timestamp to become current, without accepting a future timestamp, changing
+the timestamp, retrying REST or extending the existing two-second deadline.
+Both parallel owner decisions are rechecked together before returning; stale,
+future, mismatched or expired authority remains denied. Closed diagnostic
+categories identify HTTP/transport/header/JSON/schema/binding/freshness/expiry
+failures without response content. A real-local verification completed 256/256
+checks successfully and observed the catch-up branch on Care and Consultation.
+This is owner authorization proof, not audio E2E acceptance.
+
+The owner's later direct instruction authorizes admission/credit use to debug
+the complete real pipeline. This does not reopen/reset any consumed campaign
+or permit a paid upgrade; a separate bounded diagnostic execution must retain
+current consents, provider pins, content-free diagnostics and teardown. No PR
+merge or staging deployment is authorized. The following earlier status is
+retained as historical evidence.
+
+## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)
 authorizes source integration and offline verification only. The isolated debug
