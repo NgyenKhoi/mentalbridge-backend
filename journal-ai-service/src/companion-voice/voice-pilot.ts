@@ -7,6 +7,7 @@ export const voicePilotSchema = z
     ownerIds: z.array(z.uuid()).min(1).max(2),
     maxSessionSeconds: z.number().int().min(1).max(600).optional(),
     maxTurns: z.number().int().min(1).max(30).optional(),
+    replyStyle: z.enum(["BRIEF", "SUPPORTIVE"]).optional(),
   })
   .strict()
   .refine((value) => {

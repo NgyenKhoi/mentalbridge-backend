@@ -31,6 +31,15 @@ seconds and PREMIUM to 600 seconds per session;
 daily Text/Voice policy and financial credits are unchanged. No new collection
 or migration is introduced.
 
+Optional pilot `replyStyle` accepts `BRIEF` (the existing default) or
+`SUPPORTIVE`. The supportive spoken prompt requests two or three natural
+Vietnamese sentences, usually 180–280 characters, reflecting only what the
+caller shared, with an optional gentle observation or small next step and at
+most one open question. Ambiguous recognition takes priority and calls for a
+short clarification. The same strict JSON/safety validator, 500-character
+message limit, 1,900-input-token check, 300-output-token ceiling and provider
+pins still apply. AI Text behavior is unchanged.
+
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
 can be counted before inference. Bedrock Runtime token counting at the Singapore

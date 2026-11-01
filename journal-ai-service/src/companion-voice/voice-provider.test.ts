@@ -54,6 +54,21 @@ void test("Voice config rejects missing approval/credential, other models and ot
     assert.throws(() => loadConfiguration({ ...approved, ...override }));
 });
 
+void test("Voice pilot environment rejects unsupported reply styles", () => {
+  for (const replyStyle of ["VERBOSE", "supportive", true])
+    assert.throws(() =>
+      loadConfiguration({
+        ...approved,
+        JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+          startsAt: "2026-11-01T00:00:00.000Z",
+          endsAt: "2026-11-01T01:00:00.000Z",
+          ownerIds: ["00000000-0000-4000-8000-000000000001"],
+          replyStyle,
+        }),
+      }),
+    );
+});
+
 void test("Voice transport targets the actual Singapore Sonnet Converse endpoint with existing bearer auth", async () => {
   const original = globalThis.fetch;
   const configuration = loadConfiguration({
@@ -202,6 +217,198 @@ void test("pilot counts the exact prompt before Converse, caps output and never 
       }),
     );
     assert.equal(invocations, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("supportive pilot counts its exact grounded spoken prompt and accepts a safe longer reply without changing Text or legacy brevity", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const [replyStyle, voice] of [
+      [undefined, true],
+      ["BRIEF", true],
+      ["SUPPORTIVE", true],
+      ["SUPPORTIVE", false],
+    ] as const) {
+      const config = loadConfiguration({
+        ...approved,
+        JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+          startsAt: "2026-11-01T00:00:00.000Z",
+          endsAt: "2026-11-01T01:00:00.000Z",
+          ownerIds: ["00000000-0000-4000-8000-000000000001"],
+          replyStyle,
+        }),
+      });
+      const supportive = replyStyle === "SUPPORTIVE" && voice;
+      const message = supportive
+        ? "Mình nghe bạn chia sẻ rằng việc học đang khiến bạn mệt mỏi và muốn có người lắng nghe. Nếu thấy phù hợp, bạn có thể dành một chút thời gian nghỉ trước khi nhìn lại phần đang vướng. Điều gì trong chuyện này khiến bạn muốn chia sẻ nhất?"
+        : "Mình đang lắng nghe bạn.";
+      let countedSystem = "";
+      let counts = 0;
+      let converses = 0;
+      globalThis.fetch = (url, options) => {
+        const endpoint =
+          url instanceof Request ? new URL(url.url) : new URL(url);
+        assert.equal(
+          endpoint.origin,
+          "https://bedrock-runtime.ap-southeast-1.amazonaws.com",
+        );
+        assert.ok(typeof options?.body === "string");
+        const body = JSON.parse(options.body) as {
+          system?: { text: string }[];
+          inferenceConfig?: { maxTokens: number };
+          input?: { converse: { system: { text: string }[] } };
+        };
+        if (endpoint.pathname.endsWith("/count-tokens")) {
+          counts++;
+          assert.ok(body.input?.converse.system[0]?.text);
+          countedSystem = body.input.converse.system[0].text;
+          return Promise.resolve(Response.json({ inputTokens: 850 }));
+        }
+        converses++;
+        assert.equal(
+          endpoint.pathname,
+          "/model/global.anthropic.claude-sonnet-4-6/converse",
+        );
+        const system = body.system?.[0]?.text;
+        assert.ok(system);
+        if (voice) {
+          assert.equal(system, countedSystem);
+          assert.equal(body.inferenceConfig?.maxTokens, 300);
+          assert.equal(Object.hasOwn(body, "outputConfig"), false);
+          assert.match(system, /"maxLength":500/);
+        } else {
+          assert.equal(body.inferenceConfig?.maxTokens, 2000);
+          assert.ok(Object.hasOwn(body, "outputConfig"));
+          assert.doesNotMatch(
+            system,
+            /For this pilot|spoken Vietnamese conversation/,
+          );
+        }
+        if (supportive) {
+          assert.match(system, /2–3 natural Vietnamese sentences/);
+          assert.match(system, /180–280 characters/);
+          assert.match(system, /Reflect what the user actually shared/);
+          assert.match(system, /at most one open question/);
+          assert.match(
+            system,
+            /Never fabricate feelings, events, causes or personal facts/,
+          );
+          assert.match(system, /prioritize a short clarification over length/);
+          assert.doesNotMatch(
+            system,
+            /one short Vietnamese sentence|brief spoken/,
+          );
+        } else if (voice) {
+          assert.match(
+            system,
+            /one short Vietnamese sentence of at most 160 characters/,
+          );
+          assert.doesNotMatch(system, /2–3 natural Vietnamese sentences/);
+        }
+        return Promise.resolve(
+          Response.json({
+            output: {
+              message: {
+                content: [
+                  {
+                    text: JSON.stringify({
+                      message,
+                      language: "vi",
+                      authority: "SUPPORT_ONLY",
+                      clinicalAssessment: "NONE",
+                      safetyDecision: "NONE",
+                      eligibilityDecision: "NONE",
+                      businessAction: "NONE",
+                      thirdPartyAction: "NONE",
+                    }),
+                  },
+                ],
+              },
+            },
+            usage: { inputTokens: 850, outputTokens: 100 },
+          }),
+        );
+      };
+      const response = await createVoiceProvider(config).reply(
+        "Mình thấy mệt vì chuyện học và muốn chia sẻ.",
+        { kinds: [], prompt: "" },
+        selectVoiceProviderRoute(config, "PREMIUM"),
+        { voice },
+      );
+      assert.equal(response.message, message);
+      assert.equal(counts, voice ? 1 : 0);
+      assert.equal(converses, 1);
+      if (supportive) assert.ok(message.length >= 180 && message.length <= 280);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("supportive pilot allows short clarification and preserves strict response safety", async () => {
+  const original = globalThis.fetch;
+  const config = loadConfiguration({
+    ...approved,
+    JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+      startsAt: "2026-11-01T00:00:00.000Z",
+      endsAt: "2026-11-01T01:00:00.000Z",
+      ownerIds: ["00000000-0000-4000-8000-000000000001"],
+      replyStyle: "SUPPORTIVE",
+    }),
+  });
+  try {
+    for (const [message, accepted] of [
+      ["Mình chưa nghe rõ, bạn có thể nói lại ý vừa rồi không?", true],
+      ["Tôi chẩn đoán bạn đang mắc trầm cảm", false],
+      ["ắ".repeat(501), false],
+    ] as const) {
+      let counts = 0;
+      let converses = 0;
+      globalThis.fetch = (url) => {
+        const endpoint =
+          url instanceof Request ? new URL(url.url) : new URL(url);
+        if (endpoint.pathname.endsWith("/count-tokens")) {
+          counts++;
+          return Promise.resolve(Response.json({ inputTokens: 850 }));
+        }
+        converses++;
+        return Promise.resolve(
+          Response.json({
+            output: {
+              message: {
+                content: [
+                  {
+                    text: JSON.stringify({
+                      message,
+                      language: "vi",
+                      authority: "SUPPORT_ONLY",
+                      clinicalAssessment: "NONE",
+                      safetyDecision: "NONE",
+                      eligibilityDecision: "NONE",
+                      businessAction: "NONE",
+                      thirdPartyAction: "NONE",
+                    }),
+                  },
+                ],
+              },
+            },
+            usage: { inputTokens: 850, outputTokens: 100 },
+          }),
+        );
+      };
+      const result = createVoiceProvider(config).reply(
+        "synthetic unclear speech",
+        { kinds: [], prompt: "" },
+        selectVoiceProviderRoute(config, "PREMIUM"),
+        { voice: true },
+      );
+      if (accepted) assert.equal((await result).message, message);
+      else await assert.rejects(result);
+      assert.equal(counts, 1);
+      assert.equal(converses, 1);
+    }
   } finally {
     globalThis.fetch = original;
   }

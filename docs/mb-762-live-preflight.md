@@ -6,7 +6,45 @@ Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not c
 another mock-only delivery milestone. Tests verify production changes without
 making provider calls before approval.
 
-## Current status: owner authorization correction — 2026-11-01
+## Current status: extended-call heartbeat correction — 2026-11-01
+
+The separately authorized USD1/30-turn local attempt on `f187f053` admitted
+600 seconds and reached four validated Sonnet replies and three published Xia
+audio replies. It stopped early: Journal returned the final heartbeat HTTP200
+after2300ms, exceeding the Agent's fixed2000ms control timeout while the old
+lease was still valid. Earlier heartbeat responses took895–1914ms. The exact
+owner-service versus media-provider share of that duration was not recorded;
+this evidence does not attribute the delay to AWS or LiveKit alone.
+
+Owner-end requests started after the heartbeat failure during cleanup. The
+settled `USER_ENDED` ledger reason therefore does not establish a voluntary
+user hang-up. The raw failure remains `LEASE/TIMEOUT`. The attempt charged47
+ACTIVE seconds; reservations were released, room/active Egress were zero,
+Voice/Agent were OFF, and prior sessions/grants remained unchanged.
+
+The correction allows a control response up to3500ms, bounded by the command's
+existing expiry. Expired/cancelled acknowledgements cannot extend the prior
+acknowledged lease or hard stop. Renewal scheduling retains4500ms of lease
+headroom after delayed acknowledgements. Claim and turn timeouts remain2s and
+30s; there is no retry or provider fallback. Real loopback HTTP tests cover a
+2100ms valid response, earlier command expiry, cancellation and late responses.
+
+The owner requested one further retest and longer replies. Optional pilot
+`replyStyle: "SUPPORTIVE"` requests2–3 grounded Vietnamese sentences, usually
+180–280characters, while retaining short clarification for ambiguous speech.
+Omission or `BRIEF` keeps the earlier one-sentence pilot. AI Text, strict safety
+JSON,500-character validation,1900input/300output token ceilings and provider
+pins remain unchanged. A supportive response is a prompt preference, not a
+guaranteed duration or permission to bypass validation.
+
+The same USD1 envelope must include the failed extended attempt: four Converse
+reservations (USD0.04896 with20% headroom),200TTS characters and58400ms reported
+STT are carried forward. No consumed admission, quota, window or reservation
+is reset. The previous attempt's accepted-final-to-first-audio measurements
+were5965–6606ms across three replies, not a demonstrated realtime-latency fix.
+No successful600-second call or microphone result on the correction is claimed.
+
+## Owner authorization correction — earlier 2026-11-01 evidence
 
 Campaign PO 10364 consumed its one admission and failed before Agent claim:
 Journal recorded ADMITTED followed by ENTITLEMENT_UNAVAILABLE, returning START

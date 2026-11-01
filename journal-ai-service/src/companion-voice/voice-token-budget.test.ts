@@ -100,13 +100,19 @@ void test("pilot optional limits preserve legacy input and reject unbounded or u
   const legacy = voicePilotSchema.parse(pilot);
   assert.equal(legacy.maxSessionSeconds ?? 90, 90);
   assert.equal(legacy.maxTurns ?? 4, 4);
+  assert.equal(legacy.replyStyle ?? "BRIEF", "BRIEF");
   const bounded = voicePilotSchema.parse({
     ...pilot,
     maxSessionSeconds: 600,
     maxTurns: 30,
+    replyStyle: "SUPPORTIVE",
   });
   assert.equal(bounded.maxSessionSeconds, 600);
   assert.equal(bounded.maxTurns, 30);
+  assert.equal(bounded.replyStyle, "SUPPORTIVE");
+  assert.ok(
+    voicePilotSchema.safeParse({ ...pilot, replyStyle: "BRIEF" }).success,
+  );
   for (const patch of [
     { maxSessionSeconds: 0 },
     { maxSessionSeconds: 601 },
@@ -116,6 +122,9 @@ void test("pilot optional limits preserve legacy input and reject unbounded or u
     { maxTurns: 31 },
     { maxTurns: 4.5 },
     { maxTurns: "30" },
+    { replyStyle: "VERBOSE" },
+    { replyStyle: "supportive" },
+    { replyStyle: true },
     { unlimited: true },
   ])
     assert.equal(
