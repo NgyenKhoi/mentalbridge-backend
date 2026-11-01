@@ -5,6 +5,7 @@ import test from "node:test";
 import { MongoClient, MongoServerError, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
+import { VoiceAuthorizationError } from "./voice-authorization.js";
 import {
   MongoVoiceLedger,
   VoiceLedgerError,
@@ -68,6 +69,8 @@ class SyntheticMedia implements VoiceMediaProvider {
   pauseCreate: Promise<void> | null = null;
   pauseDispatch: Promise<void> | null = null;
   pauseConnection: Promise<void> | null = null;
+  pauseInspection: Promise<void> | null = null;
+  inspections = 0;
   async createRoom(ref: VoiceMediaReference) {
     this.creates += 1;
     await this.pauseCreate;
@@ -83,15 +86,17 @@ class SyntheticMedia implements VoiceMediaProvider {
     room.providerDispatchId = `AD_${ref.dispatchId}`;
     return room.providerDispatchId;
   }
-  inspect(ref: VoiceMediaReference) {
+  async inspect(ref: VoiceMediaReference) {
+    this.inspections++;
+    await this.pauseInspection;
     const room = this.rooms.get(ref.roomName);
-    return Promise.resolve({
+    return {
       roomExists: !!room,
       providerDispatchId: room?.providerDispatchId ?? null,
       ownerConnected: this.ownerConnected,
       agentConnected: this.agentConnected,
       agentAudioPublished: this.audioPublished,
-    });
+    };
   }
   async connection(ref: VoiceMediaReference, now: Date) {
     this.tokens += 1;
@@ -149,6 +154,10 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
     let aiConsent = true;
     let voiceConsent = true;
     let paid = true;
+    let pauseAuthority: Promise<void> | null = null;
+    let entitlementMilliseconds = 86_400_000;
+    let consentDecisionAge = 0;
+    let entitlementDecisionAge = 0;
     const media = new SyntheticMedia();
     const secret = Buffer.alloc(32, 72);
     const checks: string[] = [];
@@ -158,7 +167,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       const access = new VoiceAccessService(
         ledger,
         {
-          check: (ownerId, voiceSessionId) => {
+          check: async (ownerId, voiceSessionId) => {
             checks.push(voiceSessionId);
             const binding = {
               ownerId,
@@ -166,9 +175,12 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
               purpose: "AI_COMPANION_VOICE" as const,
               checkedAt: clock().toISOString(),
             };
-            return Promise.resolve({
+            const decision = {
               consent: {
                 ...binding,
+                checkedAt: new Date(
+                  now.getTime() - consentDecisionAge,
+                ).toISOString(),
                 aiProcessingGranted: aiConsent,
                 voiceProcessingGranted: voiceConsent,
                 authorized: aiConsent && voiceConsent,
@@ -176,18 +188,23 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
               },
               entitlement: {
                 ...binding,
+                checkedAt: new Date(
+                  now.getTime() - entitlementDecisionAge,
+                ).toISOString(),
                 packageCode: paid ? ("PLUS" as const) : ("FREE" as const),
                 source: paid ? ("PAID" as const) : ("DEFAULT_FREE" as const),
                 entitlementVersion: "synthetic-owner-v1",
                 ...(paid
                   ? {
                       validUntil: new Date(
-                        now.getTime() + 86_400_000,
+                        now.getTime() + entitlementMilliseconds,
                       ).toISOString(),
                     }
                   : {}),
               },
-            });
+            };
+            await pauseAuthority;
+            return decision;
           },
         },
         secret,
@@ -274,8 +291,249 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       downgrade: () => {
         paid = false;
       },
+      pauseAuthority: (pending: Promise<void> | null) => {
+        pauseAuthority = pending;
+      },
+      entitlementMilliseconds: (remaining: number) => {
+        entitlementMilliseconds = remaining;
+      },
+      decisionAges: (consent: number, entitlement: number) => {
+        consentDecisionAge = consent;
+        entitlementDecisionAge = entitlement;
+      },
     };
   };
+
+  const activate = async (f: Awaited<ReturnType<typeof fixture>>) => {
+    const started = await f.start();
+    const session = await f.claim(started.voiceSessionId);
+    await f.service.control(
+      session.voiceSessionId,
+      f.signal(session, 1, "MEDIA_READY"),
+      randomUUID(),
+    );
+    return f.current(session.voiceSessionId);
+  };
+
+  await t.test(
+    "turn authorization overlaps independent owner and media reads but requires both",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const owner = barrier();
+      const inspection = barrier();
+      f.pauseAuthority(owner.wait);
+      f.media.pauseInspection = inspection.wait;
+      const checks = f.checks.length;
+      const inspections = f.media.inspections;
+      let resolved = false;
+      const pending = f.service
+        .authorizeTurn(
+          session.voiceSessionId,
+          session.attemptId ?? "",
+          session.leaseId ?? "",
+          randomUUID(),
+        )
+        .then((value) => {
+          resolved = true;
+          return value;
+        });
+      try {
+        await waitFor(
+          () =>
+            f.checks.length === checks + 1 &&
+            f.media.inspections === inspections + 1,
+        );
+        assert.equal(resolved, false);
+        owner.release();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.equal(resolved, false);
+        inspection.release();
+        const authority = await pending;
+        assert.equal(authority.session.voiceSessionId, session.voiceSessionId);
+        assert.equal(authority.consent.authorized, true);
+        assert.equal(authority.entitlement.packageCode, "PLUS");
+        assert.equal(f.checks.length, checks + 1);
+        assert.equal(f.media.inspections, inspections + 1);
+      } finally {
+        owner.release();
+        inspection.release();
+        await pending.catch(() => undefined);
+      }
+    },
+  );
+
+  await t.test(
+    "a slow media read cannot turn a once-fresh owner decision into authority",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const inspection = barrier();
+      f.media.pauseInspection = inspection.wait;
+      const checks = f.checks.length;
+      const pending = f.service.authorizeTurn(
+        session.voiceSessionId,
+        session.attemptId ?? "",
+        session.leaseId ?? "",
+        randomUUID(),
+      );
+      const denied = assert.rejects(
+        pending,
+        (error: unknown) =>
+          error instanceof VoiceAuthorizationError &&
+          error.code === "CONSENT_UNAVAILABLE",
+      );
+      try {
+        await waitFor(() => f.checks.length === checks + 1);
+        f.advance(2001);
+      } finally {
+        inspection.release();
+      }
+      await denied;
+      assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
+      assert.equal(f.media.rooms.size, 0);
+    },
+  );
+
+  await t.test(
+    "the final persisted state check cannot extend owner decision freshness",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const findSession = f.ledger.findSession.bind(f.ledger);
+      let reads = 0;
+      f.ledger.findSession = async (...args) => {
+        const found = await findSession(...args);
+        if (++reads === 2) f.advance(2001);
+        return found;
+      };
+      await assert.rejects(
+        f.service.authorizeTurn(
+          session.voiceSessionId,
+          session.attemptId ?? "",
+          session.leaseId ?? "",
+          randomUUID(),
+        ),
+        (error: unknown) =>
+          error instanceof VoiceAuthorizationError &&
+          error.code === "CONSENT_UNAVAILABLE",
+      );
+      assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
+      assert.equal(f.media.rooms.size, 0);
+    },
+  );
+
+  for (const [consentAge, entitlementAge, code] of [
+    [2001, 0, "CONSENT_UNAVAILABLE"],
+    [0, 2001, "ENTITLEMENT_UNAVAILABLE"],
+    [-1, 0, "CONSENT_UNAVAILABLE"],
+    [0, -1, "ENTITLEMENT_UNAVAILABLE"],
+  ] as const)
+    await t.test(
+      `parallel-read common return rejects owner ages ${String(consentAge)}/${String(entitlementAge)}`,
+      async () => {
+        const f = await fixture();
+        const session = await activate(f);
+        f.decisionAges(consentAge, entitlementAge);
+        await assert.rejects(
+          f.service.authorizeTurn(
+            session.voiceSessionId,
+            session.attemptId ?? "",
+            session.leaseId ?? "",
+            randomUUID(),
+          ),
+          (error: unknown) =>
+            error instanceof VoiceAuthorizationError && error.code === code,
+        );
+        assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
+        assert.equal(f.media.rooms.size, 0);
+      },
+    );
+
+  await t.test(
+    "parallel owner reads retain the exact two-second freshness boundary",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      f.decisionAges(2000, 2000);
+      const authority = await f.service.authorizeTurn(
+        session.voiceSessionId,
+        session.attemptId ?? "",
+        session.leaseId ?? "",
+        randomUUID(),
+      );
+      assert.equal(authority.session.voiceSessionId, session.voiceSessionId);
+      assert.equal((await f.current(session.voiceSessionId)).state, "ACTIVE");
+    },
+  );
+
+  for (const reason of ["lease", "entitlement"] as const)
+    await t.test(
+      `parallel reads cannot outlive ${reason} authority while media is pending`,
+      async () => {
+        const f = await fixture();
+        const session = await activate(f);
+        if (reason === "lease") f.advance(8500);
+        else f.entitlementMilliseconds(1000);
+        const inspection = barrier();
+        f.media.pauseInspection = inspection.wait;
+        const checks = f.checks.length;
+        const pending = f.service.authorizeTurn(
+          session.voiceSessionId,
+          session.attemptId ?? "",
+          session.leaseId ?? "",
+          randomUUID(),
+        );
+        const denied = assert.rejects(pending, (error: unknown) =>
+          reason === "lease"
+            ? error instanceof VoiceLedgerError &&
+              error.code === "SESSION_EXPIRED"
+            : error instanceof VoiceAuthorizationError &&
+              error.code === "ENTITLEMENT_UNAVAILABLE",
+        );
+        try {
+          await waitFor(() => f.checks.length === checks + 1);
+          f.advance(1500);
+        } finally {
+          inspection.release();
+        }
+        await denied;
+        assert.notEqual(
+          (await f.current(session.voiceSessionId)).state,
+          "ACTIVE",
+        );
+        assert.equal(f.media.rooms.size, 0);
+      },
+    );
+
+  for (const denial of ["consent", "room", "owner", "agent"] as const)
+    await t.test(
+      `parallel reads still deny ${denial} loss and clean up`,
+      async () => {
+        const f = await fixture();
+        const session = await activate(f);
+        if (denial === "consent") f.revoke();
+        if (denial === "room") f.media.rooms.clear();
+        if (denial === "owner") f.media.ownerConnected = false;
+        if (denial === "agent") f.media.agentConnected = false;
+        await assert.rejects(
+          f.service.authorizeTurn(
+            session.voiceSessionId,
+            session.attemptId ?? "",
+            session.leaseId ?? "",
+            randomUUID(),
+          ),
+          (error: unknown) =>
+            denial === "consent"
+              ? error instanceof VoiceAccessError &&
+                error.code === "VOICE_CONSENT_REQUIRED"
+              : error instanceof VoiceLedgerError &&
+                error.code === "INVALID_SESSION_STATE",
+        );
+        assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
+        assert.equal(f.media.rooms.size, 0);
+      },
+    );
 
   await t.test(
     "two independent service instances never duplicate room, dispatch or quota on same-key retries",
