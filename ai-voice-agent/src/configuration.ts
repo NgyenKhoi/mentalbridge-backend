@@ -24,6 +24,18 @@ const secret = z.string().regex(/^[\x21-\x7e]{32,256}$/);
 const environmentSchema = z.object({
   AI_VOICE_AGENT_ENABLED: z.enum(["true", "false"]).default("false"),
   AI_VOICE_PILOT: z.enum(["true", "false"]).default("false"),
+  AI_VOICE_PILOT_TTS_MAX_CHARACTERS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(8000)
+    .default(1200),
+  AI_VOICE_FINAL_AGGREGATION_MS: z.coerce
+    .number()
+    .int()
+    .min(500)
+    .max(1500)
+    .default(1500),
   AI_VOICE_AGENT_APPROVAL_VERSION: optional(
     z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/),
   ),
@@ -71,6 +83,8 @@ const environmentSchema = z.object({
 });
 export interface AgentConfiguration {
   pilot?: boolean;
+  pilotTtsMaxCharacters?: number;
+  finalAggregationMs?: number;
   enabled: boolean;
   approvalVersion: string | null;
   livekitUrl: string | null;
@@ -93,6 +107,8 @@ export function loadConfiguration(
     typeof input === "string" ? input : null;
   const configuration: AgentConfiguration = {
     pilot: value.AI_VOICE_PILOT === "true",
+    pilotTtsMaxCharacters: value.AI_VOICE_PILOT_TTS_MAX_CHARACTERS,
+    finalAggregationMs: value.AI_VOICE_FINAL_AGGREGATION_MS,
     enabled,
     approvalVersion: optionalString(value.AI_VOICE_AGENT_APPROVAL_VERSION),
     livekitUrl: optionalString(value.LIVEKIT_URL),

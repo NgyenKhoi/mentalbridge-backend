@@ -19,12 +19,14 @@ and explicit `LIVE_APPROVED`; registration, named dispatch and real media remain
 unverified while disabled.
 
 Set `AI_VOICE_PILOT=true` in the external private env for the approved run. It
-pins Nova-3 and Xia `b8cd71e3-bc14-4538-a530-d6314731c036`, and reserves at most
-1,200 TTS input characters per worker attempt before synthesis, including failed
-or interrupted speech. Never restart/re-dispatch an unknown attempt. Journal's
-pilot window bounds the campaign to two admissions and 90 seconds each, with
-four Claude turns per admission. Existing no-retry, no-recording and no-export
-controls still apply. See [preflight evidence](../docs/mb-762-live-preflight.md).
+pins Nova-3 and Xia `b8cd71e3-bc14-4538-a530-d6314731c036`. The per-attempt TTS
+input reservation defaults to 1,200 characters; an approved pilot budget may set
+`AI_VOICE_PILOT_TTS_MAX_CHARACTERS` to an integer from 1 to 8,000. Reservation
+happens before synthesis and is never refunded for interrupted, failed or unknown
+speech. Never restart/re-dispatch an unknown attempt. Journal owns the approved
+campaign's admission, duration and Claude-turn limits; changing this worker cap
+does not extend them or activate Voice. Existing no-retry, no-recording and
+no-export controls still apply. See [preflight evidence](../docs/mb-762-live-preflight.md).
 
 ## Build and verify without Cloud
 
@@ -72,6 +74,9 @@ in a client, dispatch, Jira, repository, command-line value or build argument.
 | Key                                     | Meaning                                                                                                         |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `AI_VOICE_AGENT_ENABLED`                | Defaults to `false`; explicit `true` is rejected in CI/test                                                     |
+| `AI_VOICE_PILOT`                        | Defaults to `false`; explicit pilot mode pins Nova-3/Xia and reserves the configured TTS budget per attempt     |
+| `AI_VOICE_PILOT_TTS_MAX_CHARACTERS`     | Integer 1..8000, default 1200; approved pilot TTS input budget, including interrupted/failed/unknown speech     |
+| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 1500; pause joining adjacent valid STT finals before requesting a Journal turn       |
 | `AI_VOICE_AGENT_APPROVAL_VERSION`       | Reviewed account/privacy/speech QA record identifier, required when enabled                                     |
 | `LIVEKIT_URL`                           | Existing mentalbridge project's `wss://…livekit.cloud` origin                                                   |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-only existing project credentials, also used for LiveKit Inference                                       |
@@ -133,8 +138,11 @@ newly published owner tracks follow the same gate. This is distinct from
 `inputOptions.audioEnabled:false`, which omits the SDK input permanently.
 
 Every job owns one session and current-turn RAM. Silero VAD is CPU-local and
-ships its model with the plugin. Endpointing plus a 1.5-second final-segment
-aggregation pause accommodates hesitant Vietnamese speech. Interim words can
+ships its model with the plugin. Endpointing plus a final-segment aggregation
+pause accommodates hesitant Vietnamese speech. The pause defaults to 1,500 ms;
+`AI_VOICE_FINAL_AGGREGATION_MS` can bound it between 500 and 1,500 ms for an
+approved latency setting. A shorter pause may split hesitant speech sooner and
+does not change confidence validation, quota or provider deadlines. Interim words can
 interrupt after 500 ms/two words but cannot call Journal. A finite, in-range
 Vietnamese final below confidence 0.8 is discarded with the unsubmitted pending
 utterance. It cannot call Journal, generate TTS, interrupt an approved reply or
@@ -180,7 +188,7 @@ Ordinary turns and playback preserve the same recognition stream. Coordinator
 pending text is cleared locally; SDK `clearUserTurn()` is not used because it
 restarts recognition in the pinned SDK. Microphone mute/end still disable input,
 and terminal cleanup closes the session. Nova-3 endpointing is 500ms; the worker
-retains 1500ms aggregation for adjacent finals. Diagnostic HTTP status is limited
+defaults to 1500ms aggregation for adjacent finals. Diagnostic HTTP status is limited
 to numeric 400–599, without raw SDK messages or payloads.
 
 The caller must enable acoustic echo cancellation and browser/device noise

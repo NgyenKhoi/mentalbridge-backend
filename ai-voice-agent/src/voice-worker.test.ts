@@ -32,7 +32,7 @@ const hold = () => {
   return { wait, release };
 };
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
-function fixture() {
+function fixture(finalAggregationMs?: number) {
   let now = Date.now();
   const hardStopAt = new Date(now + 300000).toISOString();
   const dispatch: Dispatch = {
@@ -195,6 +195,7 @@ function fixture() {
     () => now,
     (state) => states.push(state),
     (value) => diagnostics.push(value),
+    finalAggregationMs,
   );
   return {
     worker,
@@ -519,6 +520,26 @@ void test("claims before audio and aggregates final Vietnamese segments, ignorin
   assert.equal(f.worker.state, "ENDED");
   await f.worker.stop("USER_ENDED");
   assert.equal(f.closes(), 1);
+});
+
+void test("a shorter configured aggregation interval still waits for adjacent finals and ignores interim speech", async () => {
+  const f = fixture(750);
+  await f.start();
+  f.emit("Tôi muốn chia sẻ");
+  f.advance(500);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("về hôm nay");
+  f.advance(749);
+  f.emit("câu còn chưa hoàn tất", { final: false });
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.advance(1);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0]?.finalTranscript, "Tôi muốn chia sẻ về hôm nay");
+  assert.equal(f.played.length, 1);
+  await f.worker.stop("USER_ENDED");
 });
 
 void test("initial unmuted event cannot enable input or accept STT before MEDIA_READY acknowledgement", async () => {

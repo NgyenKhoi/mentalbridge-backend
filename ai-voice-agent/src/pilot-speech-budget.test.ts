@@ -16,6 +16,56 @@ void test("pilot reserves TTS before provider work and does not refund interrupt
   });
 });
 
+void test("an approved pilot can reserve up to its configured cap without refunding interrupted or unknown speech", () => {
+  const budget = new PilotSpeechBudget(8000);
+  budget.reserve("a".repeat(3000));
+  budget.reserve("b".repeat(3000));
+  assert.throws(() => {
+    budget.reserve("c".repeat(2001));
+  });
+  budget.reserve("d".repeat(2000));
+  assert.throws(() => {
+    budget.reserve("x");
+  });
+});
+
+void test("pilot TTS configuration defaults safely and accepts only bounded integer budgets", () => {
+  assert.equal(loadConfiguration({}).pilotTtsMaxCharacters, 1200);
+  for (const maximum of [1, 3000, 8000]) {
+    assert.equal(
+      loadConfiguration({
+        AI_VOICE_PILOT_TTS_MAX_CHARACTERS: String(maximum),
+      }).pilotTtsMaxCharacters,
+      maximum,
+    );
+  }
+  for (const invalid of [0, -1, 1.5, 8001, Number.NaN, Infinity]) {
+    assert.throws(() => new PilotSpeechBudget(invalid));
+    assert.throws(() =>
+      loadConfiguration({
+        AI_VOICE_PILOT_TTS_MAX_CHARACTERS: String(invalid),
+      }),
+    );
+  }
+});
+
+void test("final aggregation configuration preserves the default and bounds a shorter speech pause", () => {
+  assert.equal(loadConfiguration({}).finalAggregationMs, 1500);
+  for (const milliseconds of [500, 750, 1500]) {
+    assert.equal(
+      loadConfiguration({
+        AI_VOICE_FINAL_AGGREGATION_MS: String(milliseconds),
+      }).finalAggregationMs,
+      milliseconds,
+    );
+  }
+  for (const invalid of [0, 499, 750.5, 1501, Number.NaN, Infinity]) {
+    assert.throws(() =>
+      loadConfiguration({ AI_VOICE_FINAL_AGGREGATION_MS: String(invalid) }),
+    );
+  }
+});
+
 void test("pilot pins Nova-3 and Xia rather than silently changing approved providers", () => {
   const base = {
     AI_VOICE_PILOT: "true",

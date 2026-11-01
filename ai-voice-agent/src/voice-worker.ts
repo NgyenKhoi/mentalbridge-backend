@@ -92,6 +92,7 @@ export class VoiceWorker {
     ) => void = () => undefined,
     private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
       undefined,
+    private readonly finalAggregationMs = 1500,
   ) {
     this.finished = new Promise((resolve) => {
       this.finish = resolve;
@@ -310,7 +311,7 @@ export class VoiceWorker {
       reject("PENDING_TOO_LARGE");
       return;
     }
-    this.pauseUntil = this.clock() + 1500;
+    this.pauseUntil = this.clock() + this.finalAggregationMs;
     this.diagnostic({ phase: "stt_final", transcriptResult: "PENDING" });
     if (!this.busy) this.setState("TRANSCRIBING");
   }

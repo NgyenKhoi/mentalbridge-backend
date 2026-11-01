@@ -242,7 +242,7 @@ async function verifyPublication(
   else if (!signal.aborted) throw new AgentFailure("PROVIDER_FAILED");
 }
 export class LiveKitMedia implements MediaPort {
-  private readonly pilotSpeechBudget = new PilotSpeechBudget();
+  private readonly pilotSpeechBudget: PilotSpeechBudget;
   private session: voice.AgentSession | undefined;
   private agent: voice.Agent | undefined;
   private speech: voice.SpeechHandle | undefined;
@@ -258,7 +258,11 @@ export class LiveKitMedia implements MediaPort {
     private readonly configuration: AgentConfiguration,
     private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
       undefined,
-  ) {}
+  ) {
+    this.pilotSpeechBudget = new PilotSpeechBudget(
+      configuration.pilotTtsMaxCharacters ?? 1200,
+    );
+  }
   async start(callbacks: MediaCallbacks) {
     initializeLogger({ pretty: false, level: "silent" });
     this.callbacks = callbacks;
