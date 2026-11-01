@@ -6,7 +6,34 @@ Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not c
 another mock-only delivery milestone. Tests verify production changes without
 making provider calls before approval.
 
-## Current status: extended-call heartbeat correction — 2026-11-01
+## Current voice selection and manual retest — 2026-11-01
+
+The owner selected Cartesia Lien
+`8e8f222d-c817-4cc5-822b-8bf76ca7e98d` for the next pilot after reporting quiet
+Xia playback, including in Cartesia's voice library. The pilot allowlist now
+accepts that explicit selection as well as historical Xia. The pinned Sonic3
+model, Vietnamese language, budget, consent and no-recording policy do not
+change. No gain override, automatic provider/voice fallback or live enablement
+is included. Prior Xia configurations and evidence remain unchanged.
+
+On the preceding `c821ab06` manual retest, a2141ms heartbeat was acknowledged
+successfully. Four Sonnet replies validated and three audio replies were
+published; the reader confirmed hearing complete replies and then clarified
+that they intentionally ended/closed the call. The following request aborts
+are not evidence of another automatic600-second cutoff or a Bedrock outage.
+The raw `AGENT_FAILURE`, downstream `ABORTED` and failed ledger outcome remain
+retained; closing client media before its end API reaches Journal can race with
+an in-flight turn. That terminal-classification behavior is not repaired by
+this voice-selection change.
+
+Accepted-final-to-first-audio was5371/5766/6683ms for the three published
+replies. Full600-second stability and Lien loudness have not been verified.
+Both Voice flags are OFF after teardown, room/active Egress are zero, and the
+same USD1 envelope retains all nine Converse reservations without refunding
+the final unknown inference outcome. A new voice selection does not restore
+daily quota or authorize another admission by itself.
+
+## Extended-call heartbeat correction — earlier 2026-11-01 evidence
 
 The separately authorized USD1/30-turn local attempt on `f187f053` admitted
 600 seconds and reached four validated Sonnet replies and three published Xia

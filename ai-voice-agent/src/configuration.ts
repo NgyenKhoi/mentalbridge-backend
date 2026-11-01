@@ -123,7 +123,10 @@ export function loadConfiguration(
   if (
     configuration.pilot &&
     (configuration.sttModel !== "deepgram/nova-3" ||
-      configuration.voiceId !== "b8cd71e3-bc14-4538-a530-d6314731c036")
+      ![
+        "b8cd71e3-bc14-4538-a530-d6314731c036",
+        "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+      ].includes(configuration.voiceId ?? ""))
   )
     throw new AgentFailure("CONFIGURATION_INVALID");
   if (

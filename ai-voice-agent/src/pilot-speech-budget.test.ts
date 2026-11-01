@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PilotSpeechBudget } from "./pilot-speech-budget.js";
 import { loadConfiguration } from "./configuration.js";
@@ -66,19 +67,32 @@ void test("final aggregation configuration preserves the default and bounds a sh
   }
 });
 
-void test("pilot pins Nova-3 and Xia rather than silently changing approved providers", () => {
+void test("pilot pins Nova-3 and Sonic 3 and explicitly accepts approved Lien or historical Xia", () => {
   const base = {
     AI_VOICE_PILOT: "true",
     AI_VOICE_TTS_VOICE_ID: "b8cd71e3-bc14-4538-a530-d6314731c036",
   };
-  assert.equal(loadConfiguration(base).pilot, true);
+  const historical = loadConfiguration(base);
+  assert.equal(historical.pilot, true);
+  assert.equal(historical.voiceId, base.AI_VOICE_TTS_VOICE_ID);
+  const current = loadConfiguration({
+    ...base,
+    AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  });
+  assert.equal(current.voiceId, "8e8f222d-c817-4cc5-822b-8bf76ca7e98d");
+  assert.equal(current.sttModel, "deepgram/nova-3");
+  assert.equal(current.ttsModel, "cartesia/sonic-3-2026-01-12");
   assert.throws(() =>
     loadConfiguration({ ...base, AI_VOICE_STT_MODEL: "deepgram/nova-2" }),
   );
   assert.throws(() =>
     loadConfiguration({
       ...base,
-      AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+      AI_VOICE_TTS_MODEL: "cartesia/sonic-3",
     }),
   );
+  for (const voice of [undefined, "", randomUUID(), "unknown"])
+    assert.throws(() =>
+      loadConfiguration({ ...base, AI_VOICE_TTS_VOICE_ID: voice }),
+    );
 });

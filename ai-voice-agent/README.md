@@ -19,7 +19,13 @@ and explicit `LIVE_APPROVED`; registration, named dispatch and real media remain
 unverified while disabled.
 
 Set `AI_VOICE_PILOT=true` in the external private env for the approved run. It
-pins Nova-3 and Xia `b8cd71e3-bc14-4538-a530-d6314731c036`. The per-attempt TTS
+pins Nova-3, Sonic 3 and an explicit approved voice. The owner selected Lien
+`8e8f222d-c817-4cc5-822b-8bf76ca7e98d` for future pilots after finding Xia quiet.
+Historical Xia `b8cd71e3-bc14-4538-a530-d6314731c036` remains in the pilot
+allowlist so prior configurations and evidence retain their original identity.
+`AI_VOICE_TTS_VOICE_ID` has no default: the operator must select the approved
+voice explicitly; missing or unknown pilot voices fail startup. No gain or
+volume override accompanies this selection. The per-attempt TTS
 input reservation defaults to 1,200 characters; an approved pilot budget may set
 `AI_VOICE_PILOT_TTS_MAX_CHARACTERS` to an integer from 1 to 8,000. Reservation
 happens before synthesis and is never refunded for interrupted, failed or unknown
@@ -71,20 +77,20 @@ Use exactly the keys in [.env.example](.env.example), injected into the server
 through managed secrets. No dotenv file is loaded automatically. Never put keys
 in a client, dispatch, Jira, repository, command-line value or build argument.
 
-| Key                                     | Meaning                                                                                                         |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `AI_VOICE_AGENT_ENABLED`                | Defaults to `false`; explicit `true` is rejected in CI/test                                                     |
-| `AI_VOICE_PILOT`                        | Defaults to `false`; explicit pilot mode pins Nova-3/Xia and reserves the configured TTS budget per attempt     |
-| `AI_VOICE_PILOT_TTS_MAX_CHARACTERS`     | Integer 1..8000, default 1200; approved pilot TTS input budget, including interrupted/failed/unknown speech     |
-| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 1500; pause joining adjacent valid STT finals before requesting a Journal turn       |
-| `AI_VOICE_AGENT_APPROVAL_VERSION`       | Reviewed account/privacy/speech QA record identifier, required when enabled                                     |
-| `LIVEKIT_URL`                           | Existing mentalbridge project's `wss://…livekit.cloud` origin                                                   |
-| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-only existing project credentials, also used for LiveKit Inference                                       |
-| `AI_VOICE_JOURNAL_BASE_URL`             | HTTPS Journal origin reachable by hosted worker; loopback HTTP allowed locally; default `http://127.0.0.1:3002` |
-| `AI_VOICE_JOURNAL_SERVICE_TOKEN`        | Purpose-specific token matching Journal `JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN`; distinct from LiveKit secret   |
-| `AI_VOICE_STT_MODEL`                    | Candidate `deepgram/nova-3` (default), or `deepgram/nova-2`, Vietnamese `vi`                                    |
-| `AI_VOICE_TTS_MODEL`                    | Pinned candidate `cartesia/sonic-3-2026-01-12`, Vietnamese `vi`                                                 |
-| `AI_VOICE_TTS_VOICE_ID`                 | Required reviewed default Cartesia voice UUID selected in MB-760; blank means no enablement                     |
+| Key                                     | Meaning                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `AI_VOICE_AGENT_ENABLED`                | Defaults to `false`; explicit `true` is rejected in CI/test                                                          |
+| `AI_VOICE_PILOT`                        | Defaults to `false`; pilot mode pins Nova-3/Sonic 3 and an explicitly approved voice, with the configured TTS budget |
+| `AI_VOICE_PILOT_TTS_MAX_CHARACTERS`     | Integer 1..8000, default 1200; approved pilot TTS input budget, including interrupted/failed/unknown speech          |
+| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 1500; pause joining adjacent valid STT finals before requesting a Journal turn            |
+| `AI_VOICE_AGENT_APPROVAL_VERSION`       | Reviewed account/privacy/speech QA record identifier, required when enabled                                          |
+| `LIVEKIT_URL`                           | Existing mentalbridge project's `wss://…livekit.cloud` origin                                                        |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-only existing project credentials, also used for LiveKit Inference                                            |
+| `AI_VOICE_JOURNAL_BASE_URL`             | HTTPS Journal origin reachable by hosted worker; loopback HTTP allowed locally; default `http://127.0.0.1:3002`      |
+| `AI_VOICE_JOURNAL_SERVICE_TOKEN`        | Purpose-specific token matching Journal `JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN`; distinct from LiveKit secret        |
+| `AI_VOICE_STT_MODEL`                    | Candidate `deepgram/nova-3` (default), or `deepgram/nova-2`, Vietnamese `vi`                                         |
+| `AI_VOICE_TTS_MODEL`                    | Pinned candidate `cartesia/sonic-3-2026-01-12`, Vietnamese `vi`                                                      |
+| `AI_VOICE_TTS_VOICE_ID`                 | Required explicit reviewed Cartesia UUID; current pilot Lien, historical Xia retained; blank means no enablement     |
 
 No additional Deepgram, Cartesia, OpenAI or AWS credentials belong in this
 worker. Enabled startup rejects those provider credentials and OTLP export
