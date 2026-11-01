@@ -208,7 +208,10 @@ export class VoiceTurnService {
       correlationId,
     );
     stage("turn_authorized");
-    if (this.configuration.VOICE_PILOT && input.sequence > 4) {
+    if (
+      this.configuration.VOICE_PILOT &&
+      input.sequence > (this.configuration.VOICE_PILOT.maxTurns ?? 4)
+    ) {
       await this.sessions.failTurn(id);
       this.discard(id);
       throw new VoiceLedgerError("QUOTA_EXHAUSTED");

@@ -16,13 +16,18 @@ Live Voice inference cannot fall back to fake, Gemini, Opus or another region. E
 nonproduction deterministic tests remain available only while Voice is disabled.
 
 For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
-`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Never change
+`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Optional
+`maxSessionSeconds` (integer 1–600) and `maxTurns` (integer 1–30) retain defaults
+of 90 seconds and four turns when omitted. These operational limits need an
+approved budget/window; they do not enable Voice. Never change
 the window to retry this campaign. Existing retained session rows count every
 admission in the window, including failed or refunded calls, in the same Mongo
 transaction as the global capacity write. Each allowlisted owner has at most
 one admission in that window even after a refund; the campaign still has two
 total admissions. Replays do not allocate again. The
-90-second deadline is frozen at admission and also bounded by the window end;
+session deadline is frozen at admission, bounded by the configured pilot cap,
+remaining daily quota and window end. Product policy still limits PLUS to 300
+seconds and PREMIUM to 600 seconds per session;
 daily Text/Voice policy and financial credits are unchanged. No new collection
 or migration is introduced.
 
@@ -32,8 +37,10 @@ can be counted before inference. Bedrock Runtime token counting at the Singapore
 endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
 most 1,900 tokens (100-token headroom under the per-turn
 2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
-to the approved global profile and caps output at 300 tokens; four turns per
-call/two calls bound output to 2,400. This capability/permission needs an actual
+to the approved global profile and caps output at 300 tokens. The default four
+turns per call and two admissions bound output to 2,400; an approved extended
+pilot can set at most 30 turns per call, so its budget must account for the
+configured admission and turn limits. This capability/permission needs an actual
 authorized runtime check and `bedrock:CountTokens` access, plus the existing
 Bearer-use authorization; unit tests do not establish account access. The
 [Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)

@@ -5,6 +5,8 @@ export const voicePilotSchema = z
     startsAt: z.iso.datetime().transform((value) => new Date(value)),
     endsAt: z.iso.datetime().transform((value) => new Date(value)),
     ownerIds: z.array(z.uuid()).min(1).max(2),
+    maxSessionSeconds: z.number().int().min(1).max(600).optional(),
+    maxTurns: z.number().int().min(1).max(30).optional(),
   })
   .strict()
   .refine((value) => {

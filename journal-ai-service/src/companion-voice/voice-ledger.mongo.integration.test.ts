@@ -291,6 +291,78 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
   );
 
   await t.test(
+    "extended pilot reservations remain bounded by product plan, daily quota and window without restoring owner admissions",
+    async () => {
+      for (const row of [
+        { plan: "PREMIUM", usedSeconds: 0, window: 900, expected: 600 },
+        { plan: "PLUS", usedSeconds: 0, window: 900, expected: 300 },
+        { plan: "PREMIUM", usedSeconds: 1680, window: 900, expected: 120 },
+        { plan: "PREMIUM", usedSeconds: 0, window: 75, expected: 75 },
+      ] as const) {
+        const { databaseName, database, a: unrestricted } = await fixture();
+        const owner = randomUUID();
+        const first = clients[0];
+        const second = clients[1];
+        assert.ok(first && second);
+        const pilot = {
+          startsAt: at(-1000),
+          endsAt: at(row.window * 1000),
+          ownerIds: [owner],
+          maxSessionSeconds: 600,
+          maxTurns: 30,
+        };
+        const a = new MongoVoiceLedger(first, databaseName, pilot);
+        const b = new MongoVoiceLedger(second, databaseName, pilot);
+        const request = input(owner);
+        request.entitlement = entitlement(start, row.plan);
+        await unrestricted.recordStartAttempt(owner, start, request.keyHash);
+        await database.collection("ai_voice_daily_usage").updateOne(
+          { ownerId: owner },
+          {
+            $set: {
+              usedSessions: row.usedSeconds ? 1 : 0,
+              usedSeconds: row.usedSeconds,
+            },
+          },
+        );
+        const admitted = await a.reserve(request);
+        assert.equal(admitted.admittedSeconds, row.expected);
+        assert.equal(
+          admitted.hardStopAt.getTime(),
+          start.getTime() + row.expected * 1000,
+        );
+        await a.requestEnd(
+          owner,
+          admitted.voiceSessionId,
+          "PROVIDER_FAILURE",
+          at(100),
+        );
+        await a.settle(
+          admitted.voiceSessionId,
+          null,
+          "NEVER_DISPATCHED",
+          at(100),
+        );
+        await assert.rejects(
+          b.reserve({
+            ...input(owner, at(200)),
+            entitlement: entitlement(at(200), row.plan),
+          }),
+          code("QUOTA_EXHAUSTED"),
+        );
+        assert.equal(
+          (await b.reserve(request)).voiceSessionId,
+          admitted.voiceSessionId,
+        );
+        assert.equal(
+          await database.collection("ai_voice_sessions").countDocuments(),
+          1,
+        );
+      }
+    },
+  );
+
+  await t.test(
     "display snapshots cannot reserve the final slot or bypass concurrent admission",
     async () => {
       const { a, b } = await fixture();

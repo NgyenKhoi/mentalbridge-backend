@@ -90,3 +90,36 @@ void test("pilot window cannot outlive retained admission evidence or include mo
     false,
   );
 });
+
+void test("pilot optional limits preserve legacy input and reject unbounded or unknown overrides", () => {
+  const pilot = {
+    startsAt: "2026-11-01T00:00:00.000Z",
+    endsAt: "2026-11-01T01:00:00.000Z",
+    ownerIds: [randomUUID()],
+  };
+  const legacy = voicePilotSchema.parse(pilot);
+  assert.equal(legacy.maxSessionSeconds ?? 90, 90);
+  assert.equal(legacy.maxTurns ?? 4, 4);
+  const bounded = voicePilotSchema.parse({
+    ...pilot,
+    maxSessionSeconds: 600,
+    maxTurns: 30,
+  });
+  assert.equal(bounded.maxSessionSeconds, 600);
+  assert.equal(bounded.maxTurns, 30);
+  for (const patch of [
+    { maxSessionSeconds: 0 },
+    { maxSessionSeconds: 601 },
+    { maxSessionSeconds: 90.5 },
+    { maxSessionSeconds: "600" },
+    { maxTurns: 0 },
+    { maxTurns: 31 },
+    { maxTurns: 4.5 },
+    { maxTurns: "30" },
+    { unlimited: true },
+  ])
+    assert.equal(
+      voicePilotSchema.safeParse({ ...pilot, ...patch }).success,
+      false,
+    );
+});

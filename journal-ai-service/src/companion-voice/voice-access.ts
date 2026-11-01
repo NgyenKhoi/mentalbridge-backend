@@ -157,7 +157,9 @@ export class VoiceAccessService {
             ? Math.min(
                 voiceLimits(plan).perSessionSeconds,
                 quota.remainingSeconds,
-                this.pilot ? 90 : Number.POSITIVE_INFINITY,
+                this.pilot
+                  ? (this.pilot.maxSessionSeconds ?? 90)
+                  : Number.POSITIVE_INFINITY,
                 this.pilot
                   ? Math.floor(
                       (this.pilot.endsAt.getTime() - now.getTime()) / 1000,
@@ -313,6 +315,7 @@ export class VoiceAccessService {
     renew: boolean,
   ): Promise<{
     session: VoiceSession;
+    consent: VoiceOwnerDecision["consent"];
     entitlement: VoiceOwnerDecision["entitlement"];
   }> {
     const session = await this.ledger.findOwned(ownerId, voiceSessionId);
@@ -339,14 +342,23 @@ export class VoiceAccessService {
       if (denial) throw new VoiceAccessError(denial);
       if (!this.providerReady(decision.entitlement.packageCode))
         throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
-      if (!renew) return { session, entitlement: decision.entitlement };
+      if (!renew)
+        return {
+          session,
+          consent: decision.consent,
+          entitlement: decision.entitlement,
+        };
       const renewed = await this.ledger.renewAuthority(
         ownerId,
         voiceSessionId,
         this.clock(),
         authorityDeadline(decision, this.clock()),
       );
-      return { session: renewed, entitlement: decision.entitlement };
+      return {
+        session: renewed,
+        consent: decision.consent,
+        entitlement: decision.entitlement,
+      };
     } catch (error) {
       const failure = this.failure(error);
       await this.ledger.requestEnd(

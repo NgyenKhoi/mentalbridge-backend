@@ -524,7 +524,9 @@ export class MongoVoiceLedger {
       const admittedSeconds = Math.min(
         limits.perSessionSeconds,
         seconds,
-        this.pilot ? 90 : Number.POSITIVE_INFINITY,
+        this.pilot
+          ? (this.pilot.maxSessionSeconds ?? 90)
+          : Number.POSITIVE_INFINITY,
         this.pilot
           ? Math.floor(
               (this.pilot.endsAt.getTime() - input.now.getTime()) / 1000,

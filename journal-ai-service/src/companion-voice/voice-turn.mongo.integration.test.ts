@@ -31,6 +31,7 @@ import {
   type VoiceTurn,
   type VoiceTurnMetric,
 } from "./voice-turn.js";
+import type { VoicePilot } from "./voice-pilot.js";
 
 type RawRecord = Record<string, unknown> & { _id: string };
 const require = createRequire(import.meta.url);
@@ -96,7 +97,9 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     }
   });
   let count = 0;
-  const fixture = async (pilot = false) => {
+  const fixture = async (
+    pilot: boolean | Pick<VoicePilot, "maxSessionSeconds" | "maxTurns"> = false,
+  ) => {
     const name = `voice_turn_verify_${String(Date.now())}_${String(count++)}`;
     assert.match(name, /^voice_turn_verify_\d+_\d+$/);
     const db = client.db(name);
@@ -168,6 +171,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
               startsAt: new Date(now.getTime() - 1000).toISOString(),
               endsAt: new Date(now.getTime() + 3600000).toISOString(),
               ownerIds: [owner],
+              ...(typeof pilot === "object" ? pilot : {}),
             }),
           }
         : {}),
@@ -341,6 +345,23 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       assert.equal(f.calls(), 0);
       await assert.rejects(f.generate(f.input(1)));
       assert.equal(f.calls(), 0);
+    },
+  );
+
+  await t.test(
+    "extended pilot allows thirty ordered turns and rejects the thirty-first before provider work",
+    async () => {
+      const f = await fixture({ maxSessionSeconds: 600, maxTurns: 30 });
+      for (let sequence = 1; sequence <= 30; sequence++)
+        await f.generate(f.input(sequence));
+      assert.equal(f.calls(), 30);
+      await assert.rejects(
+        f.generate(f.input(31)),
+        rejected("QUOTA_EXHAUSTED"),
+      );
+      assert.equal(f.calls(), 30);
+      await assert.rejects(f.generate(f.input(1)));
+      assert.equal(f.calls(), 30);
     },
   );
 
