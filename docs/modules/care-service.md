@@ -45,7 +45,25 @@ Kafka, Redis, WebSocket, notification, or directory delivery.
   episode-scoped naturally idempotent Guide ensure and the read-only
   `mb-guided-journey-v1` pointer whose ordered next action keeps safety,
   professional support and an existing plan ahead of plan proposal; see the
-  Care README. MB-372 adds the bounded initial
+  Care README. MB-672 adds the owner-only `GET /api/v1/home-next-step`
+  (`mb-home-next-step-v1`, `Cache-Control: no-store`) for web and native Home.
+  It embeds that unchanged journey and reuses the current plan, cycle,
+  single-local-date occurrences and newest plan history from `SupportPlanV3Service`.
+  `plan.cycleDay`/`cycleLengthDays` copy cycle `currentDay`/`lengthDays`; both required fields are null when the plan has no cycle.
+  Clients keep safety and professional-support journey actions ahead of the plan
+  focus. For an ACTIVE/PAUSED plan, focus is ordered `RESUME_PAUSED`,
+  `REVIEW_DUE`, `DO_TODAY`, `TODAY_DONE`, then `NOTHING_TODAY`; review never
+  changes plan lifecycle. Today excludes CANCELLED occurrences, and the next
+  open occurrence is chosen by scheduled instant then plan action order.
+  Optional IANA `timezone` selects the local date; omission uses the plan
+  schedule timezone and an invalid value returns 400. A DRAFT is represented
+  only by the journey, and completed-plan context appears only when no current
+  or draft plan exists and the newest history entry is COMPLETED. Missing
+  support policy remains 503 `SUPPORT_POLICY_UNAVAILABLE`; unverifiable
+  entitlement retains the journey's resources fallback. This read adds no
+  table, migration, assessment answers/scores, Journal/emotion data or inferred
+  progress. See [ADR 0045](../adr/0045-home-next-step-read.md)
+  (`MB-HOME-NEXT-STEP-001`). MB-372 adds the bounded initial
   `PLUS`/`PREMIUM` draft and exact persisted reload. MB-373 adds admitted-choice
   mutation, exact revalidation, explicit activation, one-current-plan
   enforcement, and authoritative current reload. MB-374 adds the explicit
@@ -115,6 +133,15 @@ leaves the plan unchanged; acceptance repeats those checks and atomically
 supersedes the old plan, activates its replacement, and records the exact
 request in the SupportPlan command audit. The specialist receives status only
 and never obtains plan-mutation authority.
+
+MB-565 adds a separate minimized notification-fact outbox path. An authenticated
+assessment save emits `ASSESSMENT_RESULT_AVAILABLE`; the first persisted
+SupportGuide generation emits `SUPPORT_GUIDE_AVAILABLE`. The fact contains only
+recipient, closed fact type, exact target/version, and UTC availability time.
+Answers, scores, safety state, guide/resource copy, and provider data stay in
+Care. A leased relay publishes the closed v1 envelope to
+`mentalbridge.care.user-notification.v1` and marks the row complete only after
+Kafka acknowledgement.
 
 MB-178 does not implement specialist grants, automatic follow-up, clinical progress interpretation, export/deletion, or production retention. Support/intervention, analytics, Kafka event delivery, and these deferred workflows must not be inferred from the implemented profile/consent/history slice.
 

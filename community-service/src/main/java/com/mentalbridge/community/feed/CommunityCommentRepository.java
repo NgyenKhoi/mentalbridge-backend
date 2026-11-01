@@ -15,6 +15,23 @@ import org.springframework.data.repository.query.Param;
 
 interface CommunityCommentRepository extends JpaRepository<CommunityCommentEntity, UUID> {
 
+    @Query("select c.post.id from CommunityCommentEntity c where c.id = :id")
+    Optional<UUID> reactionPost(@Param("id") UUID id);
+
+    @Query(value = """
+            select c.* from community_comment c left join community_comment parent on parent.id = c.parent_comment_id
+            join community_profile author on author.id = c.author_profile_id
+            where c.id = :id and c.state = 'ACTIVE' and author.status = 'ACTIVE'
+            and (parent.id is null or parent.state in ('ACTIVE','OWNER_DELETED'))
+            and not exists (select 1 from community_block b where
+              (b.blocker_profile_id = :viewer and b.blocked_profile_id in (c.author_profile_id,parent.author_profile_id))
+              or (b.blocked_profile_id = :viewer and b.blocker_profile_id in (c.author_profile_id,parent.author_profile_id)))
+            and not exists (select 1 from community_content_hide h where h.hider_profile_id = :viewer
+              and h.target_type = 'COMMENT' and h.target_id = c.id)
+            for update of c
+            """, nativeQuery = true)
+    Optional<CommunityCommentEntity> reactionTarget(@Param("id") UUID id, @Param("viewer") UUID viewer);
+
 	@Query(value = """
 			SELECT comment.*
 			FROM community_comment comment

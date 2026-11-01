@@ -12,6 +12,26 @@ const requiredEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('configuration', () => {
+  it('requires dedicated signing configuration and Kafka only when Community notice intake is enabled', () => {
+    expect(loadConfiguration(requiredEnvironment).CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED).toBe(
+      false,
+    );
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED: 'true',
+      }),
+    ).toThrow();
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED: 'true',
+        KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+        CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY: 'synthetic-key-validated-at-client-startup',
+        CONTENT_COMMUNITY_NOTIFICATION_KEY_ID: 'content-test',
+      }).CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED,
+    ).toBe(true);
+  });
   it('loads required values and defaults', () => {
     const configuration = loadConfiguration(requiredEnvironment);
 
@@ -27,8 +47,14 @@ describe('configuration', () => {
     expect(configuration.APPOINTMENT_REMINDER_ENABLED).toBe(false);
     expect(configuration.CONTENT_APPOINTMENT_CONSUMER_ENABLED).toBe(false);
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(false);
+    expect(configuration.CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED).toBe(false);
     expect(configuration.CONSULTATION_SERVICE_URL).toBe('http://localhost:8082');
     expect(configuration.IDENTITY_SERVICE_URL).toBe('http://localhost:8080');
+    expect(configuration.CONTENT_PUSH_DELIVERY_ENABLED).toBe(false);
+    expect(configuration.CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS).toBe(900);
+    expect(configuration.CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS).toBe(300);
+    expect(configuration.CONTENT_PUSH_DEVICE_RATE_LIMIT).toBe(30);
+    expect(configuration.CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS).toBe(60);
   });
 
   it('normalizes configured CORS origins', () => {
@@ -170,5 +196,36 @@ describe('configuration', () => {
     });
 
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(true);
+  });
+
+  it('requires push credentials and a valid encryption key when delivery is enabled', () => {
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: 'not-a-key',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+        EXPO_ACCESS_TOKEN: 'synthetic-token',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: 'not-a-key',
+      }),
+    ).toThrow();
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+        EXPO_ACCESS_TOKEN: 'synthetic-token',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
+      }).CONTENT_PUSH_DELIVERY_ENABLED,
+    ).toBe(true);
   });
 });

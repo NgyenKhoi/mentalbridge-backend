@@ -99,6 +99,7 @@ class LiveKitCloudJourneyTests extends ConsultationTestProperties {
 				""").param("id", userId).param("ref", "mb384-disposable-" + userId)
 				.param("start", java.sql.Timestamp.from(clock.instant().minusSeconds(60)))
 				.param("end", java.sql.Timestamp.from(clock.instant().plus(Duration.ofDays(30)))).update();
+		establishPaidEntitlement(jdbc, userId);
 		var control = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		var fixtureKey = UUID.randomUUID().toString();
 		control.createContext("/api/v1/account", this::account);

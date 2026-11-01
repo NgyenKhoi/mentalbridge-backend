@@ -14,7 +14,7 @@
 - Contract: `contracts/openapi/care-service-v1.yaml`
 - Runtime: `SupportPlanController`, `SupportPlanService`, `SupportPlanWriter`, `ReassessmentSummaryService`
 - Migration: `020-support-plan-replacement-review.sql`
-- Data model: `docs/domain-model/relational/postgresql-logical-schema.sql` and `docs/database/postgresql-field-data-dictionary.md`
+- Data model: [Care logical SQL](domain-model/relational/care-service.sql) and [Care field dictionary](database/postgresql/care-service.md)
 - Integration coverage: `SupportPlanIntegrationTests`
 
 ## Verification

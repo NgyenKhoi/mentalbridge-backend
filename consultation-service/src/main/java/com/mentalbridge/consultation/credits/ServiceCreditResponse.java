@@ -5,9 +5,11 @@ import java.util.List;
 import java.util.UUID;
 
 import com.mentalbridge.consultation.entitlement.EntitlementSource;
+import com.mentalbridge.consultation.entitlement.CurrentServiceEntitlementService.EntitlementState;
 import com.mentalbridge.consultation.entitlement.ServicePackage;
 
-public record ServiceCreditResponse(UUID accountId, ServicePackage packageCode, EntitlementSource source,
+public record ServiceCreditResponse(UUID accountId, ServicePackage packageCode, EntitlementState entitlementState,
+		boolean supportPlanEnabled, EntitlementSource source,
 		String sourceReference, Instant periodStart, Instant periodEnd, String policyVersion, Balance balance,
 		ReservationCapacity reservationCapacity, List<LedgerEvent> history, Instant generatedAt) {
 

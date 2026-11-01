@@ -1,0 +1,51 @@
+diff --git a/docs/database/postgresql/community-service.md b/docs/database/postgresql/community-service.md
+index 51ce14dd..8c81546c 100644
+--- a/docs/database/postgresql/community-service.md
++++ b/docs/database/postgresql/community-service.md
+@@ -333,7 +333,9 @@ These tables belong only to `mentalbridge_community`. Liquibase `0017-community-
+
+ ### `public.community_chat_message`
+
+-Community's encrypted text-message authority under Liquibase 0018. No raw message is placed in Kafka, Redis, a notification or another owner's database.
++Community's encrypted text-message authority under Liquibase 0018, extended by
++Liquibase 0022 with author retraction. No raw message is placed in Kafka, Redis,
++a notification or another owner's database.
+
+ | Field | Purpose |
+ | --- | --- |
+@@ -345,8 +347,10 @@ Community's encrypted text-message authority under Liquibase 0018. No raw messag
+ | `server_sequence` | Private positive per-conversation order allocated in the same transaction as content/facts; never returned in REST/socket DTOs or public versions. |
+ | `content_ciphertext` | Nullable versioned AES-256-GCM ciphertext with random nonce and exact conversation/message/sender associated data. Null only after retention purge; never plaintext. |
+ | `content_fingerprint` | Versioned keyed HMAC of normalized target/client/content used only for retry consistency; retains no recoverable message text. |
++| `state` | `ACTIVE` or `RETRACTED`. Retraction is an idempotent sender-only transition and cannot return to active. |
+ | `created_at` | Immutable UTC microsecond save instant; orders eligible activity and enforces cross-device rolling send limits. |
+ | `expires_at` | Immutable save-time retention cutoff (90 days under accepted policy v1). Content becomes unreadable at this instant, independently of sweep timing. |
+-| `purged_at` | Nullable UTC physical ciphertext-erasure checkpoint; present exactly when ciphertext is null. The content-free identity tombstone prevents expired-content recreation. |
++| `retracted_at` | Nullable UTC microsecond instant of the first successful sender retraction. A retracted row remains at its original private sequence and never creates unread. |
++| `purged_at` | Nullable UTC physical ciphertext-erasure checkpoint; present exactly when ciphertext is null. For retraction it equals `retracted_at`; the content-free identity tombstone prevents retry resurrection. |
+
+ ### `public.community_chat_read_state`
+diff --git a/docs/domain-model/relational/community-service.sql b/docs/domain-model/relational/community-service.sql
+index 650dd293..b4d1b83f 100644
+--- a/docs/domain-model/relational/community-service.sql
++++ b/docs/domain-model/relational/community-service.sql
+@@ -324,13 +324,18 @@ CREATE TABLE community.community_chat_message (
+   server_sequence bigint NOT NULL CHECK (server_sequence > 0),
+   content_ciphertext text,
+   content_fingerprint varchar(100) NOT NULL,
++  state varchar(12) NOT NULL DEFAULT 'ACTIVE' CHECK (state IN ('ACTIVE', 'RETRACTED')),
+   created_at timestamptz NOT NULL,
+   expires_at timestamptz NOT NULL,
++  retracted_at timestamptz,
+   purged_at timestamptz,
+   UNIQUE (conversation_id, sender_profile_id, client_message_id),
+   UNIQUE (conversation_id, server_sequence),
+   CHECK (expires_at > created_at),
+-  CHECK ((content_ciphertext IS NULL) = (purged_at IS NOT NULL))
++  CHECK ((content_ciphertext IS NULL) = (purged_at IS NOT NULL)),
++  CHECK ((state = 'ACTIVE' AND retracted_at IS NULL) OR
++    (state = 'RETRACTED' AND retracted_at IS NOT NULL AND content_ciphertext IS NULL AND purged_at = retracted_at)),
++  CHECK (retracted_at IS NULL OR retracted_at >= created_at)
+ );
+ CREATE TABLE community.community_chat_read_state (
+   conversation_id uuid NOT NULL REFERENCES community.community_chat_conversation(id) ON DELETE CASCADE,

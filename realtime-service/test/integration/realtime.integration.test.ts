@@ -76,6 +76,7 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
   beforeAll(async () => {
     [mongoContainer, redisContainer] = await Promise.all([
       new GenericContainer('mongo:8.0')
+        .withEnvironment({ GLIBC_TUNABLES: 'glibc.pthread.rseq=1' })
         .withCommand(['--setParameter', 'enableTestCommands=1'])
         .withExposedPorts(27017)
         .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))

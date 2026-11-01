@@ -98,6 +98,48 @@ public class NativeSupportPlanService {
 		return views.get(userId, activated);
 	}
 
+	SupportPlanV3Service.SupportPlanV3View proposeReviewed(UUID userId, UUID currentId, long currentVersion, UUID evaluationId,
+			SupportPlanPolicy.Proposal proposal, SupportPlanPersonalizationService.PersonalizationSnapshot personalization,
+			String bearer, String key, String requestHash, UUID correlationId, Runnable guard) {
+		var replay = writer.reviewedReplay(userId, key, requestHash);
+		if (replay != null) return views.get(userId, replay.planId());
+		var entitlement = paid(userId, bearer, correlationId);
+		var evaluation = evaluations.getCurrentCompatible(userId, evaluationId);
+		episodes.requiredEvaluationContext(userId, evaluationId);
+		requireSafeProposal(evaluation);
+		var selections = proposal.slots().stream().map(slot -> new SelectedResource(slot.slotId(),
+				slot.selectedResource().resourceId(), slot.selectedResource().contentVersion())).toList();
+		var request = policy.revalidationRequest(evaluation, selections);
+		if (!proposal.families().stream().map(family -> family.family() + ":" + family.targetDomain()).sorted().toList()
+				.equals(request.families().stream().map(family -> family.family() + ":" + family.targetDomain()).sorted().toList())
+				|| proposal.slots().isEmpty() || proposal.slots().size() > 5
+				|| selections.stream().map(SelectedResource::slotId).distinct().count() != selections.size()
+				|| selections.stream().map(selection -> selection.resourceId() + ":" + selection.contentVersion()).distinct().count() != selections.size()
+				|| request.slots().stream().filter(slot -> "CORE".equals(slot.kind())).anyMatch(slot ->
+						proposal.slots().stream().noneMatch(selected -> selected.slotId().equals(slot.slotId())))
+				|| proposal.slots().stream().anyMatch(selected -> request.slots().stream().noneMatch(slot ->
+						slot.slotId().equals(selected.slotId()) && slot.kind().equals(selected.kind())
+								&& slot.targetDomain().equals(selected.targetDomain()) && slot.purposeCode().equals(selected.purposeCode())))) throw stale();
+		policy.validate(request, eligibility.resolve(request.batch(), bearer, correlationId));
+		UUID id = writer.proposeReviewed(userId, currentId, currentVersion, key, requestHash, evaluation, entitlement, proposal, personalization,
+				"STANDARD_SAFETY_REMINDER",
+				"Nếu bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực bạn đã chọn.", clock.instant(), guard);
+		return views.get(userId, id);
+	}
+
+	Revalidation revalidateCurrent(UUID userId, UUID planId, String bearer, UUID correlationId) {
+		return revalidateCurrent(userId, planId, bearer, correlationId, null);
+	}
+
+	private Revalidation revalidateCurrent(UUID userId, UUID planId, String bearer, UUID correlationId,
+			CurrentEntitlementResponse entitlement) {
+		var plan = plans.findByIdAndUserId(planId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		return plan.modelVersion() == 3
+				? revalidate(userId, bearer, correlationId, writer.required(userId, planId), entitlement)
+				: revalidateLegacy(userId, bearer, correlationId, plan);
+	}
+
 	public ReplacementReview reviewReplacement(UUID userId, UUID draftId, long version, String bearer,
 			SupportPlanService.ReplacePlanCommand command, UUID correlationId) {
 		var reviewed = prepareReplacement(userId, draftId, version, bearer, command, correlationId);
@@ -141,6 +183,36 @@ public class NativeSupportPlanService {
 		return views.get(userId, continued);
 	}
 
+	SupportPlanV3Service.SupportPlanV3View continueReviewed(UUID userId, UUID planId, long version,
+			String bearer, String key, String requestHash, UUID correlationId, Runnable guard) {
+		var replay = writer.reviewedReplay(userId, key, requestHash);
+		if (replay != null) return views.get(userId, replay.planId());
+		var entitlement = paid(userId, bearer, correlationId);
+		var evidence = revalidateCurrent(userId, planId, bearer, correlationId, entitlement);
+		UUID continued = writer.continueReviewed(userId, planId, version, key, requestHash, evidence, clock.instant(), guard);
+		return views.get(userId, continued);
+	}
+
+	SupportPlanV3Service.SupportPlanV3View keepReviewed(UUID userId, UUID planId, long version,
+			String bearer, String key, String requestHash, UUID correlationId, Runnable guard) {
+		if (writer.reviewedReplay(userId, key, requestHash) != null) throw idempotencyConflict();
+		revalidateCurrent(userId, planId, bearer, correlationId);
+		return views.get(userId, writer.keepReviewed(userId, planId, version, guard));
+	}
+
+	SupportPlanV3Service.SupportPlanV3View replaceReviewed(UUID userId, UUID draftId, long version, String bearer,
+			String key, String requestHash, SupportPlanService.ReplacePlanCommand command, UUID correlationId, Runnable guard) {
+		var replay = writer.reviewedReplay(userId, key, requestHash);
+		if (replay != null) return views.get(userId, replay.planId());
+		var reviewed = prepareReplacement(userId, draftId, version, bearer, command, correlationId);
+		if ("CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE".equals(reviewed.view().outcome())) {
+			throw conflict("SUPPORT_PLAN_REPLACEMENT_UNCHANGED", "The proposed plan has no different admitted action intent");
+		}
+		UUID applied = writer.replaceReviewed(userId, draftId, version, command.currentSupportPlanId(), command.currentVersion(),
+				command.reassessmentSummaryId(), reviewed.view().outcome(), key, requestHash, reviewed.evidence(), correlationId, clock.instant(), guard);
+		return views.get(userId, applied);
+	}
+
 	public History history(UUID userId, int limit, String cursor) {
 		java.time.Instant before = null;
 		UUID beforeId = null;
@@ -165,7 +237,7 @@ public class NativeSupportPlanService {
 		return new History(rows.stream().limit(limit).map(row -> views.get(userId, row.plan().id())).toList(), next, more);
 	}
 
-	private PreparedReplacement prepareReplacement(UUID userId, UUID draftId, long version, String bearer,
+	PreparedReplacement prepareReplacement(UUID userId, UUID draftId, long version, String bearer,
 			SupportPlanService.ReplacePlanCommand command, UUID correlationId) {
 		var draft = draft(userId, draftId, version);
 		var current = plans.findByIdAndUserId(command.currentSupportPlanId(), userId).orElseThrow(() ->
@@ -208,15 +280,17 @@ public class NativeSupportPlanService {
 				clock.instant()), evidence);
 	}
 
-	private Set<String> actionIntents(SupportPlanV3Service.SupportPlanV3View view) {
-		var values = new HashSet<String>();
-		for (var focus : view.focuses()) for (var action : focus.actions()) {
-			if ("ENDED".equals(action.status())) continue;
-			var source = action.source();
-			values.add(action.actionType() + ":" + (source == null ? "" : source.ownerDomain() + ":"
-					+ source.sourceKind() + ":" + source.sourceId() + ":" + source.sourceRevision()));
-		}
-		return values;
+	private List<Set<String>> actionIntents(SupportPlanV3Service.SupportPlanV3View view) {
+		return view.focuses().stream().map(focus -> {
+			var values = new HashSet<String>();
+			for (var action : focus.actions()) {
+				if ("ENDED".equals(action.status())) continue;
+				var source = action.source();
+				values.add(action.actionType() + ":" + (source == null ? "" : source.ownerDomain() + ":"
+						+ source.sourceKind() + ":" + source.sourceId() + ":" + source.sourceRevision()));
+			}
+			return Set.copyOf(values);
+		}).toList();
 	}
 
 	private Revalidation revalidate(UUID userId, String bearer, UUID correlation, Snapshot snapshot,
@@ -308,7 +382,7 @@ public class NativeSupportPlanService {
 		return new Revalidation(evaluation.policyVersion(), entitlement, result.resourcePolicyVersion(), result.resourcesResolvedAt());
 	}
 
-	private void revalidateLegacy(UUID userId, String bearer, UUID correlation, SupportPlanEntity plan) {
+	private Revalidation revalidateLegacy(UUID userId, String bearer, UUID correlation, SupportPlanEntity plan) {
 		var stored = legacy.required(userId, plan.id());
 		var evaluation = evaluations.getCurrentCompatible(userId, plan.supportEvaluationId());
 		var selections = stored.slots().stream().filter(value -> value.slot().selectedResource() != null)
@@ -317,7 +391,8 @@ public class NativeSupportPlanService {
 		var request = policy.revalidationRequest(evaluation, selections);
 		if (!stored.families().stream().map(value -> value.family() + ":" + value.targetDomain()).toList()
 				.equals(request.families().stream().map(value -> value.family() + ":" + value.targetDomain()).toList())) throw stale();
-		policy.validate(request, eligibility.resolve(request.batch(), bearer, correlation));
+		var result = policy.validate(request, eligibility.resolve(request.batch(), bearer, correlation));
+		return new Revalidation(evaluation.policyVersion(), null, result.resourcePolicyVersion(), result.resourcesResolvedAt());
 	}
 
 	private Snapshot draft(UUID userId, UUID id, long version) {
@@ -327,7 +402,7 @@ public class NativeSupportPlanService {
 		return snapshot;
 	}
 
-	private CurrentEntitlementResponse paid(UUID userId, String bearer, UUID correlation) {
+	CurrentEntitlementResponse paid(UUID userId, String bearer, UUID correlation) {
 		var value = entitlements.current(userId, bearer, correlation);
 		if (value.packageCode() == ServicePackage.FREE) throw new ApiException(HttpStatus.FORBIDDEN,
 				"SUPPORT_PLAN_ENTITLEMENT_REQUIRED", "A current Plus or Premium entitlement is required");
@@ -351,5 +426,5 @@ public class NativeSupportPlanService {
 	public record ReplacementReview(String outcome, List<String> rationaleCodes, SupportPlanV3Service.SupportPlanV3View currentPlan,
 			SupportPlanV3Service.SupportPlanV3View proposedPlan, ReassessmentSummaryView reassessmentSummary, java.time.Instant reviewedAt) { }
 	public record History(List<SupportPlanV3Service.SupportPlanV3View> items, String nextCursor, boolean hasMore) { }
-	private record PreparedReplacement(ReplacementReview view, Revalidation evidence) { }
+	record PreparedReplacement(ReplacementReview view, Revalidation evidence) { }
 }

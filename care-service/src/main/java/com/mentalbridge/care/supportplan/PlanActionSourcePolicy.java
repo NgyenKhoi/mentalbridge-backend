@@ -19,7 +19,15 @@ final class PlanActionSourcePolicy {
 
 	void validateCompletionEvidence(String actionType, EvidenceReference evidence) {
 		switch (actionType(actionType)) {
-			case RESOURCE, ROUTINE_SELF_MANAGEMENT -> requireCareEvidence(evidence, "USER_ACKNOWLEDGEMENT");
+			case RESOURCE -> {
+				if (evidence != null && "CONTENT".equals(evidence.owner())
+						&& oneOf(evidence.kind(), "RESOURCE_PRACTICE_SESSION", "RESOURCE_COMPLETION")) {
+					requireEvidence(evidence, "CONTENT", evidence.kind());
+					if (!nonNegativeLong(evidence.revision())) throw invalidEvidence();
+				}
+				else requireCareEvidence(evidence, "USER_ACKNOWLEDGEMENT");
+			}
+			case ROUTINE_SELF_MANAGEMENT -> requireCareEvidence(evidence, "USER_ACKNOWLEDGEMENT");
 			case SELF_REPORT_REVIEW -> requireCareEvidence(evidence, "SELF_REPORT_REVIEW");
 			case JOURNAL -> requireEvidence(evidence, "JOURNAL_AI", "JOURNAL_ENTRY");
 			case EMOTION_CHECK_IN -> requireEvidence(evidence, "JOURNAL_AI", "EMOTION_CHECK_IN");

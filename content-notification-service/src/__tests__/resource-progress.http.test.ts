@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import { ConflictException, type INestApplication } from '@nestjs/common';
 import { exportSPKI, generateKeyPair, SignJWT, type KeyLike } from 'jose';
 import request from 'supertest';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -173,6 +173,62 @@ describe('resource progress HTTP boundary', () => {
         completedActionIds: ['step-1', 'step-1'],
         reflectionText: 'must not cross this boundary',
       })
+      .expect(422);
+  });
+
+  it('forwards the pinned version and rejects malformed version input', async () => {
+    const authorization = `Bearer ${await token()}`;
+    const target = `/api/v1/resource-progress/${RESOURCE_ID}/2026-09-28`;
+    await request(app.getHttpServer())
+      .put(target)
+      .set('Authorization', authorization)
+      .send({ status: 'COMPLETED', completedActionIds: [], resourceVersion: '3' })
+      .expect(200);
+    expect(repository.save).toHaveBeenCalledWith(OWNER_A, RESOURCE_ID, '2026-09-28', {
+      status: 'COMPLETED',
+      completedActionIds: [],
+      resourceVersion: '3',
+    });
+    for (const resourceVersion of ['03', '10000000000000000000']) {
+      await request(app.getHttpServer())
+        .put(target)
+        .set('Authorization', authorization)
+        .send({ status: 'COMPLETED', completedActionIds: [], resourceVersion })
+        .expect(422);
+    }
+  });
+
+  it('preserves unavailable publication conflicts at the HTTP boundary', async () => {
+    vi.mocked(repository.save).mockRejectedValueOnce(
+      new ConflictException({
+        type: 'https://mentalbridge.io/errors/RESOURCE_VERSION_UNAVAILABLE',
+        status: 409,
+        title: 'Resource version is unavailable',
+        code: 'RESOURCE_VERSION_UNAVAILABLE',
+      }),
+    );
+    const response = await request(app.getHttpServer())
+      .put(`/api/v1/resource-progress/${RESOURCE_ID}/2026-09-28`)
+      .set('Authorization', `Bearer ${await token()}`)
+      .send({ status: 'COMPLETED', completedActionIds: [], resourceVersion: '99' })
+      .expect(409);
+    expect(response.body.code).toBe('RESOURCE_VERSION_UNAVAILABLE');
+  });
+
+  it('accepts deprecated practiceStartedAt without treating it as required practice metadata', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/v1/resource-progress/${RESOURCE_ID}/2026-09-28`)
+      .set('Authorization', `Bearer ${await token()}`)
+      .send({
+        status: 'COMPLETED',
+        completedActionIds: [],
+        practiceStartedAt: '2000-01-01T00:00:00Z',
+      })
+      .expect(200);
+    await request(app.getHttpServer())
+      .put(`/api/v1/resource-progress/${RESOURCE_ID}/2026-09-28`)
+      .set('Authorization', `Bearer ${await token()}`)
+      .send({ status: 'COMPLETED', completedActionIds: [], practiceDurationSeconds: 60 })
       .expect(422);
   });
 

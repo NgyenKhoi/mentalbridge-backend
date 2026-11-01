@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/events/community/community-push-v1.schema.json",
+  "title": "Community generic push payload v1",
+  "description": "Payload contract only; does not activate a push provider or device registration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "notificationId",
+    "body"
+  ],
+  "properties": {
+    "notificationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "body": {
+      "const": "Bạn có thông báo mới trên MentalBridge."
+    }
+  }
+}

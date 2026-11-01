@@ -1,5 +1,142 @@
 # Consultation Service
 
+## PayOS pay-in (MB-786)
+
+[ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md) selects PayOS
+for subscription purchase/upgrade while keeping MoMo selectable and dormant.
+`DISABLED` remains the default; `FAKE` produces a deterministic simulated QR
+without a provider call. The catalogue reports the selected provider (`PAYOS`
+when disabled) and the authoritative checkout readiness flag.
+
+Real PayOS collection requires the explicit Spring `staging` profile, with no
+`prod`/`production` profile, all three collect credentials, the exact official
+API origin and HTTPS webhook/return/cancel URLs on `staging.mentalbridge.online`
+(default TLS port only). In Compose, `CONSULTATION_SPRING_PROFILES_ACTIVE` selects
+that profile; standalone deployments use `SPRING_PROFILES_ACTIVE`. Payout keys
+and MoMo production approval are not PayOS collect prerequisites. D1 permits
+the unchanged PLUS 5,000 / PREMIUM 10,000 VND test catalogue and full-price,
+zero-offset upgrade on staging only. Synthetic earnings remain non-redeemable;
+production cutover, refunds and payout implementation are outside this story.
+
+Checkout first commits the server-priced payment and numeric order code, then
+uses official `vn.payos:payos-java:2.0.1` outside the transaction. There is no
+automatic create retry; an uncertain command replay returns the same payment.
+Confirmed PayOS/FAKE checkout exposes the in-app QR payload and transfer details;
+the chosen local expiry remains authoritative if the provider omits expiry.
+Legacy URL fields remain nullable, with HTTPS provider-host validation.
+
+The public `POST /internal/v1/payments/payos/webhook` verifies the original body
+through the SDK, then validates the complete signed data and successful envelope.
+Only exact order/link/amount/reference evidence for an unexpired pending payment
+can activate a period and credits through the shared locked settlement path.
+Exact redelivery is idempotent. Signed mismatches, reused references, confirmation
+samples and terminal late receipts are sanitized `VERIFIED_UNMATCHED` evidence
+in commercial reconciliation, without raw payloads or bank-party details.
+
+Owner payment GET reconciles pending PayOS payments with signed SDK status queries,
+bounded cadence/backoff and no database transaction over HTTP. Only an exact
+`PAID` result with one matching transfer settles; underpayment stays pending.
+Expiry reconciles first, commits local finality/releases upgrade-held credits,
+then cancels the provider link. Return URLs never settle or cancel payments.
+Failed expiry cancellation retries with bounded backoff; six failed attempts
+leave `PAYOS_CANCEL_REQUIRES_REVIEW` in the persisted reconciliation audit code.
+The terminal payment and restored credits stay final throughout those retries.
+`terminalReason` is nullable for legacy payments; new known failures persist
+`EXPIRED`, `CANCELLED` or `PROVIDER_FAILED` alongside ledger status `FAILED`.
+
+| Configuration | Meaning |
+| --- | --- |
+| `PAYOS_PAYMENT_CLIENT_ID` | Collect channel client ID; injected, empty by default |
+| `PAYOS_PAYMENT_API_KEY` | Collect API key; injected, empty by default |
+| `PAYOS_PAYMENT_CHECKSUM_KEY` | Collect signature key; injected, empty by default |
+| `PAYOS_PAYMENT_BASE_URL` | `https://api-merchant.payos.vn`; other origins fail readiness |
+| `PAYOS_PAYMENT_WEBHOOK_URL` | Public HTTPS staging callback; registration is MB-788 |
+| `PAYOS_PAYMENT_RETURN_URL` | HTTPS staging browser return; never settlement evidence |
+| `PAYOS_PAYMENT_CANCEL_URL` | HTTPS staging browser cancel return; never financial evidence |
+
+SDK requests have a 10-second timeout, zero automatic retries and no payload
+logging. `confirmWebhook()` is an explicit gateway operation, not a startup
+side effect. MB-788 owns live registration, credentials and real-money evidence.
+
+Focused verification from this module on Java 21 with `SPRINGDOTENV_ENABLED=false`:
+
+```powershell
+.\mvnw.cmd -q '-Dtest=BillingPropertiesTests,PayosCheckoutGatewayTests,SubscriptionBillingIntegrationTests,PayosPaymentIntegrationTests,ConsultationOpenApiContractTests,ConsultationLiquibaseMigrationTests,ConsultationLiquibaseChangelogTests,PayosPaymentMigrationTests,AdminCommercialReconciliationIntegrationTests' test
+.\mvnw.cmd -q verify
+```
+
+Integration tests use isolated PostgreSQL Testcontainers, never shared databases.
+
+MB-779 rechecks authenticated JWT subjects against Identity before protected
+requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated
+`CONSULTATION_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN`; the read uses 250 ms
+connect and 750 ms response defaults, no retry, no ACTIVE cache, and fails closed.
+
+## Voice entitlement prerequisite (MB-756)
+
+`POST /internal/v1/ai-companion/voice-entitlement-authorizations` is a narrow
+read-only Journal/AI prerequisite for [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md).
+It delegates to `CurrentServiceEntitlementService.current(ownerId)`. Missing,
+expired and not-yet-effective grants return `FREE` / `DEFAULT_FREE` without
+`validUntil`; current PLUS/PREMIUM PAID/DEMO grants include their strict future
+expiry. The response echoes the exact opaque owner/session/purpose binding and
+returns policy/source/version provenance (for example
+`service-entitlement-v1:PAID:7`) in the frozen `entitlementVersion` string field
+(at most 128 characters). It contains no
+payment, source-reference, credit, balance or profile data.
+
+Inject `CONSULTATION_VOICE_JOURNAL_SERVICE_TOKEN` only into Consultation and
+Journal/AI's service-owned secret configuration. The exact header is
+`X-MentalBridge-Voice-Entitlement-Token`. An absent or empty configuration disables
+access without preventing startup. A configured token must contain 32–256
+printable ASCII characters without whitespace; malformed configuration fails
+startup. Reuse of Consultation's evidence or appointment-reminder token also
+fails startup. Use independent secrets for credentials held by other services;
+Consultation cannot compare secrets that are not configured locally.
+This credential is distinct from browser JWTs, worker, Care, reminder and
+general internal credentials; do not forward a user Authorization header.
+Only the trusted Journal caller may submit `ownerId`, `voiceSessionId` and
+`purpose: AI_COMPANION_VOICE`. Consultation echoes this session reference; it
+does not query Journal's session database or grant media access.
+
+Success and all authentication/validation/dependency errors use `no-store`.
+Voice errors retain the closed MB-755 Problem shape and codes with absolute
+type URIs; legacy Consultation routes keep their existing error behavior.
+No migration, financial mutation, provider call, voice admission, room or
+deployment is introduced. Care's independent consent prerequisite and final
+Journal integration remain separate owner deliveries.
+
+Focused verification:
+
+```sh
+./mvnw -B -Dspringdotenv.enabled=false -Dtest=VoiceEntitlementPropertiesTests,VoiceEntitlementControllerTests,ConsultationOpenApiContractTests,AdminOperationsSecurityIntegrationTests test
+```
+The HTTP slice uses the real current-entitlement service, a mocked owner
+repository and fixed time, without a database or external providers.
+
+## Migration naming and applied history (MB-717)
+
+New Consultation SQL migrations use UTC `yyyyMMddHHmmss-description.sql`, for
+example `20261022210000-add-owner-audit.sql`. Use a real calendar instant, lowercase
+kebab-case description and a timestamp not already used by another new file.
+Append its explicit include to `db.changelog-master.yaml` after the existing
+history; master include order, not filename sorting, determines execution order.
+Use a new changeset ID such as `consultation-20261022210000-add-owner-audit`.
+
+The 29 legacy changesets through `028` are frozen, including both `021` prefixes.
+They are different full identities and have both been applied. Do not renumber,
+rename, reorder or rewrite them, add `runAlways`/`runOnChange`, clear checksums,
+or change shared `DATABASECHANGELOG` rows to make filenames look sequential.
+The [MB-717 decision and evidence](../docs/story-mb-717-consultation-migration-names.md)
+records the inspected metadata and compatibility reasoning.
+
+`ConsultationLiquibaseChangelogTests` checks the ordered legacy identities and
+version-9 checksums against `src/test/resources/db/changelog/consultation-legacy-v1.tsv`,
+requires every SQL file to be included, and validates timestamp names/uniqueness
+for all files outside that fixed baseline. Do not regenerate the legacy fixture
+when adding a migration. `ConsultationLiquibaseMigrationTests` validates a fresh
+disposable PostgreSQL history and proves a second update does not replay it.
+
 MB-623 consolidates the existing online journey in the versioned
 [state/settlement map](../docs/policies/consultation-journey-state-map-v1.md).
 Its [verification runbook](../docs/runbooks/mb-623-consultation-journey.md)
@@ -121,6 +258,14 @@ MB-384 uses the existing LiveKit Cloud `mentalbridge` Free project. Set backend
 the existing local Spring configuration mechanism or injected environment.
 `CONSULTATION_VIDEO_ENABLED=false` is the safe runtime default, independent of
 slot publication. `LIVEKIT_TOKEN_TTL=PT2M` is bounded to 30 seconds–5 minutes.
+For the approved local product demo, `CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED`
+defaults false. An explicit local/dev/test profile and effective DEMO entitlement
+plus held DEMO credit are required; enabled staging/production fails startup.
+Booking keeps the current no-advance-delay, unexpired-slot contract. Both
+assigned actors may join a qualifying demo immediately after Specialist acceptance. PAID,
+FREE, chat, cancellation, completion and scheduled-end gates are unchanged.
+Early media is not completion evidence: explicitly ending a pre-start demo
+keeps verification pending and credit HELD, without earning or automatic release.
 No secret/token may enter browser configuration, logs, URLs or source control.
 Missing provider configuration fails video operations closed, not unrelated
 appointment/manual brief workflows. See [ADR 0039](../docs/adr/0039-livekit-cloud-video-consultation.md)
@@ -138,10 +283,11 @@ and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 | `IDENTITY_JWT_PUBLIC_KEY` | Yes | X.509 PEM public key used to verify tokens | local public key |
 | `CONSULTATION_VIDEO_AVAILABILITY_ENABLED` | No | Enables `IN_APP_VIDEO` slot publication only after the provider contract gate passes | `false` |
 | `CONSULTATION_VIDEO_ENABLED` | No | Enables authorized LiveKit connection issuance; not slot publication | `false` |
+| `CONSULTATION_DEMO_IMMEDIATE_VIDEO_ENABLED` | Local demo only | Source-scoped early video join after confirmation; prohibited in staging/production | `false` |
 | `LIVEKIT_URL` | Enabled video | Existing Cloud project's secure WebSocket origin; no path/query | `wss://<project-host>.livekit.cloud` |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Enabled video | Backend-only credentials for token issuance, room operations and signed webhooks | injected secrets |
 | `LIVEKIT_TOKEN_TTL` | No | New participant-token validity, bounded 30 seconds–5 minutes and clipped to scheduled end | `PT2M` |
-| `CONSULTATION_BILLING_MODE` | No | Subscription checkout mode: safe default `DISABLED`, deterministic local/CI `FAKE`, or explicitly approved `MOMO` | `DISABLED` |
+| `CONSULTATION_BILLING_MODE` | No | Subscription checkout mode: `DISABLED`, simulated `FAKE`, dormant approved `MOMO`, or staging-only `PAYOS` | `DISABLED` |
 | `CONSULTATION_BILLING_CHECKOUT_TTL` | No | Maximum lifetime of a pending purchase or upgrade checkout | `PT15M` |
 | `CONSULTATION_BILLING_EXPIRY_INTERVAL` | No | Scheduler interval for expiring abandoned checkouts and releasing upgrade-held credits | `PT1M` |
 | `MOMO_PAYMENT_PRODUCTION_APPROVED` | Real checkout | Explicit operational gate required together with complete credentials and HTTPS URLs | `false` |

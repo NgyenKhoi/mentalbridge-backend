@@ -1,6 +1,9 @@
 package com.mentalbridge.community.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,6 +37,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,12 +48,15 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import com.mentalbridge.community.configuration.IdentityAccountStatusVerifier;
 
 @Testcontainers
 @SpringBootTest
@@ -82,6 +89,7 @@ class CommunityNotificationRecoveryCrossServiceIT {
 	@Autowired CommunityInteractionOutboxRelayPersistence relayPersistence;
 	@Autowired CommunityInteractionRelayProperties relayProperties;
 	@Autowired KafkaTemplate<String, String> kafkaTemplate;
+	@MockitoBean IdentityAccountStatusVerifier accountStatusVerifier;
 
 	private Process notificationService;
 	private Path notificationLog;
@@ -99,6 +107,8 @@ class CommunityNotificationRecoveryCrossServiceIT {
 		properties.add("mentalbridge.community.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.community.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.community.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.community.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.community.cloudinary.cloud-name", () -> "test-cloud");
 		properties.add("mentalbridge.community.cloudinary.api-key", () -> "test-api-key");
 		properties.add("mentalbridge.community.cloudinary.api-secret", () -> "test-api-secret");
@@ -116,6 +126,12 @@ class CommunityNotificationRecoveryCrossServiceIT {
 		properties.add("mentalbridge.community.interaction-relay.send-timeout", () -> "5s");
 		properties.add("mentalbridge.community.interaction-relay.retry-base", () -> "1s");
 		properties.add("mentalbridge.community.interaction-relay.retry-maximum", () -> "5s");
+	}
+
+	@BeforeEach
+	void allowSyntheticAccounts() {
+		when(accountStatusVerifier.isActive(eq(POST_OWNER), any())).thenReturn(true);
+		when(accountStatusVerifier.isActive(eq(COMMENTER), any())).thenReturn(true);
 	}
 
 	@BeforeAll

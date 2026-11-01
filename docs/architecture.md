@@ -1,5 +1,34 @@
 # Architecture
 
+The accepted MB-755 [AI Voice contract](adr/0046-ai-voice-companion-contract.md)
+adds a planned Journal/AI-owned modality with Care dual consent and current
+Consultation entitlement. A dedicated Node agent uses isolated LiveKit Cloud
+media/dispatch and Vietnamese speech inference; its business turns use
+Journal/AI REST and the existing approved Bedrock route. This narrow provider
+media exception introduces no general business WebSocket API, Kafka dependency,
+new financial owner or access to ADR 0039 specialist rooms. No voice runtime is
+activated by the contract-first publication.
+
+Community peer chat is an accepted scoped extension in
+[ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md).
+Community owns its peer messages/membership in its own PostgreSQL;
+Realtime owns transport/ephemeral presence without a duplicate message store.
+The Realtime/MongoDB durable-chat statements below describe existing appointment
+chat and do not authorize reusing it for unrestricted peer messaging. MB-684
+contains contracts only. MB-685 delivers the opt-in direct Community provider,
+fresh Identity eligibility and minimized outbox publishing. MB-687 adds private
+groups/current membership epochs and isolated exact-message report intake.
+MB-689 adds signed current-viewer authorization/projections and `/community`
+Socket.IO delivery through minimized Kafka-to-Redis fanout. Private ordered
+delivery cursors and absolute read-state projections retain Community authority.
+MB-690 adds foreground multi-device presence in Redis and fresh Community-owned
+viewer/subject projections; presence never enters Kafka/history. MB-691 adds
+Content-owned durable Community notice work/inbox delivery, unread reaction
+grouping, quiet-hour deferral and generic chat/request/invitation notices under
+fresh exact-target Community authorization. Comment reactions use a separate
+compatible fact topic. Typing/shared receipts, case administration and real
+PUSH provider/device delivery remain downstream.
+
 > Current product authority/navigation: [Current Product Blueprint](CURRENT_PRODUCT_BLUEPRINT.md).
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and
 > distinguishes approved targets from implemented runtime.
@@ -27,15 +56,17 @@
 
 The core deployable business services are fixed as Spring Boot `identity-service`, `care-service`, `consultation-service`, and `community-service`, plus NestJS/TypeScript `journal-ai-service`, `realtime-service`, and `content-notification-service` using the ADR 0006 stack. ADR 0027 adds Community without granting it access to Care or Journal/AI data. ADR 0011 defers Python `phobert-worker` as an optional future benchmark baseline; it is not a current runtime or release dependency. Governance/reporting is implemented as bounded admin APIs and Kafka projections inside the relevant owner until a future ADR justifies another deployable. The edge gateway/reverse proxy and Eureka registry are infrastructure and contain no business orchestration.
 
-ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, MoMo payments/IPNs, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations, and MoMo payout reconciliation. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
+ADR 0005 assigns the cohesive billing bounded context to `consultation-service` without adding another deployable. Its PostgreSQL database is authoritative for plan versions, paid subscriptions, provider payments/verified receipts, upgrade offsets, consultation credits and ledger entries, specialist earnings, encrypted payout destinations and provider payout reconciliation. [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md) makes PayOS collect active on staging only and retains dormant MoMo. Other services query narrow current entitlement or appointment-eligibility decisions and never maintain a shadow balance.
 
 ADR 0012 bounds V1 screening and post-screening support to PHQ-9/`DEPRESSIVE_SYMPTOMS` and GAD-7/`ANXIETY_SYMPTOMS`. ADR 0013 freezes immutable SupportPlan template policy, compositional selection, slot bounds, eligibility roles, safety presentation, and lifecycle. Safety remains cross-cutting. Care owns domain-aware evaluation and final plan eligibility; Content/Notification owns exact reviewed resource definitions and eligibility provenance. Neither service reads the other's database, and AI owns neither decision.
 
 ADR 0017, as prospectively amended by ADR 0022, defines scope v2 across these owners: canonical packages are `FREE`,
 `PLUS`, and `PREMIUM`; every package receives a one-time Support Guide while
 only paid packages receive the durable Care-owned SupportPlan; new
-consultations use in-app chat/video only; and real payment/payout is VND through
-MoMo after its price, allocation, and credential gates pass.
+consultations use in-app chat/video only; and real payment/payout uses VND with
+price, allocation and credential gates. ADR 0047 permits the unchanged
+5,000/10,000 VND test catalogue through PayOS collect on staging only; production
+and real payout remain separately gated and fixture earnings non-redeemable.
 
 The Support Guide is a persisted immutable historical snapshot for one
 screening context, not ephemeral data and not a lifecycle aggregate. New

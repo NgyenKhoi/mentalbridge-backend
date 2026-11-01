@@ -44,7 +44,8 @@ class CommunityAdminAuditProducerTests {
 	void setUp() {
 		jdbc = mock(JdbcClient.class);
 		objectMapper = new ObjectMapper().findAndRegisterModules();
-		service = new CommunityModerationService(jdbc, Clock.fixed(NOW, ZoneOffset.UTC), objectMapper);
+		service = new CommunityModerationService(jdbc, Clock.fixed(NOW, ZoneOffset.UTC), objectMapper,
+				mock(com.mentalbridge.community.chat.CommunityChatVisibility.class));
 	}
 
 	@Test

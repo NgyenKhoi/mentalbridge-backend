@@ -15,6 +15,7 @@ import io.swagger.v3.oas.models.media.Schema;
 class ConsultationOpenApiContractTests {
 
 	private static final Set<String> OPERATIONS = Set.of(
+			"POST /internal/v1/ai-companion/voice-entitlement-authorizations",
 			"GET /api/v1/specialist-profile/documents",
 			"POST /api/v1/specialist-profile/documents",
 			"GET /api/v1/specialist-profile/documents/{documentId}/file",
@@ -44,6 +45,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/payments",
 			"GET /api/v1/payments/{paymentId}",
 			"POST /internal/v1/payments/momo/ipn",
+			"POST /internal/v1/payments/payos/webhook",
 			"GET /internal/v1/entitlements/current",
 			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
 			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
@@ -95,9 +97,36 @@ class ConsultationOpenApiContractTests {
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
 			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore",
 			"GET /api/v1/admin/payouts",
+			"GET /api/v1/admin/payouts/{payoutId}",
+			"GET /api/v1/admin/subscriptions/{subscriptionId}",
+			"GET /api/v1/admin/commercial/discrepancies",
+			"GET /api/v1/admin/commercial/provenance",
 			"GET /api/v1/admin/payments",
 			"GET /api/v1/admin/product-journey-metrics",
 			"POST /internal/v1/payouts/momo/ipn");
+
+	@Test
+	void voiceOwnerReadRetainsFrozenRequestDecisionAndClosedProblemSemantics() throws Exception {
+		var active = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var frozen = new com.fasterxml.jackson.databind.ObjectMapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "proposals", "companion-voice-v1.openapi.json")));
+		var schemas = active.path("components").path("schemas");
+		assertThat(schemas.path("VoiceOwnerCheck")).isEqualTo(frozen.path("components").path("schemas").path("OwnerCheck"));
+		assertThat(schemas.path("VoiceEntitlementDecision"))
+				.isEqualTo(frozen.path("components").path("schemas").path("EntitlementDecision"));
+		var problem = schemas.path("VoiceProblem");
+		assertThat(problem.path("additionalProperties").booleanValue()).isFalse();
+		assertThat(problem.path("required")).isEqualTo(frozen.path("components").path("schemas").path("Problem").path("required"));
+		var operation = active.path("paths").path("/internal/v1/ai-companion/voice-entitlement-authorizations").path("post");
+		var responseCodes = new HashSet<String>();
+		operation.path("responses").fieldNames().forEachRemaining(responseCodes::add);
+		assertThat(responseCodes).containsExactlyInAnyOrder("200", "401", "403", "422", "503");
+		assertThat(operation.path("responses").path("200").path("headers").path("Cache-Control")
+				.path("schema").path("const").asText()).isEqualTo("no-store");
+		assertThat(active.path("components").path("securitySchemes").path("journalVoiceEntitlementToken")
+				.path("name").asText()).isEqualTo("X-MentalBridge-Voice-Entitlement-Token");
+	}
 
 	@Test
 	void contractIsValidAndMatchesTheImplementedSurface() {
@@ -114,8 +143,12 @@ class ConsultationOpenApiContractTests {
 			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
 			item.readOperationsMap().forEach((method, operation) -> {
 				operations.add(method.name() + " " + path);
-				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")) {
+				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")
+						|| path.equals("/internal/v1/payments/payos/webhook")) {
 					assertThat(operation.getSecurity()).isEmpty();
+				}
+				else if (path.equals("/internal/v1/ai-companion/voice-entitlement-authorizations")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("journalVoiceEntitlementToken"));
 				}
 				else if (path.contains("notification-eligibility")) {
 					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));
@@ -129,6 +162,64 @@ class ConsultationOpenApiContractTests {
 			});
 		});
 		assertThat(operations).isEqualTo(OPERATIONS);
+	}
+
+	@Test
+	void payosQrContractPreservesLedgerAndLegacyNullableFields() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var payment = schemas.path("PlanPayment");
+		var properties = payment.path("properties");
+		assertThat(properties.path("status").path("enum").toString())
+				.isEqualTo("[\"PENDING\",\"SUCCEEDED\",\"FAILED\",\"CHARGEBACK\"]");
+		assertThat(properties.path("provider").path("enum").toString()).isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+		assertThat(schemas.path("ServicePlanCatalogue").path("properties").path("paymentProvider").path("enum"))
+				.isEqualTo(properties.path("provider").path("enum"));
+		assertThat(schemas.path("AdminPayment").path("properties").path("provider").path("enum"))
+				.isEqualTo(properties.path("provider").path("enum"));
+		assertThat(properties.path("terminalReason").path("enum").toString())
+				.isEqualTo("[\"EXPIRED\",\"CANCELLED\",\"PROVIDER_FAILED\",null]");
+		for (var field : Set.of("qrCode", "bin", "accountNumber", "accountName", "description", "amount",
+				"expiredAt", "terminalReason", "checkoutUrl", "qrCodeUrl")) {
+			assertThat(properties.has(field)).as(field).isTrue();
+			assertThat(properties.path(field).path("type").toString()).as(field).contains("\"null\"");
+			assertThat(payment.path("required").toString()).as(field).doesNotContain("\"" + field + "\"");
+		}
+		assertThat(properties.path("amount").path("minimum").asInt()).isEqualTo(1);
+		assertThat(properties.path("expiredAt").path("format").asText()).isEqualTo("date-time");
+		assertThat(properties.path("checkoutUrl").path("pattern").asText()).isEqualTo("^https://");
+		var confirmed = payment.path("examples").get(0);
+		assertThat(confirmed.path("amount")).isEqualTo(confirmed.path("amountVnd"));
+		assertThat(confirmed.path("expiredAt")).isEqualTo(confirmed.path("expiresAt"));
+		assertThat(confirmed.path("qrCode").asText()).isNotBlank().doesNotStartWith("http");
+		assertThat(schemas.path("SpecialistPayout").path("properties").path("provider").path("enum").toString())
+				.doesNotContain("PAYOS");
+	}
+
+	@Test
+	void payosWebhookPreservesSignedFieldsAndPublicSafeAcknowledgement() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var path = api.path("paths").path("/internal/v1/payments/payos/webhook");
+		assertThat(path.path("x-mentalbridge-status").asText()).isEqualTo("implemented");
+		var operation = path.path("post");
+		assertThat(operation.path("security").isArray()).isTrue();
+		assertThat(operation.path("security").isEmpty()).isTrue();
+		var codes = new HashSet<String>();
+		operation.path("responses").fieldNames().forEachRemaining(codes::add);
+		assertThat(codes).containsExactlyInAnyOrder("204", "400", "401", "503");
+		assertThat(operation.path("description").asText()).contains("VERIFIED_UNMATCHED", "unexpired", "unique reference");
+		var webhook = api.path("components").path("schemas").path("PayosPaymentWebhook");
+		assertThat(webhook.path("required").toString()).isEqualTo("[\"code\",\"desc\",\"success\",\"data\",\"signature\"]");
+		assertThat(webhook.path("additionalProperties").asBoolean()).isTrue();
+		var data = webhook.path("properties").path("data");
+		assertThat(data.path("additionalProperties").asBoolean()).isTrue();
+		assertThat(data.path("required").toString())
+				.isEqualTo("[\"orderCode\",\"amount\",\"description\",\"accountNumber\",\"reference\",\"transactionDateTime\",\"currency\",\"paymentLinkId\",\"code\",\"desc\"]");
+		assertThat(data.path("properties").path("orderCode").path("maximum").asLong()).isEqualTo(9007199254740991L);
+		assertThat(data.path("properties").has("transactionDateTime")).isTrue();
+		assertThat(data.path("properties").has("counterAccountNumber")).isTrue();
 	}
 
 	@Test

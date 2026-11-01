@@ -23,10 +23,10 @@ First apply `mentalbridge-repository-workflow`; also apply `mentalbridge-archite
 
 ## PostgreSQL
 
-1. Before changing persistence, inspect both the owner migration history and `docs/domain-model/relational/postgresql-logical-schema.sql`. The migration remains executable runtime truth; the logical schema is non-executable documentation truth.
+1. Before changing persistence, inspect both the owner migration history and its service SQL linked from `docs/domain-model/relational/README.md`. The original `postgresql-logical-schema.sql` is a comment-only router. The migration remains executable runtime truth; every owner logical schema is non-executable documentation truth.
 2. Add an append-only owner migration: Liquibase for Spring Boot or `node-pg-migrate` for Node.js; never edit an applied migration.
 3. When a migration adds, removes, renames, or materially changes a table, field, relationship, business-meaningful uniqueness, lifecycle state, ownership reference, cardinality, or important nullability, update the canonical logical schema in the same pull request. Do not copy implementation-only index tuning or migration bookkeeping into it.
-4. Update the field dictionary for every changed table/field, including authority, sensitivity, nullability, time/version, and idempotency semantics.
+4. Update `docs/database/postgresql/<owning-service>.md` for every changed table/field, including authority, sensitivity, nullability, time/version, and idempotency semantics. The shared field dictionary path routes to these owner files; changing a router or another owner's file does not satisfy migration pairing.
 5. Enforce invariants with constraints and deliberate locking; use expand/migrate/contract for overlapping versions.
 6. Test migrations, constraints, mappings, concurrency, indexes, and queries against real PostgreSQL.
 

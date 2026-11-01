@@ -33,8 +33,8 @@ For a message change:
 For a database change:
 
 1. Add an append-only migration in the owning service.
-2. Update `docs/database/postgresql-field-data-dictionary.md` with the purpose and necessity of every changed field.
-3. Update `docs/domain-model/relational/postgresql-logical-schema.sql` when the migration materially changes persisted domain structure or relationships.
+2. Update `docs/database/postgresql/<owning-service>.md` with the purpose and necessity of every changed field; use the [field dictionary index](../database/postgresql-field-data-dictionary.md) to locate it.
+3. Update `docs/domain-model/relational/<owning-service>.sql` when the migration materially changes persisted domain structure or relationships; the [relational index](../domain-model/relational/README.md) maps each model to its executable migration history.
 4. Update the data dictionary/module documentation and mapping tests.
 5. Use expand/migrate/contract when old and new application versions may overlap.
 

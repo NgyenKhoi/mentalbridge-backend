@@ -1,15 +1,30 @@
 package com.mentalbridge.community;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.mentalbridge.community.configuration.IdentityAccountStatusVerifier;
 
 public abstract class CommunityTestProperties {
 
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+
+	@MockitoBean
+	protected IdentityAccountStatusVerifier accountStatusVerifier;
+
+	@BeforeEach
+	protected void defaultActiveAccountStatus() {
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
+	}
 
 	static KeyPair jwtKeyPair() {
 		return JWT_KEY_PAIR;
@@ -21,6 +36,8 @@ public abstract class CommunityTestProperties {
 		properties.add("mentalbridge.community.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.community.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.community.identity-account-status.connect-timeout", () -> "PT0.25S");
+		properties.add("mentalbridge.community.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.community.cloudinary.cloud-name", () -> "test-cloud");
 		properties.add("mentalbridge.community.cloudinary.api-key", () -> "test-api-key");
 		properties.add("mentalbridge.community.cloudinary.api-secret", () -> "test-api-secret");

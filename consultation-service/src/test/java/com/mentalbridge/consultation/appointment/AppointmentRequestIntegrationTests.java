@@ -576,6 +576,7 @@ class AppointmentRequestIntegrationTests extends ConsultationTestProperties {
 				) values (:id, :package, 'PAID', :reference, :from, :until, 'service-entitlement-v1')
 				""").param("id", id).param("package", packageCode).param("reference", "paid-" + id)
 				.param("from", Timestamp.from(now.minusSeconds(60))).param("until", Timestamp.from(now.plusSeconds(2_592_000))).update();
+		establishPaidEntitlement(jdbc, id);
 		return id;
 	}
 

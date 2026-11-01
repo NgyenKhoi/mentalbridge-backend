@@ -1,4 +1,5 @@
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
+import { communityConfiguration } from '../../src/community/community-configuration.js';
 
 export const encryptionKey = Buffer.alloc(32, 7);
 
@@ -7,6 +8,7 @@ export const testConfiguration = (
   overrides: Partial<ServiceConfiguration> = {},
 ): ServiceConfiguration => ({
   NODE_ENV: 'test',
+  COMMUNITY: communityConfiguration(),
   PORT: 3004,
   LOG_LEVEL: 'silent',
   SERVICE_NAME: 'realtime-service',

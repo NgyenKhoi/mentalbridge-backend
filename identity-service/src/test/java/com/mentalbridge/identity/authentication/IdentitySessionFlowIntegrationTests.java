@@ -71,7 +71,13 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 			"GET /api/v1/admin/platform-report-schedules",
 			"POST /api/v1/admin/platform-report-schedules",
 			"PUT /api/v1/admin/platform-report-schedules/{scheduleId}",
-			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}");
+			"DELETE /api/v1/admin/platform-report-schedules/{scheduleId}",
+			"GET /api/v1/admin/retention/policies",
+			"POST /api/v1/admin/retention/policies/{policyId}/sweep",
+			"GET /api/v1/admin/retention/deletions",
+			"POST /api/v1/admin/retention/deletions/{requestId}/retry",
+			"POST /api/v1/admin/retention/deletions/{requestId}/holds",
+			"DELETE /api/v1/admin/retention/deletions/{requestId}/holds");
 
 	@Autowired
 	private MockMvc mvc;
@@ -125,6 +131,16 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 		mvc.perform(post("/api/v1/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"challenge\":\"" + challenge + "\"}"))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+		var activationFact = jdbc.sql("""
+				select payload::text from outbox_event
+				where aggregate_id = cast(:accountId as uuid)
+				  and message_type = 'identity.user-notification.fact'
+				""").param("accountId", firstAccountId).query(String.class).single();
+		var activationPayload = json(activationFact);
+		assertThat(activationPayload.get("recipientId").asText()).isEqualTo(firstAccountId);
+		assertThat(activationPayload.get("actorType").asText()).isEqualTo("USER");
+		assertThat(activationPayload.get("factType").asText()).isEqualTo("ACCOUNT_ACTIVATED");
+		assertThat(activationPayload.has("email")).isFalse();
 
 		var login = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
 				.content("""

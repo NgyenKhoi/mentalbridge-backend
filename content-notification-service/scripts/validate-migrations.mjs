@@ -44,6 +44,8 @@ const communityInteractionNotifications = requiredMigration(
 const specialistNotificationPreferences = requiredMigration(
   '24_add_specialist_notification_preferences.sql',
 );
+const nativePushDelivery = requiredMigration('28_add_native_push_delivery.sql');
+const hardenedNativePushDelivery = requiredMigration('29_harden_native_push_delivery.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -94,6 +96,19 @@ assert.match(commandRecords, /CREATE TABLE resource_audit_event\b/);
 assert.match(specialistNotificationPreferences, /ADD COLUMN owner_type\b/);
 assert.match(specialistNotificationPreferences, /ck_specialist_notification_preference_scope\b/);
 assert.match(specialistNotificationPreferences, /OPEN_SPECIALIST_APPOINTMENTS/);
+assert.match(nativePushDelivery, /CREATE TABLE push_device_registration\b/);
+assert.match(nativePushDelivery, /CREATE TABLE push_delivery_attempt\b/);
+assert.match(nativePushDelivery, /uq_push_device_active_token\b/);
+assert.match(nativePushDelivery, /provider_token_ciphertext\b/);
+assert.match(
+  nativePushDelivery,
+  /state IN \('PENDING', 'PROCESSING', 'ACCEPTED', 'FAILED', 'SUPPRESSED', 'UNKNOWN'\)/,
+);
+assert.match(hardenedNativePushDelivery, /uq_push_device_active_installation\b/);
+assert.match(hardenedNativePushDelivery, /ADD COLUMN receipt_attempt_count\b/);
+assert.match(hardenedNativePushDelivery, /ADD COLUMN delivery_eligible_from_at\b/);
+assert.match(hardenedNativePushDelivery, /'CONFIRMED'/);
+assert.match(hardenedNativePushDelivery, /CREATE TABLE push_device_command_rate_limit\b/);
 for (const table of [
   'resource_eligibility_publication',
   'resource_eligibility_declaration',

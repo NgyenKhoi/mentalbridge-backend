@@ -1,0 +1,100 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0019-community-private-groups
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_chat_conversation ALTER COLUMN first_profile_id DROP NOT NULL;
+              ALTER TABLE community_chat_conversation ALTER COLUMN second_profile_id DROP NOT NULL;
+              ALTER TABLE community_chat_conversation DROP CONSTRAINT community_chat_conversation_state_check;
+              ALTER TABLE community_chat_conversation DROP CONSTRAINT community_chat_conversation_check;
+              ALTER TABLE community_chat_conversation DROP CONSTRAINT community_chat_conversation_check1;
+              ALTER TABLE community_chat_conversation ADD COLUMN kind varchar(8) NOT NULL DEFAULT 'DIRECT';
+              ALTER TABLE community_chat_conversation ADD COLUMN name_ciphertext text;
+              ALTER TABLE community_chat_conversation ADD COLUMN member_limit integer;
+              ALTER TABLE community_chat_conversation ADD CONSTRAINT ck_chat_conversation_kind CHECK (
+                (kind = 'DIRECT' AND first_profile_id IS NOT NULL AND second_profile_id IS NOT NULL
+                 AND first_profile_id < second_profile_id AND state IN ('DORMANT','ACTIVE')
+                 AND ((state = 'ACTIVE') = (activated_at IS NOT NULL)) AND name_ciphertext IS NULL AND member_limit IS NULL)
+                OR (kind = 'GROUP' AND first_profile_id IS NULL AND second_profile_id IS NULL
+                 AND state IN ('ACTIVE','ARCHIVED') AND activated_at IS NOT NULL AND name_ciphertext IS NOT NULL AND member_limit IS NOT NULL AND member_limit BETWEEN 20 AND 30)
+              );
+              ALTER TABLE community_chat_command DROP CONSTRAINT community_chat_command_operation_check;
+              ALTER TABLE community_chat_command DROP CONSTRAINT community_chat_command_result_kind_check;
+              ALTER TABLE community_chat_command ADD CHECK (operation IN ('START_DIRECT','SEND_MESSAGE','CREATE_GROUP','INVITE_GROUP'));
+              ALTER TABLE community_chat_command ADD CHECK (result_kind IN ('ACTIVE','PENDING','MESSAGE','GROUP','INVITATION'));
+              CREATE TABLE community_chat_membership (
+                id uuid PRIMARY KEY,
+                conversation_id uuid NOT NULL REFERENCES community_chat_conversation(id) ON DELETE CASCADE,
+                profile_id uuid NOT NULL REFERENCES community_profile(id),
+                role varchar(8) NOT NULL CHECK (role IN ('OWNER','ADMIN','MEMBER')),
+                joined_at timestamptz NOT NULL,
+                joined_after_sequence bigint NOT NULL CHECK (joined_after_sequence >= 0),
+                departed_at timestamptz,
+                CHECK (departed_at IS NULL OR departed_at >= joined_at)
+              );
+              CREATE UNIQUE INDEX ux_chat_member_current ON community_chat_membership(conversation_id, profile_id) WHERE departed_at IS NULL;
+              CREATE INDEX ix_chat_member_viewer ON community_chat_membership(profile_id, conversation_id) WHERE departed_at IS NULL;
+              ALTER TABLE community_chat_message ADD COLUMN sender_membership_id uuid REFERENCES community_chat_membership(id);
+              CREATE FUNCTION validate_community_chat_message_sender() RETURNS trigger LANGUAGE plpgsql AS $$
+              DECLARE conversation_kind varchar;
+              BEGIN
+                IF TG_OP = 'UPDATE' THEN
+                  IF NEW.conversation_id IS DISTINCT FROM OLD.conversation_id OR NEW.sender_profile_id IS DISTINCT FROM OLD.sender_profile_id
+                    OR NEW.sender_membership_id IS DISTINCT FROM OLD.sender_membership_id OR NEW.server_sequence IS DISTINCT FROM OLD.server_sequence THEN
+                    RAISE EXCEPTION 'Community message sender is immutable' USING ERRCODE = '23514';
+                  END IF;
+                  RETURN NEW;
+                END IF;
+                SELECT kind INTO conversation_kind FROM community_chat_conversation WHERE id = NEW.conversation_id;
+                IF (conversation_kind = 'DIRECT' AND NEW.sender_membership_id IS NOT NULL) OR (conversation_kind = 'GROUP' AND NOT EXISTS (
+                  SELECT 1 FROM community_chat_membership WHERE id = NEW.sender_membership_id AND conversation_id = NEW.conversation_id
+                    AND profile_id = NEW.sender_profile_id AND departed_at IS NULL AND joined_after_sequence < NEW.server_sequence
+                )) THEN
+                  RAISE EXCEPTION 'Community message sender epoch invariant' USING ERRCODE = '23514';
+                END IF;
+                RETURN NEW;
+              END $$;
+              CREATE TRIGGER ck_chat_message_sender BEFORE INSERT OR UPDATE OF conversation_id, sender_profile_id, sender_membership_id, server_sequence
+                ON community_chat_message FOR EACH ROW EXECUTE FUNCTION validate_community_chat_message_sender();
+              CREATE TABLE community_chat_invitation (
+                id uuid PRIMARY KEY,
+                conversation_id uuid NOT NULL REFERENCES community_chat_conversation(id) ON DELETE CASCADE,
+                inviter_membership_id uuid NOT NULL REFERENCES community_chat_membership(id),
+                inviter_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                invitee_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                state varchar(12) NOT NULL CHECK (state IN ('PENDING','ACCEPTED','DECLINED','REVOKED','EXPIRED')),
+                version bigint NOT NULL DEFAULT 0 CHECK (version >= 0),
+                created_at timestamptz NOT NULL,
+                expires_at timestamptz NOT NULL CHECK (expires_at > created_at),
+                decided_at timestamptz,
+                accepted_membership_id uuid REFERENCES community_chat_membership(id),
+                CHECK (inviter_profile_id <> invitee_profile_id),
+                CHECK ((state = 'PENDING') = (decided_at IS NULL)),
+                CHECK ((state = 'ACCEPTED') = (accepted_membership_id IS NOT NULL))
+              );
+              CREATE UNIQUE INDEX ux_chat_invite_pending ON community_chat_invitation(conversation_id, invitee_profile_id) WHERE state = 'PENDING';
+              CREATE INDEX ix_chat_invite_inbox ON community_chat_invitation(invitee_profile_id, created_at DESC, id DESC);
+              CREATE INDEX ix_chat_invite_rate ON community_chat_invitation(inviter_profile_id, created_at DESC);
+              CREATE INDEX ix_chat_invite_suppression ON community_chat_invitation(conversation_id, invitee_profile_id, state);
+              CREATE FUNCTION validate_community_chat_group() RETURNS trigger LANGUAGE plpgsql AS $$
+              DECLARE target uuid; group_kind varchar; group_state varchar; cap integer; members bigint; owners bigint;
+              BEGIN
+                IF TG_TABLE_NAME = 'community_chat_conversation' THEN target := COALESCE(NEW.id, OLD.id);
+                ELSE target := COALESCE(NEW.conversation_id, OLD.conversation_id); END IF;
+                SELECT kind, state, member_limit INTO group_kind, group_state, cap FROM community_chat_conversation WHERE id = target FOR NO KEY UPDATE;
+                IF NOT FOUND THEN RETURN NULL; END IF;
+                SELECT count(*), count(*) FILTER (WHERE role = 'OWNER') INTO members, owners
+                  FROM community_chat_membership WHERE conversation_id = target AND departed_at IS NULL;
+                IF (group_kind <> 'GROUP' AND members <> 0) OR (group_kind = 'GROUP' AND
+                  (members > cap OR owners > 1 OR (group_state = 'ACTIVE' AND owners <> 1))) THEN
+                  RAISE EXCEPTION 'Community group membership invariant' USING ERRCODE = '23514';
+                END IF;
+                RETURN NULL;
+              END $$;
+              CREATE CONSTRAINT TRIGGER ck_chat_group_members AFTER INSERT OR UPDATE OR DELETE ON community_chat_membership
+                DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_community_chat_group();
+              CREATE CONSTRAINT TRIGGER ck_chat_group_owner AFTER INSERT OR UPDATE ON community_chat_conversation
+                DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_community_chat_group();

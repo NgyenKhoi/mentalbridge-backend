@@ -158,6 +158,121 @@ Collection: `ai_companion_rate_ledgers`
 Key fields: owner, bounded request window, count, and TTL expiry. It contains no
 message or context data.
 
+### AI Companion Voice Session — ACTIVE
+
+Collection: `ai_voice_sessions`
+
+Owner: `journal-ai-service`. Migration
+[`013_companion_voice_quota.cjs`](../../../journal-ai-service/migrations/013_companion_voice_quota.cjs)
+implements the MB-756 admission/accounting foundation under
+[`companion-voice-policy-v1`](../../policies/companion-voice-policy-v1.json).
+Media and public session/worker/turn APIs remain separate delivery scopes.
+
+Key fields: server session/owner IDs, keyed idempotency hash and intent
+fingerprint, policy and frozen admission entitlement provenance, closed lifecycle,
+frozen Vietnam quota day/admitted seconds/hard deadline, short authority lease,
+dispatch/attempt/generation/sequence fences, first-publication flag, accumulated
+ACTIVE milliseconds, timer cuts, terminal settlement, and creation-bound expiry.
+Authority renewal uses current owner decisions without rewriting admission
+provenance. The first trusted connected-owner publication consumes one session;
+settlement rounds summed ACTIVE time once and refunds unused reservations. An
+undelivered session consumes no quota. Midnight or upgrade never extends a live
+session.
+
+Relationships:
+
+- `ownerId` is a logical/external Identity reference;
+- `quotaDay` and owner logically identify the Voice Daily Usage document;
+- a held Voice Capacity slot logically identifies this session and its fence;
+- current consent and entitlement are REST decisions from Care and Consultation,
+  not database relationships or reusable authorization cached in this document.
+
+No audio, transcript, prompt, model reply, old Journal/text context, bearer or
+participant token is stored. Metadata expires 30 days from creation, including
+unsettled sessions. There is no session TTL: a transaction first scrubs any
+identifying held-slot references, quarantines uncertain media, and deletes the
+expired session.
+
+### AI Companion Voice Daily Usage — ACTIVE
+
+Collection: `ai_voice_daily_usage`
+
+Key fields: unique owner/quota-day identity, used and reserved sessions/seconds,
+daily and minute attempt counters, at most ten pending HMAC attempt identities, and
+creation-plus-30-day expiry. The server uses `Asia/Ho_Chi_Minh`; charging stays
+on the authorized day across midnight. Concurrent accepted-key retries add no
+attempt or reservation. Pending attempt identities last at most ten seconds;
+only the atomic claimant performs owner reads, and a unique owner/pending-key
+index protects that claim across midnight. Admission and failure cleanup check
+the matching expiry fence, so stale work cannot reserve or release a replacement
+claim. Failed cleanup releases the identity without refunding the attempt count,
+so later denied-key retries are counted again. Package upgrades raise ceilings
+without resetting use. This ledger is independent of text Companion quotas. Its
+TTL removes metadata only and never releases capacity.
+
+### AI Companion Voice Capacity — ACTIVE
+
+Collection: `ai_voice_capacity`
+
+One singleton contains exactly two bounded `FREE`, `HELD`, or `QUARANTINED`
+slots. Each has a random generation; only HELD slots contain owner/session
+references. Admission and settlement transact across session, daily usage, and
+this singleton, enforcing one session per owner and two global slots across
+processes. No all-user history, content, provider token, or TTL exists here.
+
+First settlement requires provider proof fenced by the current attempt, lease,
+generation, and a sequence newer than accepted progress. Completed settlement
+replay is stable. Expired leases and uncertain teardown keep capacity occupied.
+Before the session's creation-plus-30-day privacy deadline is swept, identifying
+slot references are scrubbed; unresolved media leaves only an anonymous blocked slot
+and random fence. Provider-verified namespace isolation is required for future
+reuse, and this foundation exposes no quarantine-clearing operation.
+
+### AI Companion Voice Media — ACTIVE
+
+Collection: `ai_voice_media`, migration 014, Journal/AI owner.
+
+One logical reference to a Voice Session/attempt, unique opaque AI room and
+logical UUID dispatch identity, separate opaque provider dispatch ID and two
+provider participant identities. It contains the immutable hard stop, bounded
+creation/dispatch/teardown phase, worker claim and independent worker/backend
+sequence fences, latest content-free control replay and latest server-issued
+turn/reply identifier proof. It contains no audio, transcript, answer, credential
+or participant-token snapshot. New media effects require both persisted mapping
+and current owner authorization. Unknown provider outcomes retain capacity;
+only confirmed cleanup permits settlement. An uninitialized ledger fence can
+be compensated only while ENDING and after transactionally proving this media
+document is absent. Such a proof cannot come from worker input.
+
+Creation and expiry follow the original session's 30-day metadata window.
+Deleting this mapping never clears a capacity permit or anonymous quarantine.
+The model has no relationship to Consultation appointments, attendance or credits.
+
+### AI Companion Voice Media Command — ACTIVE
+
+Collection: `ai_voice_media_commands`, migration 014, Journal/AI owner.
+
+Keyed owner/operation/command identity binds connection/end to one Voice Session.
+Only the digest, operation, logical session reference and creation/expiry are
+stored. Connection replay reauthorizes instead of replaying a saved token; end
+is naturally terminal/idempotent. Retention is capped by the original session
+deadline, without extension. TTL removes bindings only.
+
+MB-758 migration 015 adds a closed `turn` variant within this same aggregate.
+It binds the keyed owner/turn intent to admitted session/attempt, unique opaque
+turn ID and ordered turn sequence, originating RAM-context UUID, keyed intent
+fingerprint and approved pinned route/version hash. Unique partial session/
+sequence and session/turn-ID indexes fence concurrent generation. It is written
+before the provider call; missing RAM or a different context process cannot
+regenerate an accepted turn. Only the latest live RAM reply is replayable.
+
+Turn fences contain no transcript, model reply, prompt, token or context content.
+Creation is turn admission; expiry remains capped by the original session's
+30-day window. Cancellation/end/revocation/expiry clears RAM without clearing
+the durable fence prematurely. Existing TTL/sweep applies, and 015 rollback
+refuses surviving turn fences before restoring the legacy command validator.
+This adds no new aggregate owner or Text-quota relationship.
+
 ## Realtime active model
 
 ### Conversation — ACTIVE

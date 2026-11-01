@@ -13,6 +13,10 @@ import jakarta.persistence.LockModeType;
 
 interface CommunityProfileRepository extends JpaRepository<CommunityProfileEntity, UUID> {
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select profile from CommunityProfileEntity profile where profile.id in :ids order by profile.id")
+	java.util.List<CommunityProfileEntity> lockChatProfiles(@Param("ids") java.util.Collection<UUID> ids);
+
 	@Query("select profile.id from CommunityProfileEntity profile where profile.accountSubject = :subject")
 	Optional<UUID> findIdByAccountSubject(@Param("subject") UUID subject);
 

@@ -52,9 +52,26 @@ public class SupportPlanScheduleService {
 	@Transactional
 	public ScheduleUpdateResult update(UUID userId, UUID supportPlanId, UUID actionId,
 			long expectedPlanVersion, String idempotencyKey, ScheduleCommand command) {
+		return update(userId, supportPlanId, actionId, expectedPlanVersion, idempotencyKey, command,
+				hash(supportPlanId, actionId, command), null);
+	}
+
+	@Transactional
+	ScheduleUpdateResult updateReviewed(UUID userId, UUID supportPlanId, UUID actionId,
+			long expectedPlanVersion, String idempotencyKey, ScheduleCommand command,
+			String requestHash, Runnable guard) {
+		return update(userId, supportPlanId, actionId, expectedPlanVersion, idempotencyKey, command, requestHash, guard);
+	}
+
+	private ScheduleUpdateResult update(UUID userId, UUID supportPlanId, UUID actionId,
+			long expectedPlanVersion, String idempotencyKey, ScheduleCommand command,
+			String requestHash, Runnable guard) {
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
-		String requestHash = hash(supportPlanId, actionId, command);
+		if (plans.findRequest(userId, idempotencyKey).isPresent() || plans.findCommand(userId, idempotencyKey).isPresent()) {
+			throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
+					"Idempotency-Key was already used with a different plan command");
+		}
 		var replay = commands.findByUserIdAndIdempotencyKey(userId, idempotencyKey).orElse(null);
 		if (replay != null) {
 			if (!replay.requestHash().equals(requestHash)) {
@@ -76,6 +93,7 @@ public class SupportPlanScheduleService {
 			throw new ApiException(HttpStatus.PRECONDITION_FAILED, "SUPPORT_PLAN_VERSION_MISMATCH",
 					"SupportPlan version does not match If-Match");
 		}
+		if (guard != null) guard.run();
 
 		ActionTarget target = target(plan, userId, actionId);
 		List<SupportPlanActivityScheduleEntity> history = target.slot() != null
@@ -155,6 +173,81 @@ public class SupportPlanScheduleService {
 				plan.id(), actionId, expectedPlanVersion, plan.version(),
 				resultSchedule == null ? null : resultSchedule.id(),
 				resultSchedule == null ? null : resultSchedule.scheduleVersion(), now));
+	}
+
+	@Transactional
+	void preserveReviewedDraft(SupportPlanEntity current, SupportPlanEntity draft, Instant now) {
+		var previousActions = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(current.id(), current.userId())
+				.stream().filter(action -> !"ENDED".equals(action.status())
+						&& !List.of("REASSESSMENT_SCREENING", "PROFESSIONAL_SUPPORT").contains(action.actionType()))
+				.collect(java.util.stream.Collectors.toMap(this::intentKey, action -> action));
+		var previousSlots = slots.findBySupportPlanIdOrderByOrdinal(current.id()).stream()
+				.filter(slot -> slot.selectedResource() != null)
+				.collect(java.util.stream.Collectors.toMap(SupportPlanSlotEntity::slotKey, slot -> slot));
+		var previousSchedules = schedules.findBySupportPlanIdForUpdate(current.id()).stream()
+				.filter(schedule -> !"ENDED".equals(schedule.status())).toList();
+		var defaults = schedules.findBySupportPlanIdForUpdate(draft.id());
+		var removed = new ArrayList<SupportPlanActivityScheduleEntity>();
+		var copied = new ArrayList<SupportPlanActivityScheduleEntity>();
+		for (var action : actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(draft.id(), draft.userId())) {
+			if (List.of("REASSESSMENT_SCREENING", "PROFESSIONAL_SUPPORT").contains(action.actionType())) continue;
+			var previous = previousActions.get(intentKey(action));
+			var previousSlot = "RESOURCE".equals(action.actionType()) ? previousSlots.get(action.provenanceReferenceId()) : null;
+			if (previous == null && previousSlot == null) continue;
+			var source = previousSchedules.stream().filter(schedule -> previous != null
+					? previous.id().equals(schedule.sourceActionId())
+					: previousSlot.slotKey().equals(schedule.sourceSlotKey())).findFirst().orElse(null);
+			removed.addAll(defaults.stream().filter(schedule -> action.id().equals(schedule.sourceActionId())).toList());
+			if (source == null) continue;
+			if (!SupportPlanActivityOccurrenceService.SCHEDULE_POLICY_VERSION_V2.equals(source.schedulePolicyVersion())
+					|| source.estimatedDurationMinutes() == null) {
+				throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_POLICY_STALE",
+						"The reviewed replacement cannot preserve an older schedule policy");
+			}
+			Short days = source.recurrenceDaysMask();
+			if ("WEEKLY".equals(source.recurrenceType()) && days == null && source.recurrenceDayOfWeek() != null) {
+				days = (short) (1 << (source.recurrenceDayOfWeek() - 1));
+			}
+			copied.add(SupportPlanActivityScheduleEntity.revisionForAction(UUID.randomUUID(), draft, action, 1,
+					source.schedulePolicyVersion(), source.recurrenceType(), days, source.preferredDaypart(),
+					source.estimatedDurationMinutes(), source.localTime(), source.timezone(), source.effectiveFrom(),
+					source.effectiveUntil(), source.reminderEnabled(), "DRAFT", now));
+		}
+		schedules.deleteAll(removed);
+		schedules.flush();
+		schedules.saveAll(copied);
+		schedules.flush();
+	}
+
+	private String intentKey(PlanActionEntity action) {
+		return "RESOURCE".equals(action.actionType()) ? "RESOURCE:" + action.provenanceReferenceId()
+				: action.actionType() + ":" + action.sourceOwner() + ":" + action.sourceKind() + ":" + action.sourceId();
+	}
+
+	boolean reviewedDraftSchedulesMatch(SupportPlanV3Service.SupportPlanV3View current,
+			SupportPlanV3Service.SupportPlanV3View draft) {
+		var expected = reviewedSchedules(current);
+		return expected != null && expected.equals(reviewedSchedules(draft));
+	}
+
+	private java.util.Map<String, List<ReviewedSchedule>> reviewedSchedules(SupportPlanV3Service.SupportPlanV3View plan) {
+		var values = new java.util.HashMap<String, List<ReviewedSchedule>>();
+		for (var focus : plan.focuses()) {
+			for (var action : focus.actions()) {
+				if ("ENDED".equals(action.status()) || List.of("PROFESSIONAL_SUPPORT", "REASSESSMENT_SCREENING")
+						.contains(action.actionType())) continue;
+				var source = action.source();
+				String intent = "RESOURCE".equals(action.actionType()) ? "RESOURCE:" + action.provenance().referenceId()
+						: action.actionType() + ":" + (source == null ? "" : source.ownerDomain() + ":" + source.sourceKind() + ":" + source.sourceId());
+				var schedule = action.schedules().stream().filter(item -> !"ENDED".equals(item.status())).map(item ->
+						new ReviewedSchedule(item.schedulePolicyVersion(), item.recurrenceType(),
+								item.daysOfWeek().stream().sorted().toList(), item.preferredDaypart(), item.localTime(),
+								item.estimatedDurationMinutes(), item.timezone(), item.effectiveFrom(), item.effectiveUntil(),
+								item.reminderEnabled())).sorted(Comparator.comparing(ReviewedSchedule::toString)).toList();
+				if (values.putIfAbsent(intent, schedule) != null) return null;
+			}
+		}
+		return values;
 	}
 
 	private ActionTarget target(SupportPlanEntity plan, UUID userId, UUID actionId) {
@@ -287,6 +380,9 @@ public class SupportPlanScheduleService {
 	private record ActionTarget(SupportPlanSlotEntity slot, PlanActionEntity action, String actionType) { }
 	private record NormalizedSchedule(String recurrenceType, Short daysMask, String preferredDaypart,
 			LocalTime localTime, int estimatedDurationMinutes, String timezone,
+			LocalDate effectiveFrom, LocalDate effectiveUntil, boolean reminderEnabled) { }
+	private record ReviewedSchedule(String policy, String recurrenceType, List<Integer> daysOfWeek,
+			String preferredDaypart, LocalTime localTime, Short durationMinutes, String timezone,
 			LocalDate effectiveFrom, LocalDate effectiveUntil, boolean reminderEnabled) { }
 	public record ScheduleCommand(ScheduleInput schedule) { }
 	public record ScheduleInput(String recurrenceType, List<Integer> daysOfWeek,

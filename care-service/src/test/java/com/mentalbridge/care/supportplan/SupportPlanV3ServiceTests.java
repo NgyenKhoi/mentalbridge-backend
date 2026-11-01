@@ -2,10 +2,17 @@ package com.mentalbridge.care.supportplan;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -180,6 +187,138 @@ class SupportPlanV3ServiceTests {
 			assertThat(result.actions()).extracting(SupportPlanV3Service.PlanActionView::pathRole)
 					.containsExactly("PRIMARY", "ADJUNCT");
 		});
+	}
+
+	@Test
+	void projectionKeepsEachOccurrenceZoneAndPlanWeekZoneNearMidnight() {
+		Instant midnight = Instant.parse("2026-10-21T15:15:00Z");
+		LocalDate date = LocalDate.parse("2026-10-21");
+		UUID userId = UUID.randomUUID();
+		UUID planId = UUID.randomUUID();
+		UUID focusId = UUID.randomUUID();
+		var plan = SupportPlanEntity.nativeDraft(planId, userId, UUID.randomUUID(),
+				"mb-support-routing-capstone-v2", NOW, "support-plan-v3-actions-v1", "PLUS", "PAID",
+				"service-entitlement-v1", 3, NOW, "DOMAIN_AWARE_WELLBEING_SUPPORT", "Plan context",
+				"NEGATIVE_SAFETY_SCREEN", "NO_SAFETY_SIGNAL", "safety-v1", "STANDARD_SAFETY_REMINDER",
+				"Safety guidance", 2, NOW);
+		plan.activate(NOW);
+		var focus = new SupportPlanFocusEntity(focusId, planId, userId, 1, "Resources", null, NOW);
+		var actionList = new java.util.ArrayList<PlanActionEntity>();
+		var scheduleList = new java.util.ArrayList<SupportPlanActivityScheduleEntity>();
+		var occurrenceList = new java.util.ArrayList<SupportPlanActivityOccurrenceEntity>();
+		for (String zone : List.of("America/Los_Angeles", "Asia/Tokyo")) {
+			var action = new PlanActionEntity(UUID.randomUUID(), planId, focusId, userId, actionList.size() + 1,
+					"RESOURCE", "READ_CONTENT", null,
+					new SourceReference("CONTENT", "RESOURCE_VERSION", UUID.randomUUID().toString(), "7", null,
+							UUID.randomUUID(), "content-eligibility-v1", NOW),
+					new Provenance("USER_SELECTED", null, null, NOW), new Presentation("Read", null, null, null), NOW);
+			action.activate(NOW);
+			actionList.add(action);
+			scheduleList.add(new SupportPlanActivityScheduleEntity(UUID.randomUUID(), planId, userId,
+					actionList.size(), plan.version(), action, "support-plan-activity-schedule-v2", "DAILY", null,
+					LocalTime.MIDNIGHT, zone, date, false, NOW));
+			var occurrence = mock(SupportPlanActivityOccurrenceEntity.class);
+			when(occurrence.id()).thenReturn(UUID.randomUUID());
+			when(occurrence.sourceActionId()).thenReturn(action.id());
+			when(occurrence.timezone()).thenReturn(zone);
+			when(occurrence.state()).thenReturn("SCHEDULED");
+			when(occurrence.scheduledAt()).thenReturn(date.atStartOfDay(ZoneId.of(zone)).toInstant());
+			occurrenceList.add(occurrence);
+		}
+		when(plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"))).thenReturn(Optional.of(plan));
+		when(focuses.findBySupportPlanIdAndUserIdOrderByOrdinal(planId, userId)).thenReturn(List.of(focus));
+		when(actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(planId, userId)).thenReturn(actionList);
+		when(schedules.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(scheduleList);
+		when(activities.loadV3Window(userId, date, date)).thenReturn(new SupportPlanActivityOccurrenceService.V3Window(plan, occurrenceList));
+		when(activities.planTimezone(plan)).thenReturn("America/Los_Angeles");
+		var midnightService = new SupportPlanV3Service(plans, families, slots, focuses, actions, schedules, activities,
+				Clock.fixed(midnight, ZoneOffset.UTC));
+
+		var projection = midnightService.resourceActions(userId, date);
+
+		assertThat(projection.timeZone()).isEqualTo("America/Los_Angeles");
+		assertThat(projection.actions()).extracting(action -> action.today().timeZone())
+				.containsExactly("America/Los_Angeles", "Asia/Tokyo");
+		assertThat(midnight.atZone(ZoneId.of(projection.actions().get(0).today().timeZone())).toLocalDate()).isEqualTo(date);
+		assertThat(midnight.atZone(ZoneId.of(projection.actions().get(1).today().timeZone())).toLocalDate()).isEqualTo(date.plusDays(1));
+	}
+
+	@Test
+	void projectionAdaptsV2WithoutOccurrencesAndAllowsNoPlan() {
+		UUID userId = UUID.randomUUID();
+		UUID planId = UUID.randomUUID();
+		var date = java.time.LocalDate.parse("2026-10-11");
+		assertThat(service.resourceActions(userId, date).planState()).isEqualTo("NONE");
+		var plan = legacyPlan(planId, userId);
+		plan.activate(NOW);
+		var resource = new ResourceDraft(UUID.randomUUID(), 7, UUID.randomUUID(), "PRIMARY", "ARTICLE",
+				"Resource", "Private summary", null);
+		var slot = new SupportPlanSlotEntity(UUID.randomUUID(), planId, 1,
+				new SlotDraft("core", "CORE", "DEPRESSIVE_SYMPTOMS", "BUILD_ROUTINE", resource, List.of()));
+		when(plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"))).thenReturn(Optional.of(plan));
+		when(slots.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of(slot));
+		when(activities.planTimezone(plan)).thenReturn("Asia/Ho_Chi_Minh");
+		var result = service.resourceActions(userId, date);
+		assertThat(result.representationMode()).isEqualTo("V2_RESOURCE_ADAPTER");
+		assertThat(result.actions()).singleElement().satisfies(action -> {
+			assertThat(action.resource().resourceVersion()).isEqualTo("7");
+			assertThat(action.today()).isNull();
+			assertThat(action.schedule()).isNull();
+		});
+		org.mockito.Mockito.verify(activities, org.mockito.Mockito.never()).loadV3Window(
+				org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+	}
+
+	@Test
+	void currentDayLocksTheOwnerPlanAndUsesOneDateInTheRequestedOrPlanScheduleTimezone() {
+		UUID userId = UUID.randomUUID();
+		UUID planId = UUID.randomUUID();
+		var plan = legacyPlan(planId, userId);
+		plan.activate(NOW);
+		var resource = new ResourceDraft(UUID.randomUUID(), 7, UUID.randomUUID(), "PRIMARY", "ARTICLE",
+				"Resource", "Reviewed summary", null);
+		var slot = new SupportPlanSlotEntity(UUID.randomUUID(), planId, 1,
+				new SlotDraft("core", "CORE", "DEPRESSIVE_SYMPTOMS", "BUILD_ROUTINE", resource, List.of()));
+		var planDate = LocalDate.parse("2026-10-23");
+		var requestedDate = LocalDate.parse("2026-10-22");
+		when(plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"))).thenReturn(Optional.of(plan));
+		when(slots.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of(slot));
+		when(schedules.findBySupportPlanIdOrderByOrdinal(planId)).thenReturn(List.of());
+		when(activities.planTimezone(plan)).thenReturn("Asia/Ho_Chi_Minh");
+		when(activities.loadV3Window(userId, planDate, planDate))
+				.thenReturn(new SupportPlanActivityOccurrenceService.V3Window(plan, List.of()));
+		when(activities.loadV3Window(userId, requestedDate, requestedDate))
+				.thenReturn(new SupportPlanActivityOccurrenceService.V3Window(plan, List.of()));
+		var midnightService = new SupportPlanV3Service(plans, families, slots, focuses, actions, schedules, activities,
+				Clock.fixed(Instant.parse("2026-10-22T17:30:00Z"), ZoneOffset.UTC));
+
+		var fallback = midnightService.currentDay(userId, null).orElseThrow();
+		var requested = midnightService.currentDay(userId, ZoneId.of("America/Los_Angeles")).orElseThrow();
+
+		assertThat(fallback.plan().supportPlanId()).isEqualTo(planId);
+		assertThat(fallback.plan().status()).isEqualTo("ACTIVE");
+		assertThat(fallback.localDate()).isEqualTo(planDate);
+		assertThat(fallback.timeZone()).isEqualTo("Asia/Ho_Chi_Minh");
+		assertThat(fallback.occurrences()).isEmpty();
+		assertThat(requested.plan().supportPlanId()).isEqualTo(planId);
+		assertThat(requested.localDate()).isEqualTo(requestedDate);
+		assertThat(requested.timeZone()).isEqualTo("America/Los_Angeles");
+		verify(plans, times(2)).findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"));
+		verify(plans, never()).findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED"));
+		verify(activities).planTimezone(plan);
+		verify(activities).loadV3Window(userId, planDate, planDate);
+		verify(activities).loadV3Window(userId, requestedDate, requestedDate);
+	}
+
+	@Test
+	void currentDayWithoutAnActiveOrPausedOwnerPlanIsEmpty() {
+		UUID userId = UUID.randomUUID();
+		when(plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"))).thenReturn(Optional.empty());
+
+		assertThat(service.currentDay(userId, ZoneId.of("Asia/Ho_Chi_Minh"))).isEmpty();
+
+		verify(plans).findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"));
+		verifyNoInteractions(activities, slots, schedules, focuses, actions, families);
 	}
 
 	private SupportPlanEntity legacyPlan(UUID planId, UUID userId) {

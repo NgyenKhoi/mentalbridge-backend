@@ -2,15 +2,25 @@
 
 ## Ownership map
 
+The accepted MB-684 [Community peer-chat contract](../adr/0042-community-chat-contract.md)
+assigns peer messages/permissions to Community PostgreSQL; Realtime owns transport
+and ephemeral presence. MB-685 delivers the direct provider, current Identity
+eligibility read and minimized fact relay. MB-687 adds private groups, membership
+epochs and isolated exact-message report intake. MB-689/690 implement delegated
+transport and ephemeral presence. MB-691 adds exact notification authorization,
+comment reactions and durable Content inbox delivery. Case administration and
+client notification journeys remain separate. Existing appointment chat remains
+in Realtime MongoDB.
+
 | Module | Recommended runtime | Owns | May query synchronously | Publishes/consumes asynchronously |
 | --- | --- | --- | --- | --- |
 | `identity-service` | Spring Boot | account, credentials, roles, sessions, deletion coordination, minimized audit/security projection | no profile health data | account lifecycle, deletion and safe audit events |
 | `care-service` | Spring Boot | profile, consent, two-domain assessment, both safety triggers, Support Guide, SupportEvaluation, the one official SupportPlan and `PlanChangeRequest` decisions, follow-up | Identity for exceptional current account facts; Content for exact eligible resource/directory versions | assessment, support, consent and follow-up events |
-| `consultation-service` | Spring Boot | specialist approval/discovery/matching, `FREE`/`PLUS`/`PREMIUM` plan versions, VND/MoMo payment/upgrade, consultation credits, chat/video slots, appointments/evidence, summaries/next steps, earnings, provider payouts, reviews | Care authorization/consent and SupportPlan-change decisions when current truth is required | subscription, appointment, earning, payout, review and moderation events |
-| `community-service` | Spring Boot | Community display identity and future peer-support posts, comments, reactions, moderation, reports, blocks, and media metadata | no Care or Journal/AI data; Identity JWTs are verified locally | future minimized Community publication/moderation facts only when an accepted story requires them |
+| `consultation-service` | Spring Boot | specialist approval/discovery/matching, `FREE`/`PLUS`/`PREMIUM` plan versions, VND payment/upgrade (PayOS staging-only, MoMo dormant per ADR 0047), consultation credits, chat/video slots, appointments/evidence, summaries/next steps, earnings, provider payouts, reviews | Care authorization/consent and SupportPlan-change decisions when current truth is required | subscription, appointment, earning, payout, review and moderation events |
+| `community-service` | Spring Boot | Community display identity, posts/comments/reactions, moderation/reports/blocks, media, direct/group peer messages, requests/invitations/membership/privacy and isolated report intake | Identity current USER eligibility for peer chat only; no Care or Journal/AI data; JWTs verified locally | minimized interaction and accepted Community chat facts |
 | `journal-ai-service` | Node.js/TypeScript | journal metadata/content access, analysis jobs/results | Care for current AI-processing consent | analysis commands/results |
-| `realtime-service` | Node.js/TypeScript | conversations, messages, WebSocket sessions, presence, receipts | Consultation/Care for current authorization when connecting or sending | chat facts and notification delivery events |
-| `content-notification-service` | Node.js/TypeScript | reviewed self-help resources and eligibility, verified area-directory content, preferences, digest/resource/appointment scheduling, notification creation/provider delivery | provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
+| `realtime-service` | Node.js/TypeScript | appointment conversations/messages, WebSocket sessions, ephemeral presence, receipts and delegated Community peer transport | Consultation/Care for appointment authorization; Community delegated owner checks for peer transport | appointment chat facts and notification delivery events; minimized Community pointers |
+| `content-notification-service` | Node.js/TypeScript | reviewed self-help resources and eligibility, verified area-directory content, preferences, digest/resource/appointment scheduling, notification jobs/inbox/provider delivery | Care's minimized owner RESOURCE-action projection for plan Bingo; Community exact chat notification eligibility; provider APIs only when executing delivery | consumes domain events and emits notification/delivery outcomes |
 | `phobert-worker` (optional/deferred) | Python | inference execution only after its activation gate passes | no business data query | future versioned inference command/result only |
 
 The edge gateway/reverse proxy and Eureka service registry are infrastructure, not business modules, and contain no orchestration or domain logic. Eureka publishes service location metadata only. Language does not change ownership. Node.js and Spring communicate through REST/JSON DTOs and Kafka contracts and never share framework models.

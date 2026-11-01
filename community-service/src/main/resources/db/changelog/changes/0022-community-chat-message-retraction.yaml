@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0022-community-chat-message-retraction
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_chat_message
+                ADD COLUMN state varchar(12) NOT NULL DEFAULT 'ACTIVE',
+                ADD COLUMN retracted_at timestamptz;
+
+              ALTER TABLE community_chat_message
+                ADD CONSTRAINT ck_chat_message_state
+                  CHECK (state IN ('ACTIVE', 'RETRACTED')),
+                ADD CONSTRAINT ck_chat_message_retraction
+                  CHECK (
+                    (state = 'ACTIVE' AND retracted_at IS NULL)
+                    OR
+                    (state = 'RETRACTED' AND retracted_at IS NOT NULL
+                      AND content_ciphertext IS NULL AND purged_at = retracted_at)
+                  ),
+                ADD CONSTRAINT ck_chat_message_retracted_after_create
+                  CHECK (retracted_at IS NULL OR retracted_at >= created_at);
+
+              DROP INDEX ix_chat_message_visible_activity;
+              CREATE INDEX ix_chat_message_visible_activity
+                ON community_chat_message(conversation_id, created_at DESC)
+                WHERE content_ciphertext IS NOT NULL OR state = 'RETRACTED';

@@ -1,5 +1,9 @@
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
+import {
+  communityConfiguration,
+  type CommunityConfiguration,
+} from '../community/community-configuration.js';
 
 const logLevels = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 const keyVersionPattern = /^[A-Za-z0-9._-]{1,64}$/;
@@ -186,7 +190,9 @@ const environmentSchema = z
     };
   });
 
-export type ServiceConfiguration = z.infer<typeof environmentSchema>;
+export type ServiceConfiguration = z.infer<typeof environmentSchema> & {
+  readonly COMMUNITY: CommunityConfiguration;
+};
 
 export const loadConfiguration = (
   environment: NodeJS.ProcessEnv = process.env,
@@ -205,5 +211,8 @@ export const loadConfiguration = (
           REALTIME_REDIS_URL: environment.REALTIME_REDIS_URL ?? 'redis://localhost:6379',
           CONSULTATION_BASE_URL: environment.CONSULTATION_BASE_URL ?? 'http://localhost:8082',
         };
-  return environmentSchema.parse({ ...environment, ...localDefaults });
+  return {
+    ...environmentSchema.parse({ ...environment, ...localDefaults }),
+    COMMUNITY: communityConfiguration(environment),
+  };
 };

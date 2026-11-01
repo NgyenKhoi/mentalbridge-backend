@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   mondayOf,
-  planBingoResources,
   planDailyResources,
   practiceStreak,
   supportPlanDay,
@@ -74,13 +73,6 @@ describe('resource journey planner', () => {
     expect(result[0]).toEqual({ resourceId: resources[1].id, reason: 'PLAN_SELECTED' });
     expect(result.map((item) => item.resourceId)).not.toContain(resources[0].id);
     expect(new Set(result.map((item) => item.resourceId)).size).toBe(result.length);
-  });
-
-  it('keeps bingo stable and prioritizes repeatable resources', () => {
-    const first = planBingoResources(resources, new Set([resources[4].id]), '2026-09-28');
-    const replay = planBingoResources(resources, new Set([resources[4].id]), '2026-09-28');
-    expect(replay).toEqual(first);
-    expect(first.slice(0, 3)).toContain(resources[4].id);
   });
 
   it('separates practice streak from learning and daily checklist completion', () => {

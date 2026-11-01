@@ -10,16 +10,22 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.mentalbridge.care.profile.UserProfileRepository;
+import com.mentalbridge.care.shared.ApiException;
 
 @Repository
 class ReassessmentSummaryStore {
 
 	private final JdbcClient jdbc;
+	private final UserProfileRepository profiles;
 
-	ReassessmentSummaryStore(JdbcClient jdbc) {
+	ReassessmentSummaryStore(JdbcClient jdbc, UserProfileRepository profiles) {
 		this.jdbc = jdbc;
+		this.profiles = profiles;
 	}
 
 	Optional<StoredSummary> findByRequest(UUID userId, String idempotencyKey) {
@@ -92,6 +98,8 @@ class ReassessmentSummaryStore {
 	StoredSummary persist(UUID summaryId, UUID userId, String idempotencyKey, String requestHash, String summaryVersion,
 			UUID journalJobId, UUID journalAnalysisId, ReassessmentSummaryView.Period previousPeriod,
 			ReassessmentSummaryView.Period currentPeriod, String snapshot, Instant composedAt) {
+		profiles.findByIdForUpdate(userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+				"PROFILE_NOT_FOUND", "Care profile was not found"));
 		int inserted = jdbc.sql("""
 				insert into reassessment_summary
 					(id,user_id,idempotency_key,request_hash,summary_version,journal_job_id,journal_analysis_id,

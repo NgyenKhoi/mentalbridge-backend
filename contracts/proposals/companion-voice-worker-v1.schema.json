@@ -1,0 +1,584 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/proposals/companion-voice-worker-v1.schema.json",
+  "title": "companion-voice-worker-v1",
+  "description": "Planned closed owner/worker control envelopes, never Kafka or participant metadata. DISPATCH is a Journal-only LiveKit AgentDispatch adapter input; LEASE_RENEWED and STOP are agent-control HTTP response variants. Other kinds are worker-origin HTTP signals. Authenticate dedicated service identity outside the body; bind every command to claimed dispatch, attempt, lease and producer-specific monotonic sequence. Reject unknown/stale/expired commands. No audio, transcript, context, bearer or provider secret is allowed.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/DISPATCH"
+    },
+    {
+      "$ref": "#/$defs/LEASE_RENEWED"
+    },
+    {
+      "$ref": "#/$defs/STOP"
+    },
+    {
+      "$ref": "#/$defs/MEDIA_READY"
+    },
+    {
+      "$ref": "#/$defs/PLAYBACK_STARTED"
+    },
+    {
+      "$ref": "#/$defs/INTERRUPTED"
+    },
+    {
+      "$ref": "#/$defs/HEARTBEAT"
+    },
+    {
+      "$ref": "#/$defs/FINISHED"
+    }
+  ],
+  "$defs": {
+    "DISPATCH": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "DISPATCH"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dispatchId", "agentName", "roomName"],
+          "properties": {
+            "dispatchId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "agentName": {
+              "const": "mentalbridge-ai-voice-v1"
+            },
+            "roomName": {
+              "type": "string",
+              "pattern": "^mb-ai-voice-[0-9a-f-]{36}$"
+            }
+          }
+        }
+      },
+      "description": "Journal-only adapter input for the authenticated LiveKit AgentDispatch API. Forward only schemaVersion, opaque voiceSessionId and attemptId as vendor job metadata; the room name is a server-owned API parameter. Never forward this entire envelope as participant metadata."
+    },
+    "LEASE_RENEWED": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "LEASE_RENEWED"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "leaseId",
+            "validUntil",
+            "hardStopAt",
+            "admittedSeconds"
+          ],
+          "properties": {
+            "leaseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "validUntil": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "hardStopAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "admittedSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 600
+            }
+          }
+        }
+      }
+    },
+    "STOP": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "STOP"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": [
+                "USER_ENDED",
+                "CONSENT_REVOKED",
+                "VOICE_CONSENT_REVOKED",
+                "ENTITLEMENT_LOST",
+                "OWNER_UNAVAILABLE",
+                "IDLE_TIMEOUT",
+                "HARD_DEADLINE",
+                "QUOTA_EXHAUSTED",
+                "RECONNECT_TIMEOUT",
+                "PROVIDER_FAILURE",
+                "AGENT_FAILURE",
+                "AUTHORIZATION_EXPIRED",
+                "ACCOUNT_DELETED"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "MEDIA_READY": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "MEDIA_READY"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leaseId"],
+          "properties": {
+            "leaseId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    "PLAYBACK_STARTED": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "PLAYBACK_STARTED"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leaseId", "turnId", "replyId"],
+          "properties": {
+            "leaseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "turnId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "replyId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    "INTERRUPTED": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "INTERRUPTED"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leaseId", "turnId", "replyId"],
+          "properties": {
+            "leaseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "turnId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "replyId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    "HEARTBEAT": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "HEARTBEAT"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leaseId", "observedState"],
+          "properties": {
+            "leaseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "observedState": {
+              "type": "string",
+              "enum": ["CONNECTING", "ACTIVE", "RECONNECTING", "ENDING"]
+            }
+          }
+        }
+      }
+    },
+    "FINISHED": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "commandId",
+        "voiceSessionId",
+        "attemptId",
+        "sequence",
+        "issuedAt",
+        "expiresAt",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "FINISHED"
+        },
+        "commandId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "voiceSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["leaseId", "reason"],
+          "properties": {
+            "leaseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "USER_ENDED",
+                "CONSENT_REVOKED",
+                "VOICE_CONSENT_REVOKED",
+                "ENTITLEMENT_LOST",
+                "OWNER_UNAVAILABLE",
+                "IDLE_TIMEOUT",
+                "HARD_DEADLINE",
+                "QUOTA_EXHAUSTED",
+                "RECONNECT_TIMEOUT",
+                "PROVIDER_FAILURE",
+                "AGENT_FAILURE",
+                "AUTHORIZATION_EXPIRED",
+                "ACCOUNT_DELETED"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -71,6 +71,14 @@ If aggregate order matters, compare `aggregateVersion`, ignore stale versions, a
 
 ## WebSocket and Redis rules
 
+The Community-only proposal in
+[ADR 0042 / MB-COMMUNITY-CHAT-001](../adr/0042-community-chat-contract.md)
+puts peer messages in Community-owned PostgreSQL with transactional outbox.
+After acceptance it is the scoped exception to the MongoDB chat-write rule
+below: Realtime only authorizes/fetches Community projections through REST and
+fans out to `/community`. Existing appointment persistence and `/realtime`
+contracts remain unchanged. No raw Community content enters Kafka or Redis.
+
 - `realtime-service` authenticates the handshake and authorizes every room subscription and command. A valid token alone does not grant conversation access.
 - WebSocket inbound/outbound JSON is defined in `contracts/websocket/` with event name, schema version, correlation/message IDs, acknowledgments, errors, size limit, and compatibility policy.
 - The server assigns authoritative sender and conversation context; never trust client-supplied owner, role, delivery state, or specialist approval.

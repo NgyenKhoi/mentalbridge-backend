@@ -1,17 +1,90 @@
 # Community Service
 
+MB-779 rechecks authenticated JWT subjects against Identity before protected
+requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated
+`COMMUNITY_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN`; the read uses 250 ms connect
+and 750 ms response defaults, no retry, no ACTIVE cache, and fails closed.
+
 `community-service` is the independent Spring Boot owner for the Community bounded context. MB-574 adds authenticated newest-first feed, topic catalogue, and post detail reads. MB-575 adds personal-story lifecycle operations, MB-581 adds the owner-scoped display profile, MB-576 adds bounded owner-only image and short-video upload lifecycle operations, MB-578 adds reports, personal hide/block controls, and auditable administration, MB-579 adds supportive reactions and owner-private bookmarks, MB-580 publishes minimized interaction facts through a transactional outbox, MB-614 adds one optional stable Content-owned Resource reference per post, MB-615 adds one explicit non-clinical sensitive-content warning per post, and MB-616 adds an owner-private saved-post collection.
 
 ## Runtime
 
+MB-691 also adds `GET|PUT|DELETE /api/v1/community/comments/{commentId}/reaction`
+for supportive `SUPPORT`, `RELATE`, `THANK_YOU` reactions on visible active root
+comments and replies. The response contains the caller's reaction and current
+reaction count. PUT replaces one actor/comment value naturally; DELETE is
+idempotent. Neither changes the comment authoring ETag. Deleted/hidden/blocked
+targets are unavailable, and self-reaction creates no notification fact.
+Migration `0021-community-comment-reactions` adds the owner table. Its first
+logical non-self reaction uses the existing interaction outbox and a separate
+`mentalbridge.community.comment-reaction.v1` topic, keyed by comment ID, preserving
+the existing interaction-v1 consumer contract. Provision the topic before
+deploying this producer; Compose's Kafka initializer declares it. Replacement,
+removal/re-add and relay retry do not repeat notification. Deploy the compatible
+Content notice consumer before enabling delivery. No frontend screen is added.
+
+MB-691 adds the read-only `POST /internal/v1/community/chat/notification-authorizations`.
+Enable `COMMUNITY_CHAT_NOTIFICATION_ENABLED` only with a dedicated
+`CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY` RSA X.509 PEM and
+`CONTENT_COMMUNITY_NOTIFICATION_KEY_ID`. Content signs a maximum 30-second RS256
+service JWT with issuer/subject `content-notification-service`, audience
+`community-service`, UUID jti and scope `community:notification:authorize`.
+The closed query binds recipient routing reference, kind, target, conversation
+and actor profile. Current Identity eligibility precedes local permission locks;
+message membership epochs, pending request/invitation lifecycle and bilateral
+blocks are rechecked without decrypting content. A no-store positive result is
+not a reusable grant. Denied/mismatched/expired targets return uniform 404;
+owner uncertainty returns 503. This scope cannot read transcripts or use the
+Realtime routes. The flag defaults false and no shared environment is enabled.
+
+MB-684 accepted the [Community chat contract](../docs/adr/0042-community-chat-contract.md)
+and [privacy policy](../docs/policies/community-chat-policy-v1.md). MB-685 delivers
+the direct-chat provider subset in Community PostgreSQL, including fresh Identity
+eligibility checks. MB-687 adds private groups, membership epochs and exact-message
+report intake. MB-689 adds current signed Realtime projections and private
+read-state facts. MB-690 adds current presence-peer projections; typing and
+shared receipts remain deferred.
+Only delivered operations are registered by the canonical
+Community OpenAPI through its direct-chat fragment; the proposal is the frozen
+baseline for future delivery rather than a capability advertisement.
+
+MB-689 exposes four Realtime-only POST operations under
+`/internal/v1/community/chat/`: `session-authorizations`,
+`realtime-authorizations` (SUBSCRIBE only), `message-projections` (exact viewer,
+conversation and message), and `replay-projections` (ordered eligible IDs and
+absolute private read state). They require dedicated signed target-bound
+Realtime delegations; a public Identity USER bearer and unsigned actor headers
+cannot substitute. Results are no-store and current Identity eligibility is
+queried before local locking. See [Realtime Community integration](../realtime-service/COMMUNITY.md).
+
+Set `COMMUNITY_CHAT_REALTIME_ENABLED=true` only with the matching
+`REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY` X.509 RSA PEM and
+`REALTIME_COMMUNITY_DELEGATION_KEY_ID`. The private signing key belongs only to
+Realtime. Disabled is the default; existing public chat APIs retain their normal
+Identity USER authentication. There is no new database migration: the existing
+read watermark transaction adds a recipient-self `READ_STATE_CHANGED` outbox
+fact only on a real advance. Retry/out-of-order read acknowledgements add no fact.
+
+MB-690 adds `POST /internal/v1/community/chat/presence-projections` under the
+conversation-bound `community:presence:project` scope. Its closed body contains
+only `conversationId`; the viewer comes exclusively from signed delegation.
+Current Identity eligibility is checked before the local permission transaction.
+The no-store response contains at most 30 other eligible current peers, each
+with `communityProfileId` and private `subjectRoutingReference`. Opt-out,
+invisible, blocked, restricted, inactive and departed peers produce no row.
+The routing reference is for Realtime only and never a client profile selector
+or durable permission grant. Realtime rechecks before emission. No new database
+table, field, migration or durable presence fact is introduced. See
+[MB-690 evidence](../docs/story-mb-690-community-presence-evidence.md).
+
 - Java 21 and Spring Boot 4
 - service-owned PostgreSQL database with Liquibase migrations
-- local verification of Identity-issued RS256 JWTs; no synchronous Identity lookup
+- local verification of Identity-issued RS256 JWTs; direct chat additionally checks current eligibility through bounded Identity REST
 - Cloudinary Java SDK configuration seam for later media workflows
 - Actuator health/readiness and Prometheus metrics
 - opaque cursor pagination with explicit OR filtering across at most three active governed topics
 - fail-closed post visibility for moderation and bilateral Community blocks
-- Community-owned display identity resolved from the locally verified JWT subject, without synchronous Identity or Care calls
+- Community-owned display identity resolved from the locally verified JWT subject; feed/profile flows make no synchronous Identity or Care calls
 - short-lived signed Cloudinary uploads with server-side format, size, duration, and ownership verification
 - authenticated originals, signed metadata-stripped delivery transformations, and scheduled orphan cleanup
 - naturally idempotent supportive reactions and private bookmarks with transactionally consistent reaction counts
@@ -68,7 +141,7 @@ Copy `.env.example` to `.env` for local development. Real environment variables 
 | `COMMUNITY_MEDIA_UPLOAD_INTENT_TTL` | no | Signed upload window as a Spring duration; defaults to `10m` |
 | `COMMUNITY_MEDIA_ORPHAN_RETENTION` | no | Retention before unattached finalized media expires; defaults to `24h` |
 | `COMMUNITY_MEDIA_CLEANUP_INTERVAL` | no | Scheduled cleanup cadence; defaults to `1h` |
-| `KAFKA_BOOTSTRAP_SERVERS` | when relay enabled | Comma-separated brokers used only by the Community interaction relay |
+| `KAFKA_BOOTSTRAP_SERVERS` | when a relay is enabled | Comma-separated brokers for the independent interaction/chat relays |
 | `COMMUNITY_INTERACTION_RELAY_ENABLED` | no | Publishes due interaction facts; defaults to `false` unless the topic is provisioned |
 | `COMMUNITY_INTERACTION_RELAY_BATCH_SIZE` | no | Maximum outbox rows claimed per relay run; defaults to `100` |
 | `COMMUNITY_INTERACTION_RELAY_INTERVAL` | no | Delay between relay runs; defaults to `PT5S` |
@@ -94,3 +167,109 @@ The canonical REST contract is [`contracts/openapi/community-service-v1.yaml`](.
 Eligible external root comments route to the post owner, replies route to the parent-comment owner, and the first reaction for an actor/post pair routes to the post owner. Self-interactions, bookmarks, reaction replacement/removal, and repeated logical commands do not create notification facts. Kafka and Notification are never called inside Community commands; an unavailable broker leaves the committed outbox row retryable.
 
 MB-579 uses a compatibility-first rollout: deploy the frontend that accepts both v1.5 responses without `viewerState` and v1.6 responses with it before deploying Community v1.6. The frontend treats the presence of valid `viewerState` as the capability signal and does not render or call reaction/bookmark controls against v1.5. Do not deploy this backend ahead of that compatibility consumer.
+
+## MB-685 direct-chat provider
+
+MB-685 introduced the ten-operation direct-chat subset in [`community-chat-v1.json`](../contracts/openapi/community-chat-v1.json). MB-687 extends it to twenty operations in canonical OpenAPI v1.13. `COMMUNITY_CHAT_ENABLED` defaults false until the operator supplies the dedicated Identity credential and a versioned 32-byte AES key. No success or cached current history is returned while unavailable. Community message bodies remain encrypted in the Community owner store; Kafka contains minimized pointers only. MB-686/688 own clients; internal delegated projection/authorization endpoints, socket/presence, case resolution and notification consumers remain downstream stories. Their accepted proposal shapes do not advertise runtime support here.
+
+## MB-687 private-group lifecycle
+
+Canonical OpenAPI v1.13 additionally registers nine group lifecycle operations
+from the accepted ADR 0042 baseline: create/archive, current member list,
+invite/inbox/decision, role replacement, remove/self-leave and ownership transfer.
+`COMMUNITY_CHAT_GROUP_MEMBER_LIMIT` defaults 30 and accepts only 20–30; each
+group captures its cap at creation. The existing chat feature flag/keys gate
+these APIs. Group names are AES-GCM encrypted with exact conversation binding.
+Migrate Liquibase 0019 before using these paths; rollback disables the existing
+feature flag and preserves additive group/member/invitation records and keys.
+
+Creator alone is OWNER; invites reserve no seat. Invitation acceptance creates
+a fresh membership epoch only after current inviter/recipient eligibility,
+role, block, expiry and cap checks. Five new groups and twenty new invitations
+per actor per rolling day are enforced across devices. CREATE_GROUP/INVITE_GROUP
+commands bind UUID retry keys to normalized names/exact group-recipient inputs.
+Decline permanently suppresses that group/person; demotion, leave, restriction,
+block and archive revoke relevant pending invitations. Public management ETags
+remain separate from invitation decision versions and private message revisions.
+Archive/remove return 204 with no ETag; still-authorized clients reread
+getConversation before the next management command. Database constraints and
+owner locks protect one active-group OWNER, current epoch uniqueness and the cap.
+
+The existing conversation/message/read-cursor routes now resolve DIRECT or
+GROUP through current owner authorization. Shared-group reads filter current
+membership epochs, account eligibility, bilateral blocks and retention before
+selecting pages/counts. Group list order uses only viewer-eligible activity
+(or the viewer's current join time); hidden messages never reorder it. Current
+conversation metadata is gathered owner-locally, eligibility is batch-read in
+chunks of 100 outside the transaction, then current local visibility is locked
+and projected before list pagination. This costs work proportional to the viewer's
+related conversations and keeps remote authority out of local transactions.
+
+Memberships retain immutable epoch rows; rejoin captures a new exclusive private
+sequence floor. Each group message stores its immutable author membership epoch
+at send time. Leaving/removal does not erase that author's retained messages for
+other current viewers, including unread, read references, activity and exact-message
+report eligibility. Current account eligibility and bilateral blocks still apply
+to retained authors, fetched in batches of at most 100 before owner transactions.
+The roster remains current members only. Prior-epoch send retries cannot re-create or acknowledge earlier
+content. Leave/removal, suspension and restriction revoke reads/unread immediately
+on current owner checks. Shared blocks preserve the group's other participants;
+blocked/ineligible member projections contain only `UNAVAILABLE`, and old message
+cursors are never widened by unblock. Private read watermarks stay monotonic.
+Sends emit one minimized fact per current eligible non-self recipient; public
+management versions never advance for message/read traffic. No raw name/text is
+stored in Kafka or a second service. Existing relay ACK/replay semantics apply.
+
+### Exact-message report hook
+
+`POST /api/v1/community/chat/reports` is the twentieth active chat operation in
+v1.13. Only a current participant allowed to read the exact retained message may
+report it, including on retries. It captures one immutable encrypted snapshot
+and separately encrypted bounded details, with closed reason/priority and a
+30-day unresolved review deadline. No surrounding transcript, group name or
+personal account attributes are copied. The source conversation/message UUIDs
+are logical references: deleting source history cannot erase or block isolated
+report evidence. Reporter/message uniqueness collapses new-key duplicates;
+same-key changed input conflicts. Ten new reports/actor/day are enforced.
+
+This intake returns RECEIVED and grants no ADMIN read/management permission.
+Case resolution, authorized evidence review, resolved-evidence retention and
+account deletion are separately delivered workflows; no unrestricted case
+listing, transcript access or provider notification is enabled here. Explicit
+crisis-concern reason marks HIGH priority only, without monitoring/intervention
+promises. Migrate 0020 before using intake. Disabling the existing chat flag
+rolls back capability while preserving purpose-bound evidence and encryption keys.
+
+| Variable | Meaning |
+| --- | --- |
+| `COMMUNITY_CHAT_ENABLED` | Enables delivered provider APIs after required credentials/keys are installed. |
+| `COMMUNITY_CHAT_IDENTITY_BASE_URL` | Optional explicit trusted Identity REST URL; empty uses Eureka service ID. |
+| `IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN` | Dedicated 32–512 character service credential shared only with Identity eligibility endpoint. |
+| `COMMUNITY_CHAT_IDENTITY_CONNECT_TIMEOUT` | Positive connect deadline, default PT0.5S. |
+| `COMMUNITY_CHAT_IDENTITY_READ_TIMEOUT` | Positive read deadline, default PT1.5S; connect + read cannot exceed 2 seconds. |
+| `COMMUNITY_CHAT_ENCRYPTION_KEY` | Required base64 32-byte AES-GCM/HMAC secret when enabled; supplied externally. |
+| `COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION` | Stable non-secret key identifier, default v1; never reuse a version with another key. |
+| `COMMUNITY_CHAT_DECRYPTION_KEYS` | JSON object of retained version→base64 keys for ciphertext/cursor/retry rotation, default {} (at most ten prior versions). |
+| `COMMUNITY_CHAT_RELAY_ENABLED` | Independent opt-in publisher, default false; requires chat enabled and the provisioned topic. |
+| `COMMUNITY_CHAT_RELAY_BATCH_SIZE` | Maximum sequential claims per run, default 100, valid 1–500. |
+| `COMMUNITY_CHAT_RELAY_INTERVAL` | Fixed delay, default PT5S, valid 100 ms–1 hour. |
+
+Cursor tokens are AES-GCM authenticated ciphertext, bound to actor, surface and visibility epoch. They expose neither numeric message gaps nor private identities. Public version is for management only. Reads/sends use a fresh bounded, fail-closed Identity eligibility read outside the Community transaction, then lock current profiles in UUID order before checking local restrictions/blocks and mutating. No cross-service transaction or cached positive grant is claimed.
+
+### Message authority and retention
+
+The delivered message API returns `SAVED` and `delivery=UNCONFIRMED` only after the local message/sequence/retry/outbox transaction commits. Neither HTTP success nor a cursor proves recipient delivery, reading, engagement or clinical progress. Text is NFC-normalized, blank-checked and bounded to 4,000 Unicode code points. The complete JSON request is bounded to 32 KiB; unknown/duplicate fields, trailing JSON and client-selected sender/state are rejected.
+
+History is ordered by a private server sequence with an authenticated encrypted viewer/conversation/visibility-epoch continuation. Each pagination chain has a private snapshot ceiling; messages saved afterward appear on a fresh history read. Clients dedupe random message IDs and use REST order, never socket arrival or an inferred gap count. Conversation ordering uses the latest currently eligible message or relationship activation, including after retention expiry.
+
+Read acknowledgement accepts only a currently readable message UUID in that exact conversation. Private read state advances monotonically even when shared receipts are disabled. Counts exclude self and expired/purged content; block/restriction/inactive-account checks override history, unread, send and retry access. Existing accepted relationships remain accepted across privacy changes; unblock restores eligible retained history without replaying notifications or accepting a pending request.
+
+AES-GCM binds each ciphertext to its exact message/conversation/sender. Retain old key versions while messages or retry identities need them; never change key material under the same version. Ciphertext is excluded immediately at its stored 90-day expiry. A bounded sweep runs every minute, erasing ciphertext in independent batches of 500 (up to ten batches per sweep); it preserves content-free message/command identity and private read max. This is owner retention cleanup, not account-deletion orchestration or a promise of realtime delivery. No existing appointment chat is rewritten.
+
+### Minimized fact relay and rollout
+
+`mentalbridge.community.chat.v1` is provisioned explicitly by Compose with three partitions and seven-day delete retention. Production provisioning must match the accepted schema and conversation UUID key before enabling `COMMUNITY_CHAT_RELAY_ENABLED`; broker auto-creation is not a rollout strategy. The relay claims one due row at a time with `SKIP LOCKED`, a ten-second lease and stale-attempt protection. Kafka calls run outside the database transaction, with `acks=all`, producer idempotence, 500 ms metadata blocking, one-second broker request timeout, three-second delivery timeout and four-second ACK wait. Failed attempts back off from one to thirty seconds. A broker outage never changes a successful owner save into a delivery claim.
+
+Publishing is at-least-once: a crash or timeout around ACK can replay the same envelope ID. Consumers must dedupe stable/logical identities and reauthorize each current recipient rather than treating a fact as a permission grant. No consumer, socket delivery, presence projection or notification materialization is installed by this story. Existing interaction publishing uses its own producer configuration. The chat producer disables payload-printing error listeners and logs only safe event ID/attempt metadata.
+
+Apply owner Liquibase migrations 0017/0018 before enabling the feature; canonical SQL is documentation only. Deploy Identity's dedicated eligibility provider first, provision the topic and install externally managed keys/credentials, then opt in the Community API and relay. Compose passes the eligibility credential only to Identity and Community, and encryption keys only to Community. Use TLS or a trusted private service network for the credential-bearing Identity call. A rollback disables API/relay flags and retains additive tables, ciphertext and key versions; do not drop durable messages or rewrite applied migrations. This change does not deploy to shared environments or invoke paid/external providers.

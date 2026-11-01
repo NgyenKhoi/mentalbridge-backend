@@ -140,7 +140,8 @@ class CombinedScreeningMeaningIntegrationTests extends CareTestProperties {
 		var source = evaluate(userId, assessment(userId, PHQ9_DEFINITION, "MILD", false),
 				assessment(userId, GAD7_DEFINITION, "MINIMAL", false));
 		mvc.perform(get(PATH, source.supportEvaluationId())).andExpect(status().isUnauthorized());
-		mvc.perform(get(PATH, source.supportEvaluationId()).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+		mvc.perform(get(PATH, source.supportEvaluationId()).with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
 				.andExpect(status().isForbidden());
 		mvc.perform(get(PATH, source.supportEvaluationId()).with(jwt().jwt(token -> token.subject("invalid"))
 				.authorities(new SimpleGrantedAuthority("ROLE_USER")))).andExpect(status().isUnauthorized());

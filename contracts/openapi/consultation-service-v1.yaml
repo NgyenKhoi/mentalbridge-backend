@@ -1,16 +1,40 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.17.0
+  version: 1.20.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
+  /internal/v1/ai-companion/voice-entitlement-authorizations:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: consultation-service
+    post:
+      operationId: checkCurrentVoiceEntitlement
+      description: Dedicated Journal/AI service-authenticated read of the exact owner and opaque voice-session binding. Delegates current entitlement authority without financial writes or a shadow entitlement. Missing, expired and future grants resolve to FREE/DEFAULT_FREE; active PAID/DEMO grants require validUntil strictly after checkedAt. The session identifier is echoed for caller binding and grants no access by itself. User JWTs, worker credentials and client package claims cannot authorize this route. Does not enable voice sessions.
+      security: [{ journalVoiceEntitlementToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoiceOwnerCheck' }
+      responses:
+        '200':
+          description: Current owner entitlement decision
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoiceEntitlementDecision' }
+        '401': { $ref: '#/components/responses/VoiceUnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/VoiceForbiddenProblem' }
+        '422': { $ref: '#/components/responses/VoiceInvalidRequestProblem' }
+        '503': { $ref: '#/components/responses/VoiceEntitlementUnavailableProblem' }
   /api/v1/specialist/appointments/{appointmentId}/video-completion:
     x-mentalbridge-status: implemented
     post:
       operationId: confirmVideoConsultationFinished
-      description: Explicit assigned approved Specialist assertion of actual consultation end, accepted immediately without waiting for scheduled end or webhook grace. Stable idempotency and strong Appointment If-Match are required. Provider closure and paired trusted evidence are verified separately. Incomplete verification remains SESSION_ENDED with HELD credit, including after 24h; no timeout release, no-show, refund or earning is authorized. Verified completion reuses the existing immutable completion fact, consumed-credit ledger and MB-516 earning contract.
+      description: Explicit assigned approved Specialist assertion of actual consultation end, accepted immediately without waiting for scheduled end or webhook grace. Stable idempotency and strong Appointment If-Match are required. The opt-in local/dev effective-DEMO video exception permits explicitly ending pre-start demo transport, but it remains pending verification with HELD credit and never supplies valid completion evidence. Provider closure and paired trusted evidence are verified separately. Incomplete verification remains SESSION_ENDED with HELD credit, including after 24h; no timeout release, no-show, refund or earning is authorized. Verified completion reuses the existing immutable completion fact, consumed-credit ledger and MB-516 earning contract.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/AppointmentId'
@@ -76,7 +100,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getAppointmentVideoSession
-      description: Assigned USER or SPECIALIST only. Waiting begins five minutes early for local preview, without a provider connection or attendance. Current authorization is authoritative; no media event completes an appointment.
+      description: Assigned USER or SPECIALIST only. Normally waiting begins five minutes early for local preview without a provider connection or attendance. The disabled-by-default immediate video demo exception applies only to explicit local/dev/test profiles and effective DEMO entitlement plus held DEMO credit; a CONFIRMED/IN_PROGRESS demo may report ACTIVE before scheduled start. Booked timestamps and end cutoff remain unchanged. Current authorization is authoritative; early demo media is not completion evidence and no media event completes an appointment.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/AppointmentId'
@@ -94,7 +118,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       operationId: issueAppointmentVideoAccess
-      description: No request body. Rechecks exact assigned actor/role, approved specialist, held credit, video modality, CONFIRMED/IN_PROGRESS and [startsAt,endsAt). Uses the owner room mapping, never a client room/actor. Token is room-scoped, in-memory only, 30–300 seconds maximum and expires no later than endsAt. LiveKit SDK refresh does not extend the appointment; server revocation/closure remains required.
+      description: No request body. Rechecks exact assigned actor/role, approved specialist, held credit, video modality, CONFIRMED/IN_PROGRESS and normally [startsAt,endsAt). Only the opt-in local/dev/test effective-DEMO video exception may connect before startsAt; it never permits REQUESTED, cancelled, completed, expired or post-endsAt access. Early demo transport is not valid completion evidence. Uses the owner room mapping, never a client room/actor. Token is room-scoped, in-memory only, 30–300 seconds maximum and expires no later than endsAt. LiveKit SDK refresh does not extend the appointment; server revocation/closure remains required.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/AppointmentId'
@@ -630,11 +654,12 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/EntitlementForbiddenProblem' }
         '409': { $ref: '#/components/responses/CreditConflictProblem' }
+        '503': { $ref: '#/components/responses/EntitlementUnavailableProblem' }
   /api/v1/service-plans:
     x-mentalbridge-status: implemented
     get:
       operationId: listActiveServicePlanVersions
-      description: Returns the authoritative active VND catalogue. Price, credits, concurrent-reservation capacity, credit allocation, AI quota, SupportPlan entitlement, effective date, and allowed upgrades are immutable version facts; clients must not derive them from plan names. MoMo checkout remains gated independently.
+      description: Returns the authoritative active VND catalogue and configured active collect provider. Price, credits, concurrent-reservation capacity, credit allocation, AI quota, SupportPlan entitlement, effective date, and allowed upgrades are immutable version facts; clients must not derive them from plan names. Checkout readiness is gated independently. PayOS real money is restricted to the approved staging deployment and test catalogue.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -648,7 +673,7 @@ paths:
     x-mentalbridge-status: implemented
     post:
       operationId: createPlanCheckout
-      description: Creates one idempotent MoMo purchase for FREE to PLUS/PREMIUM or upgrade for PLUS to PREMIUM. The server resolves the exact active version and amount. There is no downgrade or user-refund operation.
+      description: Creates one idempotent purchase for FREE to PLUS/PREMIUM or upgrade for PLUS to PREMIUM using the configured collect provider. The server resolves the exact active version and amount. Confirmed PAYOS and FAKE checkout returns in-app QR transfer details; an uncertain create remains PENDING with nullable QR details and replay never creates a second charge. checkoutUrl is an optional HTTPS fallback only. There is no downgrade or user-refund operation.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -659,7 +684,7 @@ paths:
             schema: { $ref: '#/components/schemas/CreatePlanCheckout' }
       responses:
         '201':
-          description: Pending payment and provider-controlled HTTPS checkout destinations
+          description: Pending payment with confirmed in-app QR details or nullable details while provider creation is unconfirmed
           headers:
             Location:
               schema: { type: string }
@@ -690,7 +715,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getOwnPlanPayment
-      description: Returns one authenticated-owner payment attempt and its stable current state.
+      description: Returns one authenticated-owner payment attempt and its stable current state, with bounded authenticated PayOS status reconciliation for pending attempts. A return or cancel URL is never settlement evidence. A verified exact PAID query and webhook share the same atomic settlement path; terminal outcomes are never reopened.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: paymentId
@@ -722,6 +747,34 @@ paths:
         '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /internal/v1/payments/payos/webhook:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: receivePayosPlanPaymentWebhook
+      description: Verifies the original complete payload through the official PayOS SDK before business parsing. Settlement additionally requires successful envelope and data codes, exact PAYOS provider, orderCode, paymentLinkId, amount and unique reference on a pending unexpired payment. An authenticated exact event or query may bind a previously unknown paymentLinkId after uncertain creation; a known link must match. Exact redeliveries are idempotent. Signed unmatched, underpaid, reused-reference, terminal or unknown confirmation samples are acknowledged as VERIFIED_UNMATCHED without activation. Raw payloads, signatures and bank account identifiers are not returned or retained as receipt evidence.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayosPaymentWebhook' }
+      responses:
+        '204': { description: 'Verified callback acknowledged, including duplicate, unmatched and confirm-webhook sample events' }
+        '400':
+          description: Malformed payload (PAYOS_WEBHOOK_INVALID), with safe problem details and no financial mutation.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Invalid signature (PAYOS_SIGNATURE_INVALID), with no signature, raw payload or secret in the response.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503':
+          description: Verification credentials unavailable (PAYOS_WEBHOOK_UNAVAILABLE); no unverified event is accepted.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /internal/v1/entitlements/current:
     x-mentalbridge-status: implemented
     get:
@@ -1492,6 +1545,54 @@ paths:
       operationId: listAdminPayments
       description: ADMIN-only bounded read of canonical purchase/upgrade facts. No customer profile, checkout destination, raw provider payload, or computed revenue is returned.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [ALL, PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Inclusive upper bound on createdAt; retained for existing clients. Do not combine with toExclusive.
+        - name: toExclusive
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on createdAt. Must be after from; do not combine with to.
+        - name: subscriptionId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: paymentId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: orderId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: idempotencyKey
+          in: query
+          required: false
+          schema: { type: string }
+        - name: momoRef
+          in: query
+          required: false
+          schema: { type: string }
+          description: Search payments by MoMo orderId or requestId
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Recent canonical payment facts
@@ -1506,12 +1607,150 @@ paths:
       operationId: listAdminPayouts
       description: Returns a bounded reconciliation view with masked destinations and no raw provider payload or destination data.
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [ALL, PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Inclusive upper bound on requestedAt; retained for existing clients. Do not combine with toExclusive.
+        - name: toExclusive
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on requestedAt. Must be after from; do not combine with to.
+        - name: specialistAccountId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: payoutId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - name: idempotencyKey
+          in: query
+          required: false
+          schema: { type: string }
+        - name: providerReference
+          in: query
+          required: false
+          schema: { type: string }
+          description: Exact provider payout reference from any persisted attempt; the list item displays the latest attempt's reference.
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Recent provider payout reconciliation rows
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminPayoutList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/payouts/{payoutId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminPayoutDetail
+      description: Returns payout details including masked destination, attempts, earnings, and provider events.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detailed payout reconciliation record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPayoutDetail' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/subscriptions/{subscriptionId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminSubscriptionDetail
+      description: Returns subscription details including payments, credits, and upgrades.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Detailed subscription commercial record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSubscriptionDetail' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+  /api/v1/admin/commercial/discrepancies:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminCommercialDiscrepancies
+      description: Returns authoritative commercial discrepancies including pending/failed/duplicate webhooks, failed payouts, held earnings, and disputed settlements.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Authoritative discrepancy report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCommercialDiscrepancyReport' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/admin/commercial/provenance:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getAdminCommercialProvenance
+      description: Traces canonical commercial provenance across Payment, Subscription/Credit, Appointment/Settlement, Specialist Earning, and Payout.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: paymentId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: subscriptionId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: creditId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: appointmentId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: earningId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: payoutId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Complete provenance trace across the commercial bounded context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCommercialProvenance' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /internal/v1/payouts/momo/ipn:
@@ -1894,6 +2133,11 @@ paths:
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
 components:
   securitySchemes:
+    journalVoiceEntitlementToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Voice-Entitlement-Token
+      description: Dedicated Journal-to-Consultation read-only voice credential. Not a user, worker, reminder or general internal token.
     liveKitWebhook:
       type: apiKey
       in: header
@@ -2003,6 +2247,57 @@ components:
       description: Quoted current appointment version for If-Match.
       schema: { type: string, pattern: '^"[0-9]+"$' }
   schemas:
+    VoiceOwnerCheck:
+      type: object
+      additionalProperties: false
+      required: [ownerId, voiceSessionId, purpose]
+      properties:
+        ownerId: { type: string, format: uuid }
+        voiceSessionId: { type: string, format: uuid }
+        purpose: { const: AI_COMPANION_VOICE }
+    VoiceEntitlementDecision:
+      type: object
+      additionalProperties: false
+      required: [ownerId, voiceSessionId, purpose, packageCode, source, entitlementVersion, checkedAt]
+      properties:
+        ownerId: { type: string, format: uuid }
+        voiceSessionId: { type: string, format: uuid }
+        purpose: { const: AI_COMPANION_VOICE }
+        packageCode: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        source: { type: string, enum: [DEFAULT_FREE, PAID, DEMO] }
+        entitlementVersion: { type: string, minLength: 1, maxLength: 128 }
+        checkedAt: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { packageCode: { const: FREE } }
+            required: [packageCode]
+          then:
+            properties: { source: { const: DEFAULT_FREE } }
+          else:
+            properties:
+              source: { type: string, enum: [PAID, DEMO] }
+              validUntil: { type: string, format: date-time }
+            required: [validUntil]
+    VoiceProblem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string, enum: [UNAUTHENTICATED, FORBIDDEN, INVALID_REQUEST, ENTITLEMENT_UNAVAILABLE] }
+        correlationId: { type: string, format: uuid }
+      allOf:
+        - if: { properties: { code: { const: UNAUTHENTICATED } }, required: [code] }
+          then: { properties: { status: { const: 401 } } }
+        - if: { properties: { code: { const: FORBIDDEN } }, required: [code] }
+          then: { properties: { status: { const: 403 } } }
+        - if: { properties: { code: { const: INVALID_REQUEST } }, required: [code] }
+          then: { properties: { status: { const: 422 } } }
+        - if: { properties: { code: { const: ENTITLEMENT_UNAVAILABLE } }, required: [code] }
+          then: { properties: { status: { const: 503 } } }
     VideoCompletion:
       type: object
       additionalProperties: false
@@ -2095,7 +2390,7 @@ components:
           maxItems: 3
           items: { $ref: '#/components/schemas/ServicePlanVersion' }
         checkoutEnabled: { type: boolean }
-        paymentProvider: { type: string, const: MOMO }
+        paymentProvider: { type: string, enum: [FAKE, MOMO, PAYOS], description: Configured collect adapter; checkoutEnabled independently reports readiness. FAKE is simulated and never requests a bank transfer. }
         generatedAt: { type: string, format: date-time }
     ServicePlanVersion:
       type: object
@@ -2127,7 +2422,7 @@ components:
     CommercialPricingPolicy:
       type: string
       enum: [upgrade-offset-v1, sandbox-full-price-v1]
-      description: Additive owner policy provenance. sandbox-full-price-v1 is synthetic/test pricing only, charging the full target price without an offset; it does not enable production payment or payout. Historical responses may omit this field and retain upgrade-offset-v1 behavior.
+      description: Additive owner policy provenance. sandbox-full-price-v1 uses test prices and charges the full target price without an offset; ADR 0047 permits the unchanged 5000/10000 VND catalogue through PayOS on staging only, with synthetic non-redeemable earnings. It does not enable production payment or payout. Historical responses may omit this field and retain upgrade-offset-v1 behavior.
     CreatePlanCheckout:
       type: object
       additionalProperties: false
@@ -2137,7 +2432,8 @@ components:
     PlanPayment:
       type: object
       additionalProperties: false
-      required: [paymentId, subscriptionId, planVersionId, planCode, planVersion, purpose, provider, status, amountVnd, currency, checkoutUrl, qrCodeUrl, expiresAt, createdAt, paidAt, failedAt]
+      description: Authoritative payment state. Fresh confirmed PAYOS and FAKE checkout carries all QR transfer fields; they may be absent or null for legacy, non-QR or unconfirmed attempts. amount equals amountVnd and expiredAt equals expiresAt as an RFC3339 instant. Hosted URLs are optional fallbacks and are not required for an in-app QR flow.
+      required: [paymentId, subscriptionId, planVersionId, planCode, planVersion, purpose, provider, status, amountVnd, currency, expiresAt, createdAt, paidAt, failedAt]
       properties:
         paymentId: { type: string, format: uuid }
         subscriptionId: { type: string, format: uuid }
@@ -2146,20 +2442,57 @@ components:
         planVersion: { type: string, minLength: 1, maxLength: 64 }
         pricingPolicyVersion: { $ref: '#/components/schemas/CommercialPricingPolicy' }
         purpose: { type: string, enum: [PURCHASE, UPGRADE] }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
+        terminalReason:
+          type: [string, 'null']
+          enum: [EXPIRED, CANCELLED, PROVIDER_FAILED, null]
+          description: Additive reason for a FAILED ledger state, persisted from server expiry or a verified provider result. Legacy failed rows may be null or omit it. PENDING, SUCCEEDED and CHARGEBACK have no terminalReason. Never inferred from return or cancel URLs.
         amountVnd: { type: integer, format: int64, minimum: 1 }
         currency: { type: string, const: VND }
         checkoutUrl:
           type: [string, 'null']
           format: uri
           pattern: '^https://'
-          description: Null while provider checkout creation is unconfirmed. The canonical pending payment remains auditable; do not redirect or automatically resend a charge. Verified IPN remains authoritative even when checkout creation times out.
+          description: Optional provider-controlled HTTPS fallback. PAYOS URLs must use the approved PayOS checkout host and MoMo URLs the configured MoMo host. Null or absent when no hosted URL exists or provider creation is unconfirmed; never automatically resend a charge. Verified webhook or fully matched authenticated reconciliation remains authoritative when creation times out.
         qrCodeUrl: { type: [string, 'null'], format: uri, pattern: '^https://' }
+        qrCode: { type: [string, 'null'], minLength: 1, description: VietQR payload for in-app rendering, not a URL. FAKE uses a deterministic simulated payload. }
+        bin: { type: [string, 'null'], minLength: 1, description: Transfer bank BIN returned by the collect adapter. }
+        accountNumber: { type: [string, 'null'], minLength: 1 }
+        accountName: { type: [string, 'null'], minLength: 1 }
+        description: { type: [string, 'null'], minLength: 1, maxLength: 9, description: Exact bank transfer description. }
+        amount: { type: [integer, 'null'], format: int64, minimum: 1, description: Integer VND transfer amount; when present equals amountVnd. }
+        expiredAt: { type: [string, 'null'], format: date-time, description: Chosen server expiry as RFC3339; when present equals expiresAt. }
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
         paidAt: { type: [string, 'null'], format: date-time }
         failedAt: { type: [string, 'null'], format: date-time }
+      examples:
+        - paymentId: 00000000-0000-4000-8000-000000000786
+          subscriptionId: 00000000-0000-4000-8000-000000000787
+          planVersionId: 00000000-0000-4000-8000-000000000788
+          planCode: PLUS
+          planVersion: sandbox-plus-v1
+          pricingPolicyVersion: sandbox-full-price-v1
+          purpose: PURCHASE
+          provider: PAYOS
+          status: PENDING
+          terminalReason: null
+          amountVnd: 5000
+          currency: VND
+          checkoutUrl: null
+          qrCodeUrl: null
+          qrCode: '00020101021238540010A00000072701240006970422011000000007860208QRIBFTTA5303704540450005802VN62120808MB0007866304A1E7'
+          bin: '970422'
+          accountNumber: '0000000786'
+          accountName: MENTALBRIDGE TEST
+          description: MB000786
+          amount: 5000
+          expiredAt: '2026-10-30T10:15:00Z'
+          expiresAt: '2026-10-30T10:15:00Z'
+          createdAt: '2026-10-30T10:00:00Z'
+          paidAt: null
+          failedAt: null
     PlanPaymentHistory:
       type: object
       additionalProperties: false
@@ -2171,6 +2504,53 @@ components:
           items: { $ref: '#/components/schemas/PlanPayment' }
         count: { type: integer, minimum: 0, maximum: 50 }
         generatedAt: { type: string, format: date-time }
+    PayosPaymentWebhook:
+      type: object
+      additionalProperties: true
+      description: Complete PayOS webhook envelope. Preserve unknown envelope and signed data fields unchanged for official SDK verification; do not coerce or discard fields before verification. Invalid payloads or signatures cannot mutate financial state.
+      required: [code, desc, success, data, signature]
+      properties:
+        code: { type: string, minLength: 1, description: Successful envelope code is 00. }
+        desc: { type: string }
+        success: { type: boolean }
+        signature: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+        data:
+          type: object
+          additionalProperties: true
+          required: [orderCode, amount, description, accountNumber, reference, transactionDateTime, currency, paymentLinkId, code, desc]
+          properties:
+            orderCode: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+            amount: { type: integer, format: int64, minimum: 0 }
+            paymentLinkId: { type: string, minLength: 1 }
+            reference: { type: string, minLength: 1 }
+            code: { type: string, description: Successful signed transaction code is 00. }
+            desc: { type: string }
+            description: { type: string }
+            accountNumber: { type: string }
+            transactionDateTime: { type: string, description: Provider transaction timestamp preserved verbatim for signature verification. }
+            currency: { type: string }
+            counterAccountBankId: { type: [string, 'null'] }
+            counterAccountBankName: { type: [string, 'null'] }
+            counterAccountName: { type: [string, 'null'] }
+            counterAccountNumber: { type: [string, 'null'] }
+            virtualAccountName: { type: [string, 'null'] }
+            virtualAccountNumber: { type: [string, 'null'] }
+      examples:
+        - code: '00'
+          desc: success
+          success: true
+          data:
+            orderCode: 786
+            amount: 5000
+            paymentLinkId: fixture-link-786
+            reference: fixture-reference-786
+            code: '00'
+            desc: success
+            description: MB000786
+            accountNumber: '0000000786'
+            transactionDateTime: '2026-10-30 17:01:00'
+            currency: VND
+          signature: '0000000000000000000000000000000000000000000000000000000000000000'
     MomoPaymentIpn:
       type: object
       required: [partnerCode, orderId, requestId, amount, orderInfo, orderType, transId, resultCode, message, payType, responseTime, extraData, signature]
@@ -2303,6 +2683,13 @@ components:
       properties:
         accountId: { type: string, format: uuid }
         packageCode: { $ref: '#/components/schemas/ServicePackage' }
+        entitlementState:
+          type: string
+          enum: [ACTIVE, EXPIRED, DEFAULT_FREE]
+          description: Always emitted by the provider; optional for additive rollout. ACTIVE is an effective paid or explicit demo grant at generatedAt. EXPIRED is a retained grant whose exclusive end is at or before generatedAt and returns effective FREE/DEFAULT_FREE with null current dates. DEFAULT_FREE has neither an effective nor an ended grant and may have a future grant.
+        supportPlanEnabled:
+          type: boolean
+          description: Always emitted by the provider; optional for additive rollout. The exact purchased-version capability for ACTIVE PAID, or the explicit paid-package policy for ACTIVE DEMO, resolved at the same instant as entitlementState. False for EXPIRED and DEFAULT_FREE. Missing or inconsistent required grant facts return 503 rather than FREE.
         source: { $ref: '#/components/schemas/CreditSource' }
         sourceReference: { type: [string, 'null'], minLength: 1, maxLength: 128 }
         periodStart: { type: [string, 'null'], format: date-time }
@@ -2875,7 +3262,7 @@ components:
       required: [generatedAt, count, items]
       properties:
         generatedAt: { type: string, format: date-time }
-        count: { type: integer, minimum: 0, maximum: 200 }
+        count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payments. }
         items:
           type: array
           maxItems: 200
@@ -2891,7 +3278,7 @@ components:
         planCode: { type: string, enum: [PLUS, PREMIUM] }
         pricingPolicyVersion: { $ref: '#/components/schemas/CommercialPricingPolicy' }
         purpose: { type: string, enum: [PURCHASE, UPGRADE] }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CHARGEBACK] }
         amountVnd: { type: integer, format: int64, minimum: 1 }
         currency: { type: string, const: VND }
@@ -2915,13 +3302,289 @@ components:
         failureCode: { type: [string, 'null'], maxLength: 64 }
         requestedAt: { type: string, format: date-time }
         completedAt: { type: [string, 'null'], format: date-time }
+    AdminPayoutDetail:
+      type: object
+      additionalProperties: false
+      required: [payout, attempts, earnings, events]
+      properties:
+        payout: { $ref: '#/components/schemas/AdminPayout' }
+        attempts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [attemptId, attemptNumber, provider, status, requestedAt]
+            properties:
+              attemptId: { type: string, format: uuid }
+              attemptNumber: { type: integer, minimum: 1 }
+              provider: { type: string, enum: [FAKE, MOMO] }
+              status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
+              providerReference: { type: [string, 'null'] }
+              failureCode: { type: [string, 'null'] }
+              requestedAt: { type: string, format: date-time }
+              confirmedAt: { type: [string, 'null'], format: date-time }
+              failedAt: { type: [string, 'null'], format: date-time }
+        earnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [earningId, appointmentId, amountVnd, status, earnedAt]
+            properties:
+              earningId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              amountVnd: { type: integer, format: int64, minimum: 0 }
+              status: { type: string }
+              earnedAt: { type: string, format: date-time }
+              paidAt: { type: [string, 'null'], format: date-time }
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [eventId, provider, eventType, processingStatus, receivedAt]
+            properties:
+              eventId: { type: string, format: uuid }
+              provider: { type: string }
+              eventType: { type: string }
+              processingStatus: { type: string }
+              failureCode: { type: [string, 'null'] }
+              receivedAt: { type: string, format: date-time }
+              processedAt: { type: [string, 'null'], format: date-time }
+    AdminSubscriptionDetail:
+      type: object
+      additionalProperties: false
+      required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt, payments, credits, upgrades]
+      properties:
+        subscriptionId: { type: string, format: uuid }
+        userAccountId: { type: string, format: uuid }
+        planVersionId: { type: string, format: uuid }
+        planCode: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        pricingPolicyVersion: { type: string }
+        status: { type: string, enum: [PENDING_PAYMENT, ACTIVE, ENDED] }
+        currentPeriodStart: { type: [string, 'null'], format: date-time }
+        currentPeriodEnd: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPayment' }
+        credits:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [creditId, periodId, ordinal, state, creditAllocationVnd, createdAt]
+            properties:
+              creditId: { type: string, format: uuid }
+              periodId: { type: string, format: uuid }
+              ordinal: { type: integer, minimum: 1, maximum: 10 }
+              state: { type: string }
+              creditAllocationVnd: { type: integer, format: int64 }
+              appointmentId: { type: [string, 'null'], format: uuid }
+              createdAt: { type: string, format: date-time }
+        upgrades:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [upgradeId, fromPlanVersionId, toPlanVersionId, offsetVnd, amountDueVnd, status, quotedAt]
+            properties:
+              upgradeId: { type: string, format: uuid }
+              fromPlanVersionId: { type: string, format: uuid }
+              toPlanVersionId: { type: string, format: uuid }
+              offsetVnd: { type: integer, format: int64 }
+              amountDueVnd: { type: integer, format: int64 }
+              status: { type: string }
+              quotedAt: { type: string, format: date-time }
+              appliedAt: { type: [string, 'null'], format: date-time }
+    AdminCommercialDiscrepancyReport:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, totalDiscrepancies, webhooks, payouts, heldEarnings, disputes]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        totalDiscrepancies: { type: integer, minimum: 0 }
+        webhooks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, orderId, provider, discrepancyType, status, receivedAt]
+            properties:
+              id: { type: string, format: uuid }
+              orderId: { type: string }
+              provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
+              transId: { type: [integer, 'null'], format: int64 }
+              discrepancyType: { type: string }
+              status: { type: string }
+              failureCode: { type: [string, 'null'] }
+              receivedAt: { type: string, format: date-time }
+        payouts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [payoutId, specialistAccountId, destinationHint, amountVnd, currency, provider, status, requestedAt]
+            properties:
+              payoutId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              destinationHint: { type: string }
+              amountVnd: { type: integer, format: int64 }
+              currency: { type: string, const: VND }
+              provider: { type: string }
+              status: { type: string }
+              failureCode: { type: [string, 'null'] }
+              requestedAt: { type: string, format: date-time }
+        heldEarnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [earningId, appointmentId, specialistAccountId, amountVnd, status, holdReason, earnedAt, settlementAvailableAt]
+            properties:
+              earningId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              amountVnd: { type: integer, format: int64 }
+              status: { type: string }
+              holdReason: { type: string }
+              earnedAt: { type: string, format: date-time }
+              settlementAvailableAt: { type: string, format: date-time }
+        disputes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [disputeId, appointmentId, openedByRole, reasonCode, status, openedAt, eligibleUntil]
+            properties:
+              disputeId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              openedByRole: { type: string }
+              reasonCode: { type: string }
+              status: { type: string }
+              resolutionOutcome: { type: [string, 'null'] }
+              openedAt: { type: string, format: date-time }
+              eligibleUntil: { type: string, format: date-time }
+    AdminCommercialProvenance:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, queryIdentifierType, queryIdentifierValue, found, subscriptions, payments, credits, appointments, disputes, earnings, payouts, truncated]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        queryIdentifierType: { type: string }
+        queryIdentifierValue: { type: string }
+        found: { type: boolean }
+        truncated: { type: boolean, description: True when at least one entity category exceeded the fetch limit }
+        subscription:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt]
+          properties:
+            subscriptionId: { type: string, format: uuid }
+            userAccountId: { type: string, format: uuid }
+            planVersionId: { type: string, format: uuid }
+            planCode: { type: string }
+            pricingPolicyVersion: { type: string }
+            status: { type: string }
+            currentPeriodStart: { type: [string, 'null'], format: date-time }
+            currentPeriodEnd: { type: [string, 'null'], format: date-time }
+            createdAt: { type: string, format: date-time }
+        subscriptions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [subscriptionId, userAccountId, planVersionId, planCode, pricingPolicyVersion, status, createdAt]
+            properties:
+              subscriptionId: { type: string, format: uuid }
+              userAccountId: { type: string, format: uuid }
+              planVersionId: { type: string, format: uuid }
+              planCode: { type: string }
+              pricingPolicyVersion: { type: string }
+              status: { type: string }
+              currentPeriodStart: { type: [string, 'null'], format: date-time }
+              currentPeriodEnd: { type: [string, 'null'], format: date-time }
+              createdAt: { type: string, format: date-time }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPayment' }
+        credits:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [creditId, periodId, ordinal, state, creditAllocationVnd, createdAt]
+            properties:
+              creditId: { type: string, format: uuid }
+              periodId: { type: string, format: uuid }
+              ordinal: { type: integer }
+              state: { type: string }
+              creditAllocationVnd: { type: integer, format: int64 }
+              appointmentId: { type: [string, 'null'], format: uuid }
+              createdAt: { type: string, format: date-time }
+        appointments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [appointmentId, specialistAccountId, serviceCreditId, status, modality, scheduledStartAt, scheduledEndAt]
+            properties:
+              appointmentId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              serviceCreditId: { type: string, format: uuid }
+              status: { type: string }
+              modality: { type: string }
+              sessionOutcome: { type: [string, 'null'] }
+              completionFactId: { type: [string, 'null'], format: uuid }
+              scheduledStartAt: { type: string, format: date-time }
+              scheduledEndAt: { type: string, format: date-time }
+              sessionSettledAt: { type: [string, 'null'], format: date-time }
+        disputes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [disputeId, appointmentId, openedByRole, reasonCode, status, openedAt]
+            properties:
+              disputeId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              openedByRole: { type: string }
+              reasonCode: { type: string }
+              status: { type: string }
+              resolutionOutcome: { type: [string, 'null'] }
+              resolutionReason: { type: [string, 'null'] }
+              openedAt: { type: string, format: date-time }
+              resolvedAt: { type: [string, 'null'], format: date-time }
+        earnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [earningId, appointmentId, consumedCreditId, specialistAccountId, planVersion, creditAllocationVnd, specialistShareBps, specialistAmountVnd, platformAllocationVnd, status, earnedAt, settlementAvailableAt]
+            properties:
+              earningId: { type: string, format: uuid }
+              appointmentId: { type: string, format: uuid }
+              consumedCreditId: { type: string, format: uuid }
+              specialistAccountId: { type: string, format: uuid }
+              planVersion: { type: string }
+              creditAllocationVnd: { type: integer, format: int64 }
+              specialistShareBps: { type: integer }
+              specialistAmountVnd: { type: integer, format: int64 }
+              platformAllocationVnd: { type: integer, format: int64 }
+              status: { type: string }
+              earnedAt: { type: string, format: date-time }
+              settlementAvailableAt: { type: string, format: date-time }
+              paidAt: { type: [string, 'null'], format: date-time }
+        payouts:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPayout' }
     AdminPayoutList:
       type: object
       additionalProperties: false
       required: [generatedAt, count, items]
       properties:
         generatedAt: { type: string, format: date-time }
-        count: { type: integer, minimum: 0, maximum: 200 }
+        count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payouts. }
         items:
           type: array
           maxItems: 200
@@ -3557,6 +4220,34 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    VoiceUnauthorizedProblem:
+      description: Missing, disabled or invalid dedicated Journal service authentication
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
+    VoiceForbiddenProblem:
+      description: Unsupported caller authentication context
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
+    VoiceInvalidRequestProblem:
+      description: Invalid, incomplete, overposted or unsupported request
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
+    VoiceEntitlementUnavailableProblem:
+      description: Current owner entitlement could not be resolved consistently
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/VoiceProblem' }
     AppointmentForbiddenProblem:
       description: USER role or a current PLUS/PREMIUM entitlement is required (PAID_PLAN_REQUIRED).
       content:
@@ -3609,6 +4300,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     CreditConflictProblem:
       description: Entitlement period conflicts with an already provisioned immutable credit period
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    EntitlementUnavailableProblem:
+      description: Required entitlement grant, purchased-version, or period facts are missing or inconsistent (ENTITLEMENT_UNAVAILABLE).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

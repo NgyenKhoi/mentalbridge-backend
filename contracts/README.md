@@ -11,6 +11,47 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-782 amends the accepted Voice target to `1.1.0` and active Journal OpenAPI
+to `1.16.0`: display-only quota-aware duration previews and exact admitted
+room/Agent connection bindings. The [Web handoff](../docs/story-mb-782-voice-web-prerequisite.md)
+defines official `lk.agent.state` hints and consumer fallback. Existing Voice
+policy, worker control envelope and business lifecycle versions remain unchanged.
+
+MB-755 freezes the accepted [AI Voice target](proposals/companion-voice-v1.openapi.json)
+under [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md). Journal/AI voice,
+Care's separate voice consent and narrow owner authorization reads are all
+`planned`; no active OpenAPI or runtime handler is promoted. Its closed worker
+envelope, policy schema, lifecycle, synthetic fixtures and executable contract
+tests are linked in the [proposal index](proposals/README.md). The approved
+target is separate from text-chat quotas and Consultation appointment/media
+contracts. The existing Journal CI lane runs the new proposal tests.
+
+MB-684's accepted [Community chat baseline](proposals/community-chat-v1.openapi.json)
+remains frozen in proposals with its original planned markers. Its closed
+[commands](proposals/community-chat-command-v1.schema.json),
+[socket events](proposals/community-chat-realtime-v1.schema.json) and
+[durable facts](proposals/community-chat-fact-v1.schema.json) define the accepted target.
+MB-685 registers only the delivered direct-provider subset and promotes the
+unchanged fact shape under `events/community/`. MB-687 adds nine private-group
+lifecycle operations and exact-message report intake. MB-689 promotes signed
+internal projections and isolated socket delivery; MB-690 adds presence-only
+foreground heartbeat, presence events and current authorized peer projections.
+MB-691 adds scoped chat notification authorization, the comment-reaction provider
+fragment and separate `community-comment-reaction-v1.schema.json` fact. Existing
+interaction-v1 producers and schemas remain compatible. The new generic
+`community-push-v1.schema.json` defines a payload only; actual PUSH provider/device
+delivery remains MB-675/679. Typing/shared receipts and ADMIN case operations
+remain future runtime work. MB-745 adds the implemented sender-retraction DELETE
+operation, structured active/retracted Message projections, minimized
+`MESSAGE_RETRACTED` owner facts and the promoted
+`websocket/community/event-v1.schema.json` change event. The accepted
+MB-684 proposal artifacts remain frozen.
+MB-746 adds the implemented per-user conversation DELETE operation, a durable
+server-ordered cutoff in Community, and a recipient-routed
+`CONVERSATION_CLEARED` fact used only to invalidate the actor's live sockets.
+See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
+Existing appointment and Community interaction schemas are unchanged.
+
 Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:
 
 - `implemented`: the owning service has a production handler and tests for the documented method, authorization, success response, and stable errors;
@@ -34,6 +75,23 @@ fact emitted atomically when Identity suspends or restores a non-admin account.
 It carries only the account identifier, current status, immutable actor role,
 closed reason code, correlation metadata, and aggregate version. Repeated
 same-state commands emit no duplicate fact.
+
+MB-565 adds the implemented `events/care/user-notification-fact-v1.schema.json`
+and `events/identity/user-notification-fact-v1.schema.json` contracts. Care
+publishes only authenticated assessment-result and newly persisted SupportGuide
+availability facts on `mentalbridge.care.user-notification.v1`; Identity
+publishes only USER activation/restoration facts on its existing account
+lifecycle topic. Both contracts are closed, identity-bound, and exclude
+assessment answers/scores, safety flags, resource copy, email addresses, and
+provider payloads. Content/Notification owns rendering, preference enforcement,
+durable delivery state, and logical replay deduplication.
+
+For these two MB-565 v1 facts, producers truncate source instants to UTC
+microseconds before writing both JSON `payload.availableAt` and the outbox
+`occurred_at`. Truncation never rounds into the next microsecond or second.
+The relay emits the same ISO-8601 text (at most six fractional digits) after
+PostgreSQL reload. Content requires exact timestamp equality in addition to
+the existing kind, recipient, aggregate identity and version bindings.
 
 `care-service-v1.yaml` remains the unchanged v1 source for coarse historical
 SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
@@ -88,3 +146,7 @@ returns a review-required reference instead of silently mutating an active plan.
 - Runtime configuration changes together with `.env.example`, the module README, and configuration tests.
 
 Run `pwsh ./scripts/verify-repository.ps1` before opening a pull request. CI applies the same repository and changed-file policy checks.
+
+## MB-685 active direct-chat subset
+
+[`openapi/community-chat-v1.json`](openapi/community-chat-v1.json) is the runtime provider contract for delivered direct/group chat and report-intake operations. The accepted MB-684 artifact in proposals remains frozen for downstream transport and case administration. Only delivered paths are registered; schemas remain compatible with that baseline. A schema variant alone never advertises an unregistered socket/internal/ADMIN capability.

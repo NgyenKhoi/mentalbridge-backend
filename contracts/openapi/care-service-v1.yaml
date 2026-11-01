@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.7.0
+  version: 1.9.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -38,6 +38,142 @@ tags:
   - name: Anonymous assessment
   - name: Safety directory
 paths:
+  "/api/v1/ai-voice-processing-disclosure":
+    "x-mentalbridge-status": "implemented"
+    "x-mentalbridge-owner": "care-service"
+    "get":
+      "operationId": "getVoiceDisclosure"
+      "summary": "getVoiceDisclosure"
+      "description": "Care publishes the exact immutable Vietnamese ai-voice-processing-capstone-v1 title and content. Requires authenticated USER; no microphone or provider call."
+      "security":
+        -
+          "bearerAuth": []
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceDisclosure"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
+  "/api/v1/consents/ai-voice-processing":
+    "x-mentalbridge-status": "implemented"
+    "x-mentalbridge-owner": "care-service"
+    "get":
+      "operationId": "getCurrentVoiceConsent"
+      "summary": "getCurrentVoiceConsent"
+      "description": "Read only the authenticated owner current voice decision. Missing/outdated decision returns current=false and granted=false. current indicates policy-version freshness; an old POST replay never restores authority."
+      "security":
+        -
+          "bearerAuth": []
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceConsent"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
+    "post":
+      "operationId": "recordVoiceConsentDecision"
+      "summary": "recordVoiceConsentDecision"
+      "description": "Append a separate AI_VOICE_PROCESSING decision for the authenticated owner with an existing Care profile; no paid plan or text grant is required. Exact UUID idempotency replay returns the immutable original decision without restoring a revoked grant. Store only purpose/owner-scoped HMAC of the key and safe intent digest. Withdrawal preserves historical decisions. Unknown/invalid fields return INVALID_REQUEST (422)."
+      "security":
+        -
+          "bearerAuth": []
+      "parameters":
+        -
+          "in": "header"
+          "name": "Idempotency-Key"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+          "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/VoiceConsentCommand"
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceConsent"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "409":
+          "$ref": "#/components/responses/VoiceProblem409"
+        "422":
+          "$ref": "#/components/responses/VoiceProblem422"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
+  "/internal/v1/ai-companion/voice-consent-authorizations":
+    "x-mentalbridge-status": "implemented"
+    "x-mentalbridge-owner": "care-service"
+    "post":
+      "operationId": "checkCurrentVoiceConsents"
+      "summary": "checkCurrentVoiceConsents"
+      "description": "Dedicated Journal-only service credential and exact session-owned owner assertion with constant purpose. Care resolves both latest current grants in one repeatable-read transaction; no user JWT, cache, shadow grant or remote call. Journal validates echoed binding and applies a two-second request deadline. Worker and user credentials cannot authorize this read."
+      "security":
+        -
+          "JournalVoiceCareToken": []
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/VoiceOwnerCheck"
+      "responses":
+        "200":
+          "description": "Owner-authorized response"
+          "headers":
+            "Cache-Control":
+              "schema":
+                "const": "no-store"
+              "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/VoiceDualConsentDecision"
+        "401":
+          "$ref": "#/components/responses/VoiceProblem401"
+        "403":
+          "$ref": "#/components/responses/VoiceProblem403"
+        "422":
+          "$ref": "#/components/responses/VoiceProblem422"
+        "503":
+          "$ref": "#/components/responses/VoiceProblem503"
   /api/v1/admin/product-journey-metrics:
     x-mentalbridge-status: implemented
     get:
@@ -482,6 +618,69 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/GuidedJourney" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "503": { $ref: "#/components/responses/DependencyProblem" }
+  /api/v1/home-next-step:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Assessment, Support evaluation]
+      operationId: getOwnHomeNextStep
+      summary: Read the owner's single next step for Home
+      description: |
+        Read-only, owner-scoped Home composition over the unchanged GuidedJourney
+        and persisted SupportPlan facts. Clients render Care's ordered journey
+        action and plan focus; safety and professional-support journey actions keep
+        their existing precedence over plan context. No Guide, plan, lifecycle
+        transition, assessment answer, score, journal or emotion content is created
+        or returned. Entitlement uncertainty retains the journey's fail-closed
+        resources step with entitlementStatus UNAVAILABLE. A missing published
+        support policy returns 503 SUPPORT_POLICY_UNAVAILABLE.
+        A supplied timezone must be an IANA zone; an invalid value returns 400.
+        When omitted, localDate uses the plan schedule time zone. Reads carry
+        Cache-Control no-store and are usable directly with an owner bearer token.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timezone
+          in: query
+          required: false
+          description: IANA zone for today's local date; omitted uses the plan schedule time zone.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+          example: Asia/Ho_Chi_Minh
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current Home decision and minimized plan context
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HomeNextStep" }
+              examples:
+                assessmentRequired:
+                  summary: No completed initial check; the owner starts the first assessment
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"ASSESSMENT_REQUIRED","assessmentInProgress":false,"episodeId":null,"episodeCompletedAt":null,"presentationEvaluationId":null,"supportGuideId":null,"nextAction":null,"currentSupportPlanId":null,"entitlementStatus":"NOT_REQUIRED"},"plan":null,"lastCompletedPlan":null}
+                freeResources:
+                  summary: FREE retains useful reviewed Guide resources
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"EXPLORE_GUIDE_RESOURCES","currentSupportPlanId":null,"entitlementStatus":"VERIFIED"},"plan":null,"lastCompletedPlan":null}
+                plusProposal:
+                  summary: Verified PLUS owner can review the fourteen-day plan proposal
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"START_PLAN_PROPOSAL","currentSupportPlanId":null,"entitlementStatus":"VERIFIED"},"plan":null,"lastCompletedPlan":null}
+                doToday:
+                  summary: Active plan has one completed task and one open resource task today
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED"},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"ACTIVE","focus":"DO_TODAY","reviewDueOn":"2026-11-04","cycleDay":1,"cycleLengthDays":14,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":{"occurrenceId":"00000000-0000-4000-8000-000000000105","actionId":"00000000-0000-4000-8000-000000000106","actionType":"RESOURCE","title":"A short breathing practice","displayState":"SCHEDULED","scheduledAt":"2026-10-22T12:00:00Z","estimatedDurationMinutes":5}},"lastCompletedPlan":null}
+                resumePaused:
+                  summary: Paused plan without a cycle takes precedence over today's work
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED"},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"PAUSED","focus":"RESUME_PAUSED","reviewDueOn":null,"cycleDay":null,"cycleLengthDays":null,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":null},"lastCompletedPlan":null}
+                reviewDue:
+                  summary: Review date reached; the plan stays ACTIVE until an explicit owner choice
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED"},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"ACTIVE","focus":"REVIEW_DUE","reviewDueOn":"2026-10-21","cycleDay":14,"cycleLengthDays":14,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":null},"lastCompletedPlan":null}
+                lastCompletedPlan:
+                  summary: No current or draft plan; newest historical plan was completed
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"EXPLORE_GUIDE_RESOURCES","currentSupportPlanId":null,"entitlementStatus":"VERIFIED"},"plan":null,"lastCompletedPlan":{"supportPlanId":"00000000-0000-4000-8000-000000000107","completedAt":"2026-10-21T10:00:00Z"}}
         "400": { $ref: "#/components/responses/ValidationProblem" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
@@ -2060,6 +2259,95 @@ paths:
         '409': { $ref: '#/components/responses/SupportPlanEligibilityProblem' }
         '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
         '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v2/support-plans/{supportPlanId}/adaptive-review:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getAdaptiveSupportPlanReview
+      summary: Read the Care-governed adaptive review of the owner's current plan
+      description: |
+        Owner-only, no-store, stateless read (support-plan-review-v1). Composes
+        the current ACTIVE or PAUSED native plan, its cycle and actual program
+        period, the latest owned canonical reassessment-summary-v2 (or the one
+        named by reassessmentSummaryId), approved engagement patterns, deterministic
+        contradictions and bounded Care-admitted options. Never creates a draft,
+        summary, cycle or schedule change. No global wellbeing, recovery or
+        adherence score is produced. Optional sources degrade independently;
+        an unavailable admission dependency makes currentAdmission UNAVAILABLE
+        and withholds commitment options instead of failing the whole review.
+        Owned review reads survive FREE or expired access; paid entitlement gates
+        only the mutation options (reported as ENTITLEMENT_REQUIRED).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/OptionalIfMatch'
+        - name: reassessmentSummaryId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Adaptive review with separate sourced evidence and bounded options
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdaptiveSupportPlanReview' }
+              examples:
+                contradictoryWithOptions:
+                  $ref: '#/components/examples/AdaptiveSupportPlanReview'
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AdaptiveReviewConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+  /api/v2/support-plans/{supportPlanId}/adaptive-review/confirm:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan v3]
+      operationId: confirmAdaptiveSupportPlanReviewOption
+      summary: Apply exactly one explicitly chosen adaptive review option
+      description: |
+        Requires the strong current-plan If-Match and a durable Idempotency-Key.
+        Care resolves identity from the JWT, replays an identical command first,
+        then recomputes the review context and compares reviewFingerprint. A
+        changed source, summary, admission, option set or period rollover returns
+        409 ADAPTIVE_REVIEW_STALE without mutation; the client reloads and the user
+        chooses again. Exactly one existing owner operation runs:
+        KEEP_CURRENT before due returns the validated unchanged plan (no write);
+        KEEP_CURRENT when REVIEW_DUE runs cycle continuation; LOWER_WORKLOAD and
+        DIFFERENT_TIME run one versioned schedule update; ALTERNATIVE_ACTION and
+        DIFFERENT_FOCUS first prepare a DRAFT (request without proposedPlanId) and,
+        after the user compares it, replace the current plan (request with
+        proposedPlanId and proposedVersion). PROFESSIONAL_SUPPORT_NEXT_STEP is
+        navigation only and is rejected here. A PAUSED plan is never resumed implicitly.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SupportPlanId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmAdaptiveReviewOptionRequest' }
+      responses:
+        '200':
+          description: Result of the one applied operation, or unchanged command replay
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdaptiveReviewConfirmation' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanNotFoundProblem' }
+        '409': { $ref: '#/components/responses/AdaptiveReviewConflictProblem' }
+        '412': { $ref: '#/components/responses/SupportPlanVersionProblem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
   /api/v2/support-plan-occurrences:
     x-mentalbridge-status: implemented
     get:
@@ -2198,6 +2486,166 @@ paths:
         '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
         '409': { $ref: '#/components/responses/SupportPlanOccurrenceConflictProblem' }
         '412': { $ref: '#/components/responses/SupportPlanOccurrenceVersionProblem' }
+  /api/v2/support-plans/current/resource-actions:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [SupportPlan v3]
+      operationId: getOwnCurrentPlanResourceActions
+      summary: Read the current plan's minimized resource actions in plan order
+      description: |
+        Owner-only USER read for web, mobile and Content. Returns ACTIVE resource
+        actions of the current ACTIVE or PAUSED plan without rationale, why text,
+        screening data or entitlement inference. No current plan returns 200 with
+        planState NONE and an empty actions array. V2_RESOURCE_ADAPTER actions are
+        included with today null and cannot use native resource reconciliation.
+        localDate selects the occurrence projection; it never proves completion.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: localDate
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Current plan resource projection, including an explicit NONE state
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanResourceActionsV1' }
+              example:
+                planState: ACTIVE
+                supportPlanId: 71000000-0000-4000-8000-000000000001
+                supportPlanVersion: 3
+                representationMode: NATIVE_V3
+                timeZone: Asia/Ho_Chi_Minh
+                localDate: '2026-10-21'
+                actions:
+                  - actionId: 72000000-0000-4000-8000-000000000001
+                    actionVersion: 1
+                    title: Slow breathing practice
+                    resource:
+                      resourceId: 73000000-0000-4000-8000-000000000001
+                      resourceVersion: '2'
+                      publicationId: 74000000-0000-4000-8000-000000000001
+                    schedule:
+                      scheduleId: 75000000-0000-4000-8000-000000000001
+                      version: 1
+                      schedulePolicyVersion: support-plan-schedule-v3
+                      recurrenceType: DAILY
+                      recurrenceDayOfWeek: null
+                      daysOfWeek: []
+                      preferredDaypart: EVENING
+                      estimatedDurationMinutes: 5
+                      localTime: '19:00:00'
+                      timezone: Asia/Ho_Chi_Minh
+                      effectiveFrom: '2026-10-19'
+                      effectiveUntil: null
+                      reminderEnabled: false
+                      status: ACTIVE
+                    today:
+                      occurrenceId: 76000000-0000-4000-8000-000000000001
+                      timeZone: Asia/Ho_Chi_Minh
+                      occurrenceVersion: 0
+                      displayState: SCHEDULED
+                      completionEvidence: null
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v2/support-plan-occurrences/{occurrenceId}/resource/reconcile:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan v3]
+      operationId: reconcileOwnResourceOccurrence
+      summary: Reconcile one resource occurrence with exact Content-owned evidence
+      description: |
+        Explicit USER command with no request body or client-supplied fact identity.
+        Requires an owned native RESOURCE occurrence of an ACTIVE plan. Care reads
+        Content outside a transaction using the action's exact resource identity
+        and revision and the occurrence date in the plan time zone. A qualifying
+        server occurredAt must fall on that date. One Content fact may complete
+        only one occurrence. An identical accepted retry returns the persisted
+        occurrence without changing its evidence, completion instant or version.
+        A missing fact or dependency failure leaves the occurrence unchanged.
+        Self-confirmation, opening content and resource_learning_completion are
+        never evidence. A completed occurrence cannot be reopened by state PUT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OccurrenceId'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Persisted occurrence completed with Content evidence, including identical retries
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionOccurrence' }
+              example:
+                occurrenceId: 76000000-0000-4000-8000-000000000001
+                actionId: 72000000-0000-4000-8000-000000000001
+                actionType: RESOURCE
+                actionVersion: 1
+                scheduleId: 75000000-0000-4000-8000-000000000001
+                scheduleVersion: 1
+                representationMode: NATIVE_V3
+                version: 1
+                localDate: '2026-10-21'
+                scheduledAt: '2026-10-21T12:00:00Z'
+                state: COMPLETED
+                displayState: COMPLETED
+                stateReason: null
+                completionEvidence:
+                  kind: RESOURCE_PRACTICE_SESSION
+                  ownerDomain: CONTENT
+                  factId: 77000000-0000-4000-8000-000000000001
+                  factRevision: '2'
+                  occurredAt: '2026-10-21T12:00:00Z'
+                  verifiedAt: '2026-10-21T12:02:00Z'
+                outcomeRecordedAt: '2026-10-21T12:00:00Z'
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/SupportPlanOccurrenceNotFoundProblem' }
+        '409':
+          description: RESOURCE_EVIDENCE_NOT_FOUND, RESOURCE_EVIDENCE_ALREADY_USED, SUPPORT_PLAN_NOT_ACTIVE, OCCURRENCE_NOT_OPEN or RESOURCE_ACTION_REQUIRED; occurrence unchanged
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_EVIDENCE_NOT_FOUND
+                title: Resource completion evidence not found
+                status: 409
+                detail: No exact-version Content fact belongs to this occurrence date.
+                code: RESOURCE_EVIDENCE_NOT_FOUND
+                correlationId: 78000000-0000-4000-8000-000000000001
+        '412':
+          description: OCCURRENCE_VERSION_MISMATCH; reload the occurrence and its ETag
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://mentalbridge.io/errors/OCCURRENCE_VERSION_MISMATCH
+                title: Occurrence version mismatch
+                status: 412
+                detail: The occurrence changed since it was read.
+                code: OCCURRENCE_VERSION_MISMATCH
+                correlationId: 78000000-0000-4000-8000-000000000001
+        '503':
+          description: RESOURCE_EVIDENCE_UNAVAILABLE; Content evidence could not be verified and occurrence is unchanged
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://mentalbridge.io/errors/RESOURCE_EVIDENCE_UNAVAILABLE
+                title: Resource evidence unavailable
+                status: 503
+                detail: Content evidence could not be verified. Retry later.
+                code: RESOURCE_EVIDENCE_UNAVAILABLE
+                correlationId: 78000000-0000-4000-8000-000000000001
   /api/v2/support-plan-occurrences/{occurrenceId}/emotion-check-in/reconcile:
     x-mentalbridge-status: implemented
     post:
@@ -2717,6 +3165,135 @@ components:
             - { occurrenceId: 65010000-0000-4000-8000-000000000041, period: PREVIOUS, helpfulness: HELPFUL, reflection: "The short exercise felt manageable.", engagementUpdatedAt: "2026-09-03T11:15:00Z" }
             - { occurrenceId: 65010000-0000-4000-8000-000000000042, period: CURRENT, helpfulness: null, reflection: "I had less energy after work.", engagementUpdatedAt: "2026-09-17T11:10:00Z" }
         disclaimerCode: FOUR_DIMENSIONS_NOT_COMBINED
+    AdaptiveSupportPlanReview:
+      summary: Review-due plan with opposite instrument directions, a repeated barrier and an unavailable time option
+      value:
+        schemaVersion: adaptive-support-plan-review-v1
+        policyVersion: support-plan-review-v1
+        supportPlanId: 65010000-0000-4000-8000-000000000051
+        planVersion: 4
+        planStatus: ACTIVE
+        cycle: { policyVersion: support-plan-cycle-v1, lengthDays: 14, timezone: Asia/Ho_Chi_Minh, cycleNumber: 1, startedOn: "2026-09-10", reviewDueOn: "2026-09-23", currentDay: 15, pausedDays: 0, state: REVIEW_DUE }
+        reviewedAt: "2026-09-24T07:05:00Z"
+        programPeriod: { startedOn: "2026-09-10", asOf: "2026-09-24", timezone: Asia/Ho_Chi_Minh, elapsedDays: 15, pausedDays: 0, fullCycleElapsed: true, scheduledCount: 10, completedCount: 6, skippedCount: 3, openCount: 1 }
+        reviewState: REVIEW_DUE
+        currentAdmission: ADMISSIBLE
+        outcome: CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE
+        patterns:
+          - { patternId: barrier-low-energy-65010000-0000-4000-8000-000000000071, kind: REPEATED_BARRIER, code: LOW_ENERGY, actionId: 65010000-0000-4000-8000-000000000071, actionTitle: Thở chậm 5 phút, count: 2, occurrenceIds: [65010000-0000-4000-8000-000000000042, 65010000-0000-4000-8000-000000000043] }
+        contradictions:
+          - contradictionId: instrument-directions
+            kind: INSTRUMENT_DIRECTIONS_DIFFER
+            evidenceRefs:
+              - { source: SCREENING_PHQ9, refId: 65010000-0000-4000-8000-000000000012 }
+              - { source: SCREENING_GAD7, refId: 65010000-0000-4000-8000-000000000014 }
+        options:
+          - optionId: keep-current-4
+            kind: KEEP_CURRENT
+            executionKind: CONTINUE_CYCLE
+            actionId: null
+            focusId: null
+            rationaleCodes: [CURRENT_PLAN_STILL_ADMISSIBLE]
+            evidenceRefs: [{ source: SELF_REPORTED_EXPERIENCE, refId: 65010000-0000-4000-8000-000000000081 }]
+            conflictingEvidenceRefs: [{ source: PATTERN, refId: barrier-low-energy-65010000-0000-4000-8000-000000000071 }]
+            changes: []
+          - optionId: lower-workload-65010000-0000-4000-8000-000000000071-5
+            kind: LOWER_WORKLOAD
+            executionKind: UPDATE_SCHEDULE
+            actionId: 65010000-0000-4000-8000-000000000071
+            focusId: null
+            rationaleCodes: [REPEATED_LOW_ENERGY]
+            evidenceRefs: [{ source: PATTERN, refId: barrier-low-energy-65010000-0000-4000-8000-000000000071 }]
+            conflictingEvidenceRefs: []
+            changes:
+              - { field: ESTIMATED_DURATION_MINUTES, before: "10", after: "5" }
+          - optionId: professional-support
+            kind: PROFESSIONAL_SUPPORT_NEXT_STEP
+            executionKind: NAVIGATE_PROFESSIONAL_SUPPORT
+            actionId: null
+            focusId: null
+            rationaleCodes: [PROFESSIONAL_SUPPORT_ALWAYS_AVAILABLE]
+            evidenceRefs: []
+            conflictingEvidenceRefs: []
+            changes: []
+        unavailableOptions:
+          - { kind: DIFFERENT_TIME, reasonCode: NO_TIME_PREFERENCE }
+          - { kind: ALTERNATIVE_ACTION, reasonCode: NO_SUPPORTING_PATTERN }
+          - { kind: DIFFERENT_FOCUS, reasonCode: NO_ADMITTED_CANDIDATE }
+        reviewFingerprint: 3f2a9c4d7e1b6a5f8c0d2e4f6a8b0c1d
+        reassessment:
+          state: AVAILABLE
+          reasonCode: null
+          summary:
+            summaryId: 65010000-0000-4000-8000-000000000001
+            summaryVersion: reassessment-summary-v2
+            composedAt: "2026-09-24T07:00:00Z"
+            previousPeriod: { startAt: "2026-08-27T00:00:00Z", endAt: "2026-09-10T00:00:00Z" }
+            currentPeriod: { startAt: "2026-09-10T00:00:00Z", endAt: "2026-09-24T00:00:00Z" }
+            screening:
+              state: AVAILABLE
+              trends:
+                - instrument: PHQ9
+                  state: AVAILABLE
+                  scoringVersion: phq9-standard-bands-v1
+                  previous: { assessmentId: 65010000-0000-4000-8000-000000000011, questionnaireVersion: phq9-vi-vn-capstone-v2, submittedAt: "2026-09-09T08:00:00Z", totalScore: 13, screeningLevel: MODERATE }
+                  current: { assessmentId: 65010000-0000-4000-8000-000000000012, questionnaireVersion: phq9-vi-vn-capstone-v2, submittedAt: "2026-09-23T08:00:00Z", totalScore: 8, screeningLevel: MILD }
+                  rawDelta: -5
+                  direction: DECREASED
+                - instrument: GAD7
+                  state: AVAILABLE
+                  scoringVersion: gad7-standard-bands-v1
+                  previous: { assessmentId: 65010000-0000-4000-8000-000000000013, questionnaireVersion: gad7-vi-vn-capstone-v1, submittedAt: "2026-09-09T08:05:00Z", totalScore: 7, screeningLevel: MILD }
+                  current: { assessmentId: 65010000-0000-4000-8000-000000000014, questionnaireVersion: gad7-vi-vn-capstone-v1, submittedAt: "2026-09-23T08:05:00Z", totalScore: 9, screeningLevel: MILD }
+                  rawDelta: 2
+                  direction: INCREASED
+            journalContext:
+              state: AVAILABLE
+              unavailableReason: null
+              jobId: 65010000-0000-4000-8000-000000000020
+              analysisId: 65010000-0000-4000-8000-000000000021
+              sourceJournalRevisions:
+                - { journalId: 65010000-0000-4000-8000-000000000031, journalRevision: 1, period: PREVIOUS }
+                - { journalId: 65010000-0000-4000-8000-000000000032, journalRevision: 2, period: PREVIOUS }
+                - { journalId: 65010000-0000-4000-8000-000000000033, journalRevision: 1, period: PREVIOUS }
+                - { journalId: 65010000-0000-4000-8000-000000000034, journalRevision: 1, period: CURRENT }
+                - { journalId: 65010000-0000-4000-8000-000000000035, journalRevision: 1, period: CURRENT }
+                - { journalId: 65010000-0000-4000-8000-000000000036, journalRevision: 3, period: CURRENT }
+              contextSignals: [work-pressure]
+              emotionIndicators: [stress]
+              recurringThemes: [deadline-pressure]
+              changesComparedWithPreviousPeriod: [{ signal: stress, direction: MORE_FREQUENT }]
+              preferences: []
+              barriers: [low-energy]
+              helpfulPatterns: []
+              dataCoverage: { previousPeriodJournalEntryCount: 3, currentPeriodJournalEntryCount: 3, sufficientForComparison: true }
+              provenance: { provider: DETERMINISTIC_FAKE, model: deterministic-longitudinal-v1, promptVersion: longitudinal-v1, schemaVersion: 1, createdAt: "2026-09-24T06:55:00Z" }
+            supportPlanEngagement:
+              state: AVAILABLE
+              previousPeriod: { completedCount: 1, skippedCount: 0 }
+              currentPeriod: { completedCount: 0, skippedCount: 1 }
+              sources:
+                - { occurrenceId: 65010000-0000-4000-8000-000000000041, supportPlanId: 65010000-0000-4000-8000-000000000051, sourcePlanVersion: 2, sourceSlotId: grounding, sourceResourceId: 65010000-0000-4000-8000-000000000061, sourceContentVersion: 4, scheduledAt: "2026-09-03T11:00:00Z", period: PREVIOUS, state: COMPLETED, barrierCode: null }
+                - { occurrenceId: 65010000-0000-4000-8000-000000000042, supportPlanId: 65010000-0000-4000-8000-000000000051, sourcePlanVersion: 2, sourceSlotId: grounding, sourceResourceId: 65010000-0000-4000-8000-000000000061, sourceContentVersion: 4, scheduledAt: "2026-09-17T11:00:00Z", period: CURRENT, state: SKIPPED, barrierCode: LOW_ENERGY }
+            selfReportedExperience:
+              state: AVAILABLE
+              unavailableReason: null
+              source:
+                selfReportId: 65010000-0000-4000-8000-000000000071
+                sourceVersion: reassessment-self-report-v1
+                sourceRevision: 0
+                currentPeriod: { startAt: "2026-09-10T00:00:00Z", endAt: "2026-09-24T00:00:00Z" }
+                currentExperience: MORE_DIFFICULT
+                helpfulContext: "Short breathing pauses helped during meetings."
+                difficultContext: "Work pressure felt harder this period."
+                authoredAt: "2026-09-24T06:50:00Z"
+                updatedAt: "2026-09-24T06:50:00Z"
+            activityReflection:
+              state: AVAILABLE
+              sources:
+                - { occurrenceId: 65010000-0000-4000-8000-000000000041, period: PREVIOUS, helpfulness: HELPFUL, reflection: "The short exercise felt manageable.", engagementUpdatedAt: "2026-09-03T11:15:00Z" }
+                - { occurrenceId: 65010000-0000-4000-8000-000000000042, period: CURRENT, helpfulness: null, reflection: "I had less energy after work.", engagementUpdatedAt: "2026-09-17T11:10:00Z" }
+            disclaimerCode: FOUR_DIMENSIONS_NOT_COMBINED
     SelfGuidedSupportEvaluation:
       summary: Minimal and mild screening bands route to self-guided support
       value:
@@ -2841,6 +3418,11 @@ components:
         disclaimerCode: SCREENING_NOT_DIAGNOSIS
         disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
   securitySchemes:
+    "JournalVoiceCareToken":
+      "type": "apiKey"
+      "in": "header"
+      "name": "X-MentalBridge-Voice-Care-Token"
+      "description": "Unique Journal-to-Care current voice authorization credential; allowlist exact caller/purpose. Different from worker and Consultation credentials."
     bearerAuth:
       type: http
       scheme: bearer
@@ -2954,6 +3536,425 @@ components:
       required: false
       schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
   schemas:
+    "VoiceDisclosure":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "consentType"
+        - "consentVersion"
+        - "language"
+        - "disclosureText"
+        - "publishedAt"
+      "properties":
+        "consentType":
+          "const": "AI_VOICE_PROCESSING"
+        "consentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "language":
+          "const": "vi-VN"
+        "disclosureText":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 12000
+        "publishedAt":
+          "type": "string"
+          "format": "date-time"
+    "VoiceProblem":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "type"
+        - "title"
+        - "status"
+        - "code"
+        - "correlationId"
+      "properties":
+        "type":
+          "type": "string"
+          "format": "uri"
+        "title":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 120
+        "status":
+          "type": "integer"
+          "minimum": 400
+          "maximum": 599
+        "code":
+          "type": "string"
+          "enum":
+            - "UNAUTHENTICATED"
+            - "FORBIDDEN"
+            - "FREE_LOCKED"
+            - "CONSENT_REQUIRED"
+            - "VOICE_CONSENT_REQUIRED"
+            - "SESSION_NOT_FOUND"
+            - "SESSION_LIMIT"
+            - "IDEMPOTENCY_CONFLICT"
+            - "STALE_ATTEMPT"
+            - "INVALID_SESSION_STATE"
+            - "SESSION_EXPIRED"
+            - "INVALID_REQUEST"
+            - "INVALID_FINAL_TRANSCRIPT"
+            - "GLOBAL_CAPACITY_FULL"
+            - "QUOTA_EXHAUSTED"
+            - "RATE_LIMITED"
+            - "ENTITLEMENT_UNAVAILABLE"
+            - "CONSENT_UNAVAILABLE"
+            - "PROVIDER_UNAVAILABLE"
+            - "PROVIDER_TIMEOUT"
+        "correlationId":
+          "type": "string"
+          "format": "uuid"
+      "allOf":
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "UNAUTHENTICATED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 401
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "FORBIDDEN"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "FREE_LOCKED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "CONSENT_REQUIRED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "VOICE_CONSENT_REQUIRED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 403
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "SESSION_NOT_FOUND"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 404
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "SESSION_LIMIT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "IDEMPOTENCY_CONFLICT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "STALE_ATTEMPT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "INVALID_SESSION_STATE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 409
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "SESSION_EXPIRED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 410
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "INVALID_REQUEST"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 422
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "INVALID_FINAL_TRANSCRIPT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 422
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "GLOBAL_CAPACITY_FULL"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 429
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "QUOTA_EXHAUSTED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 429
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "RATE_LIMITED"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 429
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "ENTITLEMENT_UNAVAILABLE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 503
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "CONSENT_UNAVAILABLE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 503
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "PROVIDER_UNAVAILABLE"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 503
+        -
+          "if":
+            "properties":
+              "code":
+                "const": "PROVIDER_TIMEOUT"
+            "required":
+              - "code"
+          "then":
+            "properties":
+              "status":
+                "const": 504
+    "VoiceConsent":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "consentType"
+        - "consentVersion"
+        - "current"
+        - "granted"
+      "properties":
+        "consentType":
+          "const": "AI_VOICE_PROCESSING"
+        "consentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "current":
+          "type": "boolean"
+        "granted":
+          "type": "boolean"
+        "acceptedAt":
+          "type": "string"
+          "format": "date-time"
+        "revokedAt":
+          "type": "string"
+          "format": "date-time"
+      "allOf":
+        -
+          "if":
+            "properties":
+              "granted":
+                "const": true
+            "required":
+              - "granted"
+          "then":
+            "properties":
+              "acceptedAt":
+                "type": "string"
+                "format": "date-time"
+            "required":
+              - "acceptedAt"
+        -
+          "if":
+            "properties":
+              "current":
+                "const": true
+              "granted":
+                "const": false
+            "required":
+              - "current"
+              - "granted"
+          "then":
+            "properties":
+              "revokedAt":
+                "type": "string"
+                "format": "date-time"
+            "required":
+              - "revokedAt"
+    "VoiceConsentCommand":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "consentVersion"
+        - "granted"
+      "properties":
+        "consentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "granted":
+          "type": "boolean"
+    "VoiceOwnerCheck":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "ownerId"
+        - "voiceSessionId"
+        - "purpose"
+      "properties":
+        "ownerId":
+          "type": "string"
+          "format": "uuid"
+        "voiceSessionId":
+          "type": "string"
+          "format": "uuid"
+        "purpose":
+          "const": "AI_COMPANION_VOICE"
+    "VoiceDualConsentDecision":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "ownerId"
+        - "voiceSessionId"
+        - "purpose"
+        - "aiProcessingGranted"
+        - "voiceProcessingGranted"
+        - "voiceConsentVersion"
+        - "authorized"
+        - "checkedAt"
+      "properties":
+        "ownerId":
+          "type": "string"
+          "format": "uuid"
+        "voiceSessionId":
+          "type": "string"
+          "format": "uuid"
+        "purpose":
+          "const": "AI_COMPANION_VOICE"
+        "aiProcessingGranted":
+          "type": "boolean"
+        "voiceProcessingGranted":
+          "type": "boolean"
+        "voiceConsentVersion":
+          "const": "ai-voice-processing-capstone-v1"
+        "authorized":
+          "type": "boolean"
+        "checkedAt":
+          "type": "string"
+          "format": "date-time"
+      "allOf":
+        -
+          "if":
+            "properties":
+              "authorized":
+                "const": true
+            "required":
+              - "authorized"
+          "then":
+            "properties":
+              "aiProcessingGranted":
+                "const": true
+              "voiceProcessingGranted":
+                "const": true
     CareProductJourneyMetrics:
       type: object
       additionalProperties: false
@@ -3287,7 +4288,7 @@ components:
     ReassessmentJournalDimension:
       type: object
       additionalProperties: true
-      required: [state, unavailableReason, jobId, analysisId, sourceJournalRevisions, contextSignals, emotionIndicators, recurringThemes, changesComparedWithPreviousPeriod, preferences, barriers, helpfulPatterns, dataCoverage, provenance]
+      required: [state, unavailableReason, sourceJournalRevisions, contextSignals, emotionIndicators, recurringThemes, changesComparedWithPreviousPeriod, preferences, barriers, helpfulPatterns, dataCoverage, provenance]
       properties:
         state: { $ref: "#/components/schemas/ReassessmentDimensionState" }
         unavailableReason:
@@ -3335,9 +4336,9 @@ components:
         occurrenceId: { type: string, format: uuid }
         supportPlanId: { type: string, format: uuid }
         sourcePlanVersion: { type: integer, format: int64, minimum: 0 }
-        sourceSlotId: { type: string, minLength: 1, maxLength: 64 }
-        sourceResourceId: { type: string, format: uuid }
-        sourceContentVersion: { type: integer, format: int64, minimum: 0 }
+        sourceSlotId: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        sourceResourceId: { type: [string, 'null'], format: uuid }
+        sourceContentVersion: { type: [integer, 'null'], format: int64, minimum: 0 }
         scheduledAt: { type: string, format: date-time }
         period: { type: string, enum: [PREVIOUS, CURRENT] }
         state: { type: string, enum: [COMPLETED, SKIPPED] }
@@ -3796,6 +4797,99 @@ components:
         entitlementStatus:
           type: string
           enum: [NOT_REQUIRED, VERIFIED, UNAVAILABLE]
+    HomeNextStep:
+      type: object
+      additionalProperties: false
+      required: [homePolicyVersion, journey, plan, lastCompletedPlan]
+      properties:
+        homePolicyVersion: { type: string, const: mb-home-next-step-v1 }
+        journey: { $ref: "#/components/schemas/GuidedJourney" }
+        plan:
+          description: Present only for the owner's ACTIVE or PAUSED plan; a DRAFT remains journey.nextAction REVIEW_PLAN_DRAFT.
+          oneOf:
+            - { $ref: "#/components/schemas/HomePlanStep" }
+            - { type: "null" }
+        lastCompletedPlan:
+          description: Present only with no ACTIVE, PAUSED or DRAFT plan and when the newest plan in history is COMPLETED.
+          oneOf:
+            - { $ref: "#/components/schemas/HomeCompletedPlan" }
+            - { type: "null" }
+    HomePlanStep:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, status, focus, reviewDueOn, cycleDay, cycleLengthDays, localDate, timeZone, today, nextOccurrence]
+      description: |
+        Focus precedence is RESUME_PAUSED, then REVIEW_DUE, then DO_TODAY for
+        an open SCHEDULED/OVERDUE occurrence on localDate, then TODAY_DONE when
+        today's non-CANCELLED occurrences are all COMPLETED/SKIPPED, otherwise
+        NOTHING_TODAY. REVIEW_DUE changes no lifecycle state. The existing
+        cycle query supplies reviewDueOn. When timezone is omitted, localDate
+        uses the plan cycle zone, then its active/paused schedule zone, then
+        the existing profile-zone fallback.
+      properties:
+        supportPlanId: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, PAUSED] }
+        focus:
+          type: string
+          enum: [RESUME_PAUSED, REVIEW_DUE, DO_TODAY, TODAY_DONE, NOTHING_TODAY]
+        reviewDueOn: { type: [string, "null"], format: date }
+        cycleDay:
+          type: [integer, "null"]
+          description: Current day from the plan cycle's currentDay; null when the plan has no cycle.
+        cycleLengthDays:
+          type: [integer, "null"]
+          description: Length from the plan cycle's lengthDays; null when the plan has no cycle.
+        localDate: { type: string, format: date }
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: IANA zone used to determine localDate.
+        today: { $ref: "#/components/schemas/HomeTodayProgress" }
+        nextOccurrence:
+          description: Present only for DO_TODAY; earliest scheduledAt (null last), then plan focus and action order.
+          oneOf:
+            - { $ref: "#/components/schemas/HomeNextOccurrence" }
+            - { type: "null" }
+    HomeTodayProgress:
+      type: object
+      additionalProperties: false
+      required: [total, completed]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Number of non-CANCELLED occurrences on localDate; includes SKIPPED.
+        completed:
+          type: integer
+          minimum: 0
+          description: Number of COMPLETED occurrences on localDate; excludes SKIPPED.
+    HomeNextOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, actionId, actionType, title, displayState, scheduledAt, estimatedDurationMinutes]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        actionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native action identity or existing v2 slot identity from the adapter.
+        actionType:
+          type: string
+          enum: [RESOURCE, JOURNAL, EMOTION_CHECK_IN, ROUTINE_SELF_MANAGEMENT,
+            PROFESSIONAL_SUPPORT, REASSESSMENT_SCREENING, SELF_REPORT_REVIEW]
+        title: { type: string, minLength: 1, maxLength: 255 }
+        displayState: { type: string, enum: [SCHEDULED, OVERDUE] }
+        scheduledAt: { type: [string, "null"], format: date-time }
+        estimatedDurationMinutes: { type: [integer, "null"], minimum: 1 }
+    HomeCompletedPlan:
+      type: object
+      additionalProperties: false
+      required: [supportPlanId, completedAt]
+      properties:
+        supportPlanId: { type: string, format: uuid }
+        completedAt: { type: string, format: date-time }
     ScreeningEpisodeEvaluationOutcome:
       type: object
       additionalProperties: false
@@ -4962,7 +6056,7 @@ components:
           minimum: 5
           maximum: 180
           multipleOf: 5
-        localTime: { type: string, format: time }
+        localTime: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\.[0-9]{1,9})?)?$', description: Local wall time without an offset; timezone supplies the IANA zone. }
         timezone: { type: string, minLength: 1, maxLength: 64 }
         effectiveFrom: { type: string, format: date }
         effectiveUntil: { type: [string, 'null'], format: date }
@@ -4995,7 +6089,7 @@ components:
           type: [string, 'null']
           enum: [MORNING, AFTERNOON, EVENING, FLEXIBLE, null]
           description: Null means the user chose an exact local time instead of a daypart default.
-        localTime: { type: string, format: time }
+        localTime: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\.[0-9]{1,9})?)?$', description: Local wall time without an offset; timezone supplies the IANA zone. }
         estimatedDurationMinutes:
           type: integer
           minimum: 5
@@ -5023,6 +6117,355 @@ components:
         proposedPlan: { $ref: '#/components/schemas/SupportPlanV3' }
         reassessmentSummary: { $ref: '#/components/schemas/ReassessmentSummary' }
         reviewedAt: { type: string, format: date-time }
+    AdaptiveSupportPlanReview:
+      type: object
+      additionalProperties: false
+      description: |
+        support-plan-review-v1 adaptive review. Each evidence source stays separate
+        with its own availability, period and provenance; nothing is combined into
+        a wellbeing, recovery or adherence score or verdict. Options are bounded,
+        Care-admitted and explain their supporting and conflicting evidence.
+      required: [schemaVersion, policyVersion, supportPlanId, planVersion, planStatus, cycle,
+        reviewedAt, programPeriod, reviewState, reassessment, currentAdmission, outcome,
+        patterns, contradictions, options, unavailableOptions, reviewFingerprint]
+      properties:
+        schemaVersion: { type: string, const: adaptive-support-plan-review-v1 }
+        policyVersion: { type: string, const: support-plan-review-v1 }
+        supportPlanId: { type: string, format: uuid }
+        planVersion: { type: integer, minimum: 0 }
+        planStatus: { type: string, enum: [ACTIVE, PAUSED] }
+        cycle:
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanCycle' }
+            - { type: 'null' }
+        reviewedAt: { type: string, format: date-time }
+        programPeriod: { $ref: '#/components/schemas/AdaptiveReviewProgramPeriod' }
+        reviewState:
+          type: string
+          enum: [EARLY, REVIEW_DUE, PAUSED]
+          description: EARLY is a factual review before the cycle checkpoint or on a plan without a cycle; it never claims a full program elapsed.
+        reassessment: { $ref: '#/components/schemas/AdaptiveReviewReassessment' }
+        currentAdmission:
+          type: string
+          enum: [ADMISSIBLE, INADMISSIBLE, UNAVAILABLE]
+          description: UNAVAILABLE means admission could not be checked now; it is never treated as proven inadmissible.
+        outcome:
+          type: [string, 'null']
+          enum: [CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE, CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE, CURRENT_PLAN_NOT_ADMISSIBLE, null]
+          description: Null while currentAdmission is UNAVAILABLE.
+        patterns:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/AdaptiveReviewPattern' }
+        contradictions:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/AdaptiveReviewContradiction' }
+        options:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/AdaptiveReviewOption' }
+        unavailableOptions:
+          type: array
+          maxItems: 6
+          description: Option kinds Care could not offer now, with a closed reason; no candidate is invented.
+          items: { $ref: '#/components/schemas/AdaptiveReviewUnavailableOption' }
+        reviewFingerprint:
+          type: string
+          minLength: 16
+          maxLength: 128
+          description: Opaque hash of the decision context. Confirm compares it after recomputation.
+        evidenceContext:
+          $ref: '#/components/schemas/AdaptiveReviewEvidenceContext'
+    AdaptiveReviewEvidenceContext:
+      type: object
+      additionalProperties: false
+      description: |
+        Current Care evidence remains available without a composed summary. UTC comparison
+        windows are separate from programPeriod. Reusable sources contain exact native
+        action and occurrence revisions; private activity reflection text is excluded.
+        The embedded summary is a display projection with withdrawn sources masked;
+        stored immutable summaries and their history remain unchanged.
+      required: [comparisonPolicyVersion, previousPeriod, currentPeriod, timezone, selfReportedExperience, engagementSources]
+      properties:
+        comparisonPolicyVersion: { type: string }
+        previousPeriod: { $ref: '#/components/schemas/ReassessmentPeriod' }
+        currentPeriod: { $ref: '#/components/schemas/ReassessmentPeriod' }
+        timezone: { type: string, const: UTC }
+        selfReportedExperience: { $ref: '#/components/schemas/ReassessmentSelfReportedExperienceDimension' }
+        engagementSources:
+          type: array
+          items: { $ref: '#/components/schemas/AdaptiveReviewEngagementSource' }
+    AdaptiveReviewEngagementSource:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, occurrenceVersion, actionId, actionVersion, supportPlanId, sourcePlanVersion,
+        sourceSlotId, sourceResourceId, sourceContentVersion, scheduledAt, state, helpfulness, barrierCode, engagementUpdatedAt]
+      properties:
+        occurrenceId: { type: string, format: uuid }
+        occurrenceVersion: { type: integer, minimum: 0 }
+        actionId: { type: [string, 'null'], format: uuid }
+        actionVersion: { type: [integer, 'null'], minimum: 0 }
+        supportPlanId: { type: string, format: uuid }
+        sourcePlanVersion: { type: integer, minimum: 0 }
+        sourceSlotId: { type: [string, 'null'] }
+        sourceResourceId: { type: [string, 'null'], format: uuid }
+        sourceContentVersion: { type: [integer, 'null'], minimum: 0 }
+        scheduledAt: { type: string, format: date-time }
+        state: { type: string, enum: [COMPLETED, SKIPPED] }
+        helpfulness: { type: [string, 'null'] }
+        barrierCode: { type: [string, 'null'] }
+        engagementUpdatedAt: { type: [string, 'null'], format: date-time }
+    AdaptiveReviewProgramPeriod:
+      type: object
+      additionalProperties: false
+      description: Actual plan participation period in the cycle timezone. Missed occurrences never move dates; only pauses do.
+      required: [startedOn, asOf, timezone, elapsedDays, pausedDays, fullCycleElapsed, scheduledCount, completedCount, skippedCount, openCount]
+      properties:
+        startedOn: { type: string, format: date }
+        asOf: { type: string, format: date }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        elapsedDays: { type: integer, minimum: 1 }
+        pausedDays: { type: integer, minimum: 0 }
+        fullCycleElapsed: { type: boolean }
+        scheduledCount: { type: integer, minimum: 0 }
+        completedCount: { type: integer, minimum: 0 }
+        skippedCount: { type: integer, minimum: 0 }
+        openCount:
+          type: integer
+          minimum: 0
+          description: Past occurrences with no recorded outcome; factual, never a failure.
+    AdaptiveReviewReassessment:
+      type: object
+      additionalProperties: false
+      required: [state, reasonCode, summary]
+      properties:
+        state:
+          type: string
+          enum: [AVAILABLE, NOT_STARTED, INCOMPLETE, STALE, UNAVAILABLE]
+          description: |
+            AVAILABLE has a current canonical reassessment-summary-v2. NOT_STARTED and
+            INCOMPLETE mean the paired PHQ-9/GAD-7 or canonical summary is missing; self-report is optional. STALE means
+            the latest summary is older than the replacement window; UNAVAILABLE means a
+            dependency failed. Only AVAILABLE allows replacement options.
+        reasonCode: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        summary:
+          description: The owned canonical four-dimension snapshot; null unless AVAILABLE or STALE.
+          oneOf:
+            - { $ref: '#/components/schemas/ReassessmentSummary' }
+            - { type: 'null' }
+    AdaptiveReviewEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [source, refId]
+      properties:
+        source:
+          type: string
+          enum: [SCREENING_PHQ9, SCREENING_GAD7, JOURNAL_CONTEXT, PLAN_ENGAGEMENT, SELF_REPORTED_EXPERIENCE, ACTIVITY_REFLECTION, PATTERN, PREFERENCES]
+        refId:
+          type: [string, 'null']
+          maxLength: 128
+          description: Source identity (assessment, analysis, report, occurrence or pattern id) when one exists.
+    AdaptiveReviewPattern:
+      type: object
+      additionalProperties: false
+      description: |
+        Practical pattern from explicitly reusable occurrence feedback. A repeat is at
+        least two distinct occurrences of the same code for the same action in the
+        period. Never a clinical or adherence ratio.
+      required: [patternId, kind, code, actionId, actionTitle, count, occurrenceIds]
+      properties:
+        patternId: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [REPEATED_BARRIER, REPEATED_HELPFUL] }
+        code: { type: string, enum: [NOT_ENOUGH_TIME, LOW_ENERGY, NOT_A_GOOD_FIT, HELPFUL] }
+        actionId: { type: string, format: uuid }
+        actionTitle: { type: string, minLength: 1, maxLength: 255 }
+        count: { type: integer, minimum: 2 }
+        occurrenceIds:
+          type: array
+          minItems: 2
+          maxItems: 31
+          items: { type: string, format: uuid }
+    AdaptiveReviewContradiction:
+      type: object
+      additionalProperties: false
+      description: Deterministic disagreement between sources, kept visible and unresolved.
+      required: [contradictionId, kind, evidenceRefs]
+      properties:
+        contradictionId: { type: string, minLength: 1, maxLength: 128 }
+        kind:
+          type: string
+          enum: [INSTRUMENT_DIRECTIONS_DIFFER, SELF_REPORT_DIFFERS_FROM_SCREENING, JOURNAL_DIFFERS_FROM_SCREENING]
+        evidenceRefs:
+          type: array
+          minItems: 2
+          maxItems: 6
+          items: { $ref: '#/components/schemas/AdaptiveReviewEvidenceRef' }
+    AdaptiveReviewChange:
+      type: object
+      additionalProperties: false
+      required: [field, before, after]
+      properties:
+        field:
+          type: string
+          enum: [ACTION, ESTIMATED_DURATION_MINUTES, DAYS_PER_WEEK, PREFERRED_DAYPART, LOCAL_TIME, FOCUS_ORDER]
+        before: { type: [string, 'null'], maxLength: 255 }
+        after: { type: [string, 'null'], maxLength: 255 }
+    AdaptiveReviewOption:
+      type: object
+      additionalProperties: false
+      required: [optionId, kind, executionKind, actionId, focusId, rationaleCodes, evidenceRefs,
+        conflictingEvidenceRefs, changes]
+      properties:
+        optionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Opaque and deterministic for the fingerprinted context.
+        kind:
+          type: string
+          enum: [KEEP_CURRENT, LOWER_WORKLOAD, DIFFERENT_TIME, ALTERNATIVE_ACTION, DIFFERENT_FOCUS, PROFESSIONAL_SUPPORT_NEXT_STEP]
+        executionKind:
+          type: string
+          enum: [NO_CHANGE, CONTINUE_CYCLE, UPDATE_SCHEDULE, PREPARE_REPLACEMENT, NAVIGATE_PROFESSIONAL_SUPPORT]
+          description: |
+            NAVIGATE_PROFESSIONAL_SUPPORT opens existing professional routing with no
+            appointment, consent or plan write and is not confirmed through this API.
+        actionId: { type: [string, 'null'], format: uuid }
+        focusId: { type: [string, 'null'], maxLength: 128 }
+        rationaleCodes:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, minLength: 1, maxLength: 128 }
+        evidenceRefs:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/AdaptiveReviewEvidenceRef' }
+        conflictingEvidenceRefs:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/AdaptiveReviewEvidenceRef' }
+        changes:
+          type: array
+          maxItems: 6
+          description: Exact before/after consequence; empty for KEEP_CURRENT and navigation.
+          items: { $ref: '#/components/schemas/AdaptiveReviewChange' }
+    AdaptiveReviewUnavailableOption:
+      type: object
+      additionalProperties: false
+      required: [kind, reasonCode]
+      properties:
+        kind:
+          type: string
+          enum: [KEEP_CURRENT, LOWER_WORKLOAD, DIFFERENT_TIME, ALTERNATIVE_ACTION, DIFFERENT_FOCUS, PROFESSIONAL_SUPPORT_NEXT_STEP]
+        reasonCode:
+          type: string
+          enum: [NO_SUPPORTING_PATTERN, NO_TIME_PREFERENCE, NO_ADMITTED_CANDIDATE, REASSESSMENT_REQUIRED,
+            ADMISSION_UNAVAILABLE, CURRENT_PLAN_NOT_ADMISSIBLE, PLAN_PAUSED, ENTITLEMENT_REQUIRED]
+    ConfirmAdaptiveReviewOptionRequest:
+      type: object
+      additionalProperties: false
+      required: [reviewFingerprint, optionId]
+      properties:
+        reviewFingerprint: { type: string, minLength: 16, maxLength: 128 }
+        optionId: { type: string, minLength: 1, maxLength: 128 }
+        reassessmentSummaryId: { type: string, format: uuid }
+        proposedPlanId:
+          type: string
+          format: uuid
+          description: Only for PREPARE_REPLACEMENT after the prepared DRAFT was compared; omit to prepare the draft.
+        proposedVersion: { type: integer, minimum: 0 }
+    AdaptiveReviewConfirmation:
+      type: object
+      additionalProperties: false
+      required: [result, optionId, plan, draft]
+      properties:
+        result:
+          type: string
+          enum: [KEPT, CYCLE_CONTINUED, SCHEDULE_UPDATED, DRAFT_PREPARED, REPLACED]
+        optionId: { type: string, minLength: 1, maxLength: 128 }
+        plan:
+          description: The authoritative current plan after the operation.
+          allOf:
+            - { $ref: '#/components/schemas/SupportPlanV3' }
+        draft:
+          description: The prepared DRAFT for DRAFT_PREPARED, otherwise null.
+          oneOf:
+            - { $ref: '#/components/schemas/SupportPlanV3' }
+            - { type: 'null' }
+    PlanResourceActionsV1:
+      type: object
+      additionalProperties: false
+      required: [planState, localDate, actions]
+      properties:
+        planState: { type: string, enum: [ACTIVE, PAUSED, NONE] }
+        supportPlanId: { type: string, format: uuid }
+        supportPlanVersion: { type: integer, minimum: 0 }
+        representationMode: { type: string, enum: [NATIVE_V3, V2_RESOURCE_ADAPTER] }
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Plan time zone used for weekly board boundaries.
+        localDate: { type: string, format: date }
+        actions:
+          type: array
+          description: ACTIVE RESOURCE actions in plan order, without rationale or treatment meaning.
+          items: { $ref: '#/components/schemas/PlanResourceAction' }
+      allOf:
+        - if: { properties: { planState: { enum: [ACTIVE, PAUSED] } }, required: [planState] }
+          then:
+            required: [supportPlanId, supportPlanVersion, representationMode, timeZone]
+        - if: { properties: { planState: { const: NONE } }, required: [planState] }
+          then:
+            properties:
+              actions: { maxItems: 0 }
+    PlanResourceAction:
+      type: object
+      additionalProperties: false
+      required: [actionId, actionVersion, title, resource, schedule, today]
+      properties:
+        actionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Native action UUID or v2 adapter slot identity.
+        actionVersion: { type: integer, minimum: 0 }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        resource:
+          type: object
+          additionalProperties: false
+          required: [resourceId, resourceVersion, publicationId]
+          properties:
+            resourceId: { type: string, format: uuid }
+            resourceVersion: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
+            publicationId: { type: string, format: uuid }
+        schedule:
+          description: Current action schedule, or null when no schedule applies.
+          oneOf:
+            - { $ref: '#/components/schemas/ActionSchedule' }
+            - { type: 'null' }
+        today:
+          description: Occurrence for localDate, or null for an unscheduled date or V2_RESOURCE_ADAPTER.
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [occurrenceId, occurrenceVersion, displayState, completionEvidence]
+              properties:
+                occurrenceId: { type: string, format: uuid }
+                occurrenceVersion: { type: integer, minimum: 0 }
+                timeZone:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  description: Pinned occurrence IANA time zone used to determine its local today and reconcile evidence.
+                displayState: { type: string, enum: [SCHEDULED, OVERDUE, COMPLETED, SKIPPED, CANCELLED] }
+                completionEvidence:
+                  oneOf:
+                    - { $ref: '#/components/schemas/CompletionEvidence' }
+                    - { type: 'null' }
     EmotionCheckInOccurrenceReconciliation:
       type: object
       additionalProperties: false
@@ -5180,7 +6623,17 @@ components:
               state: { enum: [SCHEDULED, SKIPPED, CANCELLED] }
             required: [representationMode, state]
           then: { properties: { completionEvidence: { type: 'null' } } }
-        - if: { properties: { actionType: { enum: [RESOURCE, ROUTINE_SELF_MANAGEMENT] } }, required: [actionType] }
+        - if: { properties: { actionType: { const: RESOURCE } }, required: [actionType] }
+          then:
+            properties:
+              completionEvidence:
+                oneOf:
+                  - { type: 'null' }
+                  - allOf:
+                      - { $ref: '#/components/schemas/CompletionEvidence' }
+                      - properties:
+                          kind: { enum: [USER_ACKNOWLEDGEMENT, RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION] }
+        - if: { properties: { actionType: { const: ROUTINE_SELF_MANAGEMENT } }, required: [actionType] }
           then:
             properties:
               completionEvidence:
@@ -5254,8 +6707,9 @@ components:
         kind:
           type: string
           enum: [USER_ACKNOWLEDGEMENT, JOURNAL_ENTRY, EMOTION_CHECK_IN,
-            APPOINTMENT_FULFILMENT, ASSESSMENT_HISTORY, SELF_REPORT_REVIEW]
-        ownerDomain: { type: string, enum: [CARE, JOURNAL_AI, CONSULTATION] }
+            APPOINTMENT_FULFILMENT, ASSESSMENT_HISTORY, SELF_REPORT_REVIEW,
+            RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION]
+        ownerDomain: { type: string, enum: [CARE, JOURNAL_AI, CONSULTATION, CONTENT] }
         factId:
           type: string
           minLength: 1
@@ -5265,6 +6719,14 @@ components:
         occurredAt: { type: string, format: date-time }
         verifiedAt: { type: string, format: date-time }
       allOf:
+        - if:
+            properties:
+              kind: { enum: [RESOURCE_PRACTICE_SESSION, RESOURCE_COMPLETION] }
+            required: [kind]
+          then:
+            properties:
+              ownerDomain: { const: CONTENT }
+              factRevision: { type: string, pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 }
         - if:
             properties:
               kind: { enum: [JOURNAL_ENTRY, EMOTION_CHECK_IN] }
@@ -5343,7 +6805,7 @@ components:
         scheduleId: { type: string, format: uuid }
         scheduleVersion: { type: integer, minimum: 1 }
         localDate: { type: string, format: date }
-        localTime: { type: string, format: time }
+        localTime: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\.[0-9]{1,9})?)?$', description: Local wall time without an offset; timezone supplies the IANA zone. }
         timezone: { type: string, minLength: 1, maxLength: 64 }
         scheduledAt: { type: string, format: date-time }
         state: { type: string, enum: [SCHEDULED, COMPLETED, SKIPPED, CANCELLED] }
@@ -5478,6 +6940,61 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    "VoiceProblem401":
+      "description": "Stable sanitized errors: UNAUTHENTICATED. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem403":
+      "description": "Stable sanitized errors: FORBIDDEN, FREE_LOCKED, CONSENT_REQUIRED, VOICE_CONSENT_REQUIRED. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem503":
+      "description": "Stable sanitized errors: ENTITLEMENT_UNAVAILABLE, CONSENT_UNAVAILABLE, PROVIDER_UNAVAILABLE. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem409":
+      "description": "Stable sanitized errors: SESSION_LIMIT, IDEMPOTENCY_CONFLICT, STALE_ATTEMPT, INVALID_SESSION_STATE. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
+    "VoiceProblem422":
+      "description": "Stable sanitized errors: INVALID_REQUEST, INVALID_FINAL_TRANSCRIPT. No downstream payload or private identifiers."
+      "headers":
+        "Cache-Control":
+          "schema":
+            "const": "no-store"
+          "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+      "content":
+        "application/problem+json":
+          "schema":
+            "$ref": "#/components/schemas/VoiceProblem"
     ValidationProblem:
       description: Request validation failed with VALIDATION_FAILED or a field violation such as INCOMPLETE_QUESTIONNAIRE or INVALID_ANSWER; no result was persisted
       content:
@@ -5621,6 +7138,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanCycleConflictProblem:
       description: The plan has no proposal cycle, is not ACTIVE and REVIEW_DUE, or reuses a key differently (SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED, SUPPORT_PLAN_CYCLE_NOT_REVIEW_DUE, or IDEMPOTENCY_KEY_REUSED); no cycle was started
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AdaptiveReviewConflictProblem:
+      description: The review context changed or the choice is not allowed (ADAPTIVE_REVIEW_STALE, ADAPTIVE_REVIEW_OPTION_UNAVAILABLE, SUPPORT_PLAN_NOT_REVIEWABLE, SUPPORT_PLAN_DRAFT_EXISTS, or IDEMPOTENCY_KEY_REUSED); nothing was applied
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

@@ -38,13 +38,16 @@ public class ServiceCreditService {
 
 	@Transactional
 	public ServiceCreditResponse current(UUID accountId) {
-		var entitlement = entitlements.current(accountId);
+		var summary = entitlements.summary(accountId);
+		var entitlement = summary.entitlement();
+		var purchasedPlan = summary.grant() == null ? null : purchasedPlan(summary.grant());
 		CreditPeriod period = null;
 		if (entitlement.packageCode() != ServicePackage.FREE) {
-			period = ensurePeriod(entitlement);
+			period = ensurePeriod(entitlement, purchasedPlan);
 		}
 		return response(accountId, entitlement.packageCode(), entitlement.source(), entitlement.sourceReference(),
-				entitlement.effectiveFrom(), entitlement.effectiveUntil(), period);
+				entitlement.effectiveFrom(), entitlement.effectiveUntil(), period, summary.state(),
+				period != null && purchasedPlan.supportPlanEnabled(), entitlement.decidedAt());
 	}
 
 	@Transactional
@@ -168,8 +171,8 @@ public class ServiceCreditService {
 		return conflict("SERVICE_CREDIT_TRANSITION_CONFLICT", "Service credit cannot make that transition");
 	}
 
-	private CreditPeriod ensurePeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement) {
-		var purchasedPlan = purchasedPlan(entitlement);
+	private CreditPeriod ensurePeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement,
+			PurchasedPlan purchasedPlan) {
 		var periodId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into service_credit_period (
@@ -222,23 +225,39 @@ public class ServiceCreditService {
 				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
 				.param("packageCode", entitlement.packageCode().name())
 				.query((row, ignored) -> new PurchasedPlan(row.getString("plan_version"),
-						row.getLong("credit_allocation_minor"))).optional();
-		if (established.isPresent()) return established.orElseThrow();
-		return jdbc.sql("""
-				select v.id, v.credit_value_minor from payment_transaction pt
+						row.getLong("credit_allocation_minor"), true)).optional();
+		if (entitlement.source() == EntitlementSource.DEMO) {
+			return established.orElse(new PurchasedPlan(entitlement.policyVersion(), CURRENT_CREDIT_ALLOCATION_VND,
+					entitlement.packageCode() != ServicePackage.FREE));
+		}
+		var purchased = jdbc.sql("""
+				select v.id, v.credit_value_minor, v.support_plan_enabled from payment_transaction pt
 				join user_subscription s on s.id=pt.subscription_id
 				join subscription_plan_version v on v.id=pt.target_plan_version_id
 				where s.id::text=:source and s.user_id=:accountId
 				  and pt.status='SUCCEEDED' and pt.paid_at=:periodStart and v.plan_code=:packageCode
+				  and s.plan_version_id=v.id and s.status in ('ACTIVE', 'ENDED')
+				  and s.current_period_start=:periodStart and s.current_period_end=:periodEnd
 				""").param("source", entitlement.sourceReference()).param("accountId", entitlement.accountId())
 				.param("periodStart", databaseInstant(entitlement.effectiveFrom()))
+				.param("periodEnd", databaseInstant(entitlement.effectiveUntil()))
 				.param("packageCode", entitlement.packageCode().name())
 				.query((row, ignored) -> new PurchasedPlan(row.getObject("id", UUID.class).toString(),
-						row.getLong("credit_value_minor"))).optional()
-				.orElse(new PurchasedPlan(entitlement.policyVersion(), CURRENT_CREDIT_ALLOCATION_VND));
+						row.getLong("credit_value_minor"), row.getBoolean("support_plan_enabled"))).optional()
+				.orElseThrow(this::entitlementUnavailable);
+		if (established.isPresent() && (!established.orElseThrow().planVersion().equals(purchased.planVersion())
+				|| established.orElseThrow().creditAllocation() != purchased.creditAllocation())) {
+			throw entitlementUnavailable();
+		}
+		return purchased;
 	}
 
-	private record PurchasedPlan(String planVersion, long creditAllocation) { }
+	private ApiException entitlementUnavailable() {
+		return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "ENTITLEMENT_UNAVAILABLE",
+				"Current entitlement could not be verified");
+	}
+
+	private record PurchasedPlan(String planVersion, long creditAllocation, boolean supportPlanEnabled) { }
 
 	private CreditPeriod findPeriod(CurrentServiceEntitlementService.EntitlementDecision entitlement, String planVersion) {
 		return jdbc.sql("""
@@ -275,7 +294,8 @@ public class ServiceCreditService {
 	}
 
 	private ServiceCreditResponse response(UUID accountId, ServicePackage packageCode, EntitlementSource source,
-			String sourceReference, Instant periodStart, Instant periodEnd, CreditPeriod period) {
+			String sourceReference, Instant periodStart, Instant periodEnd, CreditPeriod period,
+			CurrentServiceEntitlementService.EntitlementState entitlementState, boolean supportPlanEnabled, Instant decidedAt) {
 		var counts = period == null ? Map.<String, Integer>of() : jdbc.sql("""
 				select state, count(*)::integer as count from service_credit
 				where period_id=:periodId group by state
@@ -295,9 +315,10 @@ public class ServiceCreditService {
 		var maximumReservations = reservationLimit(packageCode);
 		var capacity = new ServiceCreditResponse.ReservationCapacity(activeReservations, maximumReservations,
 				Math.max(0, maximumReservations - activeReservations));
-		return new ServiceCreditResponse(accountId, packageCode, source, sourceReference, periodStart, periodEnd,
+		return new ServiceCreditResponse(accountId, packageCode, entitlementState, supportPlanEnabled,
+				source, sourceReference, periodStart, periodEnd,
 				period == null ? CURRENT_POLICY_VERSION : period.creditPolicyVersion(), balance, capacity, history,
-				clock.instant());
+				decidedAt);
 	}
 
 	private int activeReservations(UUID accountId) {

@@ -1,14 +1,23 @@
 # PostgreSQL Data Model
 
 Start with the [canonical domain model](../domain-model/README.md) and its
-[PostgreSQL logical schema](../domain-model/relational/postgresql-logical-schema.sql)
+[PostgreSQL logical models by service](../domain-model/relational/README.md)
 for entities, ownership, and diagrams. That SQL is read-only documentation and
 must never be executed. Each module owns a separate PostgreSQL database and its
 default `public` schema; the service's migration history is the only executable
 runtime source of truth. Exact field purposes are documented in the
-[PostgreSQL field data dictionary](postgresql-field-data-dictionary.md).
+[PostgreSQL field data dictionary by service](postgresql-field-data-dictionary.md).
 
 ## Ownership
+
+MB-670 Care migration `031` permits bounded Content practice/completion evidence
+for native RESOURCE occurrences. The one-fact-one-occurrence unique index is
+owner-scoped because a daily completion ID is resource/date within its owner.
+Content migration `27_plan_scoped_resource_bingo.sql` makes boards unique per owner/week/plan and adds nullable
+external action references plus retirement; existing exact fact-version columns
+are reused. `last_synced_at` selects a week's latest synced board independently
+of its concurrency version. No migration rewrites legacy v2 occurrences or
+deletes historical board checks. See [ADR 0043](../adr/0043-plan-scoped-resource-progress.md).
 
 MB-669 adds nullable cycle state only for `support-plan-proposal-v1` native plans,
 under `030-support-plan-proposal-cycle.sql` (`care-031`). The stored IANA timezone,
@@ -25,7 +34,8 @@ not backfilled.
 | `mentalbridge_identity` | Identity Service | account, role, refresh session, verification/reset token |
 | `mentalbridge_care` | Care Service | user profile, consent, anonymous session, questionnaire, assessment result, safety, SupportEvaluation, Support Guide, SupportPlan lifecycle/activity occurrences |
 | `mentalbridge_consultation` | Consultation Service | specialist approval, current service entitlement, online availability, appointments, service-credit periods/ledger, and appointment status outbox |
-| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, exact-version eligibility provenance, notification preferences/inbox, and appointment email reminder delivery state |
+| `mentalbridge_community` | Community Service | posts/comments/supportive reactions, blocks/moderation, private peer messages, requests/invitations/membership and owner outboxes |
+| `mentalbridge_content_notification` | Content/Notification Service | reviewed resource definitions, exact-version eligibility provenance, notification preferences/inbox, Community notice jobs/receipts, and appointment email reminder delivery state |
 | owner-local tables | each producer; Governance reads safe events | implemented owner outbox/audit tables only; deletion/retention projections remain proposed |
 
 ADR 0005 assigns billing to Consultation; ADR 0017 amends the v2 catalogue to
@@ -39,6 +49,13 @@ is enabled; runtime FX is prohibited.
 
 Cross-owner identifiers in the canonical logical model make relationships visible but are not physical foreign keys. Executable service migrations store immutable external UUIDs and validate through APIs/events. Do not emulate distributed joins on request paths.
 
+MB-691 adds Community migration `0021-community-comment-reactions.yaml` and
+Content migration `26_add_community_notice_delivery.sql`. Community keeps one
+supportive reaction per comment/actor; Content stores minimized durable notice
+jobs, terminal receipts and nullable inbox grouping metadata. Exact chat target
+authorization is an owner REST read before the local Content transaction.
+See [MB-691 evidence](../story-mb-691-community-notification-evidence.md).
+
 ## Shared column policy
 
 - UUID primary keys are generated server-side using `gen_random_uuid()`.
@@ -46,7 +63,7 @@ Cross-owner identifiers in the canonical logical model make relationships visibl
 - `version` supports optimistic locking on concurrently edited aggregates.
 - Status fields use `varchar` plus `CHECK`, allowing controlled migrations without PostgreSQL enum coupling.
 - Email uses `citext` for case-insensitive uniqueness.
-- Sensitive free text is absent from relational tables unless required for querying. Journal and chat bodies live in MongoDB; documents live in private object storage.
+- Sensitive free text is absent unless the owner use case requires it. Journal and appointment chat bodies live in MongoDB; Community peer chat uses owner-encrypted PostgreSQL content; documents live in private object storage.
 - Foreign keys use restrictive deletion by default. User deletion is orchestrated explicitly rather than cascaded accidentally.
 
 ## Key integrity decisions
@@ -151,4 +168,25 @@ At capstone scale, do not partition by default. Consider owner-local partitionin
 3. Never edit an applied migration; add a new migration.
 4. Seed questionnaire definitions and reviewed resources through versioned reference-data migrations; introduce any future template entity only with an approved owner migration and canonical-model update.
 5. Use synthetic development data only.
-6. Every table and column has a useful entry in `postgresql-field-data-dictionary.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/postgresql-logical-schema.sql` while preserving migrations as runtime truth.
+6. Every table and column has a useful entry in the owning service's `docs/database/postgresql/<owning-service>.md`. The same change that materially changes persisted domain structure must also update `docs/domain-model/relational/<owning-service>.sql` while preserving migrations as runtime truth. Shared entry points remain indexes; ordinary feature changes edit the owner files.
+
+## Community direct chat (MB-685)
+
+ADR 0042 is the explicit scoped exception to the appointment/MongoDB chat baseline above: Community owns peer direct conversations, text-free requests, privacy, retry identities and minimized outbox records in its own PostgreSQL. Existing appointment chat remains Realtime/MongoDB-owned. Liquibase 0017 and the canonical Community model define the unique ordered pair, one pending request, explicit acceptance, suppression and separate public-management/private-message revisions. Identity current-state reads precede local transactions; local blocks/restrictions serialize on sorted Community profile locks. No remote call is made while holding those transactions.
+
+MB-685 migration 0018 adds Community-owned encrypted messages and private per-reader cursors. Content expires at its save-time 90-day cutoff and is removed by bounded owner sweeps; content-free identity records prevent late retry resurrection. Sequence allocation, idempotency and minimized outbox facts commit atomically. This is the accepted ADR 0042 exception to appointment chat storage; no canonical SQL is executed and no other owner storage is read.
+
+MB-745 migration 0022 adds the one-way `ACTIVE` to `RETRACTED` message lifecycle
+and an owner retraction instant. The same transaction removes ciphertext, retains
+the original private sequence and retry identity, and writes a minimized outbox
+pointer. Retraction does not touch read state or isolated report snapshots.
+
+MB-687 adds Community Liquibase 0019: private group discriminator/name/cap, explicit invitation lifecycle, current membership epochs and deferred exactly-one-owner/cap guards. Existing direct pair identity and encrypted message storage remain Community-owned.
+
+Group messages bind an immutable `sender_membership_id` to the exact membership
+epoch validated at send time. Departure does not invalidate retained messages
+for remaining viewers. Reads independently enforce the viewer's current epoch,
+current account eligibility and bilateral blocks; authors cannot recover their
+own previous epoch on rejoin. Direct messages keep a null membership reference.
+
+MB-687 migration 0020 adds isolated encrypted exact-message report intake with actor/message uniqueness and rate/review indexes. No general ADMIN private-history permission is introduced.

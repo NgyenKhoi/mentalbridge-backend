@@ -6,6 +6,19 @@
 
 ## 1. Product boundary
 
+MB-755 adds the accepted prospective
+[AI Voice Companion use case](adr/0046-ai-voice-companion-contract.md): an
+authenticated PLUS/PREMIUM USER explicitly grants Care-owned voice consent in
+addition to current AI-processing consent, requests a bounded voice session,
+speaks to the isolated agent and may stop or withdraw consent. Journal/AI
+authorizes admission, every inference turn and reconnect; it owns independent
+voice usage and purges current-call RAM context on termination. Voice never
+reads saved Journal/text history, books a specialist, mutates a SupportPlan or
+spends text answers/Consultation credits. The
+[policy](policies/companion-voice-policy-v1.md), planned contracts and
+[acceptance evidence](story-mb-755-ai-voice-contract-evidence.md) precede runtime
+delivery in MB-756 onward; FREE and existing text users keep current behavior.
+
 MentalBridge provides self-screening, emotional self-tracking, educational support, referral assistance, and follow-up. It does not diagnose, prescribe, provide psychotherapy, dispatch emergency responders, or guarantee continuous human monitoring.
 
 V1 supports exactly two screening and post-screening support domains for the primary Capstone cohort of adults aged 18 through 30 residing in Vietnam: `DEPRESSIVE_SYMPTOMS` through PHQ-9 and `ANXIETY_SYMPTOMS` through GAD-7, focused on generalized anxiety symptoms. It does not claim specialized screening for OCD, trauma/PTSD, panic disorder, social anxiety, bipolar/mania, psychosis, eating disorders, substance use, ADHD, insomnia as an independent domain, personality disorders, or another unapproved concern. An additional domain requires a separately governed product vertical.
@@ -235,9 +248,12 @@ For new target periods governed by `consultation-credit-v2`:
   for `PREMIUM`; both allocate 300,000 VND per consumed credit and therefore
   create a 210,000 VND specialist earning. Planned values are documentation and
   design only; runtime continues to use the explicit 5,000/10,000 VND fixtures.
-- Real payment and payout use MoMo only and remain disabled until exact VND
-  prices, fixed `creditAllocation` values, provider/reconciliation contracts,
-  and credentials are approved.
+- [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md) permits PayOS collect
+  on staging only using the unchanged 5,000/10,000 VND test catalogue and
+  full-price/zero-offset upgrade policy. MoMo remains dormant. Production and
+  real payout require separate approval; fixture earnings stay non-redeemable.
+  Settlement requires fully matched verified webhook or authenticated PayOS
+  reconciliation through the same atomic path.
 - Resources have no package-specific count limit. AI token/request quota,
   capability entitlement, credits, and reservation capacity are the commercial controls.
 
@@ -263,8 +279,9 @@ OPEN/RESOLVED workflow. See the single versioned
   appointments remain readable under their snapshotted v1 policy.
 - A slot can belong to at most one active appointment and a credit to at most one active appointment; enforce both transactionally.
 - Every slot is 60 minutes. A specialist publishes discrete bookable slots from their working schedule in an IANA timezone; the server stores UTC. The user chooses one slot and booking snapshots its start, end, timezone, and mode on the appointment.
-- A request must be made at least four hours before start. Booking requires an available credit, reservation capacity under the current package, and a still-selectable slot; it atomically holds one credit and slot and does not consume the credit.
+- A request may target an unexpired slot without an advance-booking delay, including an active window. Booking requires an available credit, reservation capacity under the current package, and a still-selectable slot; it atomically holds one credit and slot and does not consume the credit. The assigned Specialist must explicitly accept before interactive access.
 - The specialist responds by `min(requestedAt + 24h, startsAt - 2h)`, otherwise the request expires and both holds release.
+- The owner-approved local/dev DEMO video exception in [ADR 0039](adr/0039-livekit-cloud-video-consultation.md#approved-local-demo-amendment-2026-10-14) is opt-in and defaults disabled. It allows both assigned actors to join a qualifying DEMO appointment immediately after explicit Specialist acceptance, even before its scheduled start. Booking/discovery/deadline rules remain the current public contract. Booked snapshots/end cutoff and completion/credit/earning invariants do not change; early demo transport remains unverified with credit HELD. PAID/FREE, chat, staging and production keep the scheduled connection rule.
 - Eligible cancellation, rejection, expiry, specialist suspension before start, specialist/system cancellation, or specialist no-show releases the appointment credit. User cancellation inside 24 hours of a confirmed start or user no-show forfeits it under the applicable versioned policy. Only evidence-backed completion consumes it and creates one earning; this is a credit outcome, never a cash refund.
 - Rescheduling preserves old history and creates a linked new request. It never mutates the old slot snapshot and must handle the concurrent-reservation cap as one logical replacement.
 - Participants may enter waiting ten minutes before start. At `endsAt`, the
@@ -507,6 +524,8 @@ payment/payout remains disabled until explicit production approval, credentials,
 retention, and operational reconciliation readiness exist. ADR 0032 fixes the
 planned VND design values and the current 0/5,000/10,000 VND integration-test
 catalogue without turning either into permission for real-money production.
+ADR 0047's explicit staging-only PayOS exception permits the unchanged test
+catalogue without production enablement or redeemable fixture earnings.
 
 ## 6. Open product decisions
 
@@ -529,7 +548,7 @@ open where explicitly stated.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
 7. Chat/video duration and the separation of `SESSION_ENDED` from completion are fixed. Video signaling/provider, presence evidence, recording prohibition, reconnect/failure behavior, and exact completion evidence remain open contract work.
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
-9. Exact MoMo request type/payment methods, credential/key rotation, settlement delay, payout onboarding, VND `PLUS`/`PREMIUM` prices, fixed `creditAllocation`, chargeback reconciliation, and financial retention. Runtime FX, downgrade, user refund, and credit rollover remain unsupported.
+9. Production provider enablement, credential/key rotation, payout onboarding, chargeback reconciliation and financial retention. ADR 0032 fixes planned VND prices/allocation/settlement hold; ADR 0047 fixes staging-only PayOS pay-in and the unchanged test-catalogue exception. PayOS payout remains MB-787 work after the channel/keys exist. Runtime FX, downgrade, user refund and credit rollover remain unsupported.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
 
 The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md) as amended by [ADR 0022](adr/0022-current-product-blueprint-amendments.md).

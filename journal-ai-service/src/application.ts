@@ -8,7 +8,7 @@ import {
   loadConfiguration,
   type ServiceConfiguration,
 } from "./configuration/configuration.js";
-import { ProblemDetailsFilter } from "./http/problem-details.filter.js";
+import { VoiceGlobalFilter } from "./companion-voice/voice-session-boundary.js";
 
 export const createApplication = async (
   configuration: ServiceConfiguration = loadConfiguration(),
@@ -18,6 +18,6 @@ export const createApplication = async (
     AppModule.register(configuration, dependencies),
     { logger: false },
   );
-  app.useGlobalFilters(new ProblemDetailsFilter());
+  app.useGlobalFilters(new VoiceGlobalFilter());
   return app;
 };

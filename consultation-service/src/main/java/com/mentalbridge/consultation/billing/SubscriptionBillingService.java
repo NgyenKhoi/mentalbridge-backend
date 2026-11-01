@@ -27,15 +27,20 @@ public class SubscriptionBillingService {
 	private final JdbcClient jdbc;
 	private final Clock clock;
 	private final BillingProperties properties;
-	private final MomoCheckoutGateway gateway;
+	private final CollectPaymentGateway gateway;
+	private final PayosPaymentWebhookService payos;
+	private final PaymentSettlementService settlement;
 	private final TransactionTemplate transactions;
 
 	public SubscriptionBillingService(JdbcClient jdbc, Clock clock, BillingProperties properties,
-			MomoCheckoutGateway gateway, PlatformTransactionManager transactionManager) {
+			CollectPaymentGateway gateway, PayosPaymentWebhookService payos, PaymentSettlementService settlement,
+			PlatformTransactionManager transactionManager) {
 		this.jdbc = jdbc;
 		this.clock = clock;
 		this.properties = properties;
 		this.gateway = gateway;
+		this.payos = payos;
+		this.settlement = settlement;
 		this.transactions = new TransactionTemplate(transactionManager);
 	}
 
@@ -60,7 +65,7 @@ public class SubscriptionBillingService {
 				row.getTimestamp("effective_from").toInstant())).list();
 		var checkoutEnabled = properties.checkoutEnabled() && plans.stream().allMatch(plan ->
 				!SANDBOX_POLICY.equals(plan.pricingPolicyVersion()) || properties.sandboxCheckoutAllowed());
-		return new PlanCatalogueResponse(plans, checkoutEnabled, "MOMO", clock.instant());
+		return new PlanCatalogueResponse(plans, checkoutEnabled, gateway.provider(), clock.instant());
 	}
 
 	@Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -71,14 +76,22 @@ public class SubscriptionBillingService {
 		var prepared = transactions.execute(ignored -> prepareCheckout(userId, targetVersionId, idempotencyKey));
 		if (!prepared.created()) return prepared.payment();
 		var payment = prepared.payment();
-		var request = jdbc.sql("select momo_order_id, momo_request_id from payment_transaction where id=:id")
-				.param("id", payment.paymentId()).query((row, ignored) -> new String[]{row.getString(1), row.getString(2)}).single();
-		var checkout = gateway.create(request[0], request[1], payment.amountVnd(), "MentalBridge " + payment.planCode());
+		var request = jdbc.sql("select momo_order_id, momo_request_id, order_code from payment_transaction where id=:id")
+                .param("id", payment.paymentId()).query((row, ignored) -> new PreparedIdentity(row.getString(1),
+                row.getString(2), row.getObject(3, Long.class))).single();
+        var checkout = gateway.create(request.orderId(), request.requestId(), request.orderCode(), payment.amountVnd(), payment.expiresAt());
 		return transactions.execute(ignored -> {
 			jdbc.sql("""
-					update payment_transaction set checkout_url=:url, qr_code_url=:qr, updated_at=:now, version=version+1
-					where id=:id and checkout_url is null
-					""").param("url", checkout.payUrl()).param("qr", checkout.qrCodeUrl())
+					update payment_transaction set checkout_url=:url, qr_code_url=:qr,
+                     payos_payment_link_id=coalesce(payos_payment_link_id,:link), qr_code=:payload,
+                     bank_bin=:bin, bank_account_number=:account, bank_account_name=:name,
+                     payment_description=:description, updated_at=:now, version=version+1
+                    where id=:id and checkout_url is null and qr_code is null
+                     and (payos_payment_link_id is null or payos_payment_link_id=:link)
+					""").param("url", checkout.checkoutUrl()).param("qr", checkout.qrCodeUrl())
+                    .param("link", checkout.paymentLinkId()).param("payload", checkout.qrCode())
+                    .param("bin", checkout.bin()).param("account", checkout.accountNumber())
+                    .param("name", checkout.accountName()).param("description", checkout.description())
 					.param("now", databaseNow()).param("id", payment.paymentId()).update();
 			return findPaymentById(payment.paymentId());
 		});
@@ -123,10 +136,13 @@ public class SubscriptionBillingService {
 		throw conflict("SUBSCRIPTION_PLAN_CHANGE_NOT_ALLOWED", "The requested plan change is not allowed");
 	}
 
-	@Transactional(readOnly = true)
-	public PaymentResponse payment(UUID userId, UUID paymentId) {
-		return findPayment(userId, paymentId);
-	}
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public PaymentResponse payment(UUID userId, UUID paymentId) {
+        var payment = findPayment(userId, paymentId);
+        if ("PAYOS".equals(payment.provider()) && ("PENDING".equals(payment.status())
+                || ("FAILED".equals(payment.status()) && "EXPIRED".equals(payment.terminalReason())))) payos.reconcile(paymentId);
+        return findPayment(userId, paymentId);
+    }
 
 	@Transactional(readOnly = true)
 	public PaymentResponse.History history(UUID userId) {
@@ -138,18 +154,29 @@ public class SubscriptionBillingService {
 		return new PaymentResponse.History(items, items.size(), clock.instant());
 	}
 
-	@Scheduled(fixedDelayString = "${mentalbridge.consultation.billing.expiry-interval:PT1M}")
-	@Transactional
-	public void expirePendingCheckouts() {
-		var now = clock.instant();
-		var paymentIds = jdbc.sql("""
-				select id from payment_transaction
-				where status='PENDING' and expires_at <= :now
-				order by expires_at, id
-				for update skip locked limit 100
-				""").param("now", databaseInstant(now)).query(UUID.class).list();
-		paymentIds.forEach(paymentId -> expirePayment(paymentId, now));
-	}
+    @Scheduled(fixedDelayString = "${mentalbridge.consultation.billing.expiry-interval:PT1M}")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void expirePendingCheckouts() {
+        var now = clock.instant();
+        var paymentIds = jdbc.sql("""
+                select id from payment_transaction
+                where (status='PENDING' and (expires_at <= :now or (payment_provider='PAYOS'
+                 and (reconciliation_next_at is null or reconciliation_next_at<=:now))))
+                 or (payment_provider='PAYOS' and status='FAILED' and terminal_reason='EXPIRED'
+                  and reconciliation_failure_code in ('PAYOS_CANCEL_PENDING','PAYOS_CANCEL_UNAVAILABLE')
+                  and reconciliation_next_at<=:now)
+                order by expires_at,id limit 100
+                """).param("now", databaseInstant(now)).query(UUID.class).list();
+        for (var paymentId : paymentIds) {
+            var provider = jdbc.sql("select payment_provider from payment_transaction where id=:id")
+                    .param("id", paymentId).query(String.class).single();
+            if ("PAYOS".equals(provider)) payos.reconcile(paymentId);
+            else transactions.executeWithoutResult(ignored -> {
+                var payment = settlement.lock(paymentId);
+                if (payment != null && !payment.expiresAt().isAfter(now)) settlement.fail(payment, now, "EXPIRED");
+            });
+        }
+    }
 
 	private PaymentResponse purchase(UUID userId, Plan target, String idempotencyKey) {
 		var now = clock.instant();
@@ -231,59 +258,27 @@ public class SubscriptionBillingService {
 		var paymentId = UUID.randomUUID();
 		var orderId = "MB" + paymentId.toString().replace("-", "");
 		var requestId = UUID.randomUUID().toString();
-		var expiresAt = now.plus(properties.getCheckoutTtl());
+		var expiresAt = now.plus(properties.getCheckoutTtl()).truncatedTo(ChronoUnit.SECONDS);
+        var provider = gateway.provider();
+        var numericOrder = "MOMO".equals(provider) ? null
+                : jdbc.sql("select nextval('payment_order_code_seq')").query(Long.class).single();
 		jdbc.sql("""
 				insert into payment_transaction (id, subscription_id, target_plan_version_id, payment_provider,
-				 momo_order_id, momo_request_id, amount_minor, currency, status, purpose, idempotency_key,
+				 momo_order_id, momo_request_id, order_code, amount_minor, currency, status, purpose, idempotency_key,
 				 expires_at, checkout_url, qr_code_url, created_at, updated_at)
-				values (:id, :subscriptionId, :planVersionId, :provider, :orderId, :requestId, :amount,
+				values (:id, :subscriptionId, :planVersionId, :provider, :orderId, :requestId, :orderCode, :amount,
 				 'VND', 'PENDING', :purpose, :key, :expiresAt, :checkoutUrl, :qrCodeUrl, :now, :now)
 				""").param("id", paymentId).param("subscriptionId", subscriptionId)
-				.param("planVersionId", target.id()).param("provider", properties.fake() ? "FAKE" : "MOMO")
-				.param("orderId", orderId).param("requestId", requestId).param("amount", amount)
+				.param("planVersionId", target.id()).param("provider", provider)
+                .param("orderId", "PAYOS".equals(provider) ? null : orderId)
+                .param("requestId", "PAYOS".equals(provider) ? null : requestId)
+                .param("orderCode", numericOrder).param("amount", amount)
 				.param("purpose", purpose).param("key", idempotencyKey)
 				.param("expiresAt", databaseInstant(expiresAt)).param("checkoutUrl", null)
 				.param("qrCodeUrl", null).param("now", databaseInstant(now)).update();
 		return findPaymentById(paymentId);
 	}
 
-	private void expirePayment(UUID paymentId, Instant now) {
-		var payment = jdbc.sql("""
-				select subscription_id, purpose from payment_transaction where id=:id and status='PENDING'
-				""").param("id", paymentId).query((row, ignored) -> new ExpiringPayment(
-				row.getObject("subscription_id", UUID.class), row.getString("purpose"))).optional().orElse(null);
-		if (payment == null) return;
-		var changed = jdbc.sql("""
-				update payment_transaction set status='FAILED', failed_at=:now, updated_at=:now, version=version+1
-				where id=:id and status='PENDING'
-				""").param("now", databaseInstant(now)).param("id", paymentId).update();
-		if (changed == 0) return;
-		if ("UPGRADE".equals(payment.purpose())) {
-			jdbc.sql("""
-					update service_credit c set state=case when p.period_end > :now then 'AVAILABLE' else 'EXPIRED' end,
-					 updated_at=:now, version=c.version+1
-					from service_credit_period p, subscription_upgrade_credit uc, subscription_upgrade u
-					where c.period_id=p.id and u.id=uc.upgrade_id and uc.credit_id=c.id
-					 and u.payment_id=:paymentId and c.state='UPGRADE_HELD'
-					""").param("now", databaseInstant(now)).param("paymentId", paymentId).update();
-			jdbc.sql("""
-					update subscription_upgrade set status='EXPIRED', updated_at=:now, version=version+1
-					where payment_id=:paymentId and status='PENDING_PAYMENT'
-					""").param("now", databaseInstant(now)).param("paymentId", paymentId).update();
-		}
-		else {
-			var ended = jdbc.sql("""
-					update user_subscription set status='ENDED', ended_at=:now, updated_at=:now, version=version+1
-					where id=:id and status='PENDING_PAYMENT'
-					""").param("now", databaseInstant(now)).param("id", payment.subscriptionId()).update();
-			if (ended > 0) jdbc.sql("""
-					insert into subscription_status_history
-					 (id, subscription_id, from_status, to_status, reason_code, changed_at)
-					values (:id, :subscriptionId, 'PENDING_PAYMENT', 'ENDED', 'PAYMENT_EXPIRED', :now)
-					""").param("id", UUID.randomUUID()).param("subscriptionId", payment.subscriptionId())
-					.param("now", databaseInstant(now)).update();
-		}
-	}
 
 	private PaymentResponse findByUserAndKey(UUID userId, String key) {
 		return jdbc.sql("""
@@ -306,7 +301,8 @@ public class SubscriptionBillingService {
 		return jdbc.sql("""
 				select pt.id, pt.subscription_id, pt.target_plan_version_id, v.plan_code, v.version, v.pricing_policy_version,
 				 pt.purpose, pt.payment_provider, pt.status, pt.amount_minor, pt.currency,
-				 pt.checkout_url, pt.qr_code_url, pt.expires_at, pt.created_at, pt.paid_at, pt.failed_at
+				 pt.checkout_url, pt.qr_code_url, pt.expires_at, pt.created_at, pt.paid_at, pt.failed_at,
+                 pt.qr_code,pt.bank_bin,pt.bank_account_number,pt.bank_account_name,pt.payment_description,pt.terminal_reason
 				from payment_transaction pt join subscription_plan_version v on v.id=pt.target_plan_version_id
 				where pt.id=:id
 				""").param("id", paymentId).query((row, ignored) -> new PaymentResponse(
@@ -315,7 +311,9 @@ public class SubscriptionBillingService {
 				row.getString("version"), row.getString("pricing_policy_version"), row.getString("purpose"), row.getString("payment_provider"),
 				row.getString("status"), row.getLong("amount_minor"), row.getString("currency"),
 				row.getString("checkout_url"), row.getString("qr_code_url"), row.getTimestamp("expires_at").toInstant(),
-				row.getTimestamp("created_at").toInstant(), instant(row, "paid_at"), instant(row, "failed_at"))).single();
+				row.getTimestamp("created_at").toInstant(), instant(row, "paid_at"), instant(row, "failed_at"), row.getString("qr_code"), row.getString("bank_bin"),
+                row.getString("bank_account_number"), row.getString("bank_account_name"), row.getString("payment_description"),
+                row.getLong("amount_minor"), row.getTimestamp("expires_at").toInstant(), row.getString("terminal_reason"))).single();
 	}
 
 	private CurrentSubscription currentSubscription(UUID userId) {
@@ -379,6 +377,6 @@ public class SubscriptionBillingService {
 	private record CurrentSubscription(UUID id, UUID userId, UUID planVersionId, String planCode,
 			String pricingPolicyVersion, long nonConsultationValueMinor, Instant periodStart, Instant periodEnd) { }
 
-	private record ExpiringPayment(UUID subscriptionId, String purpose) { }
+	private record PreparedIdentity(String orderId, String requestId, Long orderCode) { }
 	private record CheckoutPreparation(PaymentResponse payment, boolean created) { }
 }

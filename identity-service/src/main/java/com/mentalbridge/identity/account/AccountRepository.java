@@ -16,6 +16,14 @@ import jakarta.persistence.LockModeType;
 
 public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, JpaSpecificationExecutor<AccountEntity> {
 
+	@Query("""
+			select account.id from AccountEntity account where account.id in :ids
+			and account.status = com.mentalbridge.identity.account.AccountStatus.ACTIVE
+			and account.role = com.mentalbridge.identity.account.RoleCode.USER
+			and account.emailVerifiedAt is not null
+			""")
+	List<UUID> findActiveChatUsers(@Param("ids") Collection<UUID> ids);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select account from AccountEntity account where account.email = :email")
 	Optional<AccountEntity> findByEmailForUpdate(@Param("email") String email);
@@ -25,6 +33,8 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID>, J
 	Optional<AccountEntity> findByIdForUpdate(@Param("id") UUID id);
 
 	boolean existsByIdAndStatusNot(UUID id, AccountStatus status);
+
+	boolean existsByIdAndStatus(UUID id, AccountStatus status);
 
 	@Query("select account.id from AccountEntity account where account.id in :ids and account.status = :status")
 	List<UUID> findIdsByIdInAndStatus(@Param("ids") Collection<UUID> ids, @Param("status") AccountStatus status);

@@ -4,7 +4,37 @@ NestJS service on Node.js that owns private journal entries and coordinates AI a
 
 ## Current scope
 
-Public OpenAPI v1.12.0 adds the MB-642 content-free exact Journal creation
+MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for
+AI-only rooms and explicit named dispatch. Its deterministic transport tests
+exercise the real SDK against a local synthetic server; no Cloud credentials
+or real media are used. Public session/lifecycle integration is described in
+the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md).
+MB-758 adds guarded ephemeral voice turns using the existing Companion provider;
+see [turn evidence](../docs/story-mb-758-guarded-voice-turns.md).
+
+| Optional configuration                  | Meaning                                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_VOICE_ENABLED`              | Defaults to `false`. Live enablement requires all owner/media credentials and reviewed downstream worker, speech, privacy and account evidence. Forbidden in test/CI.      |
+| `JOURNAL_AI_VOICE_APPROVAL_VERSION`     | Reviewed operational evidence version required when enabling; configuration alone is not proof of readiness.                                                               |
+| `JOURNAL_AI_VOICE_LIVEKIT_URL`          | Existing project `wss://<project>.livekit.cloud` origin only, without path, credentials, query, fragment or custom port.                                                   |
+| `JOURNAL_AI_VOICE_LIVEKIT_API_KEY`      | Existing LiveKit project key, backend only.                                                                                                                                |
+| `JOURNAL_AI_VOICE_LIVEKIT_API_SECRET`   | Existing LiveKit project secret, backend only; never placed in client grants or metadata.                                                                                  |
+| `JOURNAL_AI_VOICE_AGENT_NAME`           | Explicit registered agent name, default `mentalbridge-ai-voice-v1`; MB-759 must deploy this named worker.                                                                  |
+| `JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN` | Independent 32–256 printable ASCII secret without spaces; distinct from owner-read, reminder/SupportPlan and provider secrets. Sent only on internal worker REST requests. |
+
+Blank optional secrets keep Voice disabled. No new provider registration or
+plan upgrade is required for this implementation. Reuse the existing project;
+do not copy actual secrets into repository files, issue descriptions or CI.
+Media RPCs use a three-second timeout with SDK region failover disabled.
+Participant tokens are microphone-only and at most 60 seconds, capped by the
+original session hard stop. Explicit participant revocation uses the Cloud API's
+Unix-second cutoff near current server time, followed by exact-room teardown.
+Token expiration alone is never used as proof of media cutoff or quota release.
+
+Public OpenAPI v1.15.0 adds the MB-758 internal turn route; v1.14.0 added
+the MB-757 session and worker lifecycle routes below;
+v1.13.0 introduced the MB-756 voice-eligibility read.
+The preceding v1.12.0 adds the MB-642 content-free exact Journal creation
 evidence read alongside MB-641 daily check-in evidence and retains MB-649
 bounded SupportPlan Companion orchestration. The preceding provider enum amendment aligns exact-analysis,
 longitudinal evidence and Support
@@ -13,6 +43,181 @@ route and migration 011. Consumers must accept this provider without relaxing
 other result validation. `contract:check` compares these public enums with the
 migrated result validators. This publication does not activate a provider,
 change routing/approval/consent gates, or change persisted data.
+
+### MB-756 independent voice admission foundation
+
+The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
+introduced `GET /api/v1/ai-companion/voice-eligibility` from the accepted
+[Voice ADR](../docs/adr/0046-ai-voice-companion-contract.md) and
+[policy](../docs/policies/companion-voice-policy-v1.md). It requires an Identity
+USER bearer, derives the owner from that principal, returns `no-store`, and
+reads current Care dual consent, Consultation entitlement and independent
+voice quota. It creates no reservation, room, token, dispatch or provider call.
+Uncertain owner reads fail closed. Missing consent, FREE, occupied capacity,
+exhausted quota and provider unavailability never become eligible access.
+
+The application exports `VoiceAccessService` for server-owned reserve and
+current-session authorization. Admission reads current owners before the short
+MongoDB transaction, hashes retry intent with the existing Journal HMAC secret,
+and atomically reserves quota plus the global two-session/per-owner one-session
+capacity. Current authorization re-resolves both grants and entitlement; the
+stored admission snapshot cannot authorize a later turn. MB-756 delivered only
+this foundation. MB-757 adds the session routes below while voice admission
+remains disabled by default, pending reviewed MB-758/759/760/762 evidence.
+
+| Optional variable                            | Purpose                                                                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN`        | Dedicated Journal-to-Care credential matching Care's `CARE_VOICE_JOURNAL_SERVICE_TOKEN`; sent only as `X-MentalBridge-Voice-Care-Token`.                 |
+| `JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN` | Dedicated Journal-to-Consultation credential matching `CONSULTATION_VOICE_JOURNAL_SERVICE_TOKEN`; sent only as `X-MentalBridge-Voice-Entitlement-Token`. |
+
+Blank values disable the corresponding authorization read without changing
+existing text configuration. Configured secrets must contain 32–256 printable
+ASCII characters without spaces, be distinct from each other, and differ from
+configured reminder/SupportPlan service tokens. The clients reuse the existing
+Care/Consultation base URLs, enforce a fixed two-second read deadline, reject
+redirects, malformed/stale responses and mismatched owner/session/purpose, and
+require `no-store`. They do not forward or persist the user's bearer, replicate
+grants, query another owner's database or retry a stale positive decision.
+
+Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
+owns the three closed, content-free MongoDB collections described in the
+[database documentation](../docs/database/mongodb.md#ai-companion-voice-admission-and-usage-collections).
+MongoDB must support replica-set transactions. The service reconciliation loop
+uses server time for authority/deadline expiry, safe unissued-session settlement
+and retention cleanup; possibly issued media remains held until verified
+teardown. Session and usage records expire 30 days from their own creation,
+without extension by activity or settlement. Session deletion scrubs capacity
+references transactionally. An unknown old room leaves an anonymous quarantined
+slot occupied after identifying metadata is purged; no TTL or current ledger
+method makes that slot free.
+
+Voice usage is independent of text answers and Consultation credits. PLUS has
+two successful sessions/day, at most 300 seconds/session and 600 ACTIVE seconds/day;
+PREMIUM has three, at most 600 seconds/session and 1,800 ACTIVE seconds/day. The
+quota day is `Asia/Ho_Chi_Minh`, frozen at admission. The first trusted AI audio
+publication while the owner is connected consumes one session and starts ACTIVE
+accounting; summed eligible milliseconds are rounded up once on settlement.
+No first reply refunds reserved quota. These are ledger rules tested with
+synthetic signals; MB-756 does not produce or hear real audio. Audio, transcript,
+prompts/replies, prior Journal/chat history and provider/user tokens are excluded
+from voice persistence and operational logging.
+
+Delivery is ordered Care [PR #229](https://github.com/NgyenKhoi/mentalbridge-backend/pull/229),
+then Consultation [PR #230](https://github.com/NgyenKhoi/mentalbridge-backend/pull/230),
+then Journal. Both prerequisites are now on `dev` (`8f295d71`, `5206b3a2`).
+The new owner HTTP/Mongo integration validates synthetic owner decisions against
+the merged active contracts and proves admission, revocation/expiry compensation
+and unchanged Text quota. It runs in `npm run test:integration`; it does not prove
+a running Spring/cloud/audio stack. See the
+[MB-756 Journal evidence](../docs/story-mb-756-journal-voice-evidence.md) for the
+remaining checkpoint and provider gates.
+
+### MB-757 authorized LiveKit session lifecycle
+
+The active contract publishes these additive routes. Public commands derive the
+owner from the Identity USER bearer, accept only `{}`, require a UUID
+`Idempotency-Key`, and return `Cache-Control: no-store` on success and failure.
+Other owners receive 404. Status is an owner-only read without a command key.
+
+| Method and path                                                                | Result                                                                                        |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `POST /api/v1/ai-companion/voice-sessions`                                     | 202 minimized session; atomic quota/capacity reservation and fenced AI room/explicit dispatch |
+| `GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}`                     | 200 current minimized state, without media credentials                                        |
+| `POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection`         | 200 ephemeral, freshly authorized microphone-only token                                       |
+| `POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end`                | 202 terminal state or truthful ENDING while provider cleanup is uncertain                     |
+| `POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim`   | 200 attempt/dispatch-bound worker lease                                                       |
+| `POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control` | 200 fenced CONTINUE/STOP control response                                                     |
+
+Worker routes require only the dedicated `X-MentalBridge-Voice-Worker-Token`,
+reject USER bearers and closed-schema violations, and bind the exact session,
+attempt, logical dispatch, lease and sequence. The worker must connect as
+`va-<attemptId>`, claim before processing audio and renew every five seconds;
+loss of its ten-second lease must stop processing and clear RAM. MB-759 owns
+that worker implementation. A server-side `VoiceSessionsService.registerReply`
+hook lets MB-758 register opaque turn/reply evidence before publication; arbitrary
+worker reply IDs cannot commit usage. The internal turn route is implemented
+below; the hosted worker remains MB-759 work.
+
+Migration [`014_companion_voice_media.cjs`](migrations/014_companion_voice_media.cjs)
+persists only bounded media progress, sequencing and keyed connection/end
+bindings. It must follow 013 before starting this revision. Unknown create or
+dispatch outcomes reconcile the original references without duplicate dispatch;
+unverified cleanup retains capacity. A one-second non-overlapping maintenance
+loop enforces deadlines, current-owner revocation and cleanup retries. Before
+claim it can renew authorized setup for at most 45 seconds; after claim it
+observes revocation without renewing worker liveness. Heartbeats never reset
+the 60-second conversation-idle deadline. Reconnect stays within 30 seconds and
+the original hard stop. Metadata expiry preserves anonymous occupied quarantine.
+
+Rollback: disable admission, keep media credentials available for cleanup, end
+all voice sessions and verify teardown before rolling back 014. Its down migration
+refuses non-STOPPED media. Do not clear capacity manually or roll back 013 while
+an uncertain room may still run. See the [controlled-demo runbook](../docs/ai-voice-demo-runbook.md#mb-757-control-plane-checkpoint)
+for opt-in checks and the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md)
+for deterministic tests. No real Cloud/audio success is claimed by this story.
+
+### MB-758 guarded ephemeral Voice turns
+
+`POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns` accepts the
+frozen `VoiceTurn` body and UUID `Idempotency-Key`, with the same dedicated
+worker header as claim/control. It returns a closed `VoiceReply` with opaque
+stable reply ID, Vietnamese spoken text, policy and expiry, always `no-store`.
+There is no USER-selected owner, room, model, history or authority. Invalid final
+speech/instruction overrides fail 422, stale/conflicting work 409, expired
+authority 410, unknown/unapproved provider 503 and provider timeout 504.
+
+The turn adapter reuses `selectCompanionProviderRoute`, `RoutedChatProvider` and
+the normalized Companion validator without invoking persisted chat `send` or
+its context/quota repositories. The existing common 500-character response limit
+stays within Voice's 1,000-character ceiling. All inputs/context are untrusted
+data; ambiguous recognition requests a short clarification. No diagnosis,
+scoring, safety/eligibility decision, autonomous action or prior Journal/chat
+context is introduced. Both Care grants and current Consultation entitlement
+are checked before every generation and publication. Real Voice accepts only
+the current approved Claude Bedrock route, pins its model/approval/prompt/routing
+versions for the call and has no fallback. Fake routes are test/development
+only while live Voice is disabled. No new configuration key or provider signup
+is required; the existing provider timeout and route settings apply.
+
+Migration [`015_companion_voice_turn_fences.cjs`](migrations/015_companion_voice_turn_fences.cjs)
+must follow 014. It adds a content-free `turn` variant to the existing media
+command collection, retaining connection/end compatibility. Unique session/
+sequence and session/turn-ID claims precede provider work. Only the latest live
+RAM reply can replay exactly. Lost RAM or another context process returns stale
+rather than invoking the provider again. Demo operation therefore uses one
+Journal process or turn routing affinity to the original context process;
+replica failover/restart never restores dialogue. A fresh call needs a fresh
+authorized session, not an automatic generation retry.
+
+Recent context is at most four current-call pairs and a conservative 2,000-byte
+UTF-8 allowance, including the current recognized text and serialization margin.
+Older pairs are dropped first; speech that cannot fit returns 422 before a claim
+or provider call, even below the structural 2,000-character ceiling. This admits
+less history than a characters/4 token estimate for Vietnamese. Actual provider
+token usage and approximate route cost are content-free telemetry; missing usage
+is labelled ESTIMATED. No prompt-cache checkpoint, transcript/reply snapshot,
+recording, raw-content log or text quota mutation is added.
+
+HTTP disconnect, worker cancellation, stop, revoked authority, elapsed lease or
+provider failure abort/discard outstanding generation and clear RAM. Cancelling
+a pending turn ends that session safely; TTS-only INTERRUPTED control does not
+regenerate or bill another reply. Between turns, bounded RECONNECTING preserves
+RAM for the same session; only ACTIVE grants authorize another generation.
+Publication registers the reply with MB-757, but only trusted connected-audio
+playback commits first-reply usage. Generated/replayed text alone never does.
+
+Only a newly fenced, authorized final-speech turn records user conversational
+activity before generation, so speech near the idle cutoff remains active while
+the model responds. Replay/heartbeat never resets idle; this update neither
+consumes worker-control sequence nor extends the lease or absolute deadline.
+
+Shutdown/expiry clears RAM; the existing one-second lifecycle sweep removes
+expired command metadata. Fence expiry stays capped by the original session's
+30-day window. Disable admission, stop sessions/handlers and expire or separately
+review safe fence cleanup before rollback; 015 down refuses surviving turn rows
+and never drops the shared command collection. Hosted worker, Vietnamese speech,
+account quota/privacy and real-device gates remain in the
+[runbook](../docs/ai-voice-demo-runbook.md#mb-758-turn-checkpoint).
 
 The service provides:
 

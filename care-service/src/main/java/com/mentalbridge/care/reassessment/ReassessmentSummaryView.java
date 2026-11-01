@@ -57,7 +57,7 @@ public record ReassessmentSummaryView(
 	public record EngagementPeriod(int completedCount, int skippedCount) { }
 
 	public record EngagementSource(UUID occurrenceId, UUID supportPlanId, long sourcePlanVersion,
-			String sourceSlotId, UUID sourceResourceId, long sourceContentVersion, Instant scheduledAt,
+			String sourceSlotId, UUID sourceResourceId, Long sourceContentVersion, Instant scheduledAt,
 			String period, String state, String barrierCode) { }
 
 	public record ReflectionDimension(String state, List<ReflectionSource> sources) { }

@@ -43,6 +43,10 @@ import {
   type CompanionChatDependencies,
 } from "./companion-chat/companion-chat.js";
 import {
+  registerCompanionVoiceModule,
+  type CompanionVoiceDependencies,
+} from "./companion-voice/companion-voice.module.js";
+import {
   registerSupportGuidePhrasingModule,
   type SupportGuidePhrasingDependencies,
 } from "./support-guide-phrasing/support-guide-phrasing.js";
@@ -65,6 +69,7 @@ export interface ApplicationDependencies {
   readonly emotionCheckIns?: EmotionCheckInDependencies;
   readonly longitudinalAnalysis?: LongitudinalAnalysisDependencies;
   readonly companionChat?: CompanionChatDependencies;
+  readonly companionVoice?: CompanionVoiceDependencies;
   readonly supportGuidePhrasing?: SupportGuidePhrasingDependencies;
   readonly supportPlanCompanion?: SupportPlanCompanionDependencies;
   readonly notificationActivity?: NotificationActivityDependencies;
@@ -101,6 +106,10 @@ export class AppModule implements NestModule {
           dependencies.longitudinalAnalysis,
         ),
         registerCompanionChatModule(configuration, dependencies.companionChat),
+        registerCompanionVoiceModule(
+          configuration,
+          dependencies.companionVoice,
+        ),
         registerSupportGuidePhrasingModule(
           configuration,
           dependencies.supportGuidePhrasing,

@@ -170,6 +170,15 @@ baseline migration and overlapping-version deployment limitations.
 
 ## Modes and session boundary
 
+The owner-approved 2026-10-14 local/dev DEMO video exception is documented in
+[ADR 0039](../adr/0039-livekit-cloud-video-consultation.md#approved-local-demo-amendment-2026-10-14).
+It defaults disabled, never auto-accepts, and applies only to effective DEMO
+entitlement/held DEMO credit. It preserves current booking rules and permits immediate
+assigned-participant access after Specialist confirmation. PAID/FREE, chat,
+staging/production, booked timestamps/end cutoff and financial verification
+remain unchanged. Early demo media cannot prove completion; explicit ending
+keeps pending verification and credit HELD without earning/refund/release.
+
 Every slot is exactly 60 minutes. At `scheduledEndAt`, the authoritative
 appointment becomes `SESSION_ENDED` and interactive chat/video access closes.
 The channel end is a time boundary, not proof of service delivery.
@@ -325,6 +334,13 @@ Changing period quantities from historical `1/3` to target `4/10` changes
 commercial capacity and liability but does not change the per-credit earning
 formula.
 
-Real payment and payout are VND + MoMo only and remain disabled until approved
-plan prices, `creditAllocation`, provider contracts, reconciliation rules, and
-credentials are configured and verified.
+Real payment and payout use VND and require approved plan prices,
+`creditAllocation`, provider contracts, reconciliation rules and credentials.
+[ADR 0047](../adr/0047-payos-active-gateway-momo-dormant.md) prospectively permits
+PayOS pay-in on staging only using the unchanged 5,000/10,000 VND test catalogue
+and full-price/zero-offset upgrade policy. MoMo remains dormant. Production and
+real payout remain separately blocked; synthetic fixture earnings stay
+non-redeemable. Settlement requires a fully matched verified webhook or
+authenticated signed-response-verified PayOS reconciliation through the same
+atomic settlement path. Purchase/upgrade, no refunds, immutable history and
+per-credit earning semantics remain unchanged.

@@ -381,6 +381,7 @@ class ConsultationJourneyIntegrationTests extends ConsultationTestProperties {
 				""").param("id", user.id()).param("ref", "mb623-synthetic-" + user.id())
 				.param("start", Timestamp.from(clock.instant().minusSeconds(60)))
 				.param("end", Timestamp.from(clock.instant().plus(Duration.ofDays(30)))).update();
+		establishPaidEntitlement(jdbc, user.id());
 		jdbc.sql("""
 				insert into specialist_profile(account_id,display_name,biography,years_experience,timezone,approval_status,submitted_at,reviewed_at,reviewed_by)
 				values (:id,:name,'Synthetic non-clinical journey fixture',5,'Asia/Ho_Chi_Minh','APPROVED',:now,:now,:admin)

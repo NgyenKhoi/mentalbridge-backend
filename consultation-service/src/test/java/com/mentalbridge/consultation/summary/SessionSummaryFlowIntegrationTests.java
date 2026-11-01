@@ -261,6 +261,7 @@ class SessionSummaryFlowIntegrationTests extends ConsultationTestProperties {
 				""").param("id", userId).param("reference", "paid-" + userId)
 				.param("from", Timestamp.from(now.minusSeconds(60)))
 				.param("until", Timestamp.from(now.plusSeconds(2_592_000))).update();
+		establishPaidEntitlement(jdbc, userId);
 		jdbc.sql("""
 				insert into specialist_profile (
 				 account_id, display_name, biography, years_experience, timezone, approval_status,

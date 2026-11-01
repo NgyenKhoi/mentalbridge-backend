@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0018-community-chat-messages
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_chat_message (
+                id uuid PRIMARY KEY,
+                conversation_id uuid NOT NULL REFERENCES community_chat_conversation(id) ON DELETE CASCADE,
+                sender_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                client_message_id uuid NOT NULL,
+                server_sequence bigint NOT NULL CHECK (server_sequence > 0),
+                content_ciphertext text,
+                content_fingerprint varchar(100) NOT NULL,
+                created_at timestamptz NOT NULL,
+                expires_at timestamptz NOT NULL,
+                purged_at timestamptz,
+                UNIQUE (conversation_id, sender_profile_id, client_message_id),
+                UNIQUE (conversation_id, server_sequence),
+                CHECK (expires_at > created_at),
+                CHECK ((content_ciphertext IS NULL) = (purged_at IS NOT NULL))
+              );
+              CREATE INDEX ix_chat_message_actor_rate ON community_chat_message(sender_profile_id, created_at DESC);
+              CREATE INDEX ix_chat_message_visible_activity ON community_chat_message(conversation_id, created_at DESC) WHERE content_ciphertext IS NOT NULL;
+              CREATE INDEX ix_chat_message_expiry ON community_chat_message(expires_at, id) WHERE content_ciphertext IS NOT NULL;
+              CREATE TABLE community_chat_read_state (
+                conversation_id uuid NOT NULL REFERENCES community_chat_conversation(id) ON DELETE CASCADE,
+                profile_id uuid NOT NULL REFERENCES community_profile(id),
+                last_read_sequence bigint NOT NULL DEFAULT 0 CHECK (last_read_sequence >= 0),
+                PRIMARY KEY (conversation_id, profile_id)
+              );
+              ALTER TABLE community_chat_command ADD COLUMN conversation_id uuid REFERENCES community_chat_conversation(id) ON DELETE CASCADE;
+              UPDATE community_chat_command command SET conversation_id = COALESCE(
+                (SELECT id FROM community_chat_conversation WHERE id = command.target_id AND command.result_kind = 'ACTIVE'),
+                (SELECT conversation_id FROM community_chat_request WHERE id = command.target_id AND command.result_kind = 'PENDING'),
+                (SELECT conversation_id FROM community_chat_message WHERE id = command.target_id AND command.result_kind = 'MESSAGE')
+              );
+              ALTER TABLE community_chat_command ALTER COLUMN conversation_id SET NOT NULL;

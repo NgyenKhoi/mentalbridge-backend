@@ -89,6 +89,19 @@ Append `(#issue)` only when a real tracked issue exists; never fabricate one. Bu
 
 Before opening/updating the PR, synchronize safely with the target branch, resolve conflicts deliberately, rerun affected quality gates, and review the final base-to-head diff. Do not force-push a shared branch unless the user explicitly authorizes it and the team impact is understood.
 
+### Conflict-safe delivery (MB-706)
+
+Jira MB-706 holds the agreed team rules; this is the working summary for backend PRs.
+
+- **Story.** One Story is one demonstrable use case with one accountable feature owner across backend, web and mobile. It states the UC goal, BE/FE owners, affected paths, contract, UX handoff, authored test files, execution status, merge order and an acceptance-states table (state | what the screen shows | what it must not show | business rule and policy link). Add a `BE/CONTRACT` subtask only when a service, schema or endpoint changes; add `FE-WEB` or `FE-MOBILE` for the consumer, and `UX-POLISH` only after `ui-ready`.
+- **One writer per file.** While a PR is open, only its owner commits its feature files. Paths in `.github/CODEOWNERS` (contracts, migrations and changelogs, ADRs, database and domain-model docs, workflows) change with integrator approval and stay as narrow as the behaviour needs.
+- **Overlap check.** Before opening and before merging, run `node scripts/pr-overlap.mjs` from the repository root. It lists open PRs into `dev` that change the same files and the shared files you touch; agree the merge order with those owners. CI posts the same report as a PR comment; it warns and never blocks.
+- **Size and freshness.** About 30 files or fewer excluding generated output; rebase on `origin/dev` at least daily; a branch lives at most three days. `git diff origin/dev...HEAD --stat` shows only your paths. No workspace snapshot PRs.
+- **Migrations.** Two open PRs must not add the same changeset number to one service; the overlap report flags a shared `db.changelog-master.yaml`. Never reorder or rename an applied changeset.
+- **Generated conflicts.** Never hand-resolve `*.generated.ts` or synced OpenAPI YAML; take `dev` and re-run `npm run contracts:sync` from the intended backend branch in the frontend repository.
+- **Merge order.** Backend contract and owner API, then the compatible web or mobile consumer (which re-runs `npm run contracts:sync` from the merged contract), then UI polish, then the milestone E2E batch.
+- **Regression checks.** Before merge: required CI green on the last rebase and affected local gates re-run after it. After merge: the feature owner walks every acceptance-table row on the Docker dev stack before the frontend Story is labelled `ui-ready`.
+
 ### Synchronizing a stale feature branch
 
 Do not copy files from `dev` manually or merge a stale PR first and repair it afterward. Fetch the remote and integrate the current target branch before continuing feature work:

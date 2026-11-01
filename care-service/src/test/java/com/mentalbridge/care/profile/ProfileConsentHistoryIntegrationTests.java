@@ -68,7 +68,8 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 
 		mvc.perform(get("/api/v1/profile").with(user(UUID.randomUUID())))
 				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PROFILE_NOT_FOUND"));
-		mvc.perform(get("/api/v1/profile").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+		mvc.perform(get("/api/v1/profile").with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
 				.andExpect(status().isForbidden());
 		mvc.perform(put("/api/v1/profile").with(user(UUID.randomUUID())).contentType(MediaType.APPLICATION_JSON)
 				.content(profileBody("Invalid timezone").replace("Asia/Ho_Chi_Minh", "not-a-timezone")))

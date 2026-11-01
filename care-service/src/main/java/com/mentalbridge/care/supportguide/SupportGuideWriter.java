@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.care.profile.UserProfileRepository;
+import com.mentalbridge.care.notification.UserNotificationOutbox;
+import com.mentalbridge.care.notification.UserNotificationOutbox.FactType;
 import com.mentalbridge.care.shared.ApiException;
 
 @Service
@@ -17,12 +19,14 @@ class SupportGuideWriter {
 	private final SupportGuideRepository guides;
 	private final SupportGuideResourceRepository resources;
 	private final UserProfileRepository profiles;
+	private final UserNotificationOutbox userNotifications;
 
 	SupportGuideWriter(SupportGuideRepository guides, SupportGuideResourceRepository resources,
-			UserProfileRepository profiles) {
+			UserProfileRepository profiles, UserNotificationOutbox userNotifications) {
 		this.guides = guides;
 		this.resources = resources;
 		this.profiles = profiles;
+		this.userNotifications = userNotifications;
 	}
 
 	@Transactional
@@ -59,6 +63,8 @@ class SupportGuideWriter {
 		}
 		resources.flush();
 		guides.insertRequest(userId, idempotencyKey, requestHash, guide.id(), draft.generatedAt());
+		userNotifications.append(userId, FactType.SUPPORT_GUIDE_AVAILABLE, guide.id(), 1,
+				draft.correlationId(), draft.generatedAt());
 		return stored(guide);
 	}
 
@@ -99,7 +105,7 @@ class SupportGuideWriter {
 		return new StoredGuide(guide, resources.findBySupportGuideIdOrderByOrdinal(guide.id()));
 	}
 
-	record Draft(UUID supportEvaluationId, Instant generatedAt, String explanationCode, String explanationText,
+	record Draft(UUID supportEvaluationId, UUID correlationId, Instant generatedAt, String explanationCode, String explanationText,
 			String safetyStatus, String safetyReasonCode, String safetyPolicyVersion, String safetyGuidanceCode,
 			String safetyGuidance, String resourceStatus, String resourcePolicyVersion, Instant resourcesResolvedAt,
 			String phrasingStatus, List<ResourceDraft> resources) { }

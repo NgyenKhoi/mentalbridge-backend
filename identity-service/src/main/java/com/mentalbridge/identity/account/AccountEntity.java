@@ -94,6 +94,12 @@ public class AccountEntity {
 		updatedAt = restoredAt;
 	}
 
+	public void markDeleted(Instant deletedAt) {
+		status = AccountStatus.DELETED;
+		this.deletedAt = deletedAt;
+		updatedAt = deletedAt;
+	}
+
 	public void recordFailedLogin(Instant attemptedAt) {
 		failedLoginCount = lockedUntil != null && !lockedUntil.isAfter(attemptedAt) ? 1 : failedLoginCount + 1;
 		if (failedLoginCount >= 5) {
@@ -154,6 +160,10 @@ public class AccountEntity {
 
 	public Instant updatedAt() {
 		return updatedAt;
+	}
+
+	public Instant deletedAt() {
+		return deletedAt;
 	}
 
 	public long version() {

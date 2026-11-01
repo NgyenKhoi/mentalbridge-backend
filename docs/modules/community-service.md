@@ -1,5 +1,11 @@
 # Community Service specification
 
+The [MB-684 Community chat candidate](../adr/0042-community-chat-contract.md)
+proposes Community-owned peer conversation/message/permission persistence and
+separate Realtime delivery/presence. It is contract-only, pending approval; no
+DM/group handler, persistence or migration is introduced here. Existing feed,
+moderation and interaction runtime below is unchanged.
+
 ## Ownership
 
 `community-service` is the independent owner for the governed Community peer-support context established by ADR 0027 (`MB-COMMUNITY-SERVICE-001`). Future delivery stories may add Community display profiles, posts, comments, reactions, moderation, reports, blocks, and Community-owned media metadata.

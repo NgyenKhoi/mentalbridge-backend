@@ -137,7 +137,7 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [Domain and use cases](docs/domain-and-use-cases.md)
 - [Two-domain screening and system-proposed SupportPlan decision](docs/adr/0012-two-domain-screening-and-system-proposed-support-plans.md)
 - [Frozen SupportPlan policy v1](docs/policies/support-plan-policy-v1.md)
-- [Requirements traceability to the capstone registration and 162-function WBS](docs/requirements-traceability.md)
+- [Requirements traceability by story, including the capstone registration and 162-function WBS](docs/requirements-traceability.md)
 - [Per-module business, use-case, implementation and task specifications](docs/modules/README.md)
 - [Architecture](docs/architecture.md)
 - [Node.js service stack](docs/nodejs-service-stack.md)
@@ -153,9 +153,9 @@ Safety handling must be deterministic, immediate, auditable, non-paywalled, and 
 - [PostgreSQL data model](docs/database/postgresql.md)
 - [MongoDB collections](docs/database/mongodb.md)
 - [Canonical domain model — start here for entities and diagrams](docs/domain-model/README.md)
-- [Canonical non-executable PostgreSQL logical schema](docs/domain-model/relational/postgresql-logical-schema.sql) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
+- [Canonical non-executable PostgreSQL logical models by service](docs/domain-model/relational/README.md) — owner namespaces are visual only; each module deploys to its own database/default `public` schema
 - [Canonical MongoDB logical model](docs/domain-model/document/mongodb-logical-model.md)
-- [PostgreSQL field data dictionary](docs/database/postgresql-field-data-dictionary.md)
+- [PostgreSQL field data dictionary by service](docs/database/postgresql-field-data-dictionary.md)
 
 ## Delivery roadmap
 

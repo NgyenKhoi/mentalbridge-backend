@@ -1,0 +1,461 @@
+import SwaggerParser from '@apidevtools/swagger-parser';
+import Ajv2020Import from 'ajv/dist/2020.js';
+import addFormatsImport from 'ajv-formats';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+
+const directory = new URL('../../../contracts/proposals/', import.meta.url);
+const record = z.record(z.string(), z.unknown());
+const apiShape = z.object({
+  openapi: z.literal('3.1.0'),
+  paths: z.record(z.string(), record),
+  components: z.object({ schemas: z.record(z.string(), record) }),
+});
+const examplesShape = z.object({
+  handshake: record,
+  rest: z.array(z.object({ schema: z.string(), value: record })),
+  commands: z.array(record),
+  events: z.array(record),
+  facts: z.array(record),
+  delegatedReads: z.array(
+    z.object({
+      condition: z.string(),
+      claims: record,
+      request: record,
+      status: z.number(),
+      response: record,
+    }),
+  ),
+});
+const loadJson = async (name: string): Promise<unknown> =>
+  JSON.parse(await readFile(new URL(name, directory), 'utf8')) as unknown;
+const api = apiShape.parse(
+  await SwaggerParser.validate(fileURLToPath(new URL('community-chat-v1.openapi.json', directory))),
+);
+const examples = examplesShape.parse(await loadJson('community-chat-v1.examples.json'));
+const Ajv2020 = Ajv2020Import.default;
+const addFormats = addFormatsImport.default;
+const compile = (schema: object) => {
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  addFormats(ajv);
+  return ajv.compile(schema);
+};
+const component = (name: string) => {
+  const schema = api.components.schemas[name];
+  if (!schema) throw new Error(`Missing Community chat schema ${name}`);
+  return compile(schema);
+};
+const command = compile(record.parse(await loadJson('community-chat-command-v1.schema.json')));
+const handshake = compile(record.parse(await loadJson('community-chat-handshake-v1.schema.json')));
+const event = compile(record.parse(await loadJson('community-chat-realtime-v1.schema.json')));
+const fact = compile(record.parse(await loadJson('community-chat-fact-v1.schema.json')));
+const example = (kind: 'commands' | 'events' | 'facts', index = 0) => {
+  const value = examples[kind][index];
+  if (!value) throw new Error('Missing synthetic contract example');
+  return structuredClone(value);
+};
+const payload = (value: Record<string, unknown>) => record.parse(value.payload);
+const uuid = '11111111-1111-4111-8111-111111111111';
+
+describe('MB-684 Community contract candidate', () => {
+  it('strict-compiles every REST component, including non-example request and error shapes', () => {
+    for (const name of Object.keys(api.components.schemas))
+      expect(component(name)).toBeTypeOf('function');
+  });
+
+  it('closes the Community handshake and rejects direct bearer/actor injection', () => {
+    expect(handshake(examples.handshake)).toBe(true);
+    expect(handshake({ ...examples.handshake, schemaVersion: 2 })).toBe(false);
+    expect(handshake({ schemaVersion: 1, accessToken: 'synthetic-bearer' })).toBe(false);
+    expect(handshake({ ...examples.handshake, actorId: uuid })).toBe(false);
+    expect(handshake({ ...examples.handshake, credential: '' })).toBe(false);
+  });
+  it('resolves OpenAPI and keeps every new operation planned and authenticated', () => {
+    const operations: string[] = [];
+    for (const [path, item] of Object.entries(api.paths)) {
+      expect(item['x-mentalbridge-status']).toBe('planned');
+      expect(
+        path.startsWith('/api/v1/community/chat') || path.startsWith('/internal/v1/community/'),
+      ).toBe(true);
+      for (const method of ['get', 'post', 'put', 'delete']) {
+        if (!item[method]) continue;
+        const operation = record.parse(item[method]);
+        expect(z.array(record).parse(operation.security)).toHaveLength(1);
+        expect(record.parse(operation.responses)).toHaveProperty('503');
+        expect(record.parse(operation.responses)).toHaveProperty('404');
+        expect(record.parse(operation.responses)).toHaveProperty('429');
+        if (path.includes('/internal/')) {
+          expect(operation['x-mentalbridge-role']).toBe('SERVICE');
+        } else if (path.includes('/admin/')) {
+          expect(operation['x-mentalbridge-role']).toBe('ADMIN');
+        } else {
+          expect(operation['x-mentalbridge-role']).toBe('USER');
+        }
+        operations.push(`${method} ${path}`);
+      }
+    }
+    expect(operations).toHaveLength(27);
+  });
+
+  it('requires concurrency and idempotency at irreversible management boundaries', () => {
+    for (const path of [
+      '/requests/{requestId}/decision',
+      '/invitations/{invitationId}/decision',
+      '/groups/{conversationId}/ownership',
+    ]) {
+      const operation = record.parse(api.paths[`/api/v1/community/chat${path}`]?.post);
+      const parameters = z.array(record).parse(operation.parameters);
+      expect(parameters).toContainEqual(
+        expect.objectContaining({ name: 'If-Match', required: true }),
+      );
+    }
+    for (const path of [
+      '/direct-conversations',
+      '/groups',
+      '/conversations/{conversationId}/messages',
+      '/reports',
+    ]) {
+      const operation = record.parse(api.paths[`/api/v1/community/chat${path}`]?.post);
+      expect(z.array(record).parse(operation.parameters)).toContainEqual(
+        expect.objectContaining({ name: 'Idempotency-Key', required: true }),
+      );
+    }
+  });
+
+  it.each(examples.rest)('accepts the synthetic REST $schema example', ({ schema, value }) => {
+    const validate = component(schema);
+    expect(validate(value), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it('requires explicit privacy choices and preserves the default example', () => {
+    const defaults = record.parse(
+      examples.rest.find((item) => item.schema === 'PrivacyView')?.value.preferences,
+    );
+    expect(defaults).toEqual({
+      directMessagePolicy: 'APPROVAL_REQUIRED',
+      presenceVisible: false,
+      invisible: false,
+      typingVisible: false,
+      readReceiptsVisible: false,
+    });
+    const validate = component('Privacy');
+    expect(validate({ ...defaults, directMessagePolicy: 'ANYONE' })).toBe(true);
+    expect(validate({ ...defaults, directMessagePolicy: 'FRIENDS' })).toBe(false);
+    expect(validate({ ...defaults, presenceVisible: undefined })).toBe(false);
+    expect(validate({ ...defaults, ownerId: uuid })).toBe(false);
+  });
+
+  it('excludes request text, anonymous lookups, client senders and owner escalation', () => {
+    expect(
+      component('StartDirect')({ recipientCommunityProfileId: uuid, content: 'Unsolicited text' }),
+    ).toBe(false);
+    expect(component('StartDirect')({ anonymousPostId: uuid })).toBe(false);
+    expect(
+      component('SendMessage')({ clientMessageId: uuid, content: 'Synthetic', senderId: uuid }),
+    ).toBe(false);
+    expect(component('SetRole')({ role: 'OWNER' })).toBe(false);
+    expect(component('RequestDecision')({ decision: 'AUTO_ACCEPT' })).toBe(false);
+    expect(component('InviteDecision')({ decision: 'JOIN_WITHOUT_ACCEPTANCE' })).toBe(false);
+    expect(component('Peer')({ state: 'UNAVAILABLE', communityProfileId: uuid })).toBe(false);
+  });
+
+  it('bounds plain text, pages, roles and opaque read acknowledgements', () => {
+    const validate = component('SendMessage');
+    expect(validate({ clientMessageId: uuid, content: 'a'.repeat(4000) })).toBe(true);
+    expect(validate({ clientMessageId: uuid, content: '' })).toBe(false);
+    expect(validate({ clientMessageId: uuid, content: ' \n\t ' })).toBe(false);
+    expect(validate({ clientMessageId: uuid, content: 'a'.repeat(4001) })).toBe(false);
+    expect(validate({ clientMessageId: uuid, content: 'x', attachments: [] })).toBe(false);
+    expect(component('ReadCursor')({ lastReadMessageId: uuid })).toBe(true);
+    expect(component('ReadCursor')({ lastReadSequence: '9007199254740993' })).toBe(false);
+    expect(component('ReadCursor')({ lastReadSequence: 9007199254740992 })).toBe(false);
+    expect(component('ReadCursor')({ lastReadMessageId: '9007199254740993' })).toBe(false);
+    expect(component('AcceptedDirect')({ state: 'PENDING', requestId: uuid })).toBe(false);
+    expect(component('MessagePage')({ items: [], nextCursor: null })).toBe(true);
+    expect(component('MessagePage')({ items: [], nextCursor: 'x'.repeat(1025) })).toBe(false);
+  });
+
+  it.each(examples.commands)('accepts client command $commandType', (value) => {
+    expect(command(value), JSON.stringify(command.errors)).toBe(true);
+  });
+
+  it('rejects appointment commands, actor spoofing and fabricated presence duration', () => {
+    const value = example('commands');
+    expect(command({ ...value, commandType: 'message.send' })).toBe(false);
+    expect(command({ ...value, schemaVersion: 2 })).toBe(false);
+    expect(command({ ...value, actorId: uuid })).toBe(false);
+    expect(command({ ...value, payload: { ...payload(value), ownerId: uuid } })).toBe(false);
+    expect(
+      command({
+        ...example('commands', 1),
+        payload: { foreground: true, online: true, presentForSeconds: 1800 },
+      }),
+    ).toBe(false);
+  });
+
+  it.each(examples.events)('accepts authorized private event $eventType', (value) => {
+    expect(event(value), JSON.stringify(event.errors)).toBe(true);
+  });
+
+  it('never exposes exact last-seen, clinical state or routing identity on sockets', () => {
+    const value = example('events', 1);
+    for (const extra of [
+      { lastSeenAt: '2026-10-20T06:00:00Z' },
+      { mood: 'sad' },
+      { accountId: uuid },
+      { recipientRoutingReference: uuid },
+    ]) {
+      expect(event({ ...value, payload: { ...payload(value), ...extra } })).toBe(false);
+    }
+    expect(
+      event({ ...value, payload: { communityProfileId: uuid, state: 'WILLING_TO_TALK' } }),
+    ).toBe(false);
+  });
+
+  it.each(examples.facts)('accepts minimized durable fact', (value) => {
+    expect(fact(value), JSON.stringify(fact.errors)).toBe(true);
+  });
+
+  it('rejects text, health fields and identity metadata at every durable fact boundary', () => {
+    for (const value of examples.facts) {
+      for (const key of [
+        'content',
+        'displayName',
+        'groupName',
+        'email',
+        'assessmentScore',
+        'journal',
+        'providerPayload',
+        'accessToken',
+        'lastSeenAt',
+      ]) {
+        expect(
+          fact({ ...value, payload: { ...payload(value), [key]: 'private synthetic value' } }),
+        ).toBe(false);
+        expect(fact({ ...value, [key]: 'private synthetic value' })).toBe(false);
+      }
+      expect(fact({ ...value, schemaVersion: '2.0' })).toBe(false);
+      expect(fact({ ...value, producer: 'realtime-service' })).toBe(false);
+    }
+  });
+
+  it('distinguishes pointer facts from recipient notifications and rejects malformed variants', () => {
+    const pointer = example('facts');
+    expect(
+      fact({ ...pointer, payload: { ...payload(pointer), recipientRoutingReference: uuid } }),
+    ).toBe(false);
+    const notification = example('facts', 2);
+    expect(
+      fact({
+        ...notification,
+        payload: { ...payload(notification), recipientRoutingReference: undefined },
+      }),
+    ).toBe(false);
+    expect(
+      fact({ ...notification, payload: { ...payload(notification), kind: 'PRESENCE_ONLINE' } }),
+    ).toBe(false);
+    expect(
+      fact({ ...notification, payload: { ...payload(notification), targetId: 'not-a-uuid' } }),
+    ).toBe(false);
+    expect(fact({ ...notification, aggregateVersion: 1 })).toBe(false);
+  });
+
+  it('bounds moderation to explicit reported evidence rather than transcript access', () => {
+    expect(component('Report')({ messageId: uuid, reasonCode: 'PRIVACY_CONCERN' })).toBe(true);
+    expect(component('Report')({ messageId: uuid, reasonCode: 'OTHER', transcript: [] })).toBe(
+      false,
+    );
+    expect(
+      component('ModerateCase')({ action: 'READ_ALL_MESSAGES', reasonCode: 'ABUSE_PREVENTION' }),
+    ).toBe(false);
+    expect(
+      component('CaseEvidence')({
+        caseId: uuid,
+        messageId: uuid,
+        reportedContent: 'Synthetic reported text',
+        capturedAt: '2026-10-20T06:00:00Z',
+        version: '1',
+        surroundingMessages: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('binds service authorization to the exact conversation and visibility subject', () => {
+    const authorize = component('RealtimeAuthorization');
+    expect(authorize({ conversationId: uuid, action: 'SUBSCRIBE' })).toBe(true);
+    expect(authorize({ conversationId: uuid, action: 'MESSAGE_READ' })).toBe(false);
+    expect(
+      authorize({ conversationId: uuid, action: 'PRESENCE', targetCommunityProfileId: uuid }),
+    ).toBe(true);
+    for (const action of ['PRESENCE', 'TYPING', 'READ_RECEIPT']) {
+      expect(authorize({ conversationId: uuid, action })).toBe(false);
+    }
+    expect(
+      authorize({ conversationId: uuid, action: 'SUBSCRIBE', targetCommunityProfileId: uuid }),
+    ).toBe(false);
+    expect(authorize({ conversationId: uuid, action: 'SUBSCRIBE', actorId: uuid })).toBe(false);
+    const notification = {
+      recipientRoutingReference: uuid,
+      kind: 'MESSAGE_RECEIVED',
+      targetId: uuid,
+      conversationId: uuid,
+    };
+    expect(component('NotificationAuthorization')(notification)).toBe(true);
+    for (const missing of Object.keys(notification)) {
+      expect(
+        component('NotificationAuthorization')({ ...notification, [missing]: undefined }),
+      ).toBe(false);
+    }
+  });
+
+  it('provides a delegated content read without widening USER-only history authentication', () => {
+    const projection = record.parse(
+      api.paths['/internal/v1/community/chat/message-projections']?.post,
+    );
+    expect(projection.security).toEqual([{ RealtimeMessageReadDelegation: [] }]);
+    expect(
+      record.parse(api.paths['/api/v1/community/chat/conversations/{conversationId}/messages']?.get)
+        .security,
+    ).toEqual([{ BearerAuth: [] }]);
+    const request = record.parse(projection.requestBody);
+    const input = record.parse(record.parse(request.content)['application/json']);
+    expect(input.schema).toEqual(api.components.schemas.MessageProjectionRequest);
+    const success = record.parse(record.parse(projection.responses)['200']);
+    expect(record.parse(record.parse(success.content)['application/json']).schema).toEqual(
+      api.components.schemas.Message,
+    );
+    expect(record.parse(success.headers)['Cache-Control']).toEqual(
+      expect.objectContaining({ schema: { const: 'no-store' } }),
+    );
+    expect(z.array(record).parse(projection.parameters)).not.toContainEqual(
+      expect.objectContaining({ name: 'Idempotency-Key' }),
+    );
+    const target = { conversationId: uuid, messageId: uuid };
+    for (const selector of ['actorId', 'viewerId', 'recipientId', 'recipientRoutingReference']) {
+      expect(component('MessageProjectionRequest')({ ...target, [selector]: uuid })).toBe(false);
+    }
+    expect(component('MessageProjectionRequest')({ conversationId: uuid })).toBe(false);
+    expect(examples.delegatedReads.map((item) => item.condition)).toEqual(
+      expect.arrayContaining([
+        'ACCEPTED_DIRECT',
+        'CURRENT_GROUP_EPOCH',
+        'WRONG_AUDIENCE',
+        'WRONG_SCOPE',
+        'CONVERSATION_MISMATCH',
+        'MESSAGE_MISMATCH',
+        'MESSAGE_NOT_IN_CONVERSATION',
+        'BLOCKED_VIEWER',
+        'REVOKED_MEMBER',
+        'OUTSIDER',
+        'PRIOR_MEMBERSHIP_EPOCH',
+        'INACTIVE_VIEWER',
+        'OWNER_UNAVAILABLE',
+      ]),
+    );
+  });
+
+  it.each(examples.delegatedReads)(
+    'pins the delegated-read $condition provider obligation and safe response shape',
+    ({ condition, claims, request, status, response }) => {
+      expect(component('MessageProjectionRequest')(request)).toBe(true);
+      expect(component('MessageReadDelegationClaims')(claims)).toBe(
+        !['WRONG_AUDIENCE', 'WRONG_SCOPE'].includes(condition),
+      );
+      if (status === 200) {
+        expect(component('Message')(response)).toBe(true);
+        expect(response.conversationId).toBe(request.conversationId);
+        expect(response.messageId).toBe(request.messageId);
+        expect(claims.conversationId).toBe(request.conversationId);
+        expect(claims.messageId).toBe(request.messageId);
+      } else {
+        const operation = record.parse(
+          api.paths['/internal/v1/community/chat/message-projections']?.post,
+        );
+        expect(record.parse(operation['x-mentalbridge-denials'])[condition]).toEqual({
+          status,
+          code: response.code,
+        });
+        expect(component('Problem')(response)).toBe(true);
+        expect(component('Message')(response)).toBe(false);
+        expect(response.status).toBe(status);
+        for (const key of ['content', 'sender', 'blocked', 'membership', 'sequence']) {
+          expect(component('Problem')({ ...response, [key]: 'private' })).toBe(false);
+        }
+      }
+      for (const key of ['conversationId', 'messageId']) {
+        expect(claims[key] === request[key]).toBe(
+          condition !== (key === 'conversationId' ? 'CONVERSATION_MISMATCH' : 'MESSAGE_MISMATCH'),
+        );
+      }
+    },
+  );
+
+  it('rejects missing or forged service/subject claims even with a valid target', () => {
+    const claims = examples.delegatedReads[0]?.claims;
+    const validate = component('MessageReadDelegationClaims');
+    for (const missing of ['iss', 'aud', 'sub', 'act', 'scope', 'jti', 'iat', 'exp']) {
+      expect(validate({ ...claims, [missing]: undefined })).toBe(false);
+    }
+    expect(validate({ ...claims, iss: 'browser' })).toBe(false);
+    expect(validate({ ...claims, act: { sub: 'content-notification-service' } })).toBe(false);
+    expect(validate({ ...claims, sub: 'not-a-subject-uuid' })).toBe(false);
+  });
+
+  it('excludes global watermarks from both conversation kinds, messages, receipts and read results', () => {
+    for (const { schema, value } of examples.rest.filter((item) =>
+      ['Conversation', 'Message', 'ReadResult'].includes(item.schema),
+    )) {
+      for (const key of ['lastSequence', 'sequence', 'lastReadSequence', 'aggregateVersion']) {
+        expect(component(schema)({ ...value, [key]: '9007199254740993' })).toBe(false);
+      }
+    }
+    const messageEvent = example('events');
+    expect(
+      event({
+        ...messageEvent,
+        payload: {
+          message: { ...record.parse(payload(messageEvent).message), sequence: '100' },
+        },
+      }),
+    ).toBe(false);
+    const receiptEvent = examples.events.find(
+      (item) => item.eventType === 'community.receipt.changed',
+    );
+    if (!receiptEvent) throw new Error('Missing receipt fixture');
+    expect(
+      event({ ...receiptEvent, payload: { ...payload(receiptEvent), lastReadSequence: '100' } }),
+    ).toBe(false);
+    const pointer = example('facts');
+    expect(
+      fact({ ...pointer, payload: { ...payload(pointer), sequence: '9007199254740993' } }),
+    ).toBe(true);
+    expect(fact({ ...pointer, payload: { ...payload(pointer), sequence: 9007199254740992 } })).toBe(
+      false,
+    );
+  });
+
+  it('makes management 204 version refresh explicit without conflating invitation and group revisions', () => {
+    for (const suffix of [
+      '/groups/{conversationId}',
+      '/groups/{conversationId}/members/{communityProfileId}',
+    ]) {
+      const operation = record.parse(api.paths[`/api/v1/community/chat${suffix}`]?.delete);
+      const response = record.parse(record.parse(operation.responses)['204']);
+      expect(response).not.toHaveProperty('content');
+      expect(response).not.toHaveProperty('headers');
+      expect(operation['x-mentalbridge-version-after-204']).toBe(
+        'REREAD_CONVERSATION_IF_AUTHORIZED',
+      );
+    }
+    const read = record.parse(
+      api.paths['/api/v1/community/chat/conversations/{conversationId}']?.get,
+    );
+    expect(read.description).toContain('relationship/group management version');
+    const invitation = record.parse(
+      api.paths['/api/v1/community/chat/invitations/{invitationId}/decision']?.post,
+    );
+    expect(invitation.description).toContain('If-Match is the invitation revision');
+  });
+});

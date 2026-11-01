@@ -13,6 +13,30 @@ import org.junit.jupiter.api.Test;
 class CommunityOpenApiContractTests {
 
 	private static final Set<String> IMPLEMENTED = Set.of(
+			"GET /api/v1/community/comments/{commentId}/reaction", "PUT /api/v1/community/comments/{commentId}/reaction", "DELETE /api/v1/community/comments/{commentId}/reaction",
+			"POST /internal/v1/community/chat/notification-authorizations",
+			"POST /internal/v1/community/chat/presence-projections",
+			"POST /internal/v1/community/chat/session-authorizations", "POST /internal/v1/community/chat/realtime-authorizations",
+			"POST /internal/v1/community/chat/message-projections", "POST /internal/v1/community/chat/replay-projections",
+			"POST /api/v1/community/chat/reports",
+			"POST /api/v1/community/chat/groups",
+			"DELETE /api/v1/community/chat/groups/{conversationId}",
+			"GET /api/v1/community/chat/groups/{conversationId}/members",
+			"POST /api/v1/community/chat/groups/{conversationId}/invitations",
+			"GET /api/v1/community/chat/invitations",
+			"POST /api/v1/community/chat/invitations/{invitationId}/decision",
+			"PUT /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role",
+			"DELETE /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}",
+			"POST /api/v1/community/chat/groups/{conversationId}/ownership",
+			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
+			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
+			"DELETE /api/v1/community/chat/conversations/{conversationId}",
+			"DELETE /api/v1/community/chat/conversations/{conversationId}/messages/{messageId}",
+			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
+			"GET /api/v1/community/chat/privacy", "PUT /api/v1/community/chat/privacy",
+			"POST /api/v1/community/chat/direct-conversations", "GET /api/v1/community/chat/requests",
+			"POST /api/v1/community/chat/requests/{requestId}/decision",
+			"GET /api/v1/community/chat/conversations", "GET /api/v1/community/chat/conversations/{conversationId}",
 			"GET /api/v1/community/feed",
 			"GET /api/v1/community/saved-posts",
 			"POST /api/v1/community/posts",
@@ -45,6 +69,30 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/operations/summary");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"GET /api/v1/community/comments/{commentId}/reaction", "PUT /api/v1/community/comments/{commentId}/reaction", "DELETE /api/v1/community/comments/{commentId}/reaction",
+			"POST /internal/v1/community/chat/notification-authorizations",
+			"POST /internal/v1/community/chat/presence-projections",
+			"POST /internal/v1/community/chat/session-authorizations", "POST /internal/v1/community/chat/realtime-authorizations",
+			"POST /internal/v1/community/chat/message-projections", "POST /internal/v1/community/chat/replay-projections",
+			"POST /api/v1/community/chat/reports",
+			"POST /api/v1/community/chat/groups",
+			"DELETE /api/v1/community/chat/groups/{conversationId}",
+			"GET /api/v1/community/chat/groups/{conversationId}/members",
+			"POST /api/v1/community/chat/groups/{conversationId}/invitations",
+			"GET /api/v1/community/chat/invitations",
+			"POST /api/v1/community/chat/invitations/{invitationId}/decision",
+			"PUT /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}/role",
+			"DELETE /api/v1/community/chat/groups/{conversationId}/members/{communityProfileId}",
+			"POST /api/v1/community/chat/groups/{conversationId}/ownership",
+			"GET /api/v1/community/chat/conversations/{conversationId}/messages",
+			"POST /api/v1/community/chat/conversations/{conversationId}/messages",
+			"DELETE /api/v1/community/chat/conversations/{conversationId}",
+			"DELETE /api/v1/community/chat/conversations/{conversationId}/messages/{messageId}",
+			"PUT /api/v1/community/chat/conversations/{conversationId}/read-cursor",
+			"GET /api/v1/community/chat/privacy", "PUT /api/v1/community/chat/privacy",
+			"POST /api/v1/community/chat/direct-conversations", "GET /api/v1/community/chat/requests",
+			"POST /api/v1/community/chat/requests/{requestId}/decision",
+			"GET /api/v1/community/chat/conversations", "GET /api/v1/community/chat/conversations/{conversationId}",
 			"GET /api/v1/community/feed",
 			"GET /api/v1/community/saved-posts",
 			"POST /api/v1/community/posts",
@@ -94,7 +142,9 @@ class CommunityOpenApiContractTests {
 			var pathStatus = item.getExtensions() == null ? null : item.getExtensions().get("x-mentalbridge-status");
 			assertThat(operationStatus == null ? pathStatus : operationStatus)
 					.isEqualTo(IMPLEMENTED.contains(key) ? "implemented" : "planned");
-			assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("BearerAuth"));
+			assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey(
+                    path.endsWith("notification-authorizations") ? "NotificationServiceAuth"
+                            : path.startsWith("/internal/") ? (path.endsWith("message-projections") ? "RealtimeMessageReadDelegation" : "RealtimeDelegation") : "BearerAuth"));
 		}));
 
 		assertThat(operations).isEqualTo(ALL_OPERATIONS);
@@ -128,7 +178,7 @@ class CommunityOpenApiContractTests {
 	@Test
 	void sensitiveContentWarningContractIsBoundedAndVersioned() {
 		var api = new OpenAPIV3Parser().read(contract().toString());
-		assertThat(api.getInfo().getVersion()).isEqualTo("1.11.0");
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.15.0");
 		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
 				.containsExactly("SENSITIVE_CONTENT");
 		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())

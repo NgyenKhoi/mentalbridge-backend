@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -53,6 +54,12 @@ public class SupportPlanV3Controller {
 	ResponseEntity<SupportPlanV3Service.SupportPlanV3View> current(@AuthenticationPrincipal Jwt jwt) {
 		var plan = plans.current(subject(jwt));
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, '"' + Long.toString(plan.version()) + '"').body(plan);
+	}
+
+	@GetMapping("/support-plans/current/resource-actions")
+	ResponseEntity<SupportPlanV3Service.PlanResourceActionsView> resourceActions(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam LocalDate localDate) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(plans.resourceActions(subject(jwt), localDate));
 	}
 
 	@GetMapping("/support-plans/current-draft")

@@ -27,3 +27,14 @@ eureka:
 
 springdotenv:
   enabled: false
+
+mentalbridge:
+  care:
+    user-notification-relay:
+      enabled: false
+      topic: mentalbridge.care.user-notification.v1
+      batch-size: 100
+      interval: PT5S
+      send-timeout: PT5S
+      retry-base: PT5S
+      retry-maximum: PT5M

@@ -135,7 +135,7 @@ public class NativeActionOccurrenceService {
 		return view(occurrence, now, true);
 	}
 
-	private ActionOccurrenceView view(SupportPlanActivityOccurrenceEntity value, Instant now) {
+	ActionOccurrenceView view(SupportPlanActivityOccurrenceEntity value, Instant now) {
 		return view(value, now, false);
 	}
 

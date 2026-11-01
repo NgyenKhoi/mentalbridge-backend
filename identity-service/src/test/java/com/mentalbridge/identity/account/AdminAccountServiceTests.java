@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -133,13 +134,21 @@ class AdminAccountServiceTests {
 				account.version(), UUID.randomUUID());
 		assertThat(restored.status()).isEqualTo(AccountStatus.ACTIVE);
 		verify(audits).save(any());
-		verify(outbox).save(any());
+		var events = ArgumentCaptor.forClass(OutboxEventEntity.class);
+		verify(outbox, times(2)).save(events.capture());
+		assertThat(events.getAllValues()).extracting(OutboxEventEntity::messageType)
+				.containsExactly("identity.account.state-changed", "identity.user-notification.fact");
+		assertThat(events.getAllValues().get(1).payload())
+				.containsEntry("recipientId", account.id().toString())
+				.containsEntry("actorType", "USER")
+				.containsEntry("factType", "ACCOUNT_RESTORED")
+				.doesNotContainKeys("email", "reasonCode");
 
 		service.changeAccountState(UUID.randomUUID(), account.id(),
 				new AccountStateChangeRequest(AccountStatus.ACTIVE, AccountStateReasonCode.REVIEW_COMPLETED),
 				account.version(), UUID.randomUUID());
 		verify(audits).save(any());
-		verify(outbox).save(any());
+		verify(outbox, times(2)).save(any());
 	}
 
 	@Test

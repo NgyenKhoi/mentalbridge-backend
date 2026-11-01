@@ -37,17 +37,22 @@ class NativeSupportPlanWriter {
 	private final PlanActionRepository actions;
 	private final UserProfileRepository profiles;
 	private final SupportPlanActivityOccurrenceService activities;
+	private final SupportPlanScheduleCommandRepository scheduleCommands;
+	private final SupportPlanScheduleService schedules;
 	private final ObjectMapper mapper;
 
 	NativeSupportPlanWriter(SupportPlanRepository plans, SupportPlanTemplateFamilyRepository families,
 			SupportPlanFocusRepository focuses, PlanActionRepository actions, UserProfileRepository profiles,
-			SupportPlanActivityOccurrenceService activities, ObjectMapper mapper) {
+			SupportPlanActivityOccurrenceService activities, SupportPlanScheduleCommandRepository scheduleCommands,
+			SupportPlanScheduleService schedules, ObjectMapper mapper) {
 		this.plans = plans;
 		this.families = families;
 		this.focuses = focuses;
 		this.actions = actions;
 		this.profiles = profiles;
 		this.activities = activities;
+		this.scheduleCommands = scheduleCommands;
+		this.schedules = schedules;
 		this.mapper = mapper;
 	}
 
@@ -65,13 +70,31 @@ class NativeSupportPlanWriter {
 	UUID propose(UUID userId, String key, String hash, EvaluationView evaluation,
 			CurrentEntitlementResponse entitlement, Proposal proposal, PersonalizationSnapshot preferences,
 			String safetyCode, String safetyCopy, Instant now) {
+		return propose(userId, key, hash, evaluation, entitlement, proposal, preferences, safetyCode, safetyCopy,
+				now, null, null, null);
+	}
+
+	@Transactional
+	UUID proposeReviewed(UUID userId, UUID currentId, long currentVersion, String key, String hash,
+			EvaluationView evaluation, CurrentEntitlementResponse entitlement, Proposal proposal,
+			PersonalizationSnapshot preferences, String safetyCode, String safetyCopy, Instant now, Runnable guard) {
+		return propose(userId, key, hash, evaluation, entitlement, proposal, preferences, safetyCode, safetyCopy,
+				now, currentId, currentVersion, guard);
+	}
+
+	private UUID propose(UUID userId, String key, String hash, EvaluationView evaluation,
+			CurrentEntitlementResponse entitlement, Proposal proposal, PersonalizationSnapshot preferences,
+			String safetyCode, String safetyCopy, Instant now, UUID currentId, Long currentVersion, Runnable guard) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
+		rejectOtherLedgers(userId, key, "REQUEST");
 		var replay = plans.findRequest(userId, key).orElse(null);
 		if (replay != null) {
 			if (!hash.equals(replay.getRequestHash())) throw idempotencyConflict();
 			return required(userId, replay.getPlanId()).plan().id();
 		}
+		var current = currentId == null ? null : lockedCurrent(userId, currentId, currentVersion);
+		if (guard != null) guard.run();
 		var existing = plans.findByUserIdAndStatus(userId, "DRAFT").orElse(null);
 		if (existing != null) {
 			throw conflict("SUPPORT_PLAN_DRAFT_EXISTS", "Review or explicitly discard the existing draft before a new native proposal");
@@ -92,12 +115,17 @@ class NativeSupportPlanWriter {
 		plan.initializeCycle(profiles.findTimezoneByAccountId(userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
 		plan = plans.saveAndFlush(plan);
+		for (int index = 0; index < evaluation.contributingDomains().size(); index++) {
+			String targetDomain = evaluation.contributingDomains().get(index).domain().name();
+			var family = proposal.families().stream().filter(value -> targetDomain.equals(value.targetDomain()))
+					.findFirst().orElseThrow(() -> conflict("SUPPORT_PLAN_POLICY_STALE", "The proposal focus domains no longer match the evaluation"));
+			families.save(new SupportPlanTemplateFamilyEntity(UUID.randomUUID(), plan.id(), index + 1,
+					family.family(), family.targetDomain(), family.focusTitle(), family.focusRationale(), family.focusReasonCode()));
+		}
 		var focusByDomain = new HashMap<String, UUID>();
 		int ordinal = 1;
 		for (int index = 0; index < proposal.families().size(); index++) {
 			var family = proposal.families().get(index);
-			families.save(new SupportPlanTemplateFamilyEntity(UUID.randomUUID(), plan.id(), index + 1,
-					family.family(), family.targetDomain(), family.focusTitle(), family.focusRationale(), family.focusReasonCode()));
 			var focus = focuses.saveAndFlush(new SupportPlanFocusEntity(UUID.randomUUID(), plan.id(), userId,
 					index + 1, family.focusTitle() == null ? "ANXIETY_SYMPTOMS".equals(family.targetDomain())
 							? "Hỗ trợ bình tâm" : "Hỗ trợ tâm trạng" : family.focusTitle(), family.focusRationale(), now));
@@ -158,6 +186,7 @@ class NativeSupportPlanWriter {
 		families.flush();
 		actions.flush();
 		activities.prepareDraft(plan, now);
+		if (current != null) schedules.preserveReviewedDraft(current, plan, now);
 		plans.insertRequest(userId, key, hash, plan.id(), now);
 		return plan.id();
 	}
@@ -171,12 +200,24 @@ class NativeSupportPlanWriter {
 	@Transactional
 	UUID continueCycle(UUID userId, UUID planId, long expectedVersion, String key, String hash,
 			CurrentEntitlementResponse entitlement, Instant now) {
+		return continueCycle(userId, planId, expectedVersion, key, hash, entitlement, null, now, null);
+	}
+
+	@Transactional
+	UUID continueReviewed(UUID userId, UUID planId, long expectedVersion, String key, String hash,
+			Revalidation evidence, Instant now, Runnable guard) {
+		return continueCycle(userId, planId, expectedVersion, key, hash, evidence.entitlement(), evidence, now, guard);
+	}
+
+	private UUID continueCycle(UUID userId, UUID planId, long expectedVersion, String key, String hash,
+			CurrentEntitlementResponse entitlement, Revalidation evidence, Instant now, Runnable guard) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
 		var replay = replay(userId, key, hash, "CYCLE_CONTINUE");
 		if (replay != null) return replay;
 		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(this::notFound);
 		if (plan.version() != expectedVersion) throw versionConflict();
+		if (guard != null) guard.run();
 		var cycle = SupportPlanCycle.view(plan, now);
 		if (cycle == null || !"REVIEW_DUE".equals(cycle.state())) {
 			throw conflict("SUPPORT_PLAN_CYCLE_NOT_REVIEW_DUE", "Only a review-due proposal cycle can continue");
@@ -191,7 +232,8 @@ class NativeSupportPlanWriter {
 		plans.insertCommand(userId, key, "CYCLE_CONTINUE", hash, plan.id(), expectedVersion, plan.version(),
 				plan.status(), plan.updatedAt(), plan.evaluationPolicyVersion(), entitlement.packageCode().name(),
 				entitlement.source().name(), entitlement.policyVersion(), entitlement.version(),
-				entitlement.decidedAt(), resource.sourceEligibilityPolicyVersion(), resource.sourceVerifiedAt(), now,
+				entitlement.decidedAt(), evidence == null ? resource.sourceEligibilityPolicyVersion() : evidence.resourcePolicyVersion(),
+				evidence == null ? resource.sourceVerifiedAt() : evidence.resourcesResolvedAt(), now,
 				null, null, null, null, null);
 		return plan.id();
 	}
@@ -207,7 +249,7 @@ class NativeSupportPlanWriter {
 		if (plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED")).isPresent()) {
 			throw conflict("SUPPORT_PLAN_CURRENT_EXISTS", "Another current SupportPlan requires an explicit reassessment-backed replacement");
 		}
-		activateActions(plan, now);
+		activateActions(plan, now, false);
 		recordCommand(plan, expectedVersion, key, hash, "ACTIVATE", evidence, null, null, null, null, correlationId, now);
 		return plan.id();
 	}
@@ -215,6 +257,21 @@ class NativeSupportPlanWriter {
 	@Transactional
 	UUID replace(UUID userId, UUID draftId, long expectedVersion, UUID currentId, long currentVersion,
 			UUID summaryId, String outcome, String key, String hash, Revalidation evidence, UUID correlationId, Instant now) {
+		return replace(userId, draftId, expectedVersion, currentId, currentVersion, summaryId, outcome, key, hash,
+				evidence, correlationId, now, null, false);
+	}
+
+	@Transactional
+	UUID replaceReviewed(UUID userId, UUID draftId, long expectedVersion, UUID currentId, long currentVersion,
+			UUID summaryId, String outcome, String key, String hash, Revalidation evidence, UUID correlationId,
+			Instant now, Runnable guard) {
+		return replace(userId, draftId, expectedVersion, currentId, currentVersion, summaryId, outcome, key, hash,
+				evidence, correlationId, now, java.util.Objects.requireNonNull(guard), true);
+	}
+
+	private UUID replace(UUID userId, UUID draftId, long expectedVersion, UUID currentId, long currentVersion,
+			UUID summaryId, String outcome, String key, String hash, Revalidation evidence, UUID correlationId,
+			Instant now, Runnable guard, boolean reviewed) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
 		var replay = replay(userId, key, hash, "REPLACE");
@@ -225,23 +282,73 @@ class NativeSupportPlanWriter {
 		if (current.id().equals(draft.id()) || !List.of("ACTIVE", "PAUSED").contains(current.status())) {
 			throw conflict("SUPPORT_PLAN_TRANSITION_INVALID", "Replacement requires the current active or paused plan");
 		}
+		if (guard != null) guard.run();
 		current.supersede(now);
 		activities.end(current.id(), "PLAN_REPLACED", now);
 		plans.saveAndFlush(current);
-		activateActions(draft, now);
+		activateActions(draft, now, reviewed);
 		recordCommand(draft, expectedVersion, key, hash, "REPLACE", evidence, currentId, currentVersion,
 				summaryId, outcome, correlationId, now);
 		return draft.id();
 	}
 
 	UUID replay(UUID userId, String key, String hash, String type) {
+		rejectOtherLedgers(userId, key, "COMMAND");
 		var existing = plans.findCommand(userId, key).orElse(null);
 		if (existing == null) return null;
 		if (!hash.equals(existing.getRequestHash()) || !type.equals(existing.getCommandType())) throw idempotencyConflict();
 		return required(userId, existing.getPlanId()).plan().id();
 	}
 
-	private void activateActions(SupportPlanEntity plan, Instant now) {
+	@Transactional(readOnly = true)
+	ReviewedReplay reviewedReplay(UUID userId, String key, String hash) {
+		var request = plans.findRequest(userId, key).orElse(null);
+		var command = plans.findCommand(userId, key).orElse(null);
+		var schedule = scheduleCommands.findByUserIdAndIdempotencyKey(userId, key).orElse(null);
+		int matches = (request == null ? 0 : 1) + (command == null ? 0 : 1) + (schedule == null ? 0 : 1);
+		if (matches == 0) return null;
+		if (matches != 1) throw idempotencyConflict();
+		if (request != null) {
+			if (!hash.equals(request.getRequestHash())) throw idempotencyConflict();
+			return new ReviewedReplay("DRAFT_PREPARED", request.getPlanId());
+		}
+		if (schedule != null) {
+			if (!hash.equals(schedule.requestHash())) throw idempotencyConflict();
+			return new ReviewedReplay("SCHEDULE_UPDATED", schedule.supportPlanId());
+		}
+		if (!hash.equals(command.getRequestHash())) throw idempotencyConflict();
+		String result = switch (command.getCommandType()) {
+			case "CYCLE_CONTINUE" -> "CYCLE_CONTINUED";
+			case "REPLACE" -> "REPLACED";
+			default -> throw idempotencyConflict();
+		};
+		return new ReviewedReplay(result, command.getPlanId());
+	}
+
+	@Transactional
+	UUID keepReviewed(UUID userId, UUID planId, long expectedVersion, Runnable guard) {
+		lockOwner(userId);
+		var plan = lockedCurrent(userId, planId, expectedVersion);
+		guard.run();
+		return plan.id();
+	}
+
+	private SupportPlanEntity lockedCurrent(UUID userId, UUID planId, long expectedVersion) {
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(this::notFound);
+		if (plan.version() != expectedVersion) throw versionConflict();
+		if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) {
+			throw conflict("SUPPORT_PLAN_NOT_REVIEWABLE", "Review requires the current active or paused plan");
+		}
+		return plan;
+	}
+
+	private void rejectOtherLedgers(UUID userId, String key, String ledger) {
+		if ((!"REQUEST".equals(ledger) && plans.findRequest(userId, key).isPresent())
+				|| (!"COMMAND".equals(ledger) && plans.findCommand(userId, key).isPresent())
+				|| scheduleCommands.findByUserIdAndIdempotencyKey(userId, key).isPresent()) throw idempotencyConflict();
+	}
+
+	private void activateActions(SupportPlanEntity plan, Instant now, boolean reviewed) {
 		var values = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId());
 		if (values.size() != plan.actionCount() || values.stream().anyMatch(action -> !"DRAFT".equals(action.status()))) {
 			throw conflict("SUPPORT_PLAN_POLICY_STALE", "Native draft actions no longer match the admitted proposal");
@@ -250,7 +357,8 @@ class NativeSupportPlanWriter {
 		plans.saveAndFlush(plan);
 		values.forEach(action -> action.activate(now));
 		actions.flush();
-		activities.activateUserDraft(plan, now);
+		if (reviewed) activities.activateReviewedDraft(plan, now);
+		else activities.activateUserDraft(plan, now);
 	}
 
 	private void recordCommand(SupportPlanEntity plan, long expectedVersion, String key, String hash,
@@ -298,4 +406,5 @@ class NativeSupportPlanWriter {
 	private ApiException idempotencyConflict() { return conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different plan command"); }
 
 	record Snapshot(SupportPlanEntity plan, List<SupportPlanTemplateFamilyEntity> families, List<PlanActionEntity> actions) { }
+	record ReviewedReplay(String result, UUID planId) { }
 }

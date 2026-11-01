@@ -7,10 +7,6 @@ import type {
 
 const DAY_MS = 86_400_000;
 
-function dayNumber(localDate: string): number {
-  return Math.floor(Date.parse(`${localDate}T00:00:00Z`) / DAY_MS);
-}
-
 function daysBetween(earlier: string, later: string): number {
   return Math.floor(
     (Date.parse(`${later}T00:00:00Z`) - Date.parse(`${earlier}T00:00:00Z`)) / DAY_MS,
@@ -151,30 +147,6 @@ export function planDailyResources(
   }
 
   return selected.slice(0, 4);
-}
-
-export function planBingoResources(
-  resources: readonly PlannerResource[],
-  selectedResourceIds: ReadonlySet<string>,
-  weekStart: string,
-): readonly string[] {
-  const byId = (a: PlannerResource, b: PlannerResource) => a.id.localeCompare(b.id);
-  const repeatable = resources.filter((resource) => resource.repeatability === 'REPEATABLE');
-  const preferred = rotate(
-    repeatable.filter((resource) => selectedResourceIds.has(resource.id)).sort(byId),
-    dayNumber(weekStart),
-  );
-  const otherPractice = rotate(
-    repeatable.filter((resource) => !selectedResourceIds.has(resource.id)).sort(byId),
-    dayNumber(weekStart),
-  );
-  const fallbackLearning = rotate(
-    resources.filter((resource) => resource.repeatability === 'ONE_TIME').sort(byId),
-    dayNumber(weekStart),
-  );
-  return [...preferred, ...otherPractice, ...fallbackLearning]
-    .slice(0, 9)
-    .map((resource) => resource.id);
 }
 
 export function mondayOf(localDate: string): string {

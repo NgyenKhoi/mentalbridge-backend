@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-15
 - Decision ID: `MB-SCOPE-V2-001`
+- Provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`), staging-only PayOS test-catalogue collect and dormant MoMo; production/payout remain separately gated.
 - Amended by: [ADR 0022 — Current product blueprint amendments](0022-current-product-blueprint-amendments.md) (`MB-SCOPE-V2-002`)
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md),
   [ADR 0009](0009-care-screening-safety-and-support-boundaries.md),
@@ -151,9 +152,11 @@ and an upgrade. There is no downgrade or user-initiated refund API. Period
 expiry, payment reconciliation, and administrative revocation are lifecycle
 behavior, not alternative purchase operations.
 
-Published v2 plan versions and real payments use VND. MoMo is the only real
-payment and payout provider. One evidence-backed `COMPLETED` appointment
-consumes exactly one credit.
+Published v2 plan versions and real payments use VND.
+[ADR 0047](0047-payos-active-gateway-momo-dormant.md) prospectively replaces the
+sole-MoMo rule with PayOS staging-only pay-in and dormant MoMo; production and
+real payout remain separately gated. One evidence-backed `COMPLETED`
+appointment consumes exactly one credit.
 
 ADR 0022 changes new target plan-period quantities to `FREE=0`, `PLUS=4`, and
 `PREMIUM=10`, with no rollover and concurrent active-reservation caps
@@ -166,8 +169,10 @@ created for `SESSION_ENDED`, cancellation, either no-show, or dispute.
 
 Real-money payment and payout remain disabled until the approved VND price
 table, the VND `creditAllocation` for each paid plan version, and the required
-MoMo credentials are configured and verified. No runtime FX conversion may be
-used to fill this gap.
+provider credentials are configured and verified. ADR 0047 expressly permits
+the unchanged 5,000/10,000 VND test catalogue and full-price/zero-offset upgrade
+policy through PayOS on staging only; synthetic earnings remain non-redeemable.
+No runtime FX conversion may be used to fill a price gap.
 
 ### Safety activation and directory language
 

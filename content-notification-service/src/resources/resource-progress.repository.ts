@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 
 import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { DatabaseService } from '../database/database.service.js';
@@ -64,19 +64,57 @@ export class ResourceProgressRepository {
     update: ResourceProgressUpdate,
   ): Promise<ResourceProgressItem | null> {
     return this.db.withTransaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `${ownerId}:RESOURCE_PROGRESS:${resourceId}:${localDate}`,
+      ]);
+      if (update.resourceVersion !== undefined) {
+        const completed = (
+          await client.query<{ resource_version: string | number }>(
+            `SELECT resource_version FROM resource_daily_progress
+           WHERE owner_id = $1 AND resource_id = $2 AND local_date = $3::date AND status = 'COMPLETED'`,
+            [ownerId, resourceId, localDate],
+          )
+        ).rows.at(0);
+        if (completed && String(completed.resource_version) !== update.resourceVersion) {
+          throw new ConflictException({
+            type: 'https://mentalbridge.io/errors/RESOURCE_VERSION_UNAVAILABLE',
+            title: 'Completed progress belongs to another resource version',
+            detail:
+              'This resource already has completed progress for a different version on this local date.',
+            status: 409,
+            code: 'RESOURCE_VERSION_UNAVAILABLE',
+          });
+        }
+      }
       const eligible = await client.query<ProgressResourceRow>(
-        `SELECT id, version, repeatability, resource_kind
-         FROM resource
-         WHERE id = $1 AND status = 'PUBLISHED'
-           AND reviewed_by IS NOT NULL
-           AND reviewed_at IS NOT NULL
+        update.resourceVersion === undefined
+          ? `SELECT id, version, repeatability, resource_kind
+         FROM resource WHERE id = $1 AND status = 'PUBLISHED'
+           AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL
            AND source_review_status = 'REVIEWED'
            AND (effective_at IS NULL OR effective_at <= now())
-           AND (expires_at IS NULL OR expires_at > now())`,
-        [resourceId],
+           AND (expires_at IS NULL OR expires_at > now())`
+          : `SELECT publication.resource_id AS id, publication.content_version AS version,
+             publication.snapshot->>'repeatability' AS repeatability,
+             publication.snapshot->>'resource_kind' AS resource_kind
+           FROM resource_publication_snapshot publication
+           LEFT JOIN resource_publication_withdrawal withdrawal ON withdrawal.resource_id = publication.resource_id AND withdrawal.content_version = publication.content_version
+           WHERE publication.resource_id = $1 AND publication.content_version = $2::numeric
+             AND publication.snapshot->>'catalogue_visibility' = 'LISTED' AND withdrawal.resource_id IS NULL`,
+        update.resourceVersion === undefined ? [resourceId] : [resourceId, update.resourceVersion],
       );
       const resource = eligible.rows.at(0);
-      if (!resource) return null;
+      if (!resource) {
+        if (update.resourceVersion !== undefined) {
+          throw new ConflictException({
+            type: 'https://mentalbridge.io/errors/RESOURCE_VERSION_UNAVAILABLE',
+            title: 'Resource version is unavailable',
+            status: 409,
+            code: 'RESOURCE_VERSION_UNAVAILABLE',
+          });
+        }
+        return null;
+      }
       const assignedPlan = (
         await client.query<AssignedPlanRow>(
           `SELECT assignment.support_plan_id
@@ -137,7 +175,7 @@ export class ResourceProgressRepository {
           ownerId,
           resourceId,
           localDate,
-          Number(resource.version),
+          String(resource.version),
           update.status,
           [...update.completedActionIds],
         ],
@@ -153,26 +191,25 @@ export class ResourceProgressRepository {
             [
               ownerId,
               resourceId,
-              Number(resource.version),
+              String(result.rows[0]?.resource_version ?? resource.version),
               assignedPlan?.support_plan_id ?? null,
               localDate,
             ],
           );
-        } else if (update.practiceSessionId && assignedPlan) {
+        } else if (update.practiceSessionId) {
           await client.query(
             `INSERT INTO resource_practice_session
                (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
                 started_at, duration_seconds)
-             VALUES ($1, $2, $3, $4, $5, $6::date, $7::timestamptz, $8)
+             VALUES ($1, $2, $3, $4, $5, $6::date, CASE WHEN $7::integer IS NOT NULL THEN now() - $7::integer * interval '1 second' ELSE NULL END, $7::integer)
              ON CONFLICT (id) DO NOTHING`,
             [
               update.practiceSessionId,
               ownerId,
               resourceId,
-              Number(resource.version),
-              assignedPlan.support_plan_id,
+              String(resource.version),
+              assignedPlan?.support_plan_id ?? null,
               localDate,
-              update.practiceStartedAt ?? null,
               update.practiceDurationSeconds ?? null,
             ],
           );

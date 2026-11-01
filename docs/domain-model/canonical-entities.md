@@ -16,6 +16,11 @@ versioned configuration), and nullable occurrence provenance on ACTIVE
 one immutable `platform_report_artifact`; the unique schedule/UTC occurrence
 pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 
+MB-673 adds ACTIVE `deletion_request`, `deletion_owner_fact`, and
+`retention_execution_record` for fail-closed Identity coordination and truthful
+owner-scoped execution evidence. These rows do not authorize cross-owner data
+access or fabricate external owner completion.
+
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `role` | identity-service | PostgreSQL | ACTIVE | Physical one-to-many to `account` through `account.role_code`. |
@@ -25,6 +30,9 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `idempotency_record` | identity-service | PostgreSQL | ACTIVE | Optional physical reference to `account`; owns encrypted replay result metadata. |
 | `outbox_event` | identity-service | PostgreSQL | ACTIVE | Logical aggregate ID; no cross-service foreign key. |
 | `security_audit_event` | identity-service | PostgreSQL | ACTIVE | Optional physical subject/actor references to `account`. |
+| `deletion_request` | identity-service | PostgreSQL | ACTIVE | Identity-coordinated workflow for one account reference and privacy-minimized subject tombstone; no cascading account FK or cross-owner storage access. |
+| `deletion_owner_fact` | identity-service | PostgreSQL | ACTIVE | Physical child of `deletion_request`; one minimized state per required owner, with completion accepted only from an authoritative producer. |
+| `retention_execution_record` | identity-service | PostgreSQL | ACTIVE | Immutable owner-scoped retention attempt evidence, including failed, stale, and unavailable outcomes. |
 | `account_role` | identity-service | PostgreSQL | HISTORICAL | Removed by migration 002 after `account.role_code` became the single authoritative role. |
 
 ## Care — PostgreSQL
@@ -67,7 +75,7 @@ pair prevents duplicate generation. Manual and scheduled jobs use one engine.
 | `support_plan_command` | care-service | PostgreSQL | ACTIVE | Physical owner/plan reference; idempotent activation outcome with exact revalidation evidence. |
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Additive shared physical child of a plan; references either legacy v2 slot/resource provenance or one native v3 action and snapshots recurrence, local time, and IANA timezone without backfilling old rows. |
-| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. |
+| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. Native RESOURCE completion also accepts exact Content practice/completion references; the same owner fact revision can satisfy only one occurrence. |
 | `reassessment_self_report` | care-service | PostgreSQL | ACTIVE | Versioned owner-authored current-period experience with bounded optional context; deletion clears response content and retains only a minimal tombstone/provenance. |
 | `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, SupportPlan engagement, explicit self-reported experience, and separately labelled supporting activity reflection; never a combined score. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
@@ -124,6 +132,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `community_block` | community-service | PostgreSQL | ACTIVE | Physical profile-to-profile visibility rule applied symmetrically to feed and detail reads. |
 | `community_comment` | community-service | PostgreSQL | ACTIVE | Physical post, optional same-post root parent, and author profile references implement chronological comments and one-level replies with owner-scoped command replay. |
 | `community_comment_revision` | community-service | PostgreSQL | ACTIVE | Physical comment and acting-profile references retain immutable create/edit/delete snapshots for moderation-compatible audit. |
+| `community_comment_reaction` | community-service | PostgreSQL | ACTIVE | One supportive reaction per profile/comment; local foreign keys and first-action outbox identity prevent concurrent duplicates and repeat notifications. |
 | Reactions, bookmarks, reports, moderation cases/actions, and their command replay | community-service | PostgreSQL | ACTIVE | Community Liquibase changes `0009` and `0010` own reports/moderation, one supportive reaction per profile/post, and private bookmarks. |
 
 ## Content/Notification — PostgreSQL
@@ -137,11 +146,18 @@ settle or release credit. Historical chat policy remains unchanged.
 | `resource_eligibility_declaration` | content-notification-service | PostgreSQL | ACTIVE | Physical child of publication with domain/role/instrument eligibility. |
 | `resource_eligibility_withdrawal` | content-notification-service | PostgreSQL | ACTIVE | Physical one-to-one append-only withdrawal of a publication. |
 | `resource_eligibility_command_record` | content-notification-service | PostgreSQL | ACTIVE | Physical replay reference to publication; actor ID is external. |
+| `resource_daily_progress` / `resource_practice_session` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped exact-version Content facts; server completion/start instants determine their local date for Care reconciliation and action-bound Bingo. Learning completion is a separate fact and is not reconciliation evidence. |
+| `resource_weekly_bingo` | content-notification-service | PostgreSQL | ACTIVE | Board unique per external owner, local week and external Care SupportPlan; separate sync time selects the latest board without changing its ETag on an identical sync. |
+| `resource_weekly_bingo_item` | content-notification-service | PostgreSQL | ACTIVE | Physical ordered child of a board and exact publication snapshot; nullable external Care action/version identifies legacy rows, retirement preserves history and capacity, and self-confirmation remains independent of computed Content evidence. |
 | `resource_reward_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped optional visibility only; authoritative XP is a deterministic read model over exact progress, practice, and publication evidence. |
 | `achievement_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped private-gallery visibility only; achievement status is a deterministic read model over minimized source-owner facts. |
 | `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One role-scoped atomic aggregate per external Identity owner covering channels, allowed content groups, quiet hours/timezone, and email cadence/opt-ins; specialist scope cannot enable user wellbeing categories. |
-| `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. |
+| `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. Content owns durable delivery state and deduplicates producer facts by recipient, source, and versioned logical identity; MB-565 adds bounded assessment-result, SupportGuide, and USER account-status categories plus exact internal SupportGuide actions. |
+| `community_notification_job` | content-notification-service | PostgreSQL | ACTIVE | Durable minimized Community notice work/receipts with recipient/source/action uniqueness, leased worker claims, quiet-hour/retry scheduling and an optional physical notification reference for atomic unread reaction grouping. |
 | `appointment_email_reminder` | content-notification-service | PostgreSQL | ACTIVE | One delivery-state row per external recipient, Consultation appointment, and appointment version; no email address or message body is persisted. |
+| `push_device_registration` | content-notification-service | PostgreSQL | ACTIVE | Encrypted Expo registration with one active owner per installation/token, natural PUT idempotence, permission, rotation, revocation, and invalidation lifecycle. |
+| `push_delivery_attempt` | content-notification-service | PostgreSQL | ACTIVE | Deduplicated bounded provider-submission and receipt evidence per authoritative notification/device; neither ticket acceptance nor a successful receipt claims physical display. |
+| `push_device_command_rate_limit` | content-notification-service | PostgreSQL | ACTIVE | Owner-keyed fixed-window protection for authenticated registration/revocation commands; stores no device token or notification content. |
 | `appointment_reminder_checkpoint` | content-notification-service | PostgreSQL | ACTIVE | Latest consumed version/status per external Consultation appointment for stale and duplicate event rejection. |
 | Area directory | content-notification-service | PostgreSQL | PROPOSED | ADR 0017 requires provenance-bearing area entries, but no current migration defines the entity. |
 | `hotline` | content-notification-service | PostgreSQL | HISTORICAL | Created by migration 1 and explicitly dropped by migration 2; it must not appear as active safety data. |
@@ -163,6 +179,11 @@ settle or release credit. Historical chat policy remains unchanged.
 | AI Companion Command | journal-ai-service | MongoDB `ai_companion_commands` | ACTIVE | Owner/key-scoped immutable replay snapshot with a logical conversation reference. |
 | AI Companion Daily Quota | journal-ai-service | MongoDB `ai_companion_quota_ledgers` | ACTIVE | Owner/local-day ledger derived from server timezone and current Consultation entitlement. |
 | AI Companion Rate Limit | journal-ai-service | MongoDB `ai_companion_rate_ledgers` | ACTIVE | Short-lived owner/window counter with TTL; contains no content. |
+| AI Companion Voice Session | journal-ai-service | MongoDB `ai_voice_sessions` | ACTIVE | MB-756 migration 013; keyed owner replay identity, frozen admission policy/entitlement provenance, fixed authorized quota day/deadline, fenced authority and content-free usage settlement. Metadata is swept 30 days from creation with held-slot reference scrubbing; media/session/worker/turn APIs remain separate scope. |
+| AI Companion Voice Daily Usage | journal-ai-service | MongoDB `ai_voice_daily_usage` | ACTIVE | Unique owner/Vietnam day; independent used/reserved voice sessions and seconds plus bounded HMAC pending attempts lasting ten seconds. Unique owner/pending-key claims prevent owner-call fanout across midnight; expiry fences reject stale admission/cleanup. Failed cleanup preserves attempt counts; accepted replay is exempt. Metadata TTL never releases capacity. |
+| AI Companion Voice Capacity | journal-ai-service | MongoDB `ai_voice_capacity` | ACTIVE | One bounded two-slot singleton enforces global two and owner one across processes. First teardown proof must be newer than current fenced progress. No TTL; uncertain teardown retains a slot, then creation-bound privacy cleanup scrubs owner/session references into anonymous quarantine pending provider-verified isolation. |
+| AI Companion Voice Media | journal-ai-service | MongoDB `ai_voice_media` | ACTIVE | MB-757 migration 014; opaque AI room/dispatch mapping, recoverable side-effect phase and worker/control/publication fences. No content or participant-token replay; original session creation bounds retention, and deletion never frees uncertain capacity. |
+| AI Companion Voice Media Command | journal-ai-service | MongoDB `ai_voice_media_commands` | ACTIVE | Keyed owner/operation/command binding to one Voice Session for connection/end. No raw key or media credential; expiry is capped by the original session metadata deadline. |
 
 ## Realtime — MongoDB
 
@@ -182,3 +203,31 @@ shared platform database. These capabilities remain owner-local projections or
 future owner-specific persistence and are `PROPOSED`, not active centralized
 tables. A future migration must identify the actual owner before adding them to
 the active model.
+
+## MB-685 active Community chat entities
+
+| Entity | Owner | Storage | Status | Invariant |
+| --- | --- | --- | --- | --- |
+| `community_chat_privacy` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_conversation` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_request` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_command` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+| `community_chat_outbox` | community-service | PostgreSQL | ACTIVE | Owner migration 0017; exact fields in the Community data dictionary; no cross-owner foreign keys. |
+
+## MB-685 message and read authorities
+
+| Entity | Owner | Storage | Status | Invariant |
+| --- | --- | --- | --- | --- |
+| `community_chat_message` | community-service | PostgreSQL | ACTIVE | Migrations 0018/0019/0022; encrypted active text or sender-retracted content-free tombstone, unique sender/conversation/client identity, immutable GROUP author membership epoch and private sequence; 90-day content expiry and no retry resurrection. |
+| `community_chat_read_state` | community-service | PostgreSQL | ACTIVE | Migration 0018; one private monotonic read cursor per current reader/conversation; no shared-receipt opt-in implied. |
+
+### MB-687 private group extension — ACTIVE
+
+- `community_chat_conversation`: DIRECT ordered pair or GROUP private encrypted name/cap; GROUP ACTIVE/ARCHIVED.
+- `community_chat_membership`: current role and immutable join message floor; leave/rejoin uses a new epoch. Deferred commit constraints protect one OWNER for active groups and configured cap.
+- `community_chat_invitation`: exact inviter epoch/invitee, seven-day decision lifecycle, accepted epoch link and permanent decline suppression.
+- `community_chat_command`: additive group-create/invite retry identities; no raw name or invitation text.
+
+All physical relationships remain inside Community PostgreSQL. Migration 0019 is runtime truth; logical SQL is never executed.
+
+- MB-687 `community_chat_report_case` — ACTIVE: exact actor/message OPEN intake, encrypted isolated message/details snapshot, safe reason/priority and bounded unresolved-review deadline. No ADMIN transcript access or resolution workflow is activated. Owner migration 0020; REPORT_MESSAGE command identities reuse the Community command table.

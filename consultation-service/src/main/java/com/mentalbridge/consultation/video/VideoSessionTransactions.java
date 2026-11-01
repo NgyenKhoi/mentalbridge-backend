@@ -25,10 +25,11 @@ class VideoSessionTransactions {
 	private final VideoProvider provider;
 	private final AppointmentStatusOutbox outbox;
 	private final VideoConfirmationRepository confirmations;
+	private final DemoVideoPolicy demoVideo;
 
 	VideoSessionTransactions(VideoAppointmentRepository appointments, VideoRoomRepository rooms,
 			EntityManager entities, Clock clock, LiveKitProperties properties, VideoProvider provider,
-			AppointmentStatusOutbox outbox, VideoConfirmationRepository confirmations) {
+			AppointmentStatusOutbox outbox, VideoConfirmationRepository confirmations, DemoVideoPolicy demoVideo) {
 		this.appointments = appointments;
 		this.rooms = rooms;
 		this.entities = entities;
@@ -37,6 +38,7 @@ class VideoSessionTransactions {
 		this.provider = provider;
 		this.outbox = outbox;
 		this.confirmations = confirmations;
+		this.demoVideo = demoVideo;
 	}
 
 	@Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
@@ -50,6 +52,7 @@ class VideoSessionTransactions {
 		if ("COMPLETED".equals(appointment.status)) phase = "COMPLETED";
 		else if ("SESSION_ENDED".equals(appointment.status) || !now.isBefore(appointment.endsAt)) phase = "ENDED";
 		else if (active && (!properties.isEnabled() || !properties.configured())) phase = "UNAVAILABLE";
+		else if (active && demoVideo.allowsCredit(appointment.userId, appointment.creditId)) phase = "ACTIVE";
 		else if (active && now.isBefore(appointment.startsAt.minusSeconds(300))) phase = "TOO_EARLY";
 		else if (active && now.isBefore(appointment.startsAt)) phase = "WAITING";
 		else if (active) phase = "ACTIVE";
@@ -172,7 +175,12 @@ class VideoSessionTransactions {
 			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "VIDEO_DISABLED", "Video is currently unavailable");
 		}
 		var now = clock.instant();
-		if (!eligible(appointment) || now.isBefore(appointment.startsAt) || !now.isBefore(appointment.endsAt)) throw joinDenied();
+		if (!eligible(appointment) || !now.isBefore(appointment.endsAt)
+				|| (now.isBefore(appointment.startsAt) && !allowsImmediateDemo(appointment))) throw joinDenied();
+	}
+
+	boolean allowsImmediateDemo(VideoAppointment appointment) {
+		return demoVideo.allowsCredit(appointment.userId, appointment.creditId);
 	}
 
 	static ApiException joinDenied() {

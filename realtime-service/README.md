@@ -1,8 +1,21 @@
 # Realtime Service
 
-NestJS 11 service on Node.js 24 that owns MentalBridge conversations, encrypted messages, WebSocket sessions and ephemeral presence.
+NestJS 11 service on Node.js 24 that owns appointment conversations/encrypted messages and authenticated WebSocket delivery. Community peer messages remain exclusively in Community PostgreSQL.
 
 ## Current scope
+
+MB-689 implements the opt-in `/community` namespace under the accepted
+[Community chat ADR](../docs/adr/0042-community-chat-contract.md). It fetches
+current authorized owner projections without copying content to MongoDB, Kafka
+or Redis. The appointment baseline below remains independent; Community setup,
+protocol and recovery are documented in [COMMUNITY.md](COMMUNITY.md). MB-690
+adds opt-in foreground presence with Community-owned viewer authorization,
+Redis multi-device leases and cross-replica delivery. Its lease is distinct
+from both appointment presence below and the Community socket routing lease.
+MB-749 adds the Identity-authenticated native Community ticket exchange at
+`POST /api/v1/community/socket-credentials`; the existing BFF exchange remains
+unchanged. See [ADR 0043](../docs/adr/0043-native-community-credential-exchange.md)
+and the native handoff in [COMMUNITY.md](COMMUNITY.md#native-mobile-exchange-mb-749).
 
 - Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes
@@ -28,6 +41,18 @@ Message acknowledgements use `liveDelivery: not_applicable` because this baselin
 MongoDB is durable truth. Redis contains only expiring socket routing and presence metadata. Message bodies are encrypted with AES-256-GCM and are never written to logs, metrics, Redis or cross-service events.
 
 ## Commands
+
+The disposable MongoDB integration fixture sets
+`GLIBC_TUNABLES=glibc.pthread.rseq=1` so glibc retains rseq registration and MongoDB
+uses its supported per-thread allocator path. The GitHub Ubuntu 24.04 image
+[`20261018.339.1`](https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261018.339)
+moved to kernel `7.0.0-1017-azure`; MongoDB documents a
+[TCMalloc incompatibility on kernels 6.19–7.0.13](https://www.mongodb.com/docs/manual/release-notes/8.0/).
+See [MongoDB's allocator explanation](https://www.mongodb.com/docs/manual/administration/tcmalloc-performance/)
+and the [official image issue](https://github.com/docker-library/mongo/issues/765).
+This setting affects only the disposable test container. It does not bypass
+MongoDB's startup guard, change production configuration, remove readiness
+checks or weaken the real MongoDB/Redis/Socket.IO integration assertions.
 
 ```powershell
 npm ci

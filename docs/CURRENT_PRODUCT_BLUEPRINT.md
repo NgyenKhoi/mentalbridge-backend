@@ -4,6 +4,46 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+AI Voice Companion has an accepted prospective contract in
+[ADR 0046 / MB-AI-VOICE-COMPANION-001](adr/0046-ai-voice-companion-contract.md)
+and [Companion Voice policy v1](policies/companion-voice-policy-v1.md), frozen by
+MB-755. FREE remains text-only; PLUS receives two voice sessions of up to five
+minutes within ten daily minutes, and PREMIUM three sessions of up to ten
+minutes within thirty daily minutes. Voice uses independent quota, dual Care
+consent and isolated LiveKit agent rooms with no saved audio/transcript.
+Journal/AI owns voice authority; Consultation remains entitlement owner.
+[MB-756](requirements-traceability/stories/mb-756.md) delivers admission/quota and
+current owner authorization; [MB-757](requirements-traceability/stories/mb-757.md)
+adds disabled-by-default public sessions, isolated rooms, explicit dispatch and
+worker lifecycle control. [MB-758](requirements-traceability/stories/mb-758.md)
+adds guarded internal turns with bounded current-call RAM and no Text-quota
+consumption. [MB-759](requirements-traceability/stories/mb-759.md) adds the separate,
+disabled Node worker with final Vietnamese STT, Journal-only generation and guarded
+TTS/interruption. Hosted deployment, speech validation and live end-to-end evidence
+remain subsequent delivery gates. Existing text
+and specialist consultation behavior is unchanged. The
+[MB-760 mock pilot](requirements-traceability/stories/mb-760.md) supplies speech
+measurement tooling and explicit missing coverage; its live benchmark remains
+`BLOCKED_ALLOWANCE`, with no measured devices/readers/dialects or approved voice.
+These checkpoints do not establish live-provider readiness.
+
+Community peer messaging has a separate **accepted target** in
+[ADR 0042 / MB-COMMUNITY-CHAT-001](adr/0042-community-chat-contract.md) and
+[Community chat policy v1](policies/community-chat-policy-v1.md). MB-684 supplies
+privacy/permission/API/event contracts only. Approval and merge accept the target;
+MB-685 delivers the opt-in direct provider in Community PostgreSQL, current
+Identity eligibility and minimized Kafka facts. MB-687 adds private invite-only
+groups, membership lifecycle/epochs and isolated exact-message report intake.
+MB-689 adds signed current-viewer projections, isolated `/community` delivery,
+ordered private delivery cursors and self read-state synchronization. MB-690
+adds privacy-aware foreground presence with multi-device Redis leases and
+current owner projections. MB-691 adds exact-target chat notification checks,
+durable inbox delivery, unread reaction grouping, quiet-hour deferral and backend
+comment reactions. Generic PUSH payloads are contracts only; MB-675/679 own real
+device/provider delivery. MB-686/688 and later stories supply clients,
+typing/shared receipts, case
+administration and epic acceptance.
+
 For product/business behavior, use this order:
 
 1. the latest accepted product-scope ADR or explicit amendment that covers the rule;
@@ -142,6 +182,8 @@ PLUS / PREMIUM
           user-confirmed SupportPlan change
 ```
 
+MB-672 adds Care's owner-only `GET /api/v1/home-next-step`, embedding the unchanged guided journey with an ordered current-plan focus and bounded completed-plan context for web/native Home; see [ADR 0045](adr/0045-home-next-step-read.md) (`MB-HOME-NEXT-STEP-001`).
+
 ## 4. Support Guide versus SupportPlan
 
 The current distinction is mandatory:
@@ -201,6 +243,13 @@ Reassessment never changes a SupportPlan automatically. After fresh Care revalid
 
 Historical MB-386 v1 snapshots remain a compatibility baseline. MB-559 implements the explicit owner-authored self-report and canonical v2 composition without rewriting those records.
 
+[Adaptive SupportPlan review policy v1](policies/support-plan-review-v1.md),
+accepted 2026-10-21 for MB-645, governs early/partial and due review, separate
+sourced evidence, repeat thresholds, bounded practical options and explicit
+confirmation. The existing 14-local-day/pause cycle and adjacent 14-day UTC
+comparison periods remain distinct; review never expires or changes a plan
+automatically. Its runtime and consumer delivery remain subject to MB-645 gates.
+
 ## 6. Specialist and consultation boundary
 
 Specialist discovery exposes only approved/active specialists and selectable `IN_APP_CHAT` / `IN_APP_VIDEO` slots. Physical PracticeLocation, phone consultation, and external meeting links are not current scope.
@@ -253,14 +302,16 @@ Commercial direction remains:
 - `PLUS -> PREMIUM` upgrade;
 - no user downgrade API in V1;
 - no user refund API in V1;
-- VND + MoMo for real payment/payout;
+- VND + PayOS for staging pay-in under [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md); MoMo remains dormant and payout/production enablement remain separately gated;
 - specialist earning = 70% of the consumed credit's snapshotted `creditAllocation`, not 70% of package price.
 
 ADR 0032 fixes planned production design values at 1,390,000 VND for `PLUS`
 and 3,490,000 VND for `PREMIUM`, with 300,000 VND allocated per consumed credit
 and a 210,000 VND specialist earning. These are not runtime prices. The current
-integration-test catalogue is only 0/5,000/10,000 VND, and real payment/payout
-remains disabled pending explicit production approval and credentials.
+integration-test catalogue is only 0/5,000/10,000 VND. ADR 0047 expressly permits
+this unchanged test catalogue through real PayOS collect on staging only
+(`https://staging.mentalbridge.online`); production payment and real payout
+remain disabled pending their separate approval and credentials.
 
 The owner-approved MB-622 sandbox amendment to ADR 0032 makes new test upgrades
 charge the full 10,000 VND PREMIUM price with zero offset under the explicit
@@ -294,6 +345,7 @@ Detailed national-contact amendment: [ADR 0024](adr/0024-global-anonymous-crisis
 
 - **Care**: screening, safety triggers, SupportEvaluation, Support Guide, SupportPlan and its focuses/actions/schedules/occurrences, reassessment composition, eligibility revalidation, PlanChangeRequest decision, user-confirmed plan mutation.
 - **Content/Notification**: reviewed resource catalogue, exact-version resource eligibility and progress, owner-scoped resource bookmarks, persisted weekly resource Bingo with separate self-confirmed and verified evidence, safety-directory content/provenance, reminder preferences/scheduling/delivery attempts.
+- MB-670 ([ADR 0043](adr/0043-plan-scoped-resource-progress.md)): Care supplies current plan RESOURCE actions; Content syncs plan-scoped Bingo and exact-version facts; Care alone reconciles those facts into occurrence completion.
 - **Consultation/Billing**: specialist profile/approval/availability/discovery, service-plan entitlement, consultation-credit ledger, appointments, evidence-backed completion, SessionSummary/AgreedNextSteps persistence, earnings and payout.
 - **Realtime**: in-app chat transport/delivery under Consultation appointment eligibility.
 - **Journal/AI**: private Journal, AI analyses/conversations, model execution and minimized projections; no Care/financial authority.

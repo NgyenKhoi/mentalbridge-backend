@@ -1,0 +1,206 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Community comment reactions",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/community/comments/{commentId}/reaction": {
+      "x-mentalbridge-status": "implemented",
+      "x-mentalbridge-owner": "community-service",
+      "parameters": [
+        {
+          "name": "commentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getCommentReaction",
+        "summary": "Read my reaction and count for a currently visible comment",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current visible comment reaction state; no-store.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentReaction"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putCommentReaction",
+        "summary": "Replace my supportive reaction to a currently visible comment",
+        "description": "Naturally idempotent per actor/comment; no Idempotency-Key. First logical non-self reaction publishes one minimized outbox fact. Replacement/removal/re-add does not repeat notification. Does not change comment editing version.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reaction"
+                ],
+                "properties": {
+                  "reaction": {
+                    "type": "string",
+                    "enum": [
+                      "SUPPORT",
+                      "RELATE",
+                      "THANK_YOU"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current visible comment reaction state; no-store.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentReaction"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCommentReaction",
+        "summary": "Remove my comment reaction idempotently",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed or already absent; target must still be visible."
+          },
+          "400": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "./community-service-v1.yaml#/components/responses/Problem"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "CommentReaction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "commentId",
+          "reaction",
+          "reactionCount"
+        ],
+        "properties": {
+          "commentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reaction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "SUPPORT",
+              "RELATE",
+              "THANK_YOU"
+            ]
+          },
+          "reactionCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

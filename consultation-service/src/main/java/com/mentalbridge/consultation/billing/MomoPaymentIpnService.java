@@ -22,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.mentalbridge.consultation.credits.ServiceCreditService;
 import com.mentalbridge.consultation.shared.ApiException;
 
 @Service
@@ -36,15 +35,15 @@ public class MomoPaymentIpnService {
 	private final JdbcClient jdbc;
 	private final ObjectMapper json;
 	private final Clock clock;
-	private final ServiceCreditService credits;
+	private final PaymentSettlementService settlement;
 
 	public MomoPaymentIpnService(BillingProperties properties, JdbcClient jdbc, ObjectMapper json, Clock clock,
-			ServiceCreditService credits) {
+			PaymentSettlementService settlement) {
 		this.properties = properties;
 		this.jdbc = jdbc;
 		this.json = json;
 		this.clock = clock;
-		this.credits = credits;
+		this.settlement = settlement;
 	}
 
 	@Transactional
@@ -61,31 +60,26 @@ public class MomoPaymentIpnService {
 		}
 		var dedup = sha256(CONTRACT_VERSION + "|" + ipn.partnerCode() + "|" + ipn.orderId() + "|"
 				+ ipn.requestId() + "|" + ipn.transId() + "|" + ipn.resultCode() + "|" + ipn.responseTime());
-		if (jdbc.sql("select count(*) from momo_payment_ipn where deduplication_key=:key")
-				.param("key", dedup).query(Long.class).single() > 0) return;
+        var now = clock.instant();
+        var receiptId = UUID.randomUUID();
+        if (!insertReceipt(receiptId, null, dedup, ipn, payload, now, "RECEIVED", null)) return;
 
-		var payment = jdbc.sql("""
-				select pt.id, pt.subscription_id, pt.target_plan_version_id, pt.momo_request_id,
-				 pt.amount_minor, pt.status, pt.purpose, pt.expires_at, pt.momo_response_time_epoch_ms,
-				 s.user_id from payment_transaction pt join user_subscription s on s.id=pt.subscription_id
-				where pt.momo_order_id=:orderId for update
-				""").param("orderId", ipn.orderId()).query((row, ignored) -> new Payment(
-				row.getObject("id", UUID.class), row.getObject("subscription_id", UUID.class),
-				row.getObject("target_plan_version_id", UUID.class), row.getString("momo_request_id"),
-				row.getLong("amount_minor"), row.getString("status"), row.getString("purpose"),
-				row.getTimestamp("expires_at").toInstant(), nullableLong(row, "momo_response_time_epoch_ms"),
-				row.getObject("user_id", UUID.class))).optional().orElse(null);
+		if (ipn.transId() > 0) jdbc.sql("select pg_advisory_xact_lock(hashtextextended(:key,0))")
+                .param("key", "momo-reference:" + ipn.transId()).query(String.class).single();
+        var payment = settlement.lockMomo(ipn.orderId());
+        now = clock.instant();
 		var transactionUsable = ipn.resultCode() != 0 || (ipn.transId() > 0 && jdbc.sql("""
 				select count(*) from payment_transaction where momo_trans_id=:transId and id<>:paymentId
 				""").param("transId", ipn.transId()).param("paymentId", payment == null ? UUID.randomUUID() : payment.id())
 				.query(Long.class).single() == 0);
 		var matched = payment != null && properties.getMomoPartnerCode().equals(ipn.partnerCode())
 				&& payment.requestId().equals(ipn.requestId()) && payment.amount() == ipn.amount() && transactionUsable;
-		var now = clock.instant();
-		var receiptId = UUID.randomUUID();
-		if (!insertReceipt(receiptId, matched ? payment.id() : null, dedup, ipn, payload, now,
-				matched ? "RECEIVED" : "VERIFIED_UNMATCHED", matched ? null : mismatch(payment, ipn))) return;
-		if (!matched) return;
+        if (!matched) {
+            finishReceipt(receiptId, "VERIFIED_UNMATCHED", mismatch(payment, ipn), now);
+            return;
+        }
+        jdbc.sql("update momo_payment_ipn set payment_id=:paymentId where id=:id")
+                .param("paymentId", payment.id()).param("id", receiptId).update();
 		if (!"PENDING".equals(payment.status())) {
 			finishReceipt(receiptId, "PROCESSED", "PAYMENT_ALREADY_FINAL", now);
 			return;
@@ -108,89 +102,17 @@ public class MomoPaymentIpnService {
 		finishReceipt(receiptId, "PROCESSED", payment.expiresAt().isAfter(now) ? "MOMO_PAYMENT_FAILED" : "PAYMENT_EXPIRED", now);
 	}
 
-	private void succeed(Payment payment, Ipn ipn, Instant now) {
-		jdbc.sql("""
-				update payment_transaction set status='SUCCEEDED', momo_trans_id=:transId,
-				 momo_result_code=:resultCode, momo_pay_type=:payType, momo_response_time_epoch_ms=:responseTime,
-				 provider_occurred_at=:occurredAt, paid_at=:now, updated_at=:now, version=version+1 where id=:id
-				""").param("transId", ipn.transId() > 0 ? ipn.transId() : null).param("resultCode", ipn.resultCode())
-				.param("payType", ipn.payType()).param("responseTime", ipn.responseTime())
-				.param("occurredAt", databaseInstant(ipn.providerTime())).param("now", databaseInstant(now))
-				.param("id", payment.id()).update();
-		if ("UPGRADE".equals(payment.purpose())) {
-			jdbc.sql("""
-					update service_credit c set state='REVOKED', updated_at=:now, version=c.version+1
-					from subscription_upgrade_credit uc join subscription_upgrade u on u.id=uc.upgrade_id
-					where u.payment_id=:paymentId and uc.credit_id=c.id and c.state='UPGRADE_HELD'
-					""").param("now", databaseInstant(now)).param("paymentId", payment.id()).update();
-			jdbc.sql("""
-					update subscription_upgrade set status='APPLIED', applied_at=:now, updated_at=:now, version=version+1
-					where payment_id=:paymentId and status='PENDING_PAYMENT'
-					""").param("now", databaseInstant(now)).param("paymentId", payment.id()).update();
-		}
-		var plan = plan(payment.targetPlanVersionId());
-		var periodEnd = OffsetDateTime.ofInstant(now, ZoneOffset.UTC).plusMonths(plan.billingMonths()).toInstant();
-		jdbc.sql("""
-				update user_subscription set plan_version_id=:planVersionId, status='ACTIVE',
-				 current_period_start=:now, current_period_end=:periodEnd, ended_at=null,
-				 updated_at=:now, version=version+1 where id=:id
-				""").param("planVersionId", plan.id()).param("now", databaseInstant(now))
-				.param("periodEnd", databaseInstant(periodEnd)).param("id", payment.subscriptionId()).update();
-		jdbc.sql("""
-				insert into subscription_status_history (id, subscription_id, from_status, to_status, reason_code, changed_at)
-				values (:id, :subscriptionId, :fromStatus, 'ACTIVE', :reason, :now)
-				""").param("id", UUID.randomUUID()).param("subscriptionId", payment.subscriptionId())
-				.param("fromStatus", "PURCHASE".equals(payment.purpose()) ? "PENDING_PAYMENT" : "ACTIVE")
-				.param("reason", "PURCHASE".equals(payment.purpose()) ? "PURCHASE_PAYMENT_CONFIRMED" : "UPGRADE_PAYMENT_CONFIRMED")
-				.param("now", databaseInstant(now)).update();
-		jdbc.sql("""
-				insert into current_service_entitlement (account_id, package_code, source, source_reference,
-				 established_by, effective_from, effective_until, policy_version, created_at, updated_at, version)
-				values (:userId, :planCode, 'PAID', :source, null, :now, :periodEnd, 'service-entitlement-v1', :now, :now, 0)
-				on conflict (account_id) do update set package_code=excluded.package_code, source='PAID',
-				 source_reference=excluded.source_reference, established_by=null, effective_from=excluded.effective_from,
-				 effective_until=excluded.effective_until, policy_version=excluded.policy_version,
-				 updated_at=excluded.updated_at, version=current_service_entitlement.version+1
-				""").param("userId", payment.userId()).param("planCode", plan.planCode())
-				.param("source", payment.subscriptionId().toString()).param("now", databaseInstant(now))
-				.param("periodEnd", databaseInstant(periodEnd)).update();
-		credits.current(payment.userId());
-	}
+    private void succeed(PaymentSettlementService.Payment payment, Ipn ipn, Instant now) {
+        updateProviderFacts(payment.id(), ipn, now);
+        jdbc.sql("update payment_transaction set momo_trans_id=:transId where id=:id")
+                .param("transId", ipn.transId()).param("id", payment.id()).update();
+        settlement.succeed(payment, now);
+    }
 
-	private void fail(Payment payment, Ipn ipn, Instant now, String reason) {
-		jdbc.sql("""
-				update payment_transaction set status='FAILED', momo_result_code=:resultCode, momo_pay_type=:payType,
-				 momo_response_time_epoch_ms=:responseTime, provider_occurred_at=:occurredAt,
-				 failed_at=:now, updated_at=:now, version=version+1 where id=:id
-				""").param("resultCode", ipn.resultCode()).param("payType", ipn.payType())
-				.param("responseTime", ipn.responseTime()).param("occurredAt", databaseInstant(ipn.providerTime()))
-				.param("now", databaseInstant(now)).param("id", payment.id()).update();
-		if ("UPGRADE".equals(payment.purpose())) {
-			jdbc.sql("""
-					update service_credit c set state=case when p.period_end > :now then 'AVAILABLE' else 'EXPIRED' end,
-					 updated_at=:now, version=c.version+1
-					from service_credit_period p, subscription_upgrade_credit uc, subscription_upgrade u
-					where c.period_id=p.id and u.id=uc.upgrade_id and uc.credit_id=c.id
-					 and u.payment_id=:paymentId and c.state='UPGRADE_HELD'
-					""").param("now", databaseInstant(now)).param("paymentId", payment.id()).update();
-			jdbc.sql("""
-					update subscription_upgrade set status=:status, updated_at=:now, version=version+1
-					where payment_id=:paymentId and status='PENDING_PAYMENT'
-					""").param("status", "PAYMENT_EXPIRED".equals(reason) ? "EXPIRED" : "FAILED")
-					.param("now", databaseInstant(now)).param("paymentId", payment.id()).update();
-		}
-		else {
-			jdbc.sql("""
-					update user_subscription set status='ENDED', ended_at=:now, updated_at=:now, version=version+1
-					where id=:id and status='PENDING_PAYMENT'
-					""").param("now", databaseInstant(now)).param("id", payment.subscriptionId()).update();
-			jdbc.sql("""
-					insert into subscription_status_history (id, subscription_id, from_status, to_status, reason_code, changed_at)
-					values (:id, :subscriptionId, 'PENDING_PAYMENT', 'ENDED', :reason, :now)
-					""").param("id", UUID.randomUUID()).param("subscriptionId", payment.subscriptionId())
-					.param("reason", reason).param("now", databaseInstant(now)).update();
-		}
-	}
+    private void fail(PaymentSettlementService.Payment payment, Ipn ipn, Instant now, String reason) {
+        updateProviderFacts(payment.id(), ipn, now);
+        settlement.fail(payment, now, "PAYMENT_EXPIRED".equals(reason) ? "EXPIRED" : "PROVIDER_FAILED");
+    }
 
 	private void updateProviderFacts(UUID paymentId, Ipn ipn, Instant now) {
 		jdbc.sql("""
@@ -285,7 +207,7 @@ public class MomoPaymentIpnService {
 		}
 	}
 
-	private String mismatch(Payment payment, Ipn ipn) {
+	private String mismatch(PaymentSettlementService.Payment payment, Ipn ipn) {
 		if (!properties.getMomoPartnerCode().equals(ipn.partnerCode())) return "PARTNER_MISMATCH";
 		if (payment == null) return "ORDER_NOT_FOUND";
 		if (!payment.requestId().equals(ipn.requestId())) return "REQUEST_MISMATCH";
@@ -293,13 +215,6 @@ public class MomoPaymentIpnService {
 		return ipn.transId() <= 0 ? "TRANS_ID_INVALID" : "TRANS_ID_CONFLICT";
 	}
 
-	private Plan plan(UUID id) {
-		return jdbc.sql("""
-				select id, plan_code, billing_period_months from subscription_plan_version
-				where id=:id and currency='VND'
-				""").param("id", id).query((row, ignored) -> new Plan(row.getObject("id", UUID.class),
-				row.getString("plan_code"), row.getInt("billing_period_months"))).single();
-	}
 
 	private void copyOptional(JsonNode source, ObjectNode target, String field) {
 		var value = source.get(field);
@@ -319,11 +234,6 @@ public class MomoPaymentIpnService {
 		var result = value.longValue();
 		if (result < min || result > max) throw malformed();
 		return result;
-	}
-
-	private Long nullableLong(java.sql.ResultSet row, String column) throws java.sql.SQLException {
-		var value = row.getObject(column);
-		return value == null ? null : ((Number) value).longValue();
 	}
 
 	private boolean configured() {
@@ -348,7 +258,4 @@ public class MomoPaymentIpnService {
 	private record Ipn(String partnerCode, String orderId, String requestId, long amount, String orderInfo,
 			String orderType, long transId, int resultCode, String message, String payType, long responseTime,
 			String extraData, String signature, Instant providerTime) { }
-	private record Payment(UUID id, UUID subscriptionId, UUID targetPlanVersionId, String requestId, long amount,
-			String status, String purpose, Instant expiresAt, Long responseTime, UUID userId) { }
-	private record Plan(UUID id, String planCode, int billingMonths) { }
 }

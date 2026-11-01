@@ -1,0 +1,159 @@
+diff --git a/docs/database/postgresql/content-notification-service.md b/docs/database/postgresql/content-notification-service.md
+index 3121b7ee..eb42e93f 100644
+--- a/docs/database/postgresql/content-notification-service.md
++++ b/docs/database/postgresql/content-notification-service.md
+@@ -177,7 +177,7 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
+ | `notifications_enabled` | Top-level user switch for optional notification delivery. |
+ | `channel_in_app_enabled` | Whether optional in-app delivery is enabled. |
+ | `channel_email_enabled` | Whether email delivery is enabled; email delivery still requires an applicable behavior and opt-in. |
+-| `channel_push_enabled` | Persisted future-mobile preference only; it does not imply a registered device or active provider. |
++| `channel_push_enabled` | Owner opt-in for native push; delivery additionally requires an active permitted device and enabled provider worker. |
+ | `group_journal_reminder_enabled` | Independent journal/reminder content-group choice. |
+ | `group_emotion_check_in_enabled` | Independent emotion check-in content-group choice. |
+ | `group_streak_milestone_enabled` | Independent streak/milestone content-group choice. |
+@@ -265,6 +265,64 @@ commit together. Exact chat authorization is read remotely before that transacti
+ | `expires_at` | Source occurrence plus 90 days; expired work is not delivered and bounded cleanup removes receipts. Old replay remains expired. |
+ | `created_at` | Immutable UTC intake instant, separate from authoritative source occurrence and inbox insertion time. |
+
++### `content.push_device_registration`
++
++Content-owned native installation lifecycle. Provider tokens are sensitive
++routing credentials: REST never returns them, logs never contain them, and only
++the delivery adapter decrypts them immediately before a provider request.
++
++| Field | Purpose |
++| --- | --- |
++| `id` | Immutable internal registration UUID used by delivery attempts. |
++| `owner_id` | External Identity account UUID taken from the verified JWT; it is not client input. |
++| `installation_id` | App-generated installation UUID; at most one active/disabled owner assignment exists across accounts, and it is not a hardware identifier. |
++| `platform` / `provider` | Closed routing facts (`ANDROID`/`IOS`, initial `EXPO`) selecting the approved adapter. |
++| `provider_token_ciphertext` / `provider_token_iv` / `provider_token_auth_tag` | AES-256-GCM encrypted provider credential and authentication material; plaintext is never persisted. |
++| `provider_token_hash` | One-way SHA-256 lookup used to atomically rotate/reassign one active provider token without decrypting rows. |
++| `permission_status` | Last explicit native permission result (`GRANTED` or `DENIED`). |
++| `status` | Content-owned lifecycle: `ACTIVE`, `DISABLED`, `REVOKED`, or provider-invalidated `INVALID`. |
++| `app_version` | Optional bounded diagnostic application version; no device model or advertising identity is stored. |
++| `last_registered_at` | UTC instant of the latest material registration change. An identical PUT leaves it and `version` unchanged so enqueue eligibility cannot move past an unmaterialized notification. |
++| `delivery_eligible_from_at` | UTC start of the current permitted registration interval. Token/app-version rotation keeps it stable; reactivation after revocation, invalidation, or denied permission resets it to prevent stale backfill. |
++| `revoked_at` / `invalidated_at` | Mutually lifecycle-bound UTC evidence of owner revocation or provider invalidation. |
++| `created_at` / `updated_at` | UTC insertion and latest persisted business-change instants. |
++| `version` | Monotonic mutation counter for token rotation, permission, reassignment, and lifecycle changes. |
++
++### `content.push_delivery_attempt`
++
++Auditable and deduplicated provider-submission work. It references authoritative
++inbox truth and stores no rendered body, token, health content, or raw provider
++response.
++
++| Field | Purpose |
++| --- | --- |
++| `id` | Immutable internal work UUID used to fence one claimed attempt. |
++| `notification_id` | Physical reference to the authoritative minimized Content notification. |
++| `device_registration_id` | Physical reference to the owner installation selected for this delivery. |
++| `state` | `PENDING`/`PROCESSING`/`FAILED` work states, terminal `SUPPRESSED`/`UNKNOWN`, provider-ticket `ACCEPTED`, or receipt `CONFIRMED`; neither provider state claims physical device display. |
++| `attempt_count` | Provider submissions, database constrained to at most three. |
++| `available_at` | Earliest UTC retry/claim instant; quiet hours remain an additional live eligibility check. |
++| `claimed_at` / `last_attempt_at` | UTC worker-claim and most recent provider-submission evidence. |
++| `provider_ticket_id` | Bounded Expo acknowledgement identifier; it is not delivery proof. |
++| `failure_code` | Coarse safe classification such as preference disabled, invalid device, transient outage, or unknown outcome. |
++| `accepted_at` | UTC provider-ticket acceptance instant retained through later `CONFIRMED` or terminal receipt outcomes. |
++| `receipt_attempt_count` | Bounded Expo receipt lookups, database constrained to at most three. |
++| `receipt_checked_at` | UTC instant of the latest receipt lookup; null until the first lookup. |
++| `created_at` / `updated_at` | UTC insertion and latest state-transition instants. |
++
++### `content.push_device_command_rate_limit`
++
++Bounded fixed-window command protection for the authenticated registration and
++revocation API. It stores no provider token, installation identifier, or client
++content and is not notification delivery truth.
++
++| Field | Purpose |
++| --- | --- |
++| `owner_id` | External Identity account UUID used as the per-owner rate-limit key. |
++| `window_started_at` | UTC start of the current fixed command window. |
++| `request_count` | Atomic number of accepted commands in that window. |
++| `updated_at` | UTC instant of the latest accepted command or window reset. |
++
+ ### `content.appointment_email_reminder`
+
+ Content/Notification-owned intent and privacy-safe delivery evidence for one
+diff --git a/docs/domain-model/relational/content-notification-service.sql b/docs/domain-model/relational/content-notification-service.sql
+index d5a653a4..4efff205 100644
+--- a/docs/domain-model/relational/content-notification-service.sql
++++ b/docs/domain-model/relational/content-notification-service.sql
+@@ -355,6 +355,59 @@ CREATE TABLE content.appointment_email_reminder (
+     UNIQUE (recipient_id, appointment_id, appointment_version)
+ );
+
++CREATE TABLE content.push_device_registration (
++    id uuid PRIMARY KEY,
++    owner_id uuid NOT NULL, -- external -> identity.account.id
++    installation_id uuid NOT NULL,
++    platform varchar(16) NOT NULL,
++    provider varchar(16) NOT NULL,
++    provider_token_ciphertext text NOT NULL,
++    provider_token_iv varchar(32) NOT NULL,
++    provider_token_auth_tag varchar(32) NOT NULL,
++    provider_token_hash char(64) NOT NULL,
++    permission_status varchar(16) NOT NULL,
++    status varchar(16) NOT NULL,
++    app_version varchar(32),
++    last_registered_at timestamptz NOT NULL,
++    delivery_eligible_from_at timestamptz NOT NULL,
++    revoked_at timestamptz,
++    invalidated_at timestamptz,
++    created_at timestamptz NOT NULL,
++    updated_at timestamptz NOT NULL,
++    version bigint NOT NULL,
++    UNIQUE (owner_id, installation_id)
++);
++
++CREATE UNIQUE INDEX uq_push_device_active_installation
++    ON content.push_device_registration (installation_id)
++    WHERE status IN ('ACTIVE', 'DISABLED');
++
++CREATE TABLE content.push_delivery_attempt (
++    id uuid PRIMARY KEY,
++    notification_id uuid NOT NULL REFERENCES content.notification(id),
++    device_registration_id uuid NOT NULL REFERENCES content.push_device_registration(id),
++    state varchar(20) NOT NULL,
++    attempt_count smallint NOT NULL,
++    available_at timestamptz NOT NULL,
++    claimed_at timestamptz,
++    provider_ticket_id varchar(160),
++    failure_code varchar(48),
++    last_attempt_at timestamptz,
++    accepted_at timestamptz,
++    receipt_attempt_count smallint NOT NULL,
++    receipt_checked_at timestamptz,
++    created_at timestamptz NOT NULL,
++    updated_at timestamptz NOT NULL,
++    UNIQUE (notification_id, device_registration_id)
++);
++
++CREATE TABLE content.push_device_command_rate_limit (
++    owner_id uuid PRIMARY KEY, -- external -> identity.account.id
++    window_started_at timestamptz NOT NULL,
++    request_count smallint NOT NULL,
++    updated_at timestamptz NOT NULL
++);
++
+ CREATE TABLE content.appointment_reminder_checkpoint (
+     appointment_id uuid PRIMARY KEY, -- external -> consultation.appointment.id
+     latest_version bigint NOT NULL,
+diff --git a/docs/requirements-traceability/stories/mb-684.md b/docs/requirements-traceability/stories/mb-684.md
+index 049eb410..87490fe0 100644
+--- a/docs/requirements-traceability/stories/mb-684.md
++++ b/docs/requirements-traceability/stories/mb-684.md
+@@ -29,8 +29,9 @@ see [MB-690 evidence](../../story-mb-690-community-presence-evidence.md). Its ru
+ does not include typing/shared receipts or UI. MB-691 completes the backend
+ Community notice consumer, exact-target chat authorization, comment reactions,
+ unread reaction grouping and quiet-hour deferral; see
+-[MB-691 evidence](../../story-mb-691-community-notification-evidence.md). Its PUSH payload
+-contract does not activate device registration/provider delivery (MB-675/679),
+-and frontend route integration remains in its own lane. The Realtime/MongoDB ownership below
++[MB-691 evidence](../../story-mb-691-community-notification-evidence.md). MB-675 activates
++the independent backend device/provider boundary for eligible authoritative
++notifications; MB-679 retains mobile permission and safe-link integration, and
++frontend route integration remains in its own lane. The Realtime/MongoDB ownership below
+ remains the unchanged appointment baseline. See the
+ [MB-685 evidence](../../story-mb-685-direct-chat-evidence.md).

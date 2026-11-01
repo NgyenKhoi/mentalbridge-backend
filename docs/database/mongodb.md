@@ -184,6 +184,212 @@ subdocument under strict validation. It also extends message provenance with
 ignores legacy message-body context; resource IDs are revalidated against the
 owner's recent Content progress before any minimized context is assembled.
 
+## AI Companion Voice admission and usage collections
+
+MB-757 adds migration [`014_companion_voice_media.cjs`](../../journal-ai-service/migrations/014_companion_voice_media.cjs)
+alongside the unchanged migration 013. `ai_voice_media` and
+`ai_voice_media_commands` are Journal-owned metadata; neither contains a
+participant token, provider/user credential, audio, transcript or model text.
+
+### `ai_voice_media`
+
+One document per `voiceSessionId` (`_id`), logically referencing the existing
+Voice Session. `attemptId` binds the MB-756 dispatch fence. `dispatchId` is the
+server's logical UUID; `providerDispatchId` is the separate opaque LiveKit ID.
+`roomName`, `participantIdentity` and `agentIdentity` are AI-only opaque
+references, never Identity IDs, appointment IDs, names or emails. The approved
+agent identity is bound to the attempt. `hardStopAt` copies the immutable
+admission deadline; room/token operations cannot extend it.
+
+`phase` is one of NEW, CREATING, ROOM_READY, DISPATCHING, READY, STOPPING and
+STOPPED. A compare-and-set transition admits one creator/dispatcher across
+processes. CREATING/DISPATCHING is written before calling LiveKit. An unknown
+provider result is inspected through the same references; absence alone does
+not prove that a delayed dispatch cannot arrive. Uncertain cleanup retains its
+capacity slot. STOPPED records confirmed provider cleanup before ledger
+settlement, allowing settlement retry without another release.
+
+`claimedAt` records the first trusted worker claim. `workerSequence` and keyed
+`workerFingerprint` fence/replay the latest worker signal. `backendSequence`
+is allocated independently and monotonically for backend control envelopes.
+`lastControl` contains only the closed lease/stop response; it never contains a
+recognized turn or reply. A repeated callback cannot return an old CONTINUE
+after current authorization observes withdrawal. `expectedTurnId` and
+`expectedReplyId` are the latest opaque server-issued publication proof; MB-758
+will register them after guarded generation. Worker-supplied IDs alone do not
+commit first-publication quota.
+
+`createdAt`/`expiresAt` retain the original Voice Session creation and its
+creation-plus-30-day deadline. `updatedAt` never extends retention. Unique
+indexes protect room and logical dispatch identity; phase/expiry supports
+reconciliation. The TTL and explicit sweep delete this metadata only; they
+cannot free the MB-756 capacity singleton or clear anonymous quarantine.
+
+If a process fails between the ledger dispatch fence and metadata initialization,
+ENDING plus a transactionally verified absence of any `ai_voice_media` row is a
+`NO_MEDIA_INITIALIZATION` proof. Every creator must persist that row and freshly
+authorize before any provider effect. This internal proof cannot release an
+initialized media attempt and is never accepted from a worker/client callback.
+
+### `ai_voice_media_commands`
+
+The keyed `_id` binds authenticated owner + `connection|end` operation + command
+key; the raw key and owner bearer are absent. `operation` and `voiceSessionId`
+prevent reuse of a key for a different session. `createdAt` records command
+creation; `expiresAt` is capped by the original session metadata deadline and
+never renewed. A replay of connection reauthorizes and mints a fresh ephemeral
+token rather than persisting/replaying a token. End remains available after
+consent/entitlement loss and settles the same session once. Expiry/TTL removes
+only the command binding, never a capacity permit.
+
+Migration 014 rollback refuses any non-STOPPED media record. Disable new
+admission, reconcile all media and verify provider cleanup before rollback.
+
+### MB-758 voice generation fences
+
+Migration [`015_companion_voice_turn_fences.cjs`](../../journal-ai-service/migrations/015_companion_voice_turn_fences.cjs)
+extends the existing `ai_voice_media_commands` aggregate with a closed `turn`
+variant; legacy connection/end records remain valid without rewriting 014.
+No new collection or content store is introduced. `_id` is a keyed owner/turn
+command digest, never the raw command key. The turn variant adds `attemptId`,
+`turnId`, increasing `sequence`, process-RAM `contextId`, keyed normalized intent
+`fingerprint` and pinned provider-route/version `routeHash`. `voiceSessionId`
+continues to reference the admitted session; no worker-supplied owner is stored.
+
+Unique partial indexes on session/sequence and session/turn ID admit one provider
+effect across processes. A claim is inserted before generation, never retried
+as fresh work after an unknown result. A previous context fence cannot be claimed
+by another RAM context after restart or replica routing. Only an exact live
+in-memory latest reply can replay; old/missing RAM returns stale/conflict without
+model work. This is a side-effect fence, not a transcript or response snapshot.
+
+Only a fresh accepted fence can update the existing session's `lastActivityAt`
+for recognized user speech before generation. This does not alter delivery
+count, worker-control sequence, lease or hard stop. Replays and heartbeats cannot
+manufacture conversational activity or prolong an idle call.
+
+`createdAt` records turn admission; `expiresAt` is the original Voice Session's
+creation-plus-30-day deadline, never turn time plus a renewed window. The existing
+TTL and explicit command sweep delete expired fences. The records contain no
+transcript, recognized text, reply, prompt, token, audio or history. Dialogue and
+the latest reply exist only in bounded RAM and are discarded on stop, failure,
+expiry, revocation or shutdown. Generation does not consume AI Text quota or
+commit first-spoken-reply Voice usage; existing media publication evidence does.
+
+For rollback, disable admission, stop sessions and the old/new turn handlers,
+then allow fences to expire or use a separately reviewed, owner-scoped cleanup
+after confirmed teardown. Down refuses any surviving turn fence, drops only its
+two partial indexes and restores the 014 command validator; it never drops the
+shared command collection or silently deletes replay protection.
+
+Migration [`013_companion_voice_quota.cjs`](../../journal-ai-service/migrations/013_companion_voice_quota.cjs)
+owns three Journal/AI collections with closed validators. This is the MB-756
+admission and accounting foundation; it does not activate media dispatch, public
+session commands, worker transport, or voice turns. Its policy provenance is
+[`companion-voice-policy-v1`](../policies/companion-voice-policy-v1.json) and
+[ADR 0046](../adr/0046-ai-voice-companion-contract.md).
+
+### `ai_voice_sessions`
+
+One document per server-generated `voiceSessionId`, also used as `_id`. Its
+`ownerId` is a logical Identity reference. Owner and keyed `keyHash` are unique;
+`fingerprint` detects different intent under the same accepted key. Raw
+idempotency keys are not stored. Exact accepted retries reuse the same session
+and reservation.
+
+| Fields | Purpose |
+| --- | --- |
+| `state`, `policyVersion`, `terminalReason`, `settledAt` | Closed lifecycle, approved policy, and idempotent terminal outcome. |
+| `entitlement` | Frozen admission-time Consultation package, source, version, checked time, and validity snapshot; renewal never rewrites provenance or authorizes a future turn from this snapshot alone. |
+| `quotaDay`, `admittedSeconds`, `authorizedAt`, `hardStopAt` | Frozen server-derived Vietnam quota day and wall-clock admission deadline. |
+| `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence` | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing. |
+| `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts. |
+| `createdAt`, `updatedAt`, `expiresAt` | Metadata lifecycle; `expiresAt` is exactly creation plus 30 days and is never extended by activity or settlement. |
+
+Indexes are `uq_ai_voice_owner_key` (unique owner/key),
+`idx_ai_voice_retention_sweep` (`expiresAt`), and
+`idx_ai_voice_reauthorization` (dispatch state, lifecycle state, lease expiry).
+The session expiry index is deliberately **not TTL**: deleting a held session
+without scrubbing its capacity slot would leave identifying references behind.
+The reconciliation sweep performs that scrub and deletion transactionally.
+
+### `ai_voice_daily_usage`
+
+One bounded document per `(ownerId, quotaDay)`, with `_id` formed from those
+values. The server fixes the day in `Asia/Ho_Chi_Minh`; a session remains charged
+to its authorization day across midnight. `usedSessions`, `reservedSessions`,
+`usedSeconds`, and `reservedSeconds` support atomic admission and settlement.
+`startAttempts`, `minuteStartedAt`, and `minuteAttempts` count start attempts,
+including owner/provider denials. At most ten `pendingAttempts` contain only a
+HMAC `keyHash` and ten-second `expiresAt`. Attempt claiming returns `CLAIMED`,
+`PENDING`, or `ACCEPTED`; only the claimant performs owner reads. Pending retries
+do not fan out owner calls; accepted session replay is exempt independently.
+Successful admission verifies the unexpired claim fence and removes its pending
+identity in the transaction, including a claim from the previous local day.
+Failure cleanup removes only the matching expiry fence without refunding
+counters, so retrying a denied key counts again and stale cleanup cannot release
+a replacement claim.
+A crashed pending attempt expires after ten seconds rather than granting a
+permanent rate-limit exemption; cleanup also works across local midnight.
+
+`uq_ai_voice_owner_day` enforces unique owner/day identity.
+`uq_ai_voice_pending_owner_key` is a unique partial multikey index over owner and
+pending key; a claim remains unique across local midnight until released or
+expired. Empty pending arrays are excluded from that index.
+`ttl_ai_voice_daily_usage` expires metadata at its own creation plus 30 days;
+the reconciliation sweep also removes expired usage explicitly. It never
+releases capacity through this TTL.
+
+FREE has no voice allowance. PLUS admits at most two delivered sessions per day,
+300 seconds per session, and 600 seconds per day; PREMIUM admits three,
+600 seconds, and 1,800 seconds. Admission reserves one session and the lesser of
+the package session maximum and remaining daily seconds. Current package
+upgrades raise the daily ceiling without resetting used or reserved counters or
+extending an existing session's deadline. Voice counters are independent of
+text Companion quotas.
+
+### `ai_voice_capacity`
+
+One singleton, `_id: voice-global-v1`, contains exactly two bounded slots. Each
+slot has a random `generation` and status `FREE`, `HELD`, or `QUARANTINED`.
+Only a `HELD` slot may contain `ownerId` and `voiceSessionId`. The singleton has
+no TTL and never accumulates historical users or sessions.
+
+Admission checks one held session per owner and two occupied slots globally,
+then inserts the session and updates usage and capacity in one short MongoDB
+transaction. The shared capacity write serializes competing processes; MongoDB
+must support replica-set transactions. Care and Consultation REST reads occur
+before this transaction. Their fresh owner/session/purpose-bound decisions are
+required again before authority renewal, reconnect, and later turns.
+
+The first trusted valid AI audio publication while the owner is connected
+converts the reserved session into one used session exactly once. Only ACTIVE
+intervals after that publication accrue milliseconds. Settlement rounds their
+sum upward once, caps it at admitted seconds, retains delivered-session usage,
+and refunds unused reserved seconds. No delivered reply refunds all reserved
+quota. The first provider-confirmed teardown must match the current attempt,
+lease, generation, and a sequence newer than all accepted progress; stale proof
+cannot free a slot. Repeating a completed settlement returns its recorded
+outcome. Duplicate or reordered reports cannot charge or release twice.
+
+Lease expiry, idle timeout, reconnect timeout, or the frozen hard deadline ends
+authorization and closes accounting at the applicable cut. Possibly issued
+media remains held in ENDING until trusted provider teardown is confirmed.
+An unissued dispatch can be settled and released safely. At creation plus
+10 seconds, an unissued session expires even if a replay obtained fresh owner
+authority; reauthorization cannot extend this dispatch cutoff. At creation plus
+30 days, the sweep deletes session metadata and scrubs owner/session references
+from any remaining slot. Unknown media leaves an anonymous `QUARANTINED` slot
+containing only status and its random fence generation. It still occupies
+global capacity. A future provider adapter must prove the isolated namespace is
+empty before reuse; no timer, TTL, worker claim, or current ledger method clears
+quarantine.
+
+These validators contain no audio, transcript, prompt, model reply, synthesis
+file, prior Journal/text context, bearer token, participant token, or raw owner
+response. Current-call content stays outside this metadata model. No provider
+room or worker runtime is provisioned by migration 013.
+
 ## `analysis_jobs`
 
 One durable owner-scoped command per idempotency key. The public API maps both

@@ -62,7 +62,7 @@ class VideoCompletionTransactions {
 		}
 		var now = clock.instant();
 		if (!List.of("CONFIRMED", "IN_PROGRESS", "SESSION_ENDED").contains(appointment.status)
-				|| now.isBefore(appointment.startsAt) || !appointments.wasConfirmed(id)
+				|| (now.isBefore(appointment.startsAt) && !sessions.allowsImmediateDemo(appointment)) || !appointments.wasConfirmed(id)
 				|| appointments.hasDispute(id) || rooms.findById(id).isEmpty()
 				|| !appointments.creditState(appointment.creditId, id).orElse("").equals("HELD")
 				|| ("SESSION_ENDED".equals(appointment.status) && !VideoSessionTransactions.POLICY.equals(appointment.policy))) throw conflict();

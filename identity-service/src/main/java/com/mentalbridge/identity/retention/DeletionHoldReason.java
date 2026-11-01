@@ -1,0 +1,10 @@
+package com.mentalbridge.identity.retention;
+
+public enum DeletionHoldReason {
+	STATUTORY_INQUIRY,
+	PENDING_DISPUTE,
+	ACTIVE_SAFETY_REVIEW,
+	SCHEDULED_APPOINTMENT_ACTIVE,
+	USER_CONTESTED,
+	AUDIT_COMPLIANCE_HOLD
+}

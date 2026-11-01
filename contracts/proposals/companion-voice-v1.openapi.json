@@ -1,0 +1,2767 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MentalBridge AI Voice Companion approved target",
+    "version": "1.1.0",
+    "description": "MB-755 contract-first only. All operations planned. Journal/AI owns voice; Care owns independent dual consent; Consultation remains entitlement authority. Does not activate runtime, replace text APIs or authorize joining specialist rooms. MB-782 additive Web preview and exact admitted Agent identity amendment; existing policy unchanged."
+  },
+  "servers": [
+    {
+      "url": "https://api.example.invalid",
+      "description": "Documentation-only placeholder; route to the declared owner, not a deployed voice API."
+    }
+  ],
+  "x-mentalbridge-decision": "MB-AI-VOICE-COMPANION-001",
+  "x-mentalbridge-policy": "companion-voice-policy-v1",
+  "x-mentalbridge-error-statuses": {
+    "UNAUTHENTICATED": 401,
+    "FORBIDDEN": 403,
+    "FREE_LOCKED": 403,
+    "CONSENT_REQUIRED": 403,
+    "VOICE_CONSENT_REQUIRED": 403,
+    "SESSION_NOT_FOUND": 404,
+    "SESSION_LIMIT": 409,
+    "IDEMPOTENCY_CONFLICT": 409,
+    "STALE_ATTEMPT": 409,
+    "INVALID_SESSION_STATE": 409,
+    "SESSION_EXPIRED": 410,
+    "INVALID_REQUEST": 422,
+    "INVALID_FINAL_TRANSCRIPT": 422,
+    "GLOBAL_CAPACITY_FULL": 429,
+    "QUOTA_EXHAUSTED": 429,
+    "RATE_LIMITED": 429,
+    "ENTITLEMENT_UNAVAILABLE": 503,
+    "CONSENT_UNAVAILABLE": 503,
+    "PROVIDER_UNAVAILABLE": 503,
+    "PROVIDER_TIMEOUT": 504
+  },
+  "paths": {
+    "/api/v1/ai-companion/voice-eligibility": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "get": {
+        "operationId": "getVoiceEligibility",
+        "summary": "getVoiceEligibility",
+        "description": "Current owner-sourced capability, not authority to connect. Resolve BOTH Care consents, Consultation current entitlement, independent voice quota and provider readiness. Uncertainty never maps to ELIGIBLE. No client package/policy/clock authority.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Eligibility"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-companion/voice-sessions": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "post": {
+        "operationId": "startVoiceSession",
+        "summary": "startVoiceSession",
+        "description": "USER only. Resolve current subject, both consents and entitlement before atomic Mongo admission. Reserve user1/global2 and finite session+seconds before any room/dispatch effect. Existing attempt conflict SESSION_LIMIT; duplicate same key reuses logical session. Snapshot day/route/deadline; no text quota or financial writes.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-companion/voice-sessions/{voiceSessionId}": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "get": {
+        "operationId": "getVoiceSession",
+        "summary": "getVoiceSession",
+        "description": "Owned status only; other-owner and missing IDs both404. Return no room credentials, transcript, user names, context or old conversation history. Status access is not token issuance.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voiceSessionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "post": {
+        "operationId": "authorizeVoiceConnection",
+        "summary": "authorizeVoiceConnection",
+        "description": "Freshly check both consents/current entitlement/voice budget/active attempt before every initial token or reconnect. Mint room+participant-scoped audio-only token for at most60seconds and never beyond hardStopAt; grant no camera/data/admin/egress. New token cannot extend session. LiveKit token expiry alone cannot stop a connected participant; owner revokes/removes/tears down explicitly.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voiceSessionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connection"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem410"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-companion/voice-sessions/{voiceSessionId}/end": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "post": {
+        "operationId": "endVoiceSession",
+        "summary": "endVoiceSession",
+        "description": "Owned stop remains available even after entitlement or either consent is revoked. Idempotent terminal stop. Enter ENDING, cancel inference/playback/STT, purge RAM and settle trusted used quota once. Release global permit only after confirmed teardown or verified fencing proving the old agent/media cannot continue. Token/lease TTL alone never proves room teardown or releases a permit.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voiceSessionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/api/v1/ai-voice-processing-disclosure": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "care-service",
+      "get": {
+        "operationId": "getVoiceDisclosure",
+        "summary": "getVoiceDisclosure",
+        "description": "Accepted MB-755 target only; no runtime handler is activated by this contract.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceDisclosure"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/api/v1/consents/ai-voice-processing": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "care-service",
+      "get": {
+        "operationId": "getCurrentVoiceConsent",
+        "summary": "getCurrentVoiceConsent",
+        "description": "Accepted MB-755 target only; no runtime handler is activated by this contract.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceConsent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      },
+      "post": {
+        "operationId": "recordVoiceConsentDecision",
+        "summary": "recordVoiceConsentDecision",
+        "description": "Care-owned append-only AI_VOICE_PROCESSING decision stream, independent of existing AI_PROCESSING. Only current server-published voice version may be granted; timestamps/subject are server-issued. Withdrawal is always available. No text reconsent/reset/migration. New material provider/purpose disclosure requires explicit fresh voice grant.",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceConsentCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceConsent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-consent-authorizations": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "care-service",
+      "post": {
+        "operationId": "checkCurrentVoiceConsents",
+        "summary": "checkCurrentVoiceConsents",
+        "description": "NEW prerequisite owner API, not the existing user-bearer consent read. Dedicated Journal-only service identity/token, purpose AI_COMPANION_VOICE, allowlisted caller, verified exact owner+session binding and current owner facts; no user JWT or grant replication. Both independent decisions must be current and granted. Request deadline2s; fail closed on unknown/stale decisions; no caching. Runtime Care work is a prerequisite for MB-756.",
+        "security": [
+          {
+            "JournalVoiceCareToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerCheck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DualConsentDecision"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-entitlement-authorizations": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "consultation-service",
+      "post": {
+        "operationId": "checkCurrentVoiceEntitlement",
+        "summary": "checkCurrentVoiceEntitlement",
+        "description": "NEW narrow read-only prerequisite for service-authenticated per-turn checks without storing/forwarding user JWT. Dedicated Journal-only credential, exact session-owned user reference and purpose; Consultation resolves current entitlement. DEFAULT_FREE must be FREE; paid/DEMO PLUS/PREMIUM require validUntil strictly later than checkedAt/current server time. Expired/unknown/inconsistent responses deny voice, never fail open. Preserve existing /internal/v1/entitlements/current and all financial/credit behavior. No mutable shadow entitlement or side effect. Deadline2s; no cache.",
+        "security": [
+          {
+            "JournalVoiceEntitlementToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerCheck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementDecision"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "post": {
+        "operationId": "claimVoiceAgentAttempt",
+        "summary": "claimVoiceAgentAttempt",
+        "description": "Dedicated worker credential+exact trusted explicit dispatch. Journal resolves user from admitted session; worker cannot select user/package/model. Exactly one fenced claimed attempt; duplicate dispatch cannot join or reserve twice. No user JWT, transcript/context or provider secret in dispatch metadata.",
+        "security": [
+          {
+            "VoiceWorkerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voiceSessionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentClaim"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLease"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem410"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "post": {
+        "operationId": "recordVoiceAgentControl",
+        "summary": "recordVoiceAgentControl",
+        "description": "Accept worker-origin MEDIA_READY/PLAYBACK_STARTED/INTERRUPTED/HEARTBEAT/FINISHED only, bound to claimed attempt/lease and increasing worker sequence. Schema rejects backend-only DISPATCH/LEASE_RENEWED/STOP. Successful authorized heartbeat returns CONTINUE with a Journal-issued LEASE_RENEWED envelope; observed revocation, stop or terminal acknowledgement returns STOP with its exact reason and separately sequenced backend envelope, never a fresh live lease. Fresh owner checks before lease renewal; lease10s/renew5s; stop processing and purge context at expiry. Independent authenticated room removal/teardown provides the media cutoff; expiry alone cannot free a global permit. Server state intervals determine usage; worker cannot submit billed seconds.",
+        "security": [
+          {
+            "VoiceWorkerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voiceSessionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkerSignal"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentControlResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem410"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns": {
+      "x-mentalbridge-status": "planned",
+      "x-mentalbridge-owner": "journal-ai-service",
+      "post": {
+        "operationId": "generateAuthorizedVoiceTurn",
+        "summary": "generateAuthorizedVoiceTurn",
+        "description": "Ephemeral final vi-VN STT only; validate trimmed nonempty text, language, finality, order, attempt/lease and unique turn. Freshly verify BOTH consent streams, Consultation entitlement, remaining independent voice usage and current approved pinned Bedrock route BEFORE EVERY generation and before publication. Do not call persisted text send or consume text answers. Dedicated service identity; no client/worker user selection. RAM-only recent4turnpairs/2000tokens; transcript2000chars/reply1000chars; no transcript/prompt/provider output in idempotency snapshots/logs/traces. In-memory replay returns exact reply only during live lease; after context loss, fail stale rather than regenerate/charge again. Cancel/discard late responses after stop/withdrawal/lease expiry. No provider fallback, no Care/financial/safety mutation.",
+        "security": [
+          {
+            "VoiceWorkerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voiceSessionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceTurn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Owner-authorized response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                },
+                "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem410"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          },
+          "504": {
+            "$ref": "#/components/responses/Problem504"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Identity-issued USER JWT verified by the owner. No package authority in claims."
+      },
+      "VoiceWorkerToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-MentalBridge-Voice-Worker-Token",
+        "description": "Dedicated secret worker identity held only in worker/Journal. Not a user token, room metadata or general internal credential. Bind exact admitted dispatch+attempt+lease in owner."
+      },
+      "JournalVoiceCareToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-MentalBridge-Voice-Care-Token",
+        "description": "Unique Journal-to-Care current voice authorization credential; allowlist exact caller/purpose. Different from worker and Consultation credentials."
+      },
+      "JournalVoiceEntitlementToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-MentalBridge-Voice-Entitlement-Token",
+        "description": "Unique Journal-to-Consultation read-only voice entitlement credential; no financial write authority."
+      }
+    },
+    "schemas": {
+      "EmptyCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "status", "code", "correlationId"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "UNAUTHENTICATED",
+              "FORBIDDEN",
+              "FREE_LOCKED",
+              "CONSENT_REQUIRED",
+              "VOICE_CONSENT_REQUIRED",
+              "SESSION_NOT_FOUND",
+              "SESSION_LIMIT",
+              "IDEMPOTENCY_CONFLICT",
+              "STALE_ATTEMPT",
+              "INVALID_SESSION_STATE",
+              "SESSION_EXPIRED",
+              "INVALID_REQUEST",
+              "INVALID_FINAL_TRANSCRIPT",
+              "GLOBAL_CAPACITY_FULL",
+              "QUOTA_EXHAUSTED",
+              "RATE_LIMITED",
+              "ENTITLEMENT_UNAVAILABLE",
+              "CONSENT_UNAVAILABLE",
+              "PROVIDER_UNAVAILABLE",
+              "PROVIDER_TIMEOUT"
+            ]
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "UNAUTHENTICATED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 401
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "FORBIDDEN"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 403
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "FREE_LOCKED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 403
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "CONSENT_REQUIRED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 403
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "VOICE_CONSENT_REQUIRED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 403
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "SESSION_NOT_FOUND"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 404
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "SESSION_LIMIT"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 409
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "IDEMPOTENCY_CONFLICT"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 409
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "STALE_ATTEMPT"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 409
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "INVALID_SESSION_STATE"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 409
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "SESSION_EXPIRED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 410
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "INVALID_REQUEST"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 422
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "INVALID_FINAL_TRANSCRIPT"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 422
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "GLOBAL_CAPACITY_FULL"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 429
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "QUOTA_EXHAUSTED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 429
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "RATE_LIMITED"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 429
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "ENTITLEMENT_UNAVAILABLE"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 503
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "CONSENT_UNAVAILABLE"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 503
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "PROVIDER_UNAVAILABLE"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 503
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "code": {
+                  "const": "PROVIDER_TIMEOUT"
+                }
+              },
+              "required": ["code"]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": 504
+                }
+              }
+            }
+          }
+        ]
+      },
+      "VoiceQuota": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policyVersion",
+          "quotaDay",
+          "timeZone",
+          "resetAt",
+          "remainingSessions",
+          "remainingSeconds",
+          "reservedSessions",
+          "reservedSeconds"
+        ],
+        "properties": {
+          "policyVersion": {
+            "const": "companion-voice-policy-v1"
+          },
+          "quotaDay": {
+            "type": "string",
+            "format": "date"
+          },
+          "timeZone": {
+            "const": "Asia/Ho_Chi_Minh"
+          },
+          "resetAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingSessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "remainingSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1800
+          },
+          "reservedSessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reservedSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600
+          }
+        }
+      },
+      "Eligibility": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policyVersion",
+          "state",
+          "eligible",
+          "packageCode",
+          "quota",
+          "checkedAt",
+          "voiceConsentVersion",
+          "maxSessionSeconds",
+          "availableSessionSeconds"
+        ],
+        "properties": {
+          "policyVersion": {
+            "const": "companion-voice-policy-v1"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ELIGIBLE",
+              "FREE_LOCKED",
+              "CONSENT_REQUIRED",
+              "VOICE_CONSENT_REQUIRED",
+              "ENTITLEMENT_UNAVAILABLE",
+              "CONSENT_UNAVAILABLE",
+              "SESSION_LIMIT",
+              "GLOBAL_CAPACITY_FULL",
+              "QUOTA_EXHAUSTED",
+              "RATE_LIMITED",
+              "PROVIDER_UNAVAILABLE"
+            ]
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "packageCode": {
+            "type": "string",
+            "enum": ["FREE", "PLUS", "PREMIUM"]
+          },
+          "quota": {
+            "$ref": "#/components/schemas/VoiceQuota"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "voiceConsentVersion": {
+            "const": "ai-voice-processing-capstone-v1"
+          },
+          "maxSessionSeconds": {
+            "type": "integer",
+            "enum": [0, 300, 600],
+            "description": "Current package policy ceiling in seconds. Not an admission or reservation."
+          },
+          "availableSessionSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600,
+            "description": "Display-only min(maxSessionSeconds, unreserved daily remainingSeconds) when eligible; zero otherwise. Reauthorize and admit atomically on POST; never derive a deadline from this snapshot."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "ELIGIBLE"
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "eligible": {
+                  "const": true
+                },
+                "packageCode": {
+                  "type": "string",
+                  "enum": ["PLUS", "PREMIUM"]
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "eligible": {
+                  "const": false
+                },
+                "availableSessionSeconds": {
+                  "const": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "FREE"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "maxSessionSeconds": {
+                  "const": 0
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "maximum": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "PLUS"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "maxSessionSeconds": {
+                  "const": 300
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "maximum": 300
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "PREMIUM"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "maxSessionSeconds": {
+                  "const": 600
+                },
+                "availableSessionSeconds": {
+                  "type": "integer",
+                  "maximum": 600
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voiceSessionId",
+          "policyVersion",
+          "state",
+          "createdAt",
+          "chargedSeconds",
+          "deliveredSession"
+        ],
+        "properties": {
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "policyVersion": {
+            "const": "companion-voice-policy-v1"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "REQUESTED",
+              "AUTHORIZED",
+              "CONNECTING",
+              "ACTIVE",
+              "RECONNECTING",
+              "ENDING",
+              "ENDED",
+              "FAILED",
+              "EXPIRED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authorizedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hardStopAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quotaDay": {
+            "type": "string",
+            "format": "date"
+          },
+          "admittedSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "chargedSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600
+          },
+          "deliveredSession": {
+            "type": "boolean"
+          },
+          "terminalReason": {
+            "type": "string",
+            "enum": [
+              "USER_ENDED",
+              "CONSENT_REVOKED",
+              "VOICE_CONSENT_REVOKED",
+              "ENTITLEMENT_LOST",
+              "OWNER_UNAVAILABLE",
+              "IDLE_TIMEOUT",
+              "HARD_DEADLINE",
+              "QUOTA_EXHAUSTED",
+              "RECONNECT_TIMEOUT",
+              "PROVIDER_FAILURE",
+              "AGENT_FAILURE",
+              "AUTHORIZATION_EXPIRED",
+              "ACCOUNT_DELETED"
+            ]
+          }
+        }
+      },
+      "Connection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voiceSessionId",
+          "transport",
+          "serverUrl",
+          "participantToken",
+          "tokenExpiresAt",
+          "hardStopAt",
+          "audioOnly",
+          "roomName",
+          "agentIdentity"
+        ],
+        "properties": {
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transport": {
+            "const": "LIVEKIT_CLOUD"
+          },
+          "serverUrl": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^wss://"
+          },
+          "participantToken": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 8192,
+            "readOnly": true,
+            "description": "Ephemeral owner-scoped media credential; never log, persist or place in metadata."
+          },
+          "tokenExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hardStopAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "audioOnly": {
+            "const": true
+          },
+          "roomName": {
+            "type": "string",
+            "pattern": "^ai-voice-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "Exact admitted room for this connection. Compare the connected SDK room name before reading Agent hints."
+          },
+          "agentIdentity": {
+            "type": "string",
+            "pattern": "^va-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "Exact admitted Agent attempt identity. Require ParticipantKind.AGENT in roomName; never select a participant from its attributes."
+          }
+        }
+      },
+      "VoiceDisclosure": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consentType",
+          "consentVersion",
+          "language",
+          "disclosureText",
+          "publishedAt"
+        ],
+        "properties": {
+          "consentType": {
+            "const": "AI_VOICE_PROCESSING"
+          },
+          "consentVersion": {
+            "const": "ai-voice-processing-capstone-v1"
+          },
+          "language": {
+            "const": "vi-VN"
+          },
+          "disclosureText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VoiceConsentCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consentVersion", "granted"],
+        "properties": {
+          "consentVersion": {
+            "const": "ai-voice-processing-capstone-v1"
+          },
+          "granted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VoiceConsent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consentType", "consentVersion", "current", "granted"],
+        "properties": {
+          "consentType": {
+            "const": "AI_VOICE_PROCESSING"
+          },
+          "consentVersion": {
+            "const": "ai-voice-processing-capstone-v1"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "granted": {
+                  "const": true
+                }
+              },
+              "required": ["granted"]
+            },
+            "then": {
+              "properties": {
+                "acceptedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": ["acceptedAt"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "current": {
+                  "const": true
+                },
+                "granted": {
+                  "const": false
+                }
+              },
+              "required": ["current", "granted"]
+            },
+            "then": {
+              "properties": {
+                "revokedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": ["revokedAt"]
+            }
+          }
+        ]
+      },
+      "OwnerCheck": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ownerId", "voiceSessionId", "purpose"],
+        "properties": {
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "const": "AI_COMPANION_VOICE"
+          }
+        }
+      },
+      "DualConsentDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ownerId",
+          "voiceSessionId",
+          "purpose",
+          "aiProcessingGranted",
+          "voiceProcessingGranted",
+          "voiceConsentVersion",
+          "authorized",
+          "checkedAt"
+        ],
+        "properties": {
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "const": "AI_COMPANION_VOICE"
+          },
+          "aiProcessingGranted": {
+            "type": "boolean"
+          },
+          "voiceProcessingGranted": {
+            "type": "boolean"
+          },
+          "voiceConsentVersion": {
+            "const": "ai-voice-processing-capstone-v1"
+          },
+          "authorized": {
+            "type": "boolean"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "authorized": {
+                  "const": true
+                }
+              },
+              "required": ["authorized"]
+            },
+            "then": {
+              "properties": {
+                "aiProcessingGranted": {
+                  "const": true
+                },
+                "voiceProcessingGranted": {
+                  "const": true
+                }
+              }
+            }
+          }
+        ]
+      },
+      "EntitlementDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ownerId",
+          "voiceSessionId",
+          "purpose",
+          "packageCode",
+          "source",
+          "entitlementVersion",
+          "checkedAt"
+        ],
+        "properties": {
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "const": "AI_COMPANION_VOICE"
+          },
+          "packageCode": {
+            "type": "string",
+            "enum": ["FREE", "PLUS", "PREMIUM"]
+          },
+          "source": {
+            "type": "string",
+            "enum": ["DEFAULT_FREE", "PAID", "DEMO"]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entitlementVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "packageCode": {
+                  "const": "FREE"
+                }
+              },
+              "required": ["packageCode"]
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "const": "DEFAULT_FREE"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["PAID", "DEMO"]
+                },
+                "validUntil": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": ["validUntil"]
+            }
+          }
+        ]
+      },
+      "AgentClaim": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["attemptId", "dispatchId"],
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dispatchId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AgentLease": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voiceSessionId",
+          "attemptId",
+          "leaseId",
+          "validUntil",
+          "hardStopAt",
+          "policyVersion"
+        ],
+        "properties": {
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hardStopAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "const": "companion-voice-policy-v1"
+          }
+        }
+      },
+      "AgentControlResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "control"],
+            "properties": {
+              "action": {
+                "const": "CONTINUE"
+              },
+              "control": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "schemaVersion",
+                  "kind",
+                  "commandId",
+                  "voiceSessionId",
+                  "attemptId",
+                  "sequence",
+                  "issuedAt",
+                  "expiresAt",
+                  "payload"
+                ],
+                "properties": {
+                  "schemaVersion": {
+                    "const": 1
+                  },
+                  "kind": {
+                    "const": "LEASE_RENEWED"
+                  },
+                  "commandId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "voiceSessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "issuedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "leaseId",
+                      "validUntil",
+                      "hardStopAt",
+                      "admittedSeconds"
+                    ],
+                    "properties": {
+                      "leaseId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "validUntil": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "hardStopAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "admittedSeconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 600
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "control"],
+            "properties": {
+              "action": {
+                "const": "STOP"
+              },
+              "control": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "schemaVersion",
+                  "kind",
+                  "commandId",
+                  "voiceSessionId",
+                  "attemptId",
+                  "sequence",
+                  "issuedAt",
+                  "expiresAt",
+                  "payload"
+                ],
+                "properties": {
+                  "schemaVersion": {
+                    "const": 1
+                  },
+                  "kind": {
+                    "const": "STOP"
+                  },
+                  "commandId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "voiceSessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "issuedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["reason"],
+                    "properties": {
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "USER_ENDED",
+                          "CONSENT_REVOKED",
+                          "VOICE_CONSENT_REVOKED",
+                          "ENTITLEMENT_LOST",
+                          "OWNER_UNAVAILABLE",
+                          "IDLE_TIMEOUT",
+                          "HARD_DEADLINE",
+                          "QUOTA_EXHAUSTED",
+                          "RECONNECT_TIMEOUT",
+                          "PROVIDER_FAILURE",
+                          "AGENT_FAILURE",
+                          "AUTHORIZATION_EXPIRED",
+                          "ACCOUNT_DELETED"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "WorkerSignal": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schemaVersion",
+              "kind",
+              "commandId",
+              "voiceSessionId",
+              "attemptId",
+              "sequence",
+              "issuedAt",
+              "expiresAt",
+              "payload"
+            ],
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "kind": {
+                "const": "MEDIA_READY"
+              },
+              "commandId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "voiceSessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "issuedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseId"],
+                "properties": {
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schemaVersion",
+              "kind",
+              "commandId",
+              "voiceSessionId",
+              "attemptId",
+              "sequence",
+              "issuedAt",
+              "expiresAt",
+              "payload"
+            ],
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "kind": {
+                "const": "PLAYBACK_STARTED"
+              },
+              "commandId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "voiceSessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "issuedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseId", "turnId", "replyId"],
+                "properties": {
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "replyId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schemaVersion",
+              "kind",
+              "commandId",
+              "voiceSessionId",
+              "attemptId",
+              "sequence",
+              "issuedAt",
+              "expiresAt",
+              "payload"
+            ],
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "kind": {
+                "const": "INTERRUPTED"
+              },
+              "commandId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "voiceSessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "issuedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseId", "turnId", "replyId"],
+                "properties": {
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "replyId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schemaVersion",
+              "kind",
+              "commandId",
+              "voiceSessionId",
+              "attemptId",
+              "sequence",
+              "issuedAt",
+              "expiresAt",
+              "payload"
+            ],
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "kind": {
+                "const": "HEARTBEAT"
+              },
+              "commandId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "voiceSessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "issuedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseId", "observedState"],
+                "properties": {
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "observedState": {
+                    "type": "string",
+                    "enum": ["CONNECTING", "ACTIVE", "RECONNECTING", "ENDING"]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schemaVersion",
+              "kind",
+              "commandId",
+              "voiceSessionId",
+              "attemptId",
+              "sequence",
+              "issuedAt",
+              "expiresAt",
+              "payload"
+            ],
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "kind": {
+                "const": "FINISHED"
+              },
+              "commandId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "voiceSessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "issuedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaseId", "reason"],
+                "properties": {
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "USER_ENDED",
+                      "CONSENT_REVOKED",
+                      "VOICE_CONSENT_REVOKED",
+                      "ENTITLEMENT_LOST",
+                      "OWNER_UNAVAILABLE",
+                      "IDLE_TIMEOUT",
+                      "HARD_DEADLINE",
+                      "QUOTA_EXHAUSTED",
+                      "RECONNECT_TIMEOUT",
+                      "PROVIDER_FAILURE",
+                      "AGENT_FAILURE",
+                      "AUTHORIZATION_EXPIRED",
+                      "ACCOUNT_DELETED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "VoiceTurn": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attemptId",
+          "leaseId",
+          "turnId",
+          "sequence",
+          "language",
+          "isFinal",
+          "finalTranscript"
+        ],
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "language": {
+            "const": "vi-VN"
+          },
+          "isFinal": {
+            "const": true
+          },
+          "finalTranscript": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S",
+            "writeOnly": true
+          }
+        }
+      },
+      "VoiceReply": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voiceSessionId",
+          "turnId",
+          "replyId",
+          "language",
+          "spokenText",
+          "expiresAt",
+          "policyVersion"
+        ],
+        "properties": {
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "replyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "language": {
+            "const": "vi-VN"
+          },
+          "spokenText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "pattern": "\\S"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "const": "companion-voice-policy-v1"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Problem401": {
+        "description": "Stable sanitized errors: UNAUTHENTICATED. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem403": {
+        "description": "Stable sanitized errors: FORBIDDEN, FREE_LOCKED, CONSENT_REQUIRED, VOICE_CONSENT_REQUIRED. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem404": {
+        "description": "Stable sanitized errors: SESSION_NOT_FOUND. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem409": {
+        "description": "Stable sanitized errors: SESSION_LIMIT, IDEMPOTENCY_CONFLICT, STALE_ATTEMPT, INVALID_SESSION_STATE. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem410": {
+        "description": "Stable sanitized errors: SESSION_EXPIRED. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem422": {
+        "description": "Stable sanitized errors: INVALID_REQUEST, INVALID_FINAL_TRANSCRIPT. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem429": {
+        "description": "Stable sanitized errors: GLOBAL_CAPACITY_FULL, QUOTA_EXHAUSTED, RATE_LIMITED. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem503": {
+        "description": "Stable sanitized errors: ENTITLEMENT_UNAVAILABLE, CONSENT_UNAVAILABLE, PROVIDER_UNAVAILABLE. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Problem504": {
+        "description": "Stable sanitized errors: PROVIDER_TIMEOUT. No downstream payload or private identifiers.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "const": "no-store"
+            },
+            "description": "Required on success and errors. Never cache capabilities, connection tokens, transcripts or owner decisions."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    }
+  }
+}

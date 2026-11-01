@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0020-community-chat-report-intake
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_chat_command DROP CONSTRAINT community_chat_command_operation_check;
+              ALTER TABLE community_chat_command DROP CONSTRAINT community_chat_command_result_kind_check;
+              ALTER TABLE community_chat_command ADD CHECK (operation IN ('START_DIRECT','SEND_MESSAGE','CREATE_GROUP','INVITE_GROUP','REPORT_MESSAGE'));
+              ALTER TABLE community_chat_command ADD CHECK (result_kind IN ('ACTIVE','PENDING','MESSAGE','GROUP','INVITATION','REPORT'));
+              CREATE TABLE community_chat_report_case (
+                id uuid PRIMARY KEY,
+                conversation_id uuid NOT NULL,
+                message_id uuid NOT NULL,
+                reporter_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                reason_code varchar(32) NOT NULL CHECK (reason_code IN ('HARASSMENT','SPAM','PRIVACY_CONCERN','SELF_HARM_OR_CRISIS_CONCERN','OTHER')),
+                priority varchar(8) NOT NULL CHECK (priority IN ('NORMAL','HIGH')),
+                state varchar(8) NOT NULL DEFAULT 'OPEN' CHECK (state = 'OPEN'),
+                evidence_ciphertext text NOT NULL,
+                details_ciphertext text NOT NULL,
+                created_at timestamptz NOT NULL,
+                review_due_at timestamptz NOT NULL CHECK (review_due_at > created_at),
+                UNIQUE (reporter_profile_id, message_id)
+              );
+              CREATE INDEX ix_chat_report_actor_rate ON community_chat_report_case(reporter_profile_id, created_at DESC);
+              CREATE INDEX ix_chat_report_review ON community_chat_report_case(priority, review_due_at, id);

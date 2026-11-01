@@ -1,11 +1,102 @@
 # Content and Notification Service
 
+The service OpenAPI is v1.11.0. MB-677 adds the closed `OPEN_APPOINTMENT`
+notification action used by Content-owned appointment push reminders.
+
+## Mobile reminder overview (MB-676)
+
+`GET /api/v1/reminder-overview` is a USER-only, non-cacheable read in OpenAPI
+v1.10.0 (payload v1.0). It composes current note-free Journal/Emotion facts,
+persisted preferences and Content-owned delivery ledgers. Eligibility times are
+bounded estimates; reads never run a producer or send a message. Settings stay
+at the existing strong-ETag notification-preferences boundary.
+See [scope, semantics and verification](../docs/mb-676-reminder-overview.md).
+
+MB-691 implements the accepted [Community chat policy](../docs/policies/community-chat-policy-v1.md)
+through recipient-specific `MESSAGE_RECEIVED`, `DIRECT_REQUESTED`, `GROUP_INVITED`
+facts and separate comment-reaction facts. Content owns durable notice jobs and
+inbox state; Community retains exact target/lifecycle authorization. Existing
+MB-580/617 post/comment producers remain unchanged. No chat body, sender/group
+name or health data enters Kafka, jobs, logs or provider payloads.
+
+## Community notification delivery (MB-691)
+
+`CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED=true` requires Kafka and a dedicated
+Content-owned PKCS#8 `CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY` plus
+`CONTENT_COMMUNITY_NOTIFICATION_KEY_ID`. Community receives only its matching
+X.509 public key and opt-in `COMMUNITY_CHAT_NOTIFICATION_ENABLED` flag. Set
+`COMMUNITY_SERVICE_URL` to the Community owner. Ordinary Identity or Realtime
+credentials cannot authorize this boundary. Both new flags default false.
+
+The new consumer group `content-notification-community-notices-v1` reads the
+existing chat topic and `mentalbridge.community.comment-reaction.v1`; provision
+the latter using the versioned Compose Kafka initializer before rollout. It
+ignores message-save/read-state/authorization transport facts, strictly checks
+aggregate/target/key bindings, and parks poison diagnostics as digests in the
+existing Community dead-letter topic. Transient intake storage/DLQ failures
+retain the offset with 1–30-second backoff and heartbeats. Kafka is acknowledged
+only after the minimized job or its terminal cancellation is committed.
+
+Migration `26_add_community_notice_delivery.sql` adds jobs/receipts and nullable
+inbox `grouping_key`. The existing interaction-v1 consumer also feeds this queue.
+A bounded one-second worker tick claims at most 20 jobs, one at a time, under
+30-second expiring fencing tokens. Claims survive process loss. Remote owner
+reads finish before the local transaction; inbox insertion/grouping and terminal
+job outcome commit together. Denied/expired/revoked targets cancel; owner
+uncertainty retries without a cached grant. Quiet-hour work is scheduled for a
+new check after 60 seconds, subject to bounded queue/HTTP delays; preference and
+target authorization are checked again.
+Opt-out at intake or delivery records a terminal outcome, preventing stale
+replay after opt-in. Expired receipts are removed in bounded batches; old source
+occurrences remain expired and cannot recreate a notice.
+
+Supportive reactions join one active unread notice per recipient/target, with no
+public actor list or inferred engagement count. Reading ends that group; another
+new actor can start a new one. Duplicates never bump unread or resurrect a soft
+deleted item. Chat source identity is kind + exact target per recipient, so a
+new transport message ID does not repeat the logical notice. Existing v1 event
+identities and historical inbox items remain compatible; no history backfill or
+regrouping is performed.
+
+New closed actions are `OPEN_COMMUNITY_CONVERSATION`, `OPEN_COMMUNITY_REQUEST`,
+`OPEN_COMMUNITY_INVITATION` with their respective opaque target UUID. Their
+canonical hrefs are `/community/chat/conversations/{id}`, `/community/chat/requests/{id}`,
+`/community/chat/invitations/{id}`. These are backend consumer contracts: the
+current frontend baseline does not implement these routes. Device-2 must map
+the descriptors, implement those routes and reauthorize in Community before
+enabling the end-user journey. A pending request/invitation never grants history.
+This slice makes no browser/mobile `ui-ready` claim.
+
+`community-push-v1.schema.json` and `communityPushPayload` define only the generic
+Vietnamese body plus opaque notification ID. MB-675 now supplies backend device
+registration and provider submission; mobile permission prompts and safe-link
+handling remain MB-679 client work. Appointment chat, message retraction and
+per-user conversation deletion remain independent.
+
+Roll out migrations, the authorization provider, then compatible consumers;
+enable opt-in flags only after credentials/topics and frontend handoff are ready.
+Rollback consumers before providers. Retain additive migrations and terminal
+receipts; do not drop delivery state to roll back a binary.
+
 NestJS service that owns reviewed self-help resource definitions, immutable exact-version Resource Eligibility v1 provenance, notification preferences, and durable notification delivery state. ADR 0009 removes the hotline catalogue from product scope. ADR 0012 keeps final SupportPlan admission in Care and clarifies that review/publication does not make a resource universally plan-eligible.
 
 MB-617 adds an asynchronous consumer for the minimized
 `mentalbridge.community.interaction.v1` fact. It creates generic comment,
 reply, and first-reaction inbox entries without reading Community content or
 introducing any synchronous Community-to-Notification dependency.
+
+MB-565 wires bounded assessment, SupportGuide, and account facts into the same
+durable USER notification center. Care emits authenticated result availability
+and newly persisted guide availability through its transactional outbox;
+Identity emits USER activation/restoration through its existing outbox topic.
+Content strictly validates the versioned contracts, owns generic Vietnamese
+copy and safe internal actions, applies `screeningReassessment` or
+`resourceSystem` preferences, and persists either `DELIVERED` or `CANCELLED`.
+Logical `<fact-type>:<aggregate-id>:<aggregate-version>` identities collapse
+retries even when a transport envelope is replayed with a different message ID.
+Malformed Care facts are parked as digest-only metadata. Enable the Care path
+with `CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED=true`; Kafka remains
+disabled by default for local development.
 
 ## Current capability
 
@@ -48,9 +139,11 @@ Admin resource create, draft update/delete, exact-version review, publish, archi
 
 MB-562 also implements `GET|PATCH /api/v1/notification-preferences` for the
 authenticated owner. The atomic preference aggregate covers `IN_APP`, `EMAIL`,
-and future `PUSH` channel choices, six independent content groups,
-timezone-aware quiet hours, and email cadence/opt-ins. `PUSH` is persisted only;
-device registration and provider delivery remain deferred.
+and `PUSH` channel choices, six independent content groups, timezone-aware quiet
+hours, and email cadence/opt-ins. MB-675 adds authenticated owner-only Expo
+device registration, encrypted token rotation/revocation, and privacy-minimized
+native provider delivery. Expo ticket acceptance is recorded separately and is
+never reported as end-device delivery.
 
 MB-514 extends that same preference aggregate with the owner's local daily
 digest and explicit resource-reminder times. The bounded wellbeing scheduler
@@ -68,6 +161,34 @@ Keep the interval and database page size bounded with
 `WELLBEING_DIGEST_SCHEDULER_INTERVAL_MS` and
 `WELLBEING_DIGEST_BATCH_SIZE`. `BREVO_BASE_URL` and `BREVO_SENDER_NAME` are
 optional operational overrides.
+
+Native push delivery is disabled by default. Registration requires
+`CONTENT_PUSH_TOKEN_ENCRYPTION_KEY` (base64-encoded 32-byte key). Provider work
+also requires `CONTENT_PUSH_DELIVERY_ENABLED=true`, `EXPO_ACCESS_TOKEN`, and the
+same encryption key. `EXPO_PUSH_BASE_URL`, `CONTENT_PUSH_PROVIDER_TIMEOUT_MS`,
+`CONTENT_PUSH_DELIVERY_INTERVAL_MS`, `CONTENT_PUSH_DELIVERY_BATCH_SIZE`, receipt
+delays, and the per-owner device-command rate/window are bounded operational
+overrides. Accepted Expo tickets are checked through delayed bounded receipts;
+`DeviceNotRegistered` invalidates the registration, while a successful receipt
+does not claim physical display. Disable the worker before rolling back; additive
+registration and attempt evidence remains intact. CI uses a mocked provider and
+does not constitute staging or real-device delivery evidence.
+
+MB-677 reuses Consultation's approved appointment status v2 event and current
+notification-eligibility read to materialize one native appointment reminder
+fact at the existing exact 60-minute target. The current preference, quiet
+hours and exact appointment version are checked before materialization and
+again before Expo submission. Quiet hours always win: work waits until quiet
+hours end only when that instant is still before appointment start; otherwise
+it is suppressed. Cancellation/reschedule invalidates the old fact and unsent
+device attempts. Transient materialization failures retry within the same
+three-attempt/start-time bound; an expired final processing lease is reconciled
+to a timestamped terminal failure and cannot be sent later. The provider
+payload remains generic and carries only the
+notification UUID plus `OPEN_APPOINTMENT` and the opaque appointment UUID.
+SupportPlan activity push is deferred because Care's current occurrence v2
+event does not publish an approved reminder instant, timezone or reminder
+choice; Content does not poll private Care state to infer them.
 MB-548 adds a separate, opt-in appointment email reminder. A minimized
 Consultation status event materializes at most one row per
 recipient/appointment/version, and rejection, expiry, cancellation, reschedule,
@@ -78,6 +199,23 @@ the appointment start and never combines this message with the wellbeing digest.
 Production enablement also requires Brevo per-contact tracking consent to be
 enabled with unknown-contact tracking disabled; the adapter sends
 `contactPixelTrackingConsent=false` for every reminder recipient.
+
+MB-670 adds `PUT /api/v1/resource-bingo/{weekStart}/plan-sync` for the current
+local week. Content forwards the owner's bearer and correlation ID to Care's
+current RESOURCE-actions read, then retains at most nine plan tiles without
+catalogue padding. Removed actions become retired items; a plan switch retains
+a separate board. Journey reads return the latest board without changing it.
+`GET /api/v1/resource-completion-evidence` returns the newest exact-version
+completion or measured-practice fact for the owner's requested date, derived
+from its server instant in the requested timezone. No fact returns 404;
+provider/storage unavailability returns 503. Progress PUT accepts an optional
+`resourceVersion` to pin a listed publication snapshot, with 409 for an
+unavailable version. These Content facts do not directly mutate Care state.
+
+Configure the Care query with `CONTENT_CARE_BASE_URL` (default
+`http://localhost:8081`) and `CONTENT_CARE_TIMEOUT_MS` (default 2000 ms, allowed
+100–5000 ms). The forwarded owner JWT authorizes the read; this query has no
+service credential. Care errors leave the stored board unchanged.
 
 ## Stack
 
@@ -144,6 +282,13 @@ Identity Service must be configured with the corresponding private key (`IDENTIT
 
 ## Migrations
 
+Migration `27_plan_scoped_resource_bingo.sql` makes boards unique per owner,
+local week and SupportPlan, persists latest-sync ordering, and adds nullable
+action identity/version and retirement time to retained items. Existing boards
+are preserved; their first plan-sync binds matching resources and retires
+catalogue padding. Exact resource versions already exist on progress and
+practice facts, so this migration does not rewrite those histories.
+
 The application pool and `node-pg-migrate` share `DATABASE_URL`. Set `sslmode=require` or a stricter verified mode for remote PostgreSQL, then run:
 
 ```bash
@@ -171,9 +316,16 @@ the bounded `JOURNAL_AI_SERVICE_TIMEOUT_MS`, and the shared
 by `REMINDER_SCHEDULER_INTERVAL_MS` and `REMINDER_SCHEDULER_BATCH_SIZE`.
 `CONTENT_ACCOUNT_LIFECYCLE_CONSUMER_ENABLED=true` consumes
 `mentalbridge.identity.account-lifecycle.v1` from `KAFKA_BOOTSTRAP_SERVERS`.
-After three bounded projection attempts, a safe metadata-only record is written
-to `mentalbridge.content-notification.account-preference-dead-letter.v1`; raw
-invalid event bodies are never copied into diagnostics.
+Invalid JSON/schema facts and conflicting logical identities are parked as
+digest-only metadata in
+`mentalbridge.content-notification.account-preference-dead-letter.v1` before
+their offsets advance. Valid account facts and preference initialization retry
+storage up to three times locally (100ms/200ms delay). A continuing database
+failure throws a sanitized retriable error and leaves the Kafka offset
+uncommitted; KafkaJS uses exponential backoff (1s initial, 30s cap, five
+attempts per cycle) and restarts the consumer. Recovery replays the original
+record and commits only after the Content transaction succeeds. There is no
+digest-only conversion of valid facts and no raw event body in diagnostics.
 
 Migration `13_add_resource_daily_progress.sql` adds MB-603's owner-scoped daily
 resource progress. It stores only resource/version references, a bounded action

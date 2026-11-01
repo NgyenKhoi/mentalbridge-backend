@@ -73,3 +73,29 @@ export interface ClaimedAppointmentReminder {
   readonly firstAttemptAt: Date;
   readonly providerIdempotencyKey: string;
 }
+
+export interface AppointmentPushReminderRow {
+  readonly id: string;
+  readonly recipient_id: string;
+  readonly appointment_id: string;
+  readonly appointment_version: string | number;
+  readonly modality: AppointmentModality;
+  readonly scheduled_start_at: Date | string;
+  readonly target_at: Date | string;
+  readonly due_at: Date | string;
+  readonly attempt_count: number;
+  readonly first_attempt_at: Date | string | null;
+}
+
+export interface ClaimedAppointmentPushReminder {
+  readonly id: string;
+  readonly recipientId: string;
+  readonly appointmentId: string;
+  readonly appointmentVersion: number;
+  readonly modality: AppointmentModality;
+  readonly scheduledStartAt: Date;
+  readonly targetAt: Date;
+  readonly dueAt: Date;
+  readonly attemptCount: number;
+  readonly firstAttemptAt: Date;
+}

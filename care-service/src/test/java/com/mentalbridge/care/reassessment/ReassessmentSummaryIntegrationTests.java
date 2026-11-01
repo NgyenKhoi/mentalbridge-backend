@@ -1,6 +1,7 @@
 package com.mentalbridge.care.reassessment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -21,6 +22,11 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,11 +39,15 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
+import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.reassessment.JournalLongitudinalClient.Projection;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Change;
 import com.mentalbridge.care.reassessment.JournalLongitudinalContract.Coverage;
@@ -60,6 +70,12 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper objectMapper;
+	@Autowired AdaptiveReviewEvidenceService adaptiveEvidence;
+	@Autowired ReassessmentSelfReportStore selfReportStore;
+	@Autowired ReassessmentSummaryStore summaryStore;
+	@Autowired ReassessmentSummaryService summaryService;
+	@Autowired UserProfileRepository profiles;
+	@Autowired PlatformTransactionManager transactionManager;
 	@MockitoBean JournalLongitudinalClient journal;
 	@MockitoBean Clock clock;
 
@@ -376,6 +392,136 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 		var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
 		assertThat(elapsed).isLessThan(Duration.ofSeconds(3));
+	}
+
+	@Test
+	void adaptiveReviewReadsExactPeriodSelfReportWithoutCreatingSummary() throws Exception {
+		var owner = insertProfile();
+		var currentReport = createSelfReport(owner, "adaptive-self-current-period", "MORE_DIFFICULT", null,
+				"Current-period context", CURRENT_START, CURRENT_END);
+		createSelfReport(owner, "adaptive-self-previous-period", "BETTER", "Previous-period context", null,
+				PREVIOUS_START, PREVIOUS_END);
+
+		var context = adaptiveEvidence.read(owner, null, "token", UUID.randomUUID());
+
+		assertThat(context.summary()).isNull();
+		assertThat(context.state()).isEqualTo("NOT_STARTED");
+		assertThat(context.currentPeriod()).isEqualTo(new ReassessmentSummaryView.Period(CURRENT_START, CURRENT_END));
+		assertThat(context.selfReport().source().selfReportId()).isEqualTo(currentReport);
+		assertThat(context.selfReport().source().currentExperience()).isEqualTo("MORE_DIFFICULT");
+		assertThat(jdbc.sql("select count(*) from reassessment_summary where user_id=:owner").param("owner", owner)
+				.query(Long.class).single()).isZero();
+		assertThat(adaptiveEvidence.localToken(owner, context)).isEqualTo(context.localToken());
+	}
+
+	@Test
+	void adaptiveEvidenceUsesOnlyApprovedCurrentPeriodOccurrencesAndInvalidatesWithdrawnFeedback() {
+		var owner = insertProfile();
+		var assessments = assessments(owner);
+		insertReusableEngagement(owner, assessments.currentPhq9(), assessments.currentGad7());
+
+		var context = adaptiveEvidence.read(owner, null, "token", UUID.randomUUID());
+
+		assertThat(context.occurrences()).singleElement().satisfies(item -> {
+			assertThat(item.scheduledAt()).isEqualTo(Instant.parse("2026-09-18T08:00:00Z"));
+			assertThat(item.barrierCode()).isEqualTo("LOW_ENERGY");
+			assertThat(item.occurrenceVersion()).isEqualTo(1);
+			assertThat(item.sourcePlanVersion()).isEqualTo(1);
+			assertThat(item.actionId()).isNull();
+			assertThat(item.sourceSlotId()).isEqualTo("breathing");
+		});
+		var occurrenceId = context.occurrences().getFirst().occurrenceId();
+		jdbc.sql("""
+				update support_plan_activity_occurrence
+				set summary_reuse_approved=false, version=version+1 where id=:id
+				""").param("id", occurrenceId).update();
+
+		assertThat(adaptiveEvidence.localToken(owner, context)).isNotEqualTo(context.localToken());
+		assertThat(adaptiveEvidence.read(owner, null, "token", UUID.randomUUID()).occurrences()).isEmpty();
+	}
+
+	@Test
+	void adaptiveEngagementUsesInclusiveStartAndExclusiveEndWithNoUnapprovedSourceReuse() {
+		var owner = insertProfile();
+		var assessments = assessments(owner);
+		insertReusableEngagement(owner, assessments.currentPhq9(), assessments.currentGad7());
+		var initial = adaptiveEvidence.read(owner, null, "token", UUID.randomUUID()).occurrences().getFirst();
+		var scheduleId = jdbc.sql("select id from support_plan_activity_schedule where support_plan_id=:plan")
+				.param("plan", initial.supportPlanId()).query(UUID.class).single();
+		insertOccurrence(scheduleId, initial.supportPlanId(), owner, initial.sourceResourceId(), CURRENT_START,
+				"SKIPPED", null, "NOT_ENOUGH_TIME", null);
+		insertOccurrence(scheduleId, initial.supportPlanId(), owner, initial.sourceResourceId(), CURRENT_END,
+				"SKIPPED", null, "NOT_ENOUGH_TIME", null);
+		jdbc.sql("update support_plan_activity_occurrence set summary_reuse_approved=false where id=:id")
+				.param("id", initial.occurrenceId()).update();
+
+		var context = adaptiveEvidence.read(owner, null, "token", UUID.randomUUID());
+
+		assertThat(context.occurrences()).singleElement().satisfies(item -> {
+			assertThat(item.scheduledAt()).isEqualTo(CURRENT_START);
+			assertThat(item.barrierCode()).isEqualTo("NOT_ENOUGH_TIME");
+			assertThat(item.occurrenceId()).isNotEqualTo(initial.occurrenceId());
+		});
+	}
+
+	@Test
+	void adaptiveSourceWritesWaitForTheOwnerConfirmationLock() throws Exception {
+		var owner = insertProfile();
+		var assessments = assessments(owner);
+		var reportId = UUID.randomUUID();
+		var period = new ReassessmentSummaryView.Period(CURRENT_START, CURRENT_END);
+		assertWaitsForOwnerLock(owner, () -> selfReportStore.persist(reportId, owner, "adaptive-lock-create-report",
+				"0".repeat(64), period, "MORE_DIFFICULT", null, null, clock.instant()));
+		assertWaitsForOwnerLock(owner, () -> selfReportStore.replace(owner, reportId, 0, "BETTER", null, null,
+				clock.instant()));
+		assertWaitsForOwnerLock(owner, () -> selfReportStore.delete(owner, reportId, 1, clock.instant()));
+		var summary = summaryService.compose(owner, "token", "adaptive-lock-initial-summary", UUID.randomUUID(),
+				new ReassessmentSummaryService.ComposeCommand(assessments.currentPhq9(), assessments.currentGad7(),
+						null, UUID.randomUUID(), new ReassessmentSummaryView.Period(PREVIOUS_START, PREVIOUS_END), period,
+						reportId));
+		var newSummaryId = UUID.randomUUID();
+		ObjectNode snapshot = objectMapper.valueToTree(summary);
+		snapshot.put("summaryId", newSummaryId.toString());
+		assertWaitsForOwnerLock(owner, () -> summaryStore.persist(newSummaryId, owner, "adaptive-lock-new-summary",
+				"1".repeat(64), "reassessment-summary-v2", summary.journalContext().jobId(),
+				summary.journalContext().analysisId(), summary.previousPeriod(), summary.currentPeriod(),
+				snapshot.toString(), clock.instant().plusSeconds(1)));
+		assertThat(selfReportStore.find(owner, reportId).orElseThrow().deleted()).isTrue();
+		assertThat(summaryStore.find(owner, newSummaryId)).isPresent();
+	}
+
+	private void assertWaitsForOwnerLock(UUID owner, Callable<?> write) throws Exception {
+		var locked = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var started = new CountDownLatch(1);
+		try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+			var holder = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+				profiles.findByIdForUpdate(owner).orElseThrow();
+				locked.countDown();
+				try {
+					if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Owner lock was not released");
+				}
+				catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(exception);
+				}
+			}));
+			try {
+				assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+				var waitingWrite = executor.submit(() -> {
+					started.countDown();
+					return write.call();
+				});
+				assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThatThrownBy(() -> waitingWrite.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+				release.countDown();
+				waitingWrite.get(5, TimeUnit.SECONDS);
+				holder.get(5, TimeUnit.SECONDS);
+			}
+			finally {
+				release.countDown();
+			}
+		}
 	}
 
 	private AssessmentSet assessments(UUID owner) {

@@ -22,12 +22,29 @@ public class CurrentServiceEntitlementService {
 
 	@Transactional(readOnly = true)
 	public EntitlementDecision current(UUID accountId) {
+		return summary(accountId).entitlement();
+	}
+
+	@Transactional(readOnly = true)
+	public EntitlementSummary summary(UUID accountId) {
 		var now = clock.instant();
 		return entitlements.findById(accountId)
-			.filter(entitlement -> isEffective(entitlement, now))
-			.map(entitlement -> EntitlementDecision.effective(entitlement, now))
-			.orElseGet(() -> EntitlementDecision.defaultFree(accountId, now));
+			.map(entitlement -> {
+				var grant = EntitlementDecision.effective(entitlement, now);
+				if (isEffective(entitlement, now)) {
+					return new EntitlementSummary(grant, EntitlementState.ACTIVE, grant);
+				}
+				var state = entitlement.effectiveUntil().isAfter(now)
+						? EntitlementState.DEFAULT_FREE : EntitlementState.EXPIRED;
+				return new EntitlementSummary(EntitlementDecision.defaultFree(accountId, now), state, grant);
+			})
+			.orElseGet(() -> new EntitlementSummary(EntitlementDecision.defaultFree(accountId, now),
+					EntitlementState.DEFAULT_FREE, null));
 	}
+
+	public enum EntitlementState { ACTIVE, EXPIRED, DEFAULT_FREE }
+
+	public record EntitlementSummary(EntitlementDecision entitlement, EntitlementState state, EntitlementDecision grant) { }
 
 	private boolean isEffective(CurrentServiceEntitlementEntity entitlement, Instant now) {
 		return !entitlement.effectiveFrom().isAfter(now) && entitlement.effectiveUntil().isAfter(now);

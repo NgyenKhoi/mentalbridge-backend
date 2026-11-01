@@ -7,7 +7,10 @@ import java.util.Base64;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -21,22 +24,45 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+
+import com.mentalbridge.consultation.entitlement.VoiceEntitlementAuthenticationFilter;
+import com.mentalbridge.consultation.entitlement.VoiceEntitlementProperties;
 
 import com.mentalbridge.consultation.shared.SecurityProblemSupport;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(VoiceEntitlementProperties.class)
 public class SecurityConfiguration {
+
+	@Bean
+	@Order(1)
+	SecurityFilterChain voiceEntitlementSecurity(HttpSecurity http, VoiceEntitlementProperties properties,
+			Environment environment)
+			throws Exception {
+		if (properties.journalServiceToken() != null && !properties.journalServiceToken().isEmpty()) {
+			properties.requireDistinctFrom(environment.getProperty("mentalbridge.consultation.evidence-service-token"),
+					environment.getProperty("mentalbridge.consultation.appointment-notifications.service-token"));
+		}
+		http.securityMatcher(VoiceEntitlementAuthenticationFilter.PATH)
+				.csrf(csrf -> csrf.disable())
+				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.addFilterBefore(new VoiceEntitlementAuthenticationFilter(properties), AuthorizationFilter.class)
+				.authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll());
+		return http.build();
+	}
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
 			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-			SecurityProblemSupport securityProblems) throws Exception {
+			SecurityProblemSupport securityProblems, IdentityAccountStatusVerifier accountStatus) throws Exception {
 		http.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
 						.permitAll()
-						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn").permitAll()
+						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn", "/internal/v1/payments/payos/webhook").permitAll()
 						.requestMatchers("/internal/v1/video/livekit/webhook").permitAll()
 						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
 						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
@@ -70,7 +96,12 @@ public class SecurityConfiguration {
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))
 				.oauth2ResourceServer(resourceServer -> resourceServer
-						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+				.addFilterAfter(new AccountStatusEnforcementFilter(accountStatus, securityProblems,
+						"/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**",
+						"/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn", "/internal/v1/payments/payos/webhook",
+						"/internal/v1/video/livekit/webhook", "/internal/v1/appointments/*/notification-eligibility"),
+						BearerTokenAuthenticationFilter.class);
 		return http.build();
 	}
 

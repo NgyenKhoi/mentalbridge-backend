@@ -11,9 +11,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.mentalbridge.care.guidedjourney.GuidedJourneyService.JourneyView;
+import com.mentalbridge.care.guidedjourney.HomeNextStepService.HomeNextStepView;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.supportguide.SupportGuideService.SupportGuideView;
 
@@ -21,9 +23,19 @@ import com.mentalbridge.care.supportguide.SupportGuideService.SupportGuideView;
 public class GuidedJourneyController {
 
 	private final GuidedJourneyService journeys;
+	private final HomeNextStepService home;
 
-	public GuidedJourneyController(GuidedJourneyService journeys) {
+	public GuidedJourneyController(GuidedJourneyService journeys, HomeNextStepService home) {
 		this.journeys = journeys;
+		this.home = home;
+	}
+
+	@GetMapping("/api/v1/home-next-step")
+	ResponseEntity<HomeNextStepView> home(@AuthenticationPrincipal Jwt jwt,
+			@RequestHeader(name = "X-Correlation-Id", required = false) UUID correlationId,
+			@RequestParam(required = false) String timezone) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(home.current(subject(jwt), jwt.getTokenValue(), correlation(correlationId), timezone));
 	}
 
 	@GetMapping("/api/v1/guided-journey/current")
