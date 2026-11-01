@@ -21,6 +21,7 @@ import com.mentalbridge.consultation.shared.ApiException;
 import vn.payos.PayOS;
 import vn.payos.core.ClientOptions;
 import vn.payos.model.v2.paymentRequests.CreatePaymentLinkRequest;
+import vn.payos.model.webhooks.WebhookData;
 import okhttp3.OkHttpClient;
 
 @Component
@@ -127,35 +128,32 @@ class PayosCheckoutGateway {
 	VerifiedWebhook verify(String originalBody) {
 		if (!properties.payosVerificationReady()) throw unavailable("PAYOS_WEBHOOK_UNAVAILABLE");
 		if (originalBody == null || originalBody.length() > 65_536) throw invalid();
+		WebhookData data;
 		try {
-			client.webhooks().verify(originalBody);
+			data = client.webhooks().verify(originalBody);
 		}
 		catch (Exception exception) {
 			throw verificationFailure(originalBody);
 		}
 		try {
 			var body = json.readTree(originalBody);
-			var data = body.path("data");
-			if (!body.isObject() || !data.isObject() || !body.path("success").isBoolean()
-					|| !text(body, "code", 32) || !string(body, "desc", 1024) || !text(body, "signature", 128)
-					|| !data.path("orderCode").isIntegralNumber() || !data.path("orderCode").canConvertToLong()
-					|| !data.path("amount").isIntegralNumber() || !data.path("amount").canConvertToLong()
-					|| !text(data, "paymentLinkId", 128) || !text(data, "reference", 128)
-					|| !text(data, "code", 32) || !text(data, "currency", 3)
-					|| !string(data, "description", 1024) || !string(data, "accountNumber", 64)
-					|| !string(data, "transactionDateTime", 64) || !string(data, "desc", 1024)
-					|| data.path("orderCode").longValue() < 0 || data.path("orderCode").longValue() > MAX_ORDER_CODE
-					|| data.path("amount").longValue() < 0) throw invalid();
-			Map<String, Object> completeData = json.convertValue(data, new TypeReference<>() { });
+			var raw = body.path("data");
+			// The SDK coerces "5000" and 5000.0 into Long; money fields must arrive as JSON integers.
+			if (!raw.path("orderCode").isIntegralNumber() || !raw.path("amount").isIntegralNumber()
+					|| data.getOrderCode() < 0 || data.getOrderCode() > MAX_ORDER_CODE || data.getAmount() < 0
+					|| !present(data.getPaymentLinkId(), 128) || !present(data.getReference(), 128)) throw invalid();
+			// The SDK signs only the fields it models; this rejects unsigned extra fields in the raw data.
+			Map<String, Object> completeData = json.convertValue(raw, new TypeReference<>() { });
 			var expected = client.getCrypto().createSignatureFromObj(completeData, properties.getPayosChecksumKey());
 			if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
-					body.path("signature").textValue().getBytes(StandardCharsets.UTF_8))) {
+					body.path("signature").asText().getBytes(StandardCharsets.UTF_8))) {
 				throw new ApiException(HttpStatus.UNAUTHORIZED, "PAYOS_SIGNATURE_INVALID", "Invalid payment signature");
 			}
-			return new VerifiedWebhook(data.path("orderCode").longValue(), data.path("amount").longValue(),
-					data.path("paymentLinkId").textValue(), data.path("reference").textValue(),
-					body.path("success").booleanValue() && "00".equals(body.path("code").textValue())
-					&& "00".equals(data.path("code").textValue()) && "VND".equals(data.path("currency").textValue()));
+			// PayOS omits the envelope "success" flag in some deliveries (the dashboard sample); "00" codes decide.
+			return new VerifiedWebhook(data.getOrderCode(), data.getAmount(), data.getPaymentLinkId(), data.getReference(),
+					(!body.path("success").isBoolean() || body.path("success").booleanValue())
+					&& "00".equals(body.path("code").textValue()) && "00".equals(data.getCode())
+					&& "VND".equals(data.getCurrency()));
 		}
 		catch (ApiException exception) { throw exception; }
 		catch (Exception exception) { throw invalid(); }
@@ -173,7 +171,7 @@ class PayosCheckoutGateway {
 		try {
 			var body = json.readTree(originalBody);
 			if (body == null || !body.isObject() || !body.path("data").isObject()
-					|| !body.path("success").isBoolean() || !text(body, "code", 32)
+					|| !text(body, "code", 32)
 					|| !string(body, "desc", 1024) || !text(body, "signature", 128)) return invalid();
 		}
 		catch (Exception exception) { return invalid(); }
