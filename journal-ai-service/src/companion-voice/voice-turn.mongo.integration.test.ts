@@ -737,8 +737,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         sequence: number,
         kind: "HEARTBEAT" | "PLAYBACK_STARTED",
         payload: Record<string, unknown>,
-      ) =>
-        f.left.sessions.control(
+      ) => {
+        const current = await f.db
+          .collection<RawRecord>("ai_voice_sessions")
+          .findOne({ _id: f.active.id });
+        assert.ok(current?.leaseExpiresAt instanceof Date);
+        return f.left.sessions.control(
           f.active.id,
           voiceWorkerSignalSchema.parse({
             schemaVersion: 1,
@@ -748,11 +752,17 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
             attemptId: f.active.attemptId,
             sequence,
             issuedAt: f.clock().toISOString(),
-            expiresAt: new Date(f.clock().getTime() + 5000).toISOString(),
+            expiresAt: new Date(
+              Math.min(
+                current.leaseExpiresAt.getTime(),
+                f.clock().getTime() + 4000,
+              ),
+            ).toISOString(),
             payload: { leaseId: f.active.leaseId, ...payload },
           }),
           randomUUID(),
         );
+      };
       await control(2, "PLAYBACK_STARTED", {
         turnId: first.turnId,
         replyId: initial.replyId,
@@ -764,6 +774,10 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       }
       f.advance(4000);
       const spokenAt = f.clock().getTime();
+      const acknowledged = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(acknowledged?.leaseExpiresAt instanceof Date);
       const gate = hold();
       f.respond(async () => {
         await gate.wait;
@@ -787,6 +801,14 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       } finally {
         gate.release();
       }
+      const registered = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(registered?.leaseExpiresAt instanceof Date);
+      assert.equal(
+        registered.leaseExpiresAt.getTime(),
+        acknowledged.leaseExpiresAt.getTime(),
+      );
       await control(sequence, "HEARTBEAT", { observedState: "ACTIVE" });
       f.advance(1000);
       assert.deepEqual(await f.generate(input, key), result);
