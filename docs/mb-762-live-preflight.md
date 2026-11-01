@@ -6,7 +6,49 @@ Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not c
 another mock-only delivery milestone. Tests verify production changes without
 making provider calls before approval.
 
-## Current voice selection and manual retest — 2026-11-01
+## Completed Liên microphone test — 2026-11-01
+
+The separately authorized local test on backend `43583431` and frontend
+`8fbb9893` reached Nova-3 final validation, Journal authorization, Sonnet 4.6
+response validation and pinned Sonic3/Liên playback. The tester explicitly
+confirmed that Liên was much louder and clearer than Xia and complete replies
+were audible. This is one real local microphone acceptance result, not a
+claim of all dialects, noise conditions, ten-minute stability or staging
+readiness. See [Jira 10383](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10383).
+
+The fixed window was 22:24:18.850–22:39:18.850 Asia/Ho_Chi_Minh. Exactly one new
+synthetic local USER separately accepted both current Care disclosures and
+received one DEMO PREMIUM grant. Exactly one admission reserved 600 seconds;
+the session ended after about 186 seconds with `ENDED/USER_ENDED`, delivered
+true and 161 ACTIVE seconds charged. No 600-second deadline or lease/provider
+failure initiated the stop. Raw room-disconnect/provider-failure events during
+shutdown remain retained; the earlier client-close classification race is not
+claimed fixed.
+
+There were 13 Journal/Sonnet requests, 13 validated replies and 11 first-audio
+publications. All 27 heartbeat attempts were acknowledged; maximum response
+time was 2056 ms and minimum lease headroom at request was 4271 ms. Ordered
+metadata correlation, rather than a turn-ID join, measured 11 accepted-final
+to first-audio samples: median 6117 ms, range 5075–18129 ms. Request-to-first-audio
+median was 4838 ms; queued finals waited up to 13291 ms before request. Time before
+the final STT event is unmeasured. Audio acceptance does not establish a
+realtime-latency PASS; queued-turn latency remains a limitation.
+
+Observed attempt usage was 11948 input/1946 output tokens, 171900 ms STT and 1608
+reported TTS characters. The existing USD 1 envelope retains 22 cumulative
+Converse reservations/USD 0.26928 without refunding unknown outcomes; cumulative
+observed usage is 17083 input/2873 output, 291850 ms STT and 2133 TTS characters.
+Interrupted/unobserved synthesis stays reserved, not zero. These figures are
+not invoices or evidence of numeric remaining credit. No upgrade/cash payment,
+historical quota reset, staging deployment or PR merge occurred.
+
+Teardown PASS: Voice/Agent OFF, no open new session, room/active Egress 0,
+dispatch/media STOPPED, quota reservations 0 and no audio/transcript content
+files within the audited runtime. Historical grant/session and prior cumulative
+evidence hashes remained unchanged. The owner requested review/merge handoff
+to `dev`, backend before frontend; full PR approval is still a separate gate.
+
+## Earlier voice selection and manual retest — 2026-11-01
 
 The owner selected Cartesia Lien
 `8e8f222d-c817-4cc5-822b-8bf76ca7e98d` for the next pilot after reporting quiet
@@ -27,7 +69,8 @@ an in-flight turn. That terminal-classification behavior is not repaired by
 this voice-selection change.
 
 Accepted-final-to-first-audio was5371/5766/6683ms for the three published
-replies. Full600-second stability and Lien loudness have not been verified.
+replies. At that point, full600-second stability and Lien loudness had not been
+verified.
 Both Voice flags are OFF after teardown, room/active Egress are zero, and the
 same USD1 envelope retains all nine Converse reservations without refunding
 the final unknown inference outcome. A new voice selection does not restore
