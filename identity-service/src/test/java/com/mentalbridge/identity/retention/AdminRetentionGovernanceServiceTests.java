@@ -610,6 +610,10 @@ class AdminRetentionGovernanceServiceTests {
 		// Overall request CANNOT be marked COMPLETED without all owner facts!
 		assertThat(response.status()).isEqualTo(DeletionRequestStatus.IN_PROGRESS);
 		assertThat(account.status()).isEqualTo(AccountStatus.DELETED);
+		assertThat(account.deletedAt()).isNotNull();
+		assertThat(account.updatedAt()).isEqualTo(account.deletedAt());
+		assertThat(account.email()).isEqualTo("user@example.com");
+		assertThat(account.passwordHash()).isEqualTo("hash");
 		verify(authentication).revokeAll(eq(account.id()), eq("ACCOUNT_DELETED"), any(Instant.class));
 	}
 
