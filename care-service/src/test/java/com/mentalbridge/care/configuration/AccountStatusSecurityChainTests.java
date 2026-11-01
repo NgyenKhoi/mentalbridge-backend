@@ -47,6 +47,15 @@ class AccountStatusSecurityChainTests extends CareTestProperties {
 	}
 
 	@Test
+	void previouslyAllowedJwtIsRejectedAfterAccountBecomesInactive() throws Exception {
+		var accountId = UUID.randomUUID();
+		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true, false);
+		mvc.perform(get(PROTECTED).with(user(accountId))).andExpect(status().isOk());
+		mvc.perform(get(PROTECTED).with(user(accountId))).andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("invalid_token"));
+	}
+
+	@Test
 	void deletedOrUnknownAccountReturnsInvalidToken() throws Exception {
 		when(accountStatusVerifier.isActive(any(), any())).thenReturn(false);
 		mvc.perform(get(PROTECTED).with(user(UUID.randomUUID()))).andExpect(status().isUnauthorized())
