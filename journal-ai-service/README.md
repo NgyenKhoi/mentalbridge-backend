@@ -2,6 +2,66 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-762 scoped Voice provider
+
+Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
+`ap-southeast-1` using `JOURNAL_AI_VOICE_PROVIDER_MODE=APPROVED_BEDROCK`,
+`JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION` and the existing
+`AWS_BEARER_TOKEN_BEDROCK`. The model and region are validated by the dedicated
+`JOURNAL_AI_VOICE_BEDROCK_MODEL` / `JOURNAL_AI_VOICE_BEDROCK_REGION` keys.
+This configuration does not change AI Text, benchmark selection, consent,
+entitlement or admission. `JOURNAL_AI_VOICE_ENABLED` remains false until the
+[real preflight](../docs/mb-762-live-preflight.md) and LIVE_APPROVED gate pass.
+Live Voice inference cannot fall back to fake, Gemini, Opus or another region. Existing
+nonproduction deterministic tests remain available only while Voice is disabled.
+
+For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
+`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Optional
+`maxSessionSeconds` (integer 1–600) and `maxTurns` (integer 1–30) retain defaults
+of 90 seconds and four turns when omitted. These operational limits need an
+approved budget/window; they do not enable Voice. Never change
+the window to retry this campaign. Existing retained session rows count every
+admission in the window, including failed or refunded calls, in the same Mongo
+transaction as the global capacity write. Each allowlisted owner has at most
+one admission in that window even after a refund; the campaign still has two
+total admissions. Replays do not allocate again. The
+session deadline is frozen at admission, bounded by the configured pilot cap,
+remaining daily quota and window end. Product policy still limits PLUS to 300
+seconds and PREMIUM to 600 seconds per session;
+daily Text/Voice policy and financial credits are unchanged. No new collection
+or migration is introduced.
+
+Optional pilot `replyStyle` accepts `BRIEF` (the existing default) or
+`SUPPORTIVE`. The supportive spoken prompt requests two or three natural
+Vietnamese sentences, usually 180–280 characters, reflecting only what the
+caller shared, with an optional gentle observation or small next step and at
+most one open question. Ambiguous recognition takes priority and calls for a
+short clarification. The same strict JSON/safety validator, 500-character
+message limit, 1,900-input-token check, 300-output-token ceiling and provider
+pins still apply. AI Text behavior is unchanged.
+
+Pilot Voice uses the same safety schema/validator with the schema included in
+the system prompt, and omits provider-side `outputConfig` so the complete input
+can be counted before inference. Bedrock Runtime token counting at the Singapore
+endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
+most 1,900 tokens (100-token headroom under the per-turn
+2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
+to the approved global profile and caps output at 300 tokens. The default four
+turns per call and two admissions bound output to 2,400; an approved extended
+pilot can set at most 30 turns per call, so its budget must account for the
+configured admission and turn limits. This capability/permission needs an actual
+authorized runtime check and `bedrock:CountTokens` access, plus the existing
+Bearer-use authorization; unit tests do not establish account access. The
+[Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+supports Runtime CountTokens and explicitly excludes Mantle. The prior Mantle
+403 did not establish an IAM deficiency. After the owner applied the scoped IAM
+policy, the separately approved recheck in Jira 10295 returned HTTP 200,
+`inputTokens: 53`, in 440 ms on 2026-10-30. This supersedes the earlier unavailable
+result; do not repeat IAM or synthetic CountTokens checks during preparation.
+Admission and Agent remain OFF pending explicit `LIVE_APPROVED`. Actual inference stays on the approved Singapore Converse
+endpoint with the global profile, separately from the counting model ID. There is
+no fallback or retry when counting/inference fails. Text requests are unchanged.
+
 ## Current scope
 
 MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for
@@ -78,6 +138,24 @@ Care/Consultation base URLs, enforce a fixed two-second read deadline, reject
 redirects, malformed/stale responses and mismatched owner/session/purpose, and
 require `no-store`. They do not forward or persist the user's bearer, replicate
 grants, query another owner's database or retry a stale positive decision.
+
+Java and Node wall clocks can differ by a few milliseconds even on the same
+Windows host. A response at most 25 ms ahead may wait for the client's clock
+to reach its original `checkedAt`, within the same two-second read deadline.
+It is never accepted while future-dated, and no REST request is repeated.
+Both owner decisions are checked again at the common return time: age must be
+0..2,000 ms and a paid entitlement must still be unexpired. Large clock skew,
+clock rollback, stale decisions and missing authority continue to fail closed.
+`voice_owner_authorization` diagnostics expose only the owner-service enum,
+closed rejection/catch-up reason, bounded elapsed/age and optional HTTP status;
+no response body, headers, error text, owner ID or token is recorded.
+
+The Voice Bedrock decoder accepts a single whole-response JSON code fence as
+an encoding wrapper. The same exact object schema, Vietnamese language,
+authority and message-safety validators still run; surrounding prose, trailing
+objects, incomplete fences and unsafe fields remain rejected. Pilot prompts
+explicitly request JSON without fences. No provider retry or Text change is
+introduced by this Voice-only decoding rule.
 
 Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
 owns the three closed, content-free MongoDB collections described in the

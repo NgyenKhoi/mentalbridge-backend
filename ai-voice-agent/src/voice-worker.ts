@@ -2,6 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { AgentFailure } from "./configuration.js";
 import type { Dispatch, Lease, Reply, Signal, StopReason } from "./contract.js";
 import type { JournalClient } from "./journal-client.js";
+import type {
+  AgentDiagnostic,
+  MediaFailure,
+  TranscriptRejection,
+} from "./diagnostics.js";
 
 export type AgentState =
   | "CONNECTING"
@@ -26,13 +31,12 @@ export interface MediaCallbacks {
   transcript: (value: Transcript) => void;
   muted: (value: boolean) => void;
   connected: (value: boolean) => void;
-  failed: () => void;
+  failed: (failure?: MediaFailure) => void;
 }
 export interface MediaPort {
   state(state: AgentState): void;
   start(callbacks: MediaCallbacks): Promise<void>;
   input(enabled: boolean): void;
-  clearInput(): void;
   speak(
     text: string,
     started: () => Promise<void>,
@@ -86,6 +90,9 @@ export class VoiceWorker {
     private readonly outcome: (
       code: AgentState | "TEXT_OR_PUSH_TO_TALK",
     ) => void = () => undefined,
+    private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
+      undefined,
+    private readonly finalAggregationMs = 1500,
   ) {
     this.finished = new Promise((resolve) => {
       this.finish = resolve;
@@ -115,6 +122,8 @@ export class VoiceWorker {
   async start() {
     try {
       this.lease = await this.journal.claim(this.dispatch, this.life.signal);
+      this.diagnostic({ phase: "agent_claim_ok" });
+      this.scheduleHeartbeat();
       await this.media.start({
         transcript: (value) => {
           this.receive(value);
@@ -125,18 +134,28 @@ export class VoiceWorker {
         connected: (value) => {
           void this.connection(value).catch(() => this.fail());
         },
-        failed: () => {
+        failed: (failure = { source: "UNKNOWN" }) => {
+          if (this.life.signal.aborted) return;
+          this.diagnostic({ phase: "media_failed", ...failure });
           void this.fail();
         },
       });
       await this.control("MEDIA_READY", {});
+      this.diagnostic({ phase: "media_ready_ack" });
       if (!this.live()) throw new AgentFailure("AUTHORITY_EXPIRED");
       this.ready = true;
       this.media.input(this.connected && !this.muted);
       this.setState(
         this.connected ? (this.muted ? "MUTED" : "LISTENING") : "DISCONNECTED",
       );
-    } catch {
+    } catch (error) {
+      this.diagnostic({
+        phase: "startup_failed",
+        code:
+          error instanceof AgentFailure
+            ? (error.failure ?? "INVALID_RESPONSE")
+            : "TRANSPORT",
+      });
       await this.fail();
     }
   }
@@ -148,6 +167,11 @@ export class VoiceWorker {
       const lease = this.lease;
       if (!lease || !this.live()) throw new AgentFailure("AUTHORITY_EXPIRED");
       const now = this.clock();
+      if (kind === "HEARTBEAT")
+        this.diagnostic({
+          phase: "heartbeat_attempt",
+          remainingMs: Date.parse(lease.validUntil) - now,
+        });
       const signal: Signal = {
         schemaVersion: 1,
         kind,
@@ -166,6 +190,7 @@ export class VoiceWorker {
         signal,
         kind === "FINISHED" ? undefined : this.life.signal,
       );
+      if (!this.live()) throw new AgentFailure("AUTHORITY_EXPIRED");
       if (result.control.sequence <= this.backendSequence)
         throw new AgentFailure("INVALID_RESPONSE");
       this.backendSequence = result.control.sequence;
@@ -184,22 +209,77 @@ export class VoiceWorker {
       )
         throw new AgentFailure("INVALID_RESPONSE");
       this.lease = { ...lease, validUntil: renewed.validUntil };
-      this.nextHeartbeat = this.clock() + 5000;
+      if (kind === "HEARTBEAT") this.diagnostic({ phase: "heartbeat_ack" });
+      this.scheduleHeartbeat();
     });
     this.controls = work.catch(() => undefined);
     return work;
   }
+  private scheduleHeartbeat() {
+    if (!this.lease) return;
+    const now = this.clock();
+    this.nextHeartbeat = Math.max(
+      now,
+      Math.min(now + 5000, Date.parse(this.lease.validUntil) - 4500),
+    );
+    this.diagnostic({
+      phase: "next_heartbeat_due",
+      delayMs: this.nextHeartbeat - now,
+      remainingMs: Date.parse(this.lease.validUntil) - now,
+    });
+  }
   receive(value: Transcript) {
     if (!this.ready || !this.live() || !this.connected || this.muted) return;
     const text = value.text.trim();
-    if (!text) return;
-    if (
-      !Number.isFinite(value.confidence) ||
-      value.confidence < 0.8 ||
-      value.language !== "vi" ||
-      text.length > 2000
-    ) {
-      if (value.final) void this.fail();
+    if (!text) {
+      if (value.final)
+        this.diagnostic({ phase: "stt_final", transcriptResult: "EMPTY" });
+      return;
+    }
+    const confidenceValid =
+      Number.isFinite(value.confidence) &&
+      value.confidence >= 0 &&
+      value.confidence <= 1;
+    const reject = (rejection: TranscriptRejection) => {
+      this.diagnostic({
+        phase: "stt_final",
+        transcriptResult: "REJECTED",
+        rejection,
+        confidenceValid,
+        ...(confidenceValid ? { confidence: value.confidence } : {}),
+        languageAccepted: value.language === "vi",
+      });
+      void this.fail();
+    };
+    if (!confidenceValid || value.language !== "vi" || text.length > 2000) {
+      if (value.final)
+        reject(
+          !confidenceValid
+            ? "INVALID_CONFIDENCE"
+            : value.language !== "vi"
+              ? "LANGUAGE_MISMATCH"
+              : "TRANSCRIPT_TOO_LARGE",
+        );
+      return;
+    }
+    if (Buffer.byteLength(text, "utf8") > 1800) {
+      if (value.final) reject("PENDING_TOO_LARGE");
+      return;
+    }
+    if (value.confidence < 0.8) {
+      if (value.final) {
+        this.pending = "";
+        this.pauseUntil = 0;
+        this.diagnostic({
+          phase: "stt_final",
+          transcriptResult: "DISCARDED",
+          rejection: "LOW_CONFIDENCE",
+          confidenceValid: true,
+          confidence: value.confidence,
+          languageAccepted: true,
+        });
+        if (!this.busy) this.setState("LISTENING");
+      }
       return;
     }
     const clean = normalized(text);
@@ -221,27 +301,25 @@ export class VoiceWorker {
     const key = digest(value.segmentId);
     if (this.seen.has(key)) return;
     if (this.seen.size >= 256) {
-      void this.fail();
+      reject("SEGMENT_LIMIT");
       return;
     }
     this.seen.add(key);
-    if (this.busy && !this.speaking) {
-      void this.stop("USER_ENDED");
-      return;
-    }
     if (this.speaking) void this.bargeIn();
     this.pending = [this.pending, text].filter(Boolean).join(" ");
     if (Buffer.byteLength(this.pending, "utf8") > 1800) {
-      void this.fail();
+      reject("PENDING_TOO_LARGE");
       return;
     }
-    this.pauseUntil = this.clock() + 1500;
-    this.setState("TRANSCRIBING");
+    this.pauseUntil = this.clock() + this.finalAggregationMs;
+    this.diagnostic({ phase: "stt_final", transcriptResult: "PENDING" });
+    if (!this.busy) this.setState("TRANSCRIBING");
   }
   async tick() {
     if (this.life.signal.aborted) return;
     if (!this.lease && this.state === "CONNECTING") return;
     if (!this.live()) {
+      this.diagnostic({ phase: "lease_expired" });
       await this.stop("AUTHORIZATION_EXPIRED", false);
       return;
     }
@@ -260,7 +338,17 @@ export class VoiceWorker {
                 ? "ACTIVE"
                 : "RECONNECTING",
         });
-      } catch {
+      } catch (error) {
+        this.diagnostic({
+          phase: "heartbeat_fail",
+          code:
+            error instanceof AgentFailure
+              ? (error.failure ??
+                (error.code === "AUTHORITY_EXPIRED"
+                  ? "AUTHORITY_EXPIRED"
+                  : "INVALID_RESPONSE"))
+              : "TRANSPORT",
+        });
         await this.stop("AUTHORIZATION_EXPIRED", false);
       } finally {
         this.renewing = false;
@@ -281,9 +369,10 @@ export class VoiceWorker {
   private async turn(text: string) {
     if (!this.live() || !this.lease) return;
     this.busy = true;
+    this.interrupted = false;
     this.setState("WAITING_FOR_REPLY");
-    this.media.clearInput();
     try {
+      this.diagnostic({ phase: "turn_requested" });
       const reply = await this.journal.turn(
         this.dispatch,
         {
@@ -298,6 +387,7 @@ export class VoiceWorker {
         randomUUID(),
         this.life.signal,
       );
+      await this.controls;
       if (
         !this.live() ||
         Date.parse(reply.expiresAt) > Date.parse(this.lease.validUntil) ||
@@ -305,14 +395,15 @@ export class VoiceWorker {
       )
         throw new AgentFailure("AUTHORITY_EXPIRED");
       this.speaking = reply;
-      this.interrupted = false;
       this.playbackStarted = false;
       this.playback = new AbortController();
       this.lastEcho = normalized(reply.spokenText);
       this.echoUntil = this.clock() + 60000;
+      this.diagnostic({ phase: "tts_begin" });
       await this.media.speak(
         reply.spokenText,
         async () => {
+          this.diagnostic({ phase: "playout_first_audio" });
           if (
             !this.live() ||
             !this.connected ||
@@ -339,13 +430,28 @@ export class VoiceWorker {
       this.echoUntil = this.clock() + 1000;
       this.speaking = null;
       this.playback = null;
-      if (!this.pending)
-        this.setState(
-          this.muted ? "MUTED" : this.connected ? "LISTENING" : "DISCONNECTED",
-        );
-    } catch {
+      this.setState(
+        this.muted
+          ? "MUTED"
+          : !this.connected
+            ? "DISCONNECTED"
+            : this.pending
+              ? "TRANSCRIBING"
+              : "LISTENING",
+      );
+    } catch (error) {
+      this.diagnostic({
+        phase: "turn_failed",
+        code:
+          error instanceof AgentFailure
+            ? (error.failure ??
+              (error.code === "AUTHORITY_EXPIRED"
+                ? "AUTHORITY_EXPIRED"
+                : "INVALID_RESPONSE"))
+            : "PROVIDER_FAILED",
+      });
       if (this.life.signal.aborted) return;
-      if (!this.interrupted) await this.fail();
+      if (!this.playback?.signal.aborted) await this.fail();
     } finally {
       this.busy = false;
       this.speaking = null;
@@ -376,7 +482,6 @@ export class VoiceWorker {
   private async mute(value: boolean) {
     this.muted = value;
     this.pending = "";
-    this.media.clearInput();
     this.media.input(this.ready && this.live() && this.connected && !value);
     if (value && this.speaking) await this.bargeIn();
     if (this.ready && !this.life.signal.aborted)
@@ -393,7 +498,6 @@ export class VoiceWorker {
     this.connected = value;
     this.pending = "";
     this.media.input(false);
-    this.media.clearInput();
     if (!value) {
       this.reconnectUntil = this.clock() + 30000;
       if (this.busy) {
@@ -424,6 +528,7 @@ export class VoiceWorker {
     const lease = this.lease;
     const notifyAllowed = notify && this.live();
     this.setState("ENDING");
+    this.diagnostic({ phase: "agent_stopped", reason });
     this.ready = false;
     this.pending = "";
     this.seen.clear();
@@ -478,4 +583,13 @@ export class VoiceWorker {
     });
     return this.stopWork;
   }
+}
+export function startWorkerTimer(worker: Pick<VoiceWorker, "tick" | "fail">) {
+  const timer = setInterval(() => {
+    void worker.tick().catch(() => worker.fail());
+  }, 250);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
 }

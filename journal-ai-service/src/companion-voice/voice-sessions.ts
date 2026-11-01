@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
+import { VoiceAuthorizationError } from "./voice-authorization.js";
 import {
   MongoVoiceLedger,
   VoiceLedgerError,
@@ -196,12 +197,10 @@ export class VoiceSessionsService {
     )
       throw new VoiceLedgerError("STALE_ATTEMPT");
     try {
-      const authority = await this.access.authorizeTurn(
-        session.ownerId,
-        id,
-        correlationId,
-      );
-      const observed = await this.media.inspect(document);
+      const [authority, observed] = await Promise.all([
+        this.access.authorizeTurn(session.ownerId, id, correlationId),
+        this.media.inspect(document),
+      ]);
       if (
         !observed.roomExists ||
         !observed.ownerConnected ||
@@ -209,6 +208,20 @@ export class VoiceSessionsService {
       )
         throw new VoiceLedgerError("INVALID_SESSION_STATE");
       await this.turnState(id, attemptId, leaseId);
+      const now = this.clock().getTime();
+      for (const [decision, failure] of [
+        [authority.consent, "CONSENT_UNAVAILABLE"],
+        [authority.entitlement, "ENTITLEMENT_UNAVAILABLE"],
+      ] as const) {
+        const age = now - Date.parse(decision.checkedAt);
+        if (!Number.isFinite(age) || age < 0 || age > 2000)
+          throw new VoiceAuthorizationError(failure);
+      }
+      const entitlementExpiry = Date.parse(
+        authority.entitlement.validUntil ?? "",
+      );
+      if (!Number.isFinite(entitlementExpiry) || entitlementExpiry <= now)
+        throw new VoiceAuthorizationError("ENTITLEMENT_UNAVAILABLE");
       return authority;
     } catch (error) {
       this.discardContext(id);
@@ -610,7 +623,8 @@ export class VoiceSessionsService {
       } else if (
         observed.ownerConnected &&
         observed.agentConnected &&
-        ["CONNECTING", "RECONNECTING"].includes(session.state)
+        (session.state === "RECONNECTING" ||
+          (session.state === "CONNECTING" && input.kind === "MEDIA_READY"))
       ) {
         await this.ledger.transition(id, guard, "ACTIVE", this.clock());
       } else if (!observed.ownerConnected && session.state === "ACTIVE") {
@@ -699,7 +713,7 @@ export class VoiceSessionsService {
     const session = await this.current(id);
     if (session.attemptId !== attemptId || session.state !== "ACTIVE")
       throw new VoiceLedgerError("STALE_ATTEMPT");
-    await this.access.authorizeSession(session.ownerId, id, correlationId);
+    await this.access.inspectSession(session.ownerId, id, correlationId);
     await this.store.registerReply(
       id,
       attemptId,

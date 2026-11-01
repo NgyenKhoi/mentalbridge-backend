@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { performance } from "node:perf_hooks";
+import { setTimeout as pause } from "node:timers/promises";
 
 const ownerBinding = {
   ownerId: z.uuid(),
@@ -68,11 +70,35 @@ export class VoiceAuthorizationError extends Error {
   }
 }
 
+export interface VoiceOwnerDiagnostic {
+  service: "CARE" | "CONSULTATION";
+  reason:
+    | "MISSING_CREDENTIAL"
+    | "TIMEOUT"
+    | "TRANSPORT"
+    | "HTTP_4XX"
+    | "HTTP_5XX"
+    | "HTTP_OTHER"
+    | "INVALID_HEADERS"
+    | "INVALID_JSON"
+    | "INVALID_RESPONSE"
+    | "BINDING_MISMATCH"
+    | "STALE_DECISION"
+    | "FUTURE_DECISION"
+    | "CLOCK_CAUGHT_UP"
+    | "EXPIRED_ENTITLEMENT";
+  elapsedMs: number;
+  status?: number;
+  decisionAgeMs?: number;
+}
+
 export class CurrentVoiceOwnerAuthorizer implements VoiceOwnerAuthorizer {
   constructor(
     private readonly configuration: VoiceOwnerConfiguration,
     private readonly clock: () => Date = () => new Date(),
     private readonly transport: typeof fetch = fetch,
+    private readonly diagnostic: (value: VoiceOwnerDiagnostic) => void = () =>
+      undefined,
   ) {}
 
   async check(
@@ -104,10 +130,31 @@ export class CurrentVoiceOwnerAuthorizer implements VoiceOwnerAuthorizer {
         correlationId,
       ),
     ]);
+    const now = this.clock().getTime();
+    for (const [decision, service, code] of [
+      [consent, "CARE", "CONSENT_UNAVAILABLE"],
+      [entitlement, "CONSULTATION", "ENTITLEMENT_UNAVAILABLE"],
+    ] as const) {
+      const age = now - Date.parse(decision.checkedAt);
+      if (age < 0 || age > 2_000) {
+        this.observe({
+          service,
+          reason: age < 0 ? "FUTURE_DECISION" : "STALE_DECISION",
+          elapsedMs: 0,
+          decisionAgeMs: Math.max(-60_000, Math.min(60_000, age)),
+        });
+        throw new VoiceAuthorizationError(code);
+      }
+    }
     if (
       entitlement.packageCode !== "FREE" &&
-      Date.parse(entitlement.validUntil ?? "") <= this.clock().getTime()
+      Date.parse(entitlement.validUntil ?? "") <= now
     ) {
+      this.observe({
+        service: "CONSULTATION",
+        reason: "EXPIRED_ENTITLEMENT",
+        elapsedMs: 0,
+      });
       throw new VoiceAuthorizationError("ENTITLEMENT_UNAVAILABLE");
     }
     return { consent, entitlement };
@@ -124,7 +171,29 @@ export class CurrentVoiceOwnerAuthorizer implements VoiceOwnerAuthorizer {
     voiceSessionId: string,
     correlationId: string,
   ): Promise<z.infer<T>> {
-    if (!token) throw new VoiceAuthorizationError(failure);
+    const started = performance.now();
+    const service = failure === "CONSENT_UNAVAILABLE" ? "CARE" : "CONSULTATION";
+    const reject = (
+      reason: VoiceOwnerDiagnostic["reason"],
+      status?: number,
+      age?: number,
+    ): never => {
+      this.observe({
+        service,
+        reason,
+        elapsedMs: Math.min(
+          30_000,
+          Math.max(0, Math.floor(performance.now() - started)),
+        ),
+        ...(status === undefined ? {} : { status }),
+        ...(age === undefined
+          ? {}
+          : { decisionAgeMs: Math.max(-60_000, Math.min(60_000, age)) }),
+      });
+      throw new VoiceAuthorizationError(failure);
+    };
+    if (!token) return reject("MISSING_CREDENTIAL");
+    const deadline = AbortSignal.timeout(2_000);
     try {
       const response = await this.transport(new URL(path, baseUrl), {
         method: "POST",
@@ -139,32 +208,78 @@ export class CurrentVoiceOwnerAuthorizer implements VoiceOwnerAuthorizer {
           voiceSessionId,
           purpose: "AI_COMPANION_VOICE",
         }),
-        signal: AbortSignal.timeout(2_000),
+        signal: deadline,
       });
-      if (
-        !response.ok ||
-        response.headers.get("cache-control") !== "no-store"
-      ) {
-        throw new VoiceAuthorizationError(failure);
+      if (!response.ok) {
+        return reject(
+          response.status >= 400 && response.status < 500
+            ? "HTTP_4XX"
+            : response.status >= 500 && response.status < 600
+              ? "HTTP_5XX"
+              : "HTTP_OTHER",
+          response.status,
+        );
       }
-      const data: unknown = await response.json();
+      if (response.headers.get("cache-control") !== "no-store")
+        return reject("INVALID_HEADERS");
+      let data: unknown;
+      try {
+        data = await response.json();
+      } catch {
+        return reject(deadline.aborted ? "TIMEOUT" : "INVALID_JSON");
+      }
       const parsed = schema.safeParse(data);
       const binding = z.object(ownerBinding).safeParse(data);
       if (!parsed.success || !binding.success) {
-        throw new VoiceAuthorizationError(failure);
+        return reject("INVALID_RESPONSE");
       }
       const checkedAt = Date.parse(binding.data.checkedAt);
+      let now = this.clock().getTime();
       if (
         binding.data.ownerId !== ownerId ||
-        binding.data.voiceSessionId !== voiceSessionId ||
-        checkedAt < this.clock().getTime() - 2_000 ||
-        checkedAt > this.clock().getTime()
+        binding.data.voiceSessionId !== voiceSessionId
       ) {
-        throw new VoiceAuthorizationError(failure);
+        return reject("BINDING_MISMATCH");
       }
+      if (checkedAt < now - 2_000)
+        return reject("STALE_DECISION", undefined, now - checkedAt);
+      const initialAge = now - checkedAt;
+      if (initialAge < 0 && initialAge >= -25) {
+        const waitStarted = performance.now();
+        while (
+          checkedAt > now &&
+          performance.now() - waitStarted < 25 &&
+          performance.now() - started < 2_000
+        ) {
+          await pause(1, undefined, { signal: deadline });
+          now = this.clock().getTime();
+        }
+        if (checkedAt <= now)
+          this.observe({
+            service,
+            reason: "CLOCK_CAUGHT_UP",
+            elapsedMs: Math.min(2_000, Math.floor(performance.now() - started)),
+            decisionAgeMs: initialAge,
+          });
+      }
+      if (deadline.aborted || performance.now() - started >= 2_000)
+        return reject("TIMEOUT");
+      if (checkedAt > now)
+        return reject("FUTURE_DECISION", undefined, now - checkedAt);
+      if (checkedAt < now - 2_000)
+        return reject("STALE_DECISION", undefined, now - checkedAt);
       return parsed.data;
+    } catch (error) {
+      if (error instanceof VoiceAuthorizationError) throw error;
+      return reject(deadline.aborted ? "TIMEOUT" : "TRANSPORT");
+    }
+  }
+
+  private observe(value: VoiceOwnerDiagnostic) {
+    try {
+      this.diagnostic(value);
     } catch {
-      throw new VoiceAuthorizationError(failure);
+      return;
     }
   }
 }

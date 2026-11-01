@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { FailureCode } from "./diagnostics.js";
 
 export class AgentFailure extends Error {
   constructor(
@@ -9,6 +10,7 @@ export class AgentFailure extends Error {
       | "AUTHORITY_EXPIRED"
       | "INVALID_RESPONSE"
       | "PROVIDER_FAILED",
+    readonly failure?: FailureCode,
   ) {
     super(code);
   }
@@ -21,6 +23,19 @@ const optional = (schema: z.ZodType) =>
 const secret = z.string().regex(/^[\x21-\x7e]{32,256}$/);
 const environmentSchema = z.object({
   AI_VOICE_AGENT_ENABLED: z.enum(["true", "false"]).default("false"),
+  AI_VOICE_PILOT: z.enum(["true", "false"]).default("false"),
+  AI_VOICE_PILOT_TTS_MAX_CHARACTERS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(8000)
+    .default(1200),
+  AI_VOICE_FINAL_AGGREGATION_MS: z.coerce
+    .number()
+    .int()
+    .min(500)
+    .max(1500)
+    .default(1500),
   AI_VOICE_AGENT_APPROVAL_VERSION: optional(
     z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/),
   ),
@@ -67,6 +82,9 @@ const environmentSchema = z.object({
   AI_VOICE_TTS_VOICE_ID: optional(z.uuid()),
 });
 export interface AgentConfiguration {
+  pilot?: boolean;
+  pilotTtsMaxCharacters?: number;
+  finalAggregationMs?: number;
   enabled: boolean;
   approvalVersion: string | null;
   livekitUrl: string | null;
@@ -88,6 +106,9 @@ export function loadConfiguration(
   const optionalString = (input: unknown): string | null =>
     typeof input === "string" ? input : null;
   const configuration: AgentConfiguration = {
+    pilot: value.AI_VOICE_PILOT === "true",
+    pilotTtsMaxCharacters: value.AI_VOICE_PILOT_TTS_MAX_CHARACTERS,
+    finalAggregationMs: value.AI_VOICE_FINAL_AGGREGATION_MS,
     enabled,
     approvalVersion: optionalString(value.AI_VOICE_AGENT_APPROVAL_VERSION),
     livekitUrl: optionalString(value.LIVEKIT_URL),
@@ -99,6 +120,15 @@ export function loadConfiguration(
     ttsModel: value.AI_VOICE_TTS_MODEL,
     voiceId: optionalString(value.AI_VOICE_TTS_VOICE_ID),
   };
+  if (
+    configuration.pilot &&
+    (configuration.sttModel !== "deepgram/nova-3" ||
+      ![
+        "b8cd71e3-bc14-4538-a530-d6314731c036",
+        "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+      ].includes(configuration.voiceId ?? ""))
+  )
+    throw new AgentFailure("CONFIGURATION_INVALID");
   if (
     configuration.journalToken &&
     configuration.journalToken === configuration.apiSecret

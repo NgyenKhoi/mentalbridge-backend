@@ -222,6 +222,40 @@ void test("paid and DEMO PLUS/PREMIUM use current owner package and fresh check-
     }
 });
 
+void test("pilot eligibility retains default 90 seconds and bounds extended sessions by plan, remaining quota and window", async () => {
+  for (const row of [
+    { plan: "PREMIUM", remaining: 1800, window: 900, expected: 90 },
+    { plan: "PREMIUM", remaining: 1800, window: 900, cap: 600, expected: 600 },
+    { plan: "PLUS", remaining: 600, window: 900, cap: 600, expected: 300 },
+    { plan: "PREMIUM", remaining: 120, window: 900, cap: 600, expected: 120 },
+    { plan: "PREMIUM", remaining: 1800, window: 75, cap: 600, expected: 75 },
+  ] as const) {
+    const d = decision();
+    d.entitlement.packageCode = row.plan;
+    const service = new VoiceAccessService(
+      ledger({
+        snapshot: () =>
+          Promise.resolve({ ...quota(), remainingSeconds: row.remaining }),
+      }),
+      { check: () => Promise.resolve(d) },
+      secret,
+      () => true,
+      () => now,
+      undefined,
+      {
+        startsAt: new Date(now.getTime() - 1000),
+        endsAt: new Date(now.getTime() + row.window * 1000),
+        ownerIds: [ownerId],
+        ...("cap" in row ? { maxSessionSeconds: row.cap } : {}),
+      },
+    );
+    const result = await service.eligibility(ownerId, key);
+    assert.equal(result.state, "ELIGIBLE");
+    assert.equal(result.availableSessionSeconds, row.expected);
+    assert.equal(result.maxSessionSeconds, row.plan === "PLUS" ? 300 : 600);
+  }
+});
+
 for (const [label, patch, state] of [
   ["same owner on another device", { ownerActive: true }, "SESSION_LIMIT"],
   ["global demo slots", { globalAvailable: 0 }, "GLOBAL_CAPACITY_FULL"],
@@ -489,13 +523,16 @@ void test("every renewal/turn/reconnect authority request observes both consents
     () => now,
   );
   await service.authorizeSession(ownerId, sessionId, key);
+  const authority = await service.authorizeTurn(ownerId, sessionId, key);
+  assert.equal(authority.consent, d.consent);
+  assert.equal(authority.entitlement, d.entitlement);
   d.consent.voiceProcessingGranted = false;
   d.consent.authorized = false;
   await assert.rejects(
     service.authorizeSession(ownerId, sessionId, key),
     VoiceAccessError,
   );
-  assert.equal(checks, 2);
+  assert.equal(checks, 3);
   assert.deepEqual(reasons, ["VOICE_CONSENT_REVOKED"]);
 });
 
