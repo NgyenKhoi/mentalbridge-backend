@@ -77,6 +77,7 @@ export interface AgentDiagnostic {
     | "tts_begin"
     | "playout_first_audio"
     | "speech_usage"
+    | "input_audio_level"
     | "stt_final"
     | "media_failed"
     | "agent_stopped";
@@ -87,11 +88,13 @@ export interface AgentDiagnostic {
   reason?: StopReason;
   component?: "STT" | "TTS" | "OTHER";
   audioDurationMs?: number;
+  rms?: number;
+  peakAmplitude?: number;
   charactersCount?: number;
   cancelled?: boolean;
   source?: MediaFailureSource;
   recoverable?: boolean;
-  transcriptResult?: "EMPTY" | "PENDING" | "REJECTED";
+  transcriptResult?: "EMPTY" | "PENDING" | "REJECTED" | "DISCARDED";
   rejection?: TranscriptRejection;
   confidence?: number;
   confidenceValid?: boolean;

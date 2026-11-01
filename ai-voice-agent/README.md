@@ -135,15 +135,22 @@ newly published owner tracks follow the same gate. This is distinct from
 Every job owns one session and current-turn RAM. Silero VAD is CPU-local and
 ships its model with the plugin. Endpointing plus a 1.5-second final-segment
 aggregation pause accommodates hesitant Vietnamese speech. Interim words can
-interrupt after 500 ms/two words but cannot call Journal. Low-confidence
-(`<0.8`), non-Vietnamese, oversized or uncertain **final** input closes the call;
-it never invents a transcript or model response. Clients can offer explicit text
-or manual push-to-talk re-entry; this worker adds no client UI or silent fallback.
+interrupt after 500 ms/two words but cannot call Journal. A finite, in-range
+Vietnamese final below confidence 0.8 is discarded with the unsubmitted pending
+utterance. It cannot call Journal, generate TTS, interrupt an approved reply or
+cancel an authorized in-flight turn. This input-quality rejection does not reset
+idle time, quota, lease or hard stop; the user may provide a fresh valid utterance
+in the same authorized call. No rejected text is fabricated, forwarded or saved.
+Malformed confidence, non-Vietnamese or oversized final input and genuine
+SDK/provider failures still close the call. Clients can offer explicit text or
+manual push-to-talk re-entry; this worker adds no client UI or silent fallback.
 
 The adapter normalizes valid Vietnamese BCP 47 recognition tags such as `vi-VN`
 and `vi-Latn-VN` to `vi`. Other languages and tags still malformed after SDK
 processing remain rejected. The SDK itself repairs `vi_VN` to `vi-VN` first;
-confidence must be finite, within 0..1 and at least 0.8. The pinned SDK defaults
+confidence must be finite, within 0..1 and at least 0.8 before Journal receives a
+turn. Lower valid confidence is classified DISCARDED rather than fatal REJECTED;
+invalid values remain fatal. The pinned SDK defaults
 omitted aggregate confidence to 1 and rejects null confidence at wire validation.
 Empty finals remain nonfatal and do not call Journal. These SDK semantics are
 regression-tested; normalization does not raise recognition confidence.
@@ -199,6 +206,11 @@ contains only valid numeric confidence and language-match booleans, never raw
 language or transcript. Media errors expose a closed component enum, optional
 recoverability and HTTP status class, never error messages, response bodies or
 headers. The first failure survives shutdown; a later SDK close cannot replace it.
+
+`input_audio_level` contains only approximately one-second numeric RMS, peak
+amplitude and duration aggregates. Frames are forwarded unchanged and are not
+retained by the meter. It records no device identity, audio samples or transcript,
+and cannot establish the microphone amplitude of an earlier unmeasured call.
 
 The operator must also disable project-side recording, session insights, content
 tracing, exports and content sampling before enablement. Application settings

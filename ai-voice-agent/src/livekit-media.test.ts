@@ -20,11 +20,17 @@ import {
   recognitionLanguage,
   sttModelOptions,
   LiveKitMedia,
+  inputAudioLevel,
 } from "./livekit-media.js";
 import { loadConfiguration } from "./configuration.js";
 import { DispatchAdmission, run } from "./main.js";
 import { agentName, policyVersion, type Dispatch } from "./contract.js";
-import { Room as RtcRoom, TrackKind, TrackSource } from "@livekit/rtc-node";
+import {
+  AudioFrame,
+  Room as RtcRoom,
+  TrackKind,
+  TrackSource,
+} from "@livekit/rtc-node";
 import { initializeLogger } from "@livekit/agents";
 import { microphoneSubscriptions } from "./livekit-media.js";
 import {
@@ -83,6 +89,7 @@ void test("pinned SDK wire validation, transcript processing and worker preserve
     turns: number;
     rejection?: string;
     empty?: boolean;
+    discarded?: boolean;
     confidence?: number;
   }[] = [
     { name: "vi", wire: {}, wireAccepted: true, turns: 1 },
@@ -124,6 +131,7 @@ void test("pinned SDK wire validation, transcript processing and worker preserve
       wireAccepted: true,
       turns: 0,
       rejection: "LOW_CONFIDENCE",
+      discarded: true,
     },
     {
       name: "confidence at threshold",
@@ -328,9 +336,13 @@ void test("pinned SDK wire validation, transcript processing and worker preserve
         const rejected = diagnostics.find(
           (value) =>
             value.phase === "stt_final" &&
-            value.transcriptResult === "REJECTED",
+            ["REJECTED", "DISCARDED"].includes(value.transcriptResult ?? ""),
         );
         assert.equal(rejected?.rejection, row.rejection);
+        if (row.discarded) {
+          assert.equal(rejected?.transcriptResult, "DISCARDED");
+          assert.equal(worker.state, "LISTENING");
+        }
         assert.equal(
           diagnostics.some(
             (value) =>
@@ -340,7 +352,7 @@ void test("pinned SDK wire validation, transcript processing and worker preserve
         );
         assert.equal(
           diagnostics.find((value) => value.phase === "agent_stopped")?.reason,
-          row.rejection ? "PROVIDER_FAILURE" : undefined,
+          row.rejection && !row.discarded ? "PROVIDER_FAILURE" : undefined,
         );
         assert.equal(JSON.stringify(diagnostics).includes("PRIVATE"), false);
       } finally {
@@ -765,4 +777,62 @@ void test("named dispatch admits only one bounded AI attempt, never a consultati
   assert.equal(accepted, 1);
   assert.equal(rejected, 7);
   await assert.rejects(run({}), /VOICE_DISABLED/u);
+});
+
+void test("input audio levels aggregate numeric PCM windows and pass identical frames without retaining content", async () => {
+  const known = new Int16Array(8000);
+  known.fill(16384, 2000, 4000);
+  known.fill(-16384, 4000, 6000);
+  known.fill(-32768, 6000);
+  const tail = new Int16Array(4000).fill(16384);
+  const frames = [
+    new AudioFrame(known, 8000, 1, 8000, {
+      transcript: "PRIVATE_TRANSCRIPT",
+      device: "PRIVATE_DEVICE",
+    }),
+    new AudioFrame(tail, 8000, 1, 4000),
+    new AudioFrame(new Int16Array([1]), Number.NaN, 1, 1),
+  ];
+  const snapshots = frames.map((frame) => new Int16Array(frame.data));
+  const diagnostics: AgentDiagnostic[] = [];
+  const stream = new ReadableStream<AudioFrame>({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(frame);
+      controller.close();
+    },
+  });
+  const forwarded = [];
+  for await (const frame of inputAudioLevel(stream, (value) =>
+    diagnostics.push(value),
+  ))
+    forwarded.push(frame);
+  assert.equal(forwarded.length, frames.length);
+  for (const [index, frame] of frames.entries()) {
+    assert.equal(forwarded[index], frame);
+    assert.equal(forwarded[index].data, frame.data);
+    assert.deepEqual(frame.data, snapshots[index]);
+  }
+  assert.deepEqual(diagnostics, [
+    {
+      phase: "input_audio_level",
+      component: "STT",
+      rms: 0.612372,
+      peakAmplitude: 1,
+      audioDurationMs: 1000,
+    },
+    {
+      phase: "input_audio_level",
+      component: "STT",
+      rms: 0.5,
+      peakAmplitude: 0.5,
+      audioDurationMs: 500,
+    },
+  ]);
+  assert.equal(JSON.stringify(diagnostics).includes("PRIVATE"), false);
+  assert.equal(JSON.stringify(diagnostics).includes("data"), false);
+  for (const diagnostic of diagnostics) {
+    assert.ok(Number.isFinite(diagnostic.audioDurationMs));
+    for (const value of [diagnostic.rms, diagnostic.peakAmplitude])
+      assert.ok(typeof value === "number" && value >= 0 && value <= 1);
+  }
 });

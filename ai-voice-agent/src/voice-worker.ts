@@ -250,22 +250,35 @@ export class VoiceWorker {
       });
       void this.fail();
     };
-    if (
-      !confidenceValid ||
-      value.confidence < 0.8 ||
-      value.language !== "vi" ||
-      text.length > 2000
-    ) {
+    if (!confidenceValid || value.language !== "vi" || text.length > 2000) {
       if (value.final)
         reject(
           !confidenceValid
             ? "INVALID_CONFIDENCE"
-            : value.confidence < 0.8
-              ? "LOW_CONFIDENCE"
-              : value.language !== "vi"
-                ? "LANGUAGE_MISMATCH"
-                : "TRANSCRIPT_TOO_LARGE",
+            : value.language !== "vi"
+              ? "LANGUAGE_MISMATCH"
+              : "TRANSCRIPT_TOO_LARGE",
         );
+      return;
+    }
+    if (Buffer.byteLength(text, "utf8") > 1800) {
+      if (value.final) reject("PENDING_TOO_LARGE");
+      return;
+    }
+    if (value.confidence < 0.8) {
+      if (value.final) {
+        this.pending = "";
+        this.pauseUntil = 0;
+        this.diagnostic({
+          phase: "stt_final",
+          transcriptResult: "DISCARDED",
+          rejection: "LOW_CONFIDENCE",
+          confidenceValid: true,
+          confidence: value.confidence,
+          languageAccepted: true,
+        });
+        if (!this.busy) this.setState("LISTENING");
+      }
       return;
     }
     const clean = normalized(text);

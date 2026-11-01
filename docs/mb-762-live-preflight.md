@@ -88,6 +88,18 @@ renew authority but cannot invite speech or start ACTIVE billing. Reconnecting
 recovery keeps its existing heartbeat behavior. This supports the Web readiness
 gate that requires both backend ACTIVE and the current Agent listening hint.
 
+A later manual retest on these exact green heads generated a valid Sonnet reply,
+then a Vietnamese final with confidence0.46875 interrupted the first Xia audio.
+The implementation's low-confidence shutdown policy caused this cutoff. Speaker
+output was in use, but no amplitude/audio was retained, so echo or a quiet mic
+is not a proven historical cause. The correction keeps the0.8 acceptance
+threshold: valid bounded Vietnamese finals below it are discarded together with
+unsubmitted pending text, without calling Journal, interrupting authorized TTS
+or extending idle/deadline/quota. Malformed confidence, unsupported language,
+oversized input and actual provider/authority failures remain fatal. This is an
+intentional correction to MB-759 handling under the owner's broad debug
+authorization, not a relaxation of accepted transcription confidence.
+
 ## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)

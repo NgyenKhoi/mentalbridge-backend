@@ -7,6 +7,7 @@ import type {
   Lease,
   Reply,
   Signal,
+  StopReason,
   Turn,
 } from "./contract.js";
 import { policyVersion } from "./contract.js";
@@ -56,6 +57,7 @@ function fixture() {
   let claimed = true;
   let failControl = false;
   let stopControl = false;
+  let stopReason: StopReason = "CONSENT_REVOKED";
   let duplicateControl = false;
   let generation: Promise<void> | undefined;
   let play: Promise<void> | undefined;
@@ -96,7 +98,7 @@ function fixture() {
             control: {
               ...base,
               kind: "STOP",
-              payload: { reason: "CONSENT_REVOKED" },
+              payload: { reason: stopReason },
             },
           }
         : {
@@ -240,8 +242,9 @@ function fixture() {
     badControl: () => {
       failControl = true;
     },
-    revoke: () => {
+    revoke: (reason: StopReason = "CONSENT_REVOKED") => {
       stopControl = true;
+      stopReason = reason;
     },
     replayControl: () => {
       duplicateControl = true;
@@ -635,7 +638,7 @@ void test("queued finals remain byte-bounded and confidence-checked while Journa
     if (mode === "size") {
       f.emit("x".repeat(1000));
       f.emit("y".repeat(800));
-    } else f.emit("PRIVATE_LOW_CONFIDENCE", { confidence: 0.79 });
+    } else f.emit("PRIVATE_INVALID_CONFIDENCE", { confidence: Number.NaN });
     await f.worker.finished;
     await first;
     generation.release();
@@ -647,7 +650,7 @@ void test("queued finals remain byte-bounded and confidence-checked while Journa
     assert.equal(
       f.diagnostics.find((value) => value.transcriptResult === "REJECTED")
         ?.rejection,
-      mode === "size" ? "PENDING_TOO_LARGE" : "LOW_CONFIDENCE",
+      mode === "size" ? "PENDING_TOO_LARGE" : "INVALID_CONFIDENCE",
     );
     assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
   }
@@ -813,9 +816,9 @@ void test("native input/interruption failures during stop still cancel work and 
   assert.equal(f.closes(), 1);
   assert.equal(f.worker.state, "ENDED");
 });
-void test("uncertain/oversized/wrong-language final STT closes to text/manual fallback with no fabricated speech", async () => {
+void test("invalid/oversized/wrong-language final STT closes to text/manual fallback with no fabricated speech", async () => {
   for (const partial of [
-    { confidence: 0.3 },
+    { confidence: 0.3, language: "en" },
     { confidence: Number.NaN },
     { language: "en" },
   ]) {
@@ -833,9 +836,161 @@ void test("uncertain/oversized/wrong-language final STT closes to text/manual fa
   await f.worker.finished;
   assert.equal(f.turns.length, 0);
 });
+void test("low-confidence finals discard unsubmitted prefixes without generating or ending the call", async () => {
+  const f = fixture();
+  await f.start();
+  f.emit("PRIVATE_UNSUBMITTED_PREFIX");
+  assert.equal(f.worker.state, "TRANSCRIBING");
+  f.emit("PRIVATE_UNCERTAIN_FINAL", { confidence: 0.46875 });
+  assert.equal(f.worker.state, "LISTENING");
+  f.advance(1600);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  assert.equal(f.played.length, 0);
+  assert.equal(f.closes(), 0);
+  assert.equal(f.input(), true);
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.transcriptResult === "DISCARDED"),
+    {
+      phase: "stt_final",
+      transcriptResult: "DISCARDED",
+      rejection: "LOW_CONFIDENCE",
+      confidenceValid: true,
+      confidence: 0.46875,
+      languageAccepted: true,
+    },
+  );
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  f.emit("PRIVATE_FRESH_VALID_QUESTION", { confidence: 0.8 });
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0]?.finalTranscript, "PRIVATE_FRESH_VALID_QUESTION");
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("a low-confidence final during approved playback does not interrupt audio or issue another turn", async () => {
+  const f = fixture();
+  const playback = hold();
+  f.play(playback.wait);
+  await f.start();
+  f.emit("PRIVATE_APPROVED_QUESTION");
+  f.advance(1500);
+  const first = f.tick();
+  await flush();
+  assert.equal(f.worker.state, "SPEAKING");
+  f.emit("PRIVATE_UNCERTAIN_DURING_PLAYBACK", { confidence: 0.46875 });
+  await flush();
+  assert.equal(f.worker.state, "SPEAKING");
+  assert.equal(f.interrupted(), 0);
+  assert.equal(f.closes(), 0);
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.played.length, 1);
+  assert.equal(
+    f.signals.some((value) => value.kind === "INTERRUPTED"),
+    false,
+  );
+  assert.equal(
+    f.diagnostics.some((value) => value.phase === "agent_stopped"),
+    false,
+  );
+  playback.release();
+  await first;
+  f.emit("PRIVATE_NEW_VALID_UTTERANCE");
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 2);
+  assert.equal(f.played.length, 2);
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("discarding an uncertain queued utterance does not cancel an authorized Journal request", async () => {
+  const f = fixture();
+  const generation = hold();
+  f.generation(generation.wait);
+  await f.start();
+  f.emit("PRIVATE_IN_FLIGHT_QUESTION");
+  f.advance(1500);
+  const first = f.tick();
+  await flush();
+  f.emit("PRIVATE_QUEUED_PREFIX");
+  f.emit("PRIVATE_UNCERTAIN_QUEUED_FINAL", { confidence: 0 });
+  assert.equal(f.worker.state, "WAITING_FOR_REPLY");
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.closes(), 0);
+  generation.release();
+  await first;
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.played.length, 1);
+  assert.equal(f.worker.state, "LISTENING");
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("discarded speech cannot reset owner idle enforcement or extend the session hard stop", async () => {
+  const idle = fixture();
+  await idle.start();
+  idle.emit("PRIVATE_UNCERTAIN_NO_ACTIVITY", { confidence: 0.2 });
+  idle.revoke("IDLE_TIMEOUT");
+  idle.advance(5000);
+  await idle.tick();
+  await idle.worker.finished;
+  assert.equal(idle.turns.length, 0);
+  assert.ok(
+    idle.diagnostics.some(
+      (value) =>
+        value.phase === "agent_stopped" && value.reason === "IDLE_TIMEOUT",
+    ),
+  );
+  const deadline = fixture();
+  await deadline.start();
+  for (let step = 0; step < 60; step++) {
+    deadline.advance(5000);
+    deadline.emit("PRIVATE_UNCERTAIN_NO_EXTENSION", { confidence: 0.2 });
+    await deadline.tick();
+  }
+  await deadline.worker.finished;
+  assert.equal(deadline.turns.length, 0);
+  assert.equal(deadline.played.length, 0);
+  assert.equal(deadline.worker.state, "ENDED");
+  assert.equal(deadline.closes(), 1);
+  assert.equal(deadline.input(), false);
+});
+
+void test("low confidence never masks invalid language, oversized input or invalid confidence failures", async () => {
+  for (const [text, partial, reason] of [
+    [
+      "PRIVATE_WRONG_LANGUAGE",
+      { confidence: 0.2, language: "en" },
+      "LANGUAGE_MISMATCH",
+    ],
+    ["x".repeat(2001), { confidence: 0.2 }, "TRANSCRIPT_TOO_LARGE"],
+    ["x".repeat(1801), { confidence: 0.2 }, "PENDING_TOO_LARGE"],
+    ["PRIVATE_NONFINITE", { confidence: Number.NaN }, "INVALID_CONFIDENCE"],
+  ] as const) {
+    const f = fixture();
+    await f.start();
+    f.emit(text, partial);
+    await f.worker.finished;
+    assert.equal(f.turns.length, 0);
+    assert.equal(f.played.length, 0);
+    assert.equal(
+      f.diagnostics.find((value) => value.phase === "stt_final")?.rejection,
+      reason,
+    );
+    assert.equal(
+      f.diagnostics.some((value) => value.transcriptResult === "DISCARDED"),
+      false,
+    );
+    assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  }
+});
+
 void test("final rejection diagnostics identify confidence, language and size without transcript", async () => {
   for (const [partial, expected] of [
-    [{ confidence: 0.79 }, "LOW_CONFIDENCE"],
+    [{ confidence: 0.79, language: "en" }, "LANGUAGE_MISMATCH"],
     [{ confidence: Number.NaN }, "INVALID_CONFIDENCE"],
     [{ confidence: Number.POSITIVE_INFINITY }, "INVALID_CONFIDENCE"],
     [{ confidence: Number.NEGATIVE_INFINITY }, "INVALID_CONFIDENCE"],

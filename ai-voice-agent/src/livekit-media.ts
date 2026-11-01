@@ -17,6 +17,7 @@ import {
   TrackSource,
   type RemoteParticipant,
   type RemoteTrackPublication,
+  type AudioFrame,
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
 import { PilotSpeechBudget } from "./pilot-speech-budget.js";
@@ -114,6 +115,52 @@ export function recognitionLanguage(language: string): string {
     return new Intl.Locale(language).language === "vi" ? "vi" : language;
   } catch {
     return language;
+  }
+}
+export async function* inputAudioLevel(
+  audio: AsyncIterable<AudioFrame>,
+  receive: (value: AgentDiagnostic) => void,
+) {
+  let samples = 0;
+  let power = 0;
+  let peakAmplitude = 0;
+  let audioDurationMs = 0;
+  const emit = () => {
+    if (!samples) return;
+    receive({
+      phase: "input_audio_level",
+      component: "STT",
+      rms:
+        Math.round(Math.min(1, Math.sqrt(power / samples)) * 1000000) / 1000000,
+      peakAmplitude: Math.round(peakAmplitude * 1000000) / 1000000,
+      audioDurationMs: Math.round(audioDurationMs),
+    });
+    samples = power = peakAmplitude = audioDurationMs = 0;
+  };
+  try {
+    for await (const frame of audio) {
+      if (
+        Number.isSafeInteger(frame.sampleRate) &&
+        frame.sampleRate > 0 &&
+        frame.sampleRate <= 384000 &&
+        Number.isSafeInteger(frame.channels) &&
+        frame.channels > 0 &&
+        frame.channels <= 32
+      ) {
+        const sampleDurationMs = 1000 / (frame.sampleRate * frame.channels);
+        for (const pcm of frame.data) {
+          const amplitude = pcm / 32768;
+          samples++;
+          power += amplitude * amplitude;
+          peakAmplitude = Math.max(peakAmplitude, Math.abs(amplitude));
+          audioDurationMs += sampleDurationMs;
+          if (audioDurationMs >= 1000) emit();
+        }
+      }
+      yield frame;
+    }
+  } finally {
+    emit();
   }
 }
 export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
@@ -345,13 +392,14 @@ export class LiveKitMedia implements MediaPort {
       },
     );
     this.session.input.setAudioEnabled(false);
+    const diagnostic = this.diagnostic;
     this.agent = voice.Agent.create({
       instructions: "",
       llm: null,
       async *sttNode(ctx, audio, settings) {
         const events = await voice.Agent.default.sttNode(
           ctx.agent,
-          audio,
+          inputAudioLevel(audio, diagnostic),
           settings,
         );
         if (!events) return;
