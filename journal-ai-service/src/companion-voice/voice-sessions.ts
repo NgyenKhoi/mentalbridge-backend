@@ -699,7 +699,7 @@ export class VoiceSessionsService {
     const session = await this.current(id);
     if (session.attemptId !== attemptId || session.state !== "ACTIVE")
       throw new VoiceLedgerError("STALE_ATTEMPT");
-    await this.access.authorizeSession(session.ownerId, id, correlationId);
+    await this.access.inspectSession(session.ownerId, id, correlationId);
     await this.store.registerReply(
       id,
       attemptId,

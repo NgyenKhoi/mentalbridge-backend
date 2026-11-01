@@ -378,6 +378,7 @@ export class VoiceWorker {
         randomUUID(),
         this.life.signal,
       );
+      await this.controls;
       if (
         !this.live() ||
         Date.parse(reply.expiresAt) > Date.parse(this.lease.validUntil) ||
@@ -430,7 +431,10 @@ export class VoiceWorker {
         phase: "turn_failed",
         code:
           error instanceof AgentFailure
-            ? (error.failure ?? "INVALID_RESPONSE")
+            ? (error.failure ??
+              (error.code === "AUTHORITY_EXPIRED"
+                ? "AUTHORITY_EXPIRED"
+                : "INVALID_RESPONSE"))
             : "PROVIDER_FAILED",
       });
       if (this.life.signal.aborted) return;

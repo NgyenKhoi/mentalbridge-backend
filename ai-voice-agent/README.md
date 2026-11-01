@@ -163,6 +163,11 @@ to return within 30 seconds after fresh authorization. Agent network loss or
 disconnect during generation/playback ends the attempt. Reconnect creates no
 new quota or extended duration.
 
+Before playback the worker waits for already queued control acknowledgements
+and checks the reply against its acknowledged lease. A reply never renews that
+lease. An expired or denied control prevents TTS, and authority expiry has an
+explicit diagnostic category.
+
 The caller must enable acoustic echo cancellation and browser/device noise
 suppression. Exact normalized recent TTS echoes are additionally suppressed.
 This guard is not proof of acoustic noise rejection: speakers, headphones,

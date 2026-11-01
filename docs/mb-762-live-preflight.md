@@ -49,6 +49,17 @@ Voice decoder now unwraps one whole-response JSON fence and retains the same
 strict object/safety checks. Additional prose, extra objects and malformed or
 unsafe output still fail. This is not a provider fallback or automatic retry.
 
+The next real synthetic run validated and registered a Sonnet reply (487 input /
+82 output tokens), but the worker rejected it before TTS. Reply registration
+renewed the server lease without sending a lease ACK to the worker, so the
+reply deadline exceeded the worker's acknowledged authority. Registration now
+rechecks current owner authorization without renewing the lease. The worker
+waits for already queued heartbeat controls before checking the reply against
+its acknowledged lease; it never adopts a deadline from a reply or extends
+authority locally. Expired/denied controls still stop playback. Authority expiry
+is diagnosed explicitly rather than labelled an invalid response. These changes
+retain the same consent, quota, duration, provider and no-retry limits.
+
 ## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)

@@ -60,6 +60,8 @@ function fixture() {
   let play: Promise<void> | undefined;
   let publication: Promise<void> | undefined;
   let readiness: Promise<void> | undefined;
+  let heartbeat: Promise<void> | undefined;
+  let replyExpiryOffset = 0;
   let playingReject: ((error: Error) => void) | undefined;
   const journal: Pick<JournalClient, "claim" | "control" | "turn"> = {
     claim: () =>
@@ -111,6 +113,8 @@ function fixture() {
           };
       if (signal.kind === "MEDIA_READY" && readiness)
         return readiness.then(() => value);
+      if (signal.kind === "HEARTBEAT" && heartbeat)
+        return heartbeat.then(() => value);
       return signal.kind === "PLAYBACK_STARTED" && publication
         ? publication.then(() => value)
         : Promise.resolve(value);
@@ -136,7 +140,7 @@ function fixture() {
         replyId: randomUUID(),
         language: "vi-VN",
         spokenText: "Mình đang lắng nghe. Bạn muốn chia sẻ thêm điều gì?",
-        expiresAt: new Date(expires).toISOString(),
+        expiresAt: new Date(expires + replyExpiryOffset).toISOString(),
         policyVersion,
       } satisfies Reply;
     },
@@ -251,6 +255,12 @@ function fixture() {
     },
     readiness: (value: Promise<void>) => {
       readiness = value;
+    },
+    heartbeat: (value: Promise<void>) => {
+      heartbeat = value;
+    },
+    replyExpiryOffset: (value: number) => {
+      replyExpiryOffset = value;
     },
   };
 }
@@ -374,6 +384,82 @@ void test("backward wall-clock adjustment does not fabricate a heartbeat and a f
   assert.equal(f.worker.state, "ENDED");
   assert.equal(f.signals.filter((s) => s.kind === "HEARTBEAT").length, 1);
   assert.equal(f.input(), false);
+});
+
+void test("a reply waits for an in-flight heartbeat acknowledgement before validating renewed authority", async () => {
+  const f = fixture();
+  const generation = hold();
+  const acknowledgement = hold();
+  await f.start();
+  f.generation(generation.wait);
+  f.heartbeat(acknowledgement.wait);
+  f.emit("Synthetic Vietnamese greeting");
+  f.advance(1500);
+  const turn = f.tick();
+  await flush();
+  f.advance(3500);
+  const heartbeat = f.tick();
+  await flush();
+  assert.equal(f.signals.at(-1)?.kind, "HEARTBEAT");
+  generation.release();
+  await flush();
+  assert.equal(f.played.length, 0);
+  assert.equal(
+    f.diagnostics.some((d) => d.phase === "turn_failed"),
+    false,
+  );
+  acknowledgement.release();
+  await Promise.all([turn, heartbeat]);
+  assert.equal(f.played.length, 1);
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.signals.filter((s) => s.kind === "HEARTBEAT").length, 1);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("a denied or expired heartbeat acknowledgement cannot authorize pending reply audio", async () => {
+  for (const mode of ["denied", "expired"]) {
+    const f = fixture();
+    const generation = hold();
+    const acknowledgement = hold();
+    await f.start();
+    f.generation(generation.wait);
+    f.heartbeat(acknowledgement.wait);
+    f.emit("Synthetic Vietnamese greeting");
+    f.advance(1500);
+    const turn = f.tick();
+    await flush();
+    if (mode === "denied") f.revoke();
+    f.advance(3500);
+    const heartbeat = f.tick();
+    await flush();
+    generation.release();
+    await flush();
+    assert.equal(f.played.length, 0);
+    if (mode === "expired") f.advance(5001);
+    acknowledgement.release();
+    await Promise.all([turn, heartbeat]);
+    await f.worker.finished;
+    assert.equal(f.played.length, 0);
+    assert.equal(f.turns.length, 1);
+    assert.equal(f.input(), false);
+    assert.equal(f.worker.state, "ENDED");
+  }
+});
+
+void test("a reply beyond acknowledged authority is rejected with the exact safe failure category", async () => {
+  const f = fixture();
+  await f.start();
+  f.replyExpiryOffset(1);
+  f.emit("PRIVATE_SYNTHETIC_GREETING");
+  f.advance(1500);
+  await f.tick();
+  await f.worker.finished;
+  assert.equal(f.played.length, 0);
+  assert.equal(
+    f.diagnostics.find((d) => d.phase === "turn_failed")?.code,
+    "AUTHORITY_EXPIRED",
+  );
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
 });
 
 void test("diagnostic records are bounded, monotonic and contain no conversation or credentials", () => {

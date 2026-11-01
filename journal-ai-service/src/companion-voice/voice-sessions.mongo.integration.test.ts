@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import { MongoClient, MongoServerError, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
-import { VoiceAccessService } from "./voice-access.js";
+import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import {
   MongoVoiceLedger,
   VoiceLedgerError,
@@ -471,6 +471,98 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
     },
   );
+
+  await t.test(
+    "reply registration rechecks authority without extending the acknowledged worker lease",
+    async () => {
+      const f = await fixture();
+      const started = await f.start();
+      let session = await f.claim(started.voiceSessionId);
+      await f.service.control(
+        session.voiceSessionId,
+        f.signal(session, 1, "MEDIA_READY"),
+        randomUUID(),
+      );
+      f.advance(2000);
+      session = await f.current(session.voiceSessionId);
+      const heartbeat = await f.service.control(
+        session.voiceSessionId,
+        f.signal(session, 2, "HEARTBEAT"),
+        randomUUID(),
+      );
+      assert.equal(heartbeat.action, "CONTINUE");
+      const deadline = heartbeat.control.expiresAt;
+      f.advance(2000);
+      const checks = f.checks.length;
+      const turnId = randomUUID();
+      const replyId = randomUUID();
+      await f.service.registerReply(
+        session.voiceSessionId,
+        session.attemptId ?? "",
+        turnId,
+        replyId,
+        randomUUID(),
+      );
+      assert.equal(f.checks.length, checks + 1);
+      const registered = await f.current(session.voiceSessionId);
+      assert.equal(registered.leaseExpiresAt?.toISOString(), deadline);
+      assert.equal(registered.authorityExpiresAt.toISOString(), deadline);
+      const document = await f.document(session.voiceSessionId);
+      assert.equal(document.expectedTurnId, turnId);
+      assert.equal(document.expectedReplyId, replyId);
+    },
+  );
+
+  for (const denial of [
+    "AI_CONSENT",
+    "VOICE_CONSENT",
+    "ENTITLEMENT",
+    "EXPIRED",
+  ] as const)
+    await t.test(
+      `reply registration rejects current ${denial} denial`,
+      async () => {
+        const f = await fixture();
+        const started = await f.start();
+        let session = await f.claim(started.voiceSessionId);
+        await f.service.control(
+          session.voiceSessionId,
+          f.signal(session, 1, "MEDIA_READY"),
+          randomUUID(),
+        );
+        session = await f.current(session.voiceSessionId);
+        const code = {
+          AI_CONSENT: "CONSENT_REQUIRED",
+          VOICE_CONSENT: "VOICE_CONSENT_REQUIRED",
+          ENTITLEMENT: "FREE_LOCKED",
+          EXPIRED: "STALE_ATTEMPT",
+        }[denial];
+        if (denial === "AI_CONSENT") f.revokeAi();
+        if (denial === "VOICE_CONSENT") f.revoke();
+        if (denial === "ENTITLEMENT") f.downgrade();
+        if (denial === "EXPIRED") f.advance(10_000);
+        await assert.rejects(
+          f.service.registerReply(
+            session.voiceSessionId,
+            session.attemptId ?? "",
+            randomUUID(),
+            randomUUID(),
+            randomUUID(),
+          ),
+          (error: unknown) =>
+            (error instanceof VoiceAccessError ||
+              error instanceof VoiceLedgerError) &&
+            error.code === code,
+        );
+        assert.notEqual(
+          (await f.current(session.voiceSessionId)).state,
+          "ACTIVE",
+        );
+        const document = await f.document(session.voiceSessionId);
+        assert.equal(document.expectedTurnId, null);
+        assert.equal(document.expectedReplyId, null);
+      },
+    );
 
   await t.test(
     "pre-claim setup can renew within45s; polling never extends a claimed worker lease",
