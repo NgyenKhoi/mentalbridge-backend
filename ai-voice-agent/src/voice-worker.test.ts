@@ -307,9 +307,9 @@ void test("first heartbeat follows claim/readiness deadlines; jitter and slow qu
   await startup;
   assert.equal(
     f.diagnostics.findLast((d) => d.phase === "next_heartbeat_due")?.delayMs,
-    5000,
+    3500,
   );
-  f.advance(4999);
+  f.advance(3499);
   await f.tick();
   assert.equal(f.signals.length, 1);
   f.advance(251);
@@ -331,9 +331,8 @@ void test("first heartbeat follows claim/readiness deadlines; jitter and slow qu
   await slowStart;
   assert.equal(
     slow.diagnostics.findLast((d) => d.phase === "next_heartbeat_due")?.delayMs,
-    1000,
+    0,
   );
-  slow.advance(1000);
   await slow.tick();
   assert.equal(slow.signals.at(-1)?.kind, "HEARTBEAT");
   await slow.worker.stop("USER_ENDED");

@@ -23,10 +23,13 @@ export class JournalClient {
     schema: z.ZodType<T>,
     signal?: AbortSignal,
     key?: string,
+    timeoutMs?: number,
   ): Promise<T> {
     if (!this.configuration.journalToken)
       throw new AgentFailure("JOURNAL_UNAVAILABLE");
-    const timeout = AbortSignal.timeout(path === "turns" ? 30000 : 2000);
+    const timeout = AbortSignal.timeout(
+      timeoutMs ?? (path === "turns" ? 30000 : 2000),
+    );
     let received = false;
     try {
       const response = await this.transport(
@@ -78,7 +81,12 @@ export class JournalClient {
         await reader.cancel();
         reader.releaseLock();
       }
-      return schema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      const value = schema.parse(
+        JSON.parse(Buffer.concat(chunks).toString("utf8")),
+      );
+      if (signal?.aborted || timeout.aborted)
+        throw new AgentFailure("JOURNAL_UNAVAILABLE");
+      return value;
     } catch (error) {
       throw new AgentFailure(
         "JOURNAL_UNAVAILABLE",
@@ -114,13 +122,22 @@ export class JournalClient {
     return value;
   }
   async control(dispatch: Dispatch, signal: Signal, abort?: AbortSignal) {
+    const remainingMs = Date.parse(signal.expiresAt) - this.clock();
+    if (!Number.isFinite(remainingMs) || remainingMs <= 0)
+      throw new AgentFailure("AUTHORITY_EXPIRED");
+    if (abort?.aborted)
+      throw new AgentFailure("JOURNAL_UNAVAILABLE", "ABORTED");
     const value = await this.post(
       dispatch.voiceSessionId,
       "agent-control",
       signal,
       controlSchema,
       abort,
+      undefined,
+      Math.min(3500, remainingMs),
     );
+    if (Date.parse(signal.expiresAt) <= this.clock())
+      throw new AgentFailure("AUTHORITY_EXPIRED");
     if (
       value.control.voiceSessionId !== dispatch.voiceSessionId ||
       value.control.attemptId !== dispatch.attemptId ||

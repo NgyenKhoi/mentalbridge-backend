@@ -171,9 +171,13 @@ pending buffer. A later turn starts only after the current request and playback
 finish; a failed or cancelled request discards pending speech. There are no automatic REST,
 STT/TTS or dispatch retries after an unknown outcome.
 
-Control requests time out after 2 seconds, turns after 30 seconds; STT/TTS
-connection/frame failures stop safely. Renew every 5 seconds against Journal's
-10-second lease, and never extend the original hard stop locally. Muting clears
+Claim requests time out after 2 seconds and turns after 30 seconds. Control
+requests allow at most 3.5 seconds, bounded by the command expiry; expired or
+cancelled acknowledgements cannot renew authority. STT/TTS connection/frame
+failures stop safely. Renew every 5 seconds against Journal's 10-second lease,
+or sooner to retain 4.5 seconds of lease headroom after a delayed acknowledgement.
+The previous acknowledged lease and original hard stop remain authoritative
+while renewal is in flight; neither can be extended locally. Muting clears
 pending speech and input; owner disconnect between turns permits the same owner
 to return within 30 seconds after fresh authorization. Agent network loss or
 disconnect during generation/playback ends the attempt. Reconnect creates no

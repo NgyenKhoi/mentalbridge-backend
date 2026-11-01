@@ -220,7 +220,7 @@ export class VoiceWorker {
     const now = this.clock();
     this.nextHeartbeat = Math.max(
       now,
-      Math.min(now + 5000, Date.parse(this.lease.validUntil) - 3000),
+      Math.min(now + 5000, Date.parse(this.lease.validUntil) - 4500),
     );
     this.diagnostic({
       phase: "next_heartbeat_due",

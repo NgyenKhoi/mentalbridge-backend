@@ -64,6 +64,196 @@ void test("Journal HTTP timeout/refusal/malformed responses fail closed without 
   await assert.rejects(client.claim(dispatch), AgentFailure);
   assert.equal(calls, 3);
 });
+
+void test("a 2.1-second HTTP control acknowledgement succeeds within the command and live lease without retry", async () => {
+  let calls = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const leaseId = randomUUID();
+  const hardStopAt = new Date(Date.now() + 300000).toISOString();
+  const server = createServer((req, response) => {
+    calls++;
+    req.resume();
+    timer = setTimeout(() => {
+      const now = Date.now();
+      const validUntil = new Date(now + 10000).toISOString();
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-store");
+      response.end(
+        JSON.stringify({
+          action: "CONTINUE",
+          control: {
+            schemaVersion: 1,
+            kind: "LEASE_RENEWED",
+            commandId: randomUUID(),
+            voiceSessionId: dispatch.voiceSessionId,
+            attemptId: dispatch.attemptId,
+            sequence: 1,
+            issuedAt: new Date(now).toISOString(),
+            expiresAt: validUntil,
+            payload: { leaseId, validUntil, hardStopAt, admittedSeconds: 300 },
+          },
+        }),
+      );
+    }, 2100);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient({
+    ...configuration(),
+    journalUrl: `http://127.0.0.1:${String(address.port)}`,
+  });
+  const now = Date.now();
+  const oldLeaseUntil = now + 10000;
+  const signal: Signal = {
+    schemaVersion: 1,
+    kind: "HEARTBEAT",
+    commandId: randomUUID(),
+    voiceSessionId: dispatch.voiceSessionId,
+    attemptId: dispatch.attemptId,
+    sequence: 1,
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 4000).toISOString(),
+    payload: { leaseId, observedState: "ACTIVE" },
+  };
+  try {
+    assert.equal((await client.control(dispatch, signal)).action, "CONTINUE");
+    assert.equal(calls, 1);
+    assert.ok(Date.now() - now >= 2100);
+    assert.ok(oldLeaseUntil - Date.now() >= 5000);
+  } finally {
+    clearTimeout(timer);
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
+});
+
+void test("control deadlines reject before transport and after a late acknowledgement, and cancellation cannot renew authority", async () => {
+  let now = Date.now();
+  const initial = now;
+  const leaseId = randomUUID();
+  const signal: Signal = {
+    schemaVersion: 1,
+    kind: "HEARTBEAT",
+    commandId: randomUUID(),
+    voiceSessionId: dispatch.voiceSessionId,
+    attemptId: dispatch.attemptId,
+    sequence: 1,
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 4000).toISOString(),
+    payload: { leaseId, observedState: "ACTIVE" },
+  };
+  let calls = 0;
+  let mode = "late";
+  const abort = new AbortController();
+  const client = new JournalClient(
+    configuration(),
+    () => {
+      calls++;
+      if (mode === "late") now += 4001;
+      else abort.abort();
+      const validUntil = new Date(now + 10000).toISOString();
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            action: "CONTINUE",
+            control: {
+              schemaVersion: 1,
+              kind: "LEASE_RENEWED",
+              commandId: randomUUID(),
+              voiceSessionId: dispatch.voiceSessionId,
+              attemptId: dispatch.attemptId,
+              sequence: 1,
+              issuedAt: new Date(now).toISOString(),
+              expiresAt: validUntil,
+              payload: {
+                leaseId,
+                validUntil,
+                hardStopAt: new Date(now + 300000).toISOString(),
+                admittedSeconds: 300,
+              },
+            },
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+            },
+          },
+        ),
+      );
+    },
+    () => now,
+  );
+  await assert.rejects(
+    client.control(dispatch, { ...signal, expiresAt: signal.issuedAt }),
+    (error) =>
+      error instanceof AgentFailure && error.code === "AUTHORITY_EXPIRED",
+  );
+  assert.equal(calls, 0);
+  await assert.rejects(
+    client.control(dispatch, signal),
+    (error) =>
+      error instanceof AgentFailure && error.code === "AUTHORITY_EXPIRED",
+  );
+  assert.equal(calls, 1);
+  now = initial;
+  mode = "cancelled";
+  await assert.rejects(
+    client.control(dispatch, signal, abort.signal),
+    (error) => error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  assert.equal(calls, 2);
+  await assert.rejects(
+    client.control(dispatch, signal, abort.signal),
+    (error) => error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  assert.equal(calls, 2);
+});
+
+void test("control transport timeout is bounded by the command deadline without retry", async () => {
+  let calls = 0;
+  const server = createServer((req) => {
+    calls++;
+    req.resume();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient({
+    ...configuration(),
+    journalUrl: `http://127.0.0.1:${String(address.port)}`,
+  });
+  const now = Date.now();
+  try {
+    await assert.rejects(
+      client.control(dispatch, {
+        schemaVersion: 1,
+        kind: "HEARTBEAT",
+        commandId: randomUUID(),
+        voiceSessionId: dispatch.voiceSessionId,
+        attemptId: dispatch.attemptId,
+        sequence: 1,
+        issuedAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 200).toISOString(),
+        payload: { leaseId: randomUUID(), observedState: "ACTIVE" },
+      }),
+      (error) => error instanceof AgentFailure && error.failure === "TIMEOUT",
+    );
+    assert.equal(calls, 1);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
+});
 void test("configuration is disabled by default and never leaks unsafe setup values", () => {
   assert.equal(configuration().enabled, false);
   for (const environment of [
