@@ -291,10 +291,6 @@ export class VoiceWorker {
       return;
     }
     this.seen.add(key);
-    if (this.busy && !this.speaking) {
-      void this.stop("USER_ENDED");
-      return;
-    }
     if (this.speaking) void this.bargeIn();
     this.pending = [this.pending, text].filter(Boolean).join(" ");
     if (Buffer.byteLength(this.pending, "utf8") > 1800) {
@@ -303,7 +299,7 @@ export class VoiceWorker {
     }
     this.pauseUntil = this.clock() + 1500;
     this.diagnostic({ phase: "stt_final", transcriptResult: "PENDING" });
-    this.setState("TRANSCRIBING");
+    if (!this.busy) this.setState("TRANSCRIBING");
   }
   async tick() {
     if (this.life.signal.aborted) return;
@@ -359,6 +355,7 @@ export class VoiceWorker {
   private async turn(text: string) {
     if (!this.live() || !this.lease) return;
     this.busy = true;
+    this.interrupted = false;
     this.setState("WAITING_FOR_REPLY");
     try {
       this.diagnostic({ phase: "turn_requested" });
@@ -384,7 +381,6 @@ export class VoiceWorker {
       )
         throw new AgentFailure("AUTHORITY_EXPIRED");
       this.speaking = reply;
-      this.interrupted = false;
       this.playbackStarted = false;
       this.playback = new AbortController();
       this.lastEcho = normalized(reply.spokenText);
@@ -420,10 +416,15 @@ export class VoiceWorker {
       this.echoUntil = this.clock() + 1000;
       this.speaking = null;
       this.playback = null;
-      if (!this.pending)
-        this.setState(
-          this.muted ? "MUTED" : this.connected ? "LISTENING" : "DISCONNECTED",
-        );
+      this.setState(
+        this.muted
+          ? "MUTED"
+          : !this.connected
+            ? "DISCONNECTED"
+            : this.pending
+              ? "TRANSCRIBING"
+              : "LISTENING",
+      );
     } catch (error) {
       this.diagnostic({
         phase: "turn_failed",
@@ -436,7 +437,7 @@ export class VoiceWorker {
             : "PROVIDER_FAILED",
       });
       if (this.life.signal.aborted) return;
-      if (!this.interrupted) await this.fail();
+      if (!this.playback?.signal.aborted) await this.fail();
     } finally {
       this.busy = false;
       this.speaking = null;

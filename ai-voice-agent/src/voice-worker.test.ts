@@ -580,6 +580,150 @@ void test("consecutive turns retain the live input stream while mute and end dis
   assert.equal(f.worker.state, "ENDED");
 });
 
+void test("valid late finals queue behind a pending Journal request and become one sequential turn", async () => {
+  const f = fixture();
+  const generation = hold();
+  await f.start();
+  f.generation(generation.wait);
+  f.emit("PRIVATE_FIRST_QUESTION");
+  f.advance(1500);
+  const first = f.tick();
+  await flush();
+  const segmentId = randomUUID();
+  f.emit("PRIVATE_LATE_FIRST", { segmentId });
+  f.emit("PRIVATE_LATE_FIRST", { segmentId });
+  f.advance(500);
+  f.emit("PRIVATE_LATE_SECOND");
+  f.advance(1500);
+  await Promise.all([f.tick(), f.tick()]);
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.played.length, 0);
+  assert.equal(f.worker.state, "WAITING_FOR_REPLY");
+  assert.equal(f.closes(), 0);
+  assert.equal(
+    f.diagnostics.some((value) => value.phase === "agent_stopped"),
+    false,
+  );
+  generation.release();
+  await first;
+  assert.equal(f.played.length, 1);
+  assert.equal(f.worker.state, "TRANSCRIBING");
+  await Promise.all([f.tick(), f.tick()]);
+  assert.equal(f.turns.length, 2);
+  assert.equal(
+    f.turns[1]?.finalTranscript,
+    "PRIVATE_LATE_FIRST PRIVATE_LATE_SECOND",
+  );
+  assert.equal(f.turns[1].sequence, 2);
+  assert.notEqual(f.turns[1].turnId, f.turns[0]?.turnId);
+  assert.equal(f.played.length, 2);
+  assert.equal(f.worker.state, "LISTENING");
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("queued finals remain byte-bounded and confidence-checked while Journal is busy", async () => {
+  for (const mode of ["size", "confidence"] as const) {
+    const f = fixture();
+    const generation = hold();
+    await f.start();
+    f.generation(generation.wait);
+    f.emit("PRIVATE_FIRST_QUESTION");
+    f.advance(1500);
+    const first = f.tick();
+    await flush();
+    if (mode === "size") {
+      f.emit("x".repeat(1000));
+      f.emit("y".repeat(800));
+    } else f.emit("PRIVATE_LOW_CONFIDENCE", { confidence: 0.79 });
+    await f.worker.finished;
+    await first;
+    generation.release();
+    f.advance(1500);
+    await f.tick();
+    assert.equal(f.turns.length, 1);
+    assert.equal(f.played.length, 0);
+    assert.equal(f.input(), false);
+    assert.equal(
+      f.diagnostics.find((value) => value.transcriptResult === "REJECTED")
+        ?.rejection,
+      mode === "size" ? "PENDING_TOO_LARGE" : "LOW_CONFIDENCE",
+    );
+    assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  }
+});
+
+void test("failed or cancelled Journal work discards queued finals without another provider request", async () => {
+  for (const mode of ["failure", "owner-end", "authority"] as const) {
+    const f = fixture();
+    let reject: (reason: Error) => void = () => undefined;
+    const generation = new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    });
+    await f.start();
+    f.generation(generation);
+    f.emit("PRIVATE_FIRST_QUESTION");
+    f.advance(1500);
+    const first = f.tick();
+    await flush();
+    f.emit("PRIVATE_QUEUED_QUESTION");
+    if (mode === "failure") reject(new Error("PRIVATE_PROVIDER_FAILURE"));
+    else if (mode === "owner-end") await f.worker.stop("USER_ENDED");
+    else {
+      f.revoke();
+      f.advance(3500);
+      await f.tick();
+    }
+    await first;
+    await f.worker.finished;
+    f.advance(1500);
+    f.emit("PRIVATE_IGNORED_AFTER_END");
+    await f.tick();
+    assert.equal(f.turns.length, 1);
+    assert.equal(f.played.length, 0);
+    assert.equal(f.closes(), 1);
+    assert.equal(f.worker.state, "ENDED");
+    assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  }
+});
+
+void test("a prior playback interruption cannot hide a failed next Journal request or replay its queued speech", async () => {
+  const f = fixture();
+  const playback = hold();
+  await f.start();
+  f.play(playback.wait);
+  f.emit("PRIVATE_FIRST_QUESTION");
+  f.advance(1500);
+  const first = f.tick();
+  await flush();
+  f.emit("PRIVATE_SECOND_QUESTION");
+  await first;
+  playback.release();
+  let reject: (reason: Error) => void = () => undefined;
+  f.generation(
+    new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    }),
+  );
+  f.advance(1500);
+  const second = f.tick();
+  await flush();
+  f.emit("PRIVATE_QUEUED_AFTER_INTERRUPTION");
+  reject(new Error("PRIVATE_PROVIDER_FAILURE"));
+  await second;
+  await f.worker.finished;
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 2);
+  assert.equal(f.played.length, 1);
+  assert.equal(f.worker.state, "ENDED");
+  assert.equal(
+    f.diagnostics.findLast((value) => value.phase === "agent_stopped")?.reason,
+    "PROVIDER_FAILURE",
+  );
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+});
+
 void test("barge-in before publication acknowledgement still reports one interruption after the trusted start", async () => {
   const f = fixture();
   const acknowledgement = hold();

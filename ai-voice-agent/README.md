@@ -151,8 +151,9 @@ regression-tested; normalization does not raise recognition confidence.
 Only Journal's validated short `spokenText` reaches TTS. First audio publication
 reports its exact turn/reply identity once. Barge-in cuts the current TTS stream,
 reports interruption and never resumes an old prefix or retries generation.
-Speech arriving while a Journal request is still unresolved cancels the session
-instead of generating a second uncertain turn. There are no automatic REST,
+Final speech arriving while a Journal request is unresolved stays in the bounded
+pending buffer. A later turn starts only after the current request and playback
+finish; a failed or cancelled request discards pending speech. There are no automatic REST,
 STT/TTS or dispatch retries after an unknown outcome.
 
 Control requests time out after 2 seconds, turns after 30 seconds; STT/TTS

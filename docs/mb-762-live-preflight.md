@@ -76,6 +76,13 @@ will distinguish future provider errors without exposing messages or content.
 Regression checks cover consecutive turns and actual SDK-session lifecycle;
 longer real-provider stability remains to be verified on this correction.
 
+The subsequent stability probe exposed the worker's late-final branch: a valid
+final arriving during an unresolved Journal request ended the call before any
+provider authorization. Late finals now use the same bounded pending buffer;
+provider calls remain sequential, with no retry after a failed/unknown request.
+Request interruption state is reset per turn so a previous barge-in cannot hide
+a later provider failure.
+
 ## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)
