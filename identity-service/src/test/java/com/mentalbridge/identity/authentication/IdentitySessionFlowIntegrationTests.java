@@ -8,8 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +40,15 @@ import com.mentalbridge.identity.registration.OutboxRelayPersistence;
 import com.mentalbridge.identity.registration.RegistrationRequested;
 import com.mentalbridge.identity.registration.VerificationDelivery;
 import com.mentalbridge.identity.credential.CredentialDeliveryRequested;
+import com.mentalbridge.identity.retention.AdminRetentionGovernanceService;
+import com.mentalbridge.identity.retention.DeletionEscalationState;
+import com.mentalbridge.identity.retention.DeletionFactStatus;
+import com.mentalbridge.identity.retention.DeletionHoldType;
+import com.mentalbridge.identity.retention.DeletionOwnerFactEntity;
+import com.mentalbridge.identity.retention.DeletionRequestEntity;
+import com.mentalbridge.identity.retention.DeletionRequestRepository;
+import com.mentalbridge.identity.retention.DeletionRequestStatus;
+import com.mentalbridge.identity.retention.RetentionOwnerService;
 
 @Import({ TestcontainersConfiguration.class, IdentitySessionFlowIntegrationTests.CaptureConfiguration.class })
 @SpringBootTest
@@ -96,6 +107,12 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 
 	@Autowired
 	private OutboxRelayPersistence outboxRelayPersistence;
+
+	@Autowired
+	private DeletionRequestRepository deletionRequests;
+
+	@Autowired
+	private AdminRetentionGovernanceService retentionGovernance;
 
 	@Autowired
 	@Qualifier("requestMappingHandlerMapping")
@@ -283,6 +300,58 @@ class IdentitySessionFlowIntegrationTests extends IdentityTestProperties {
 						+ "\",\"password\":\"correct-horse-battery-staple\"}"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+	}
+
+	@Test
+	void deletionRetryCommitsSoftDeletionAndBlocksExistingCredentials() throws Exception {
+		var email = "mb777-" + UUID.randomUUID() + "@example.test";
+		var tokens = registerVerifyAndLogin(email, "mb777-register-" + UUID.randomUUID());
+		var accountId = jdbc.sql("select id from account where email = :email")
+				.param("email", email).query(UUID.class).single();
+		var originalHash = jdbc.sql("select password_hash from account where id = :id")
+				.param("id", accountId).query(String.class).single();
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted());
+		var priorChallenge = verificationCapture.recoveryChallenge();
+		assertThat(priorChallenge).isNotBlank();
+		var before = Instant.now();
+		var request = new DeletionRequestEntity(UUID.randomUUID(), accountId, "a".repeat(64),
+				DeletionRequestStatus.PENDING, DeletionHoldType.NONE, null, 0, 3,
+				DeletionEscalationState.NONE, null, before, before.minusSeconds(1), null, null, before, before);
+		request.addOwnerFact(new DeletionOwnerFactEntity(UUID.randomUUID(), request, RetentionOwnerService.IDENTITY,
+				DeletionFactStatus.PENDING, null, null, null, before));
+		deletionRequests.saveAndFlush(request);
+		retentionGovernance.retryDeletion(request.id(), null, UUID.randomUUID());
+		var after = Instant.now();
+		var row = jdbc.sql("select status, email, password_hash, deleted_at, updated_at from account where id = :id")
+				.param("id", accountId).query((rs, n) -> new Object[] { rs.getString(1), rs.getString(2),
+						rs.getString(3), rs.getTimestamp(4).toInstant(), rs.getTimestamp(5).toInstant() }).single();
+		assertThat(row[0]).isEqualTo("DELETED");
+		assertThat(row[1]).isEqualTo(email);
+		assertThat(row[2]).isEqualTo(originalHash);
+		assertThat((Instant) row[3]).isBetween(before.minusSeconds(1), after.plusSeconds(1));
+		assertThat(row[4]).isEqualTo(row[3]);
+		assertThat(jdbc.sql("select count(*) from refresh_session where account_id = :id and revoked_at is not null and revoke_reason = 'ACCOUNT_DELETED'")
+				.param("id", accountId).query(Long.class).single()).isEqualTo(1);
+		assertLoginRejected(email, "correct-horse-battery-staple");
+		assertRefreshRejected(tokens.get("refreshToken").asText(), "mb777-refresh-" + UUID.randomUUID());
+		var recoveryCount = jdbc.sql("select count(*) from one_time_token where account_id = :id and purpose = 'RESET_PASSWORD'")
+				.param("id", accountId).query(Long.class).single();
+		mvc.perform(post("/api/v1/auth/password-recovery-requests").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isAccepted());
+		assertThat(jdbc.sql("select count(*) from one_time_token where account_id = :id and purpose = 'RESET_PASSWORD'")
+				.param("id", accountId).query(Long.class).single()).isEqualTo(recoveryCount);
+		mvc.perform(post("/api/v1/auth/password-resets").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"challenge\":\"" + priorChallenge + "\",\"newPassword\":\"new-correct-horse-battery-staple\"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CHALLENGE"));
+		mvc.perform(post("/api/v1/auth/registrations").header("Idempotency-Key", "mb777-reregister-" + UUID.randomUUID())
+				.contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email.toUpperCase(java.util.Locale.ROOT)
+						+ "\",\"password\":\"correct-horse-battery-staple\",\"actorType\":\"USER\"}"))
+				.andExpect(status().isConflict());
+		assertThat(jdbc.sql("select count(*) from account where email = :email")
+				.param("email", email).query(Long.class).single()).isOne();
 	}
 
 	@Test
