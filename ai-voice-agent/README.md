@@ -50,7 +50,8 @@ npm run migration:check
 npm run build
 ```
 
-Tests use synthetic local HTTP and fake media/provider boundaries. They never
+Tests use synthetic local HTTP and media/provider boundaries, including the
+pinned SDK's real STT wire validation and transcript processing. They never
 enable the worker or need Cloud, model or owner-service credentials.
 `migration:check` verifies the no-database/no-direct-reasoning-provider boundary;
 there is no worker database, migration, durable transcript or audio store.
@@ -139,6 +140,14 @@ interrupt after 500 ms/two words but cannot call Journal. Low-confidence
 it never invents a transcript or model response. Clients can offer explicit text
 or manual push-to-talk re-entry; this worker adds no client UI or silent fallback.
 
+The adapter normalizes valid Vietnamese BCP 47 recognition tags such as `vi-VN`
+and `vi-Latn-VN` to `vi`. Other languages and tags still malformed after SDK
+processing remain rejected. The SDK itself repairs `vi_VN` to `vi-VN` first;
+confidence must be finite, within 0..1 and at least 0.8. The pinned SDK defaults
+omitted aggregate confidence to 1 and rejects null confidence at wire validation.
+Empty finals remain nonfatal and do not call Journal. These SDK semantics are
+regression-tested; normalization does not raise recognition confidence.
+
 Only Journal's validated short `spokenText` reaches TTS. First audio publication
 reports its exact turn/reply identity once. Barge-in cuts the current TTS stream,
 reports interruption and never resumes an old prefix or retries generation.
@@ -170,6 +179,13 @@ parent and job processes; errors expose only fixed safe codes. No debug export,
 audio file, transcript, prompt, reply or token is logged/persisted by this package.
 Current input/reply and deduplication digests remain only in bounded call RAM
 and are dropped on end; there is no recovery from disk or previous chats.
+
+Bounded diagnostics distinguish empty/pending/rejected STT finals, fixed rejection
+reasons and SDK/room/participant/publication failure sources. Rejection evidence
+contains only valid numeric confidence and language-match booleans, never raw
+language or transcript. Media errors expose a closed component enum, optional
+recoverability and HTTP status class, never error messages, response bodies or
+headers. The first failure survives shutdown; a later SDK close cannot replace it.
 
 The operator must also disable project-side recording, session insights, content
 tracing, exports and content sampling before enablement. Application settings

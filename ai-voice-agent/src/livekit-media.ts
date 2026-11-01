@@ -24,6 +24,7 @@ import type { Dispatch } from "./contract.js";
 import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
 import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
 import type { AgentDiagnostic } from "./diagnostics.js";
+import { mediaFailure } from "./diagnostics.js";
 
 export function speechUsage(metrics: {
   type: string;
@@ -103,6 +104,13 @@ export function microphoneSubscriptions(
         publication.source === TrackSource.SOURCE_MICROPHONE,
     );
 }
+export function recognitionLanguage(language: string): string {
+  try {
+    return new Intl.Locale(language).language === "vi" ? "vi" : language;
+  } catch {
+    return language;
+  }
+}
 export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
   return new TransformStream<
     stt.SpeechEvent | string,
@@ -119,7 +127,7 @@ export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
           receive({
             text: first.text,
             final: event.type === stt.SpeechEventType.FINAL_TRANSCRIPT,
-            language: first.language,
+            language: recognitionLanguage(first.language),
             confidence: first.confidence,
             segmentId: createHash("sha256")
               .update(
@@ -209,7 +217,7 @@ export class LiveKitMedia implements MediaPort {
         context.room.isRecording ||
         context.room.metadata !== this.dispatch.dispatchId
       ) {
-        callbacks.failed();
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
         return;
       }
       const people = [...context.room.remoteParticipants.values()];
@@ -226,12 +234,12 @@ export class LiveKitMedia implements MediaPort {
             ),
         )
       ) {
-        callbacks.failed();
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
         return;
       }
       const person = people[0];
       if (person && this.owner && person.identity !== this.owner) {
-        callbacks.failed();
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
         return;
       }
       if (person) this.owner = person.identity;
@@ -354,11 +362,11 @@ export class LiveKitMedia implements MediaPort {
       },
       llmNode: () => null,
     });
-    this.session.on(voice.AgentSessionEventTypes.Error, () => {
-      callbacks.failed();
+    this.session.on(voice.AgentSessionEventTypes.Error, (event) => {
+      callbacks.failed(mediaFailure("SDK_ERROR", event));
     });
-    this.session.on(voice.AgentSessionEventTypes.Close, () => {
-      if (!this.closed) callbacks.failed();
+    this.session.on(voice.AgentSessionEventTypes.Close, (event) => {
+      if (!this.closed) callbacks.failed(mediaFailure("SDK_CLOSE", event));
     });
     const disconnected = (p: RemoteParticipant) => {
       if (p.identity === this.owner) callbacks.connected(false);
@@ -367,8 +375,11 @@ export class LiveKitMedia implements MediaPort {
       guard();
       if (p.identity === this.owner) callbacks.connected(true);
     };
-    const ownDisconnect = () => {
-      callbacks.failed();
+    const reconnecting = () => {
+      callbacks.failed(mediaFailure("ROOM_RECONNECTING"));
+    };
+    const disconnectedRoom = () => {
+      callbacks.failed(mediaFailure("ROOM_DISCONNECTED"));
     };
     const muted = (_track: unknown, p: { identity: string }) => {
       if (p.identity === this.owner) callbacks.muted(true);
@@ -378,15 +389,15 @@ export class LiveKitMedia implements MediaPort {
     };
     context.room.on(RoomEvent.ParticipantDisconnected, disconnected);
     context.room.on(RoomEvent.ParticipantConnected, connected);
-    context.room.on(RoomEvent.Reconnecting, ownDisconnect);
-    context.room.on(RoomEvent.Disconnected, ownDisconnect);
+    context.room.on(RoomEvent.Reconnecting, reconnecting);
+    context.room.on(RoomEvent.Disconnected, disconnectedRoom);
     context.room.on(RoomEvent.TrackMuted, muted);
     context.room.on(RoomEvent.TrackUnmuted, unmuted);
     this.cleanup.push(() => {
       context.room.off(RoomEvent.ParticipantDisconnected, disconnected);
       context.room.off(RoomEvent.ParticipantConnected, connected);
-      context.room.off(RoomEvent.Reconnecting, ownDisconnect);
-      context.room.off(RoomEvent.Disconnected, ownDisconnect);
+      context.room.off(RoomEvent.Reconnecting, reconnecting);
+      context.room.off(RoomEvent.Disconnected, disconnectedRoom);
       context.room.off(RoomEvent.TrackMuted, muted);
       context.room.off(RoomEvent.TrackUnmuted, unmuted);
     });
@@ -452,7 +463,7 @@ export class LiveKitMedia implements MediaPort {
           this.interrupt();
         },
         () => {
-          this.callbacks?.failed();
+          this.callbacks?.failed(mediaFailure("PLAYBACK_PUBLICATION"));
         },
       );
     } finally {

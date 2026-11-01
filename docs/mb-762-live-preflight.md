@@ -1,10 +1,61 @@
 # MB-762 real-provider preflight
 
-Authority: MB-762 comments 10243–10259, 10294–10295, 10297 and the owner's direct
+Authority: MB-762 comments 10243–10259, 10294–10295, 10297, 10329 and the owner's direct
 2026-10-30 instruction to finish Local Real E2E preparation. Comment 10251 supersedes the
 Hosted Agent/HTTPS prerequisite for this first local pilot. This work does not create
 another mock-only delivery milestone. Tests verify production changes without
 making provider calls before approval.
+
+## Current status: STT correction under review — 2026-11-01
+
+[PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)
+authorizes source integration and offline verification only. The isolated debug
+branch incorporates `origin/dev` at `e2759709` with a normal merge so PR 240 can
+advance without rewriting published history. The closed pilot worktree and its
+compiled runtime remain frozen at `0896bd4a`. No new admission, campaign, grant,
+microphone or provider request is authorized by this correction. Voice and Agent
+stay OFF; both PRs remain unmerged and staging is unchanged.
+
+The later manual attempt on October 31 reached `MEDIA_READY`, renewed its lease
+once and emitted STT usage immediately before `PROVIDER_FAILURE`. It produced
+zero observed Journal turn POSTs, Bedrock phases or TTS/first-audio phases. The
+heartbeat abort followed the stop and does not establish the initiating cause.
+No amplitude, actual language or confidence was retained. The consumed manual
+admission and the earlier 2/2 campaign are preserved; neither can be reused.
+
+A real adapter defect is reproducible independently of that historical attempt:
+LiveKit Agents 1.9.4 accepts a final `vi-VN` wire event and preserves the regional
+tag, while the previous worker accepted only literal `vi`. The correction
+normalizes valid Vietnamese BCP 47 tags at the adapter boundary. It preserves
+other/malformed tags for rejection and keeps the confidence threshold at 0.8,
+with finite values restricted to 0..1. It does not prove the old call had `vi-VN`;
+low confidence and SDK/media failures remain possible historical explanations.
+
+| Boundary | Required regression behavior |
+| --- | --- |
+| Recognition language | `vi`, `vi-VN` and `vi-Latn-VN` reach a synthetic local Journal turn; `en-VN` and tags still malformed after SDK processing reject. SDK repair of `vi_VN` to `vi-VN` is tested separately from adapter rejection of raw malformed tags. |
+| Confidence | 0.79 rejects, 0.80 accepts; nonfinite/out-of-range values reject. SDK wire validation defaults omitted confidence to 1 and discards null confidence. |
+| Empty final | SDK usage can occur without a turn; an empty/whitespace final remains nonfatal. |
+| Failure evidence | Fixed rejection/source/component enums, valid numeric confidence, language-match boolean, optional recoverability and HTTP class only. First failure survives shutdown. |
+| Privacy | No transcript, raw language, audio, prompt/reply, error message/body/headers, credentials or provider payload in diagnostics. |
+
+Committed regression tests exercise the pinned SDK wire schema, actual transcript
+processing, production adapter and worker using synthetic local boundaries. The
+normalization and diagnostic changes do not alter quota, consent, admission,
+lease limits, provider routing, budgets, recording/export or no-retry behavior.
+They add no persisted fields or public payloads. Module checks and exact-head CI
+must pass before review handoff; the PR records the actual commit and results.
+Offline success is not an audible E2E PASS. A future live campaign requires its
+own PO approval, fixed limits and current preflight after this fix is reviewed.
+
+Local integration checks on the synchronized debug source: `npm test` PASS
+74/74 (including 14 SDK wire-path cases); `npm run typecheck`, `npm run lint`,
+build, contract and boundary checks PASS. Prettier with `--end-of-line auto`
+passes on Windows CRLF checkout files; no unrelated newline rewrite is included.
+Repository documentation policy and `git diff --check` pass. An independent
+read-only source review found no blocking normalization, SDK-error-shape,
+diagnostic-privacy or shutdown-source regression. These are source verification
+results; required CI still has to run on the published commit.
 
 ## Approved pilot
 
@@ -23,7 +74,7 @@ making provider calls before approval.
 - Keep live admission disabled until preflight is complete and the owner
   explicitly confirms `LIVE_APPROVED`.
 
-## Current status: LIVE_FAILED_CAMPAIGN_STOPPED — 2026-10-30
+## Historical status: LIVE_FAILED_CAMPAIGN_STOPPED — 2026-10-30
 
 The real local pilot under PO **10297** did not produce an audible AI reply.
 [Jira post-run report 10299](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10299)

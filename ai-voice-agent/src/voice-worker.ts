@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { AgentFailure } from "./configuration.js";
 import type { Dispatch, Lease, Reply, Signal, StopReason } from "./contract.js";
 import type { JournalClient } from "./journal-client.js";
-import type { AgentDiagnostic } from "./diagnostics.js";
+import type {
+  AgentDiagnostic,
+  MediaFailure,
+  TranscriptRejection,
+} from "./diagnostics.js";
 
 export type AgentState =
   | "CONNECTING"
@@ -27,7 +31,7 @@ export interface MediaCallbacks {
   transcript: (value: Transcript) => void;
   muted: (value: boolean) => void;
   connected: (value: boolean) => void;
-  failed: () => void;
+  failed: (failure?: MediaFailure) => void;
 }
 export interface MediaPort {
   state(state: AgentState): void;
@@ -130,7 +134,9 @@ export class VoiceWorker {
         connected: (value) => {
           void this.connection(value).catch(() => this.fail());
         },
-        failed: () => {
+        failed: (failure = { source: "UNKNOWN" }) => {
+          if (this.life.signal.aborted) return;
+          this.diagnostic({ phase: "media_failed", ...failure });
           void this.fail();
         },
       });
@@ -225,14 +231,42 @@ export class VoiceWorker {
   receive(value: Transcript) {
     if (!this.ready || !this.live() || !this.connected || this.muted) return;
     const text = value.text.trim();
-    if (!text) return;
+    if (!text) {
+      if (value.final)
+        this.diagnostic({ phase: "stt_final", transcriptResult: "EMPTY" });
+      return;
+    }
+    const confidenceValid =
+      Number.isFinite(value.confidence) &&
+      value.confidence >= 0 &&
+      value.confidence <= 1;
+    const reject = (rejection: TranscriptRejection) => {
+      this.diagnostic({
+        phase: "stt_final",
+        transcriptResult: "REJECTED",
+        rejection,
+        confidenceValid,
+        ...(confidenceValid ? { confidence: value.confidence } : {}),
+        languageAccepted: value.language === "vi",
+      });
+      void this.fail();
+    };
     if (
-      !Number.isFinite(value.confidence) ||
+      !confidenceValid ||
       value.confidence < 0.8 ||
       value.language !== "vi" ||
       text.length > 2000
     ) {
-      if (value.final) void this.fail();
+      if (value.final)
+        reject(
+          !confidenceValid
+            ? "INVALID_CONFIDENCE"
+            : value.confidence < 0.8
+              ? "LOW_CONFIDENCE"
+              : value.language !== "vi"
+                ? "LANGUAGE_MISMATCH"
+                : "TRANSCRIPT_TOO_LARGE",
+        );
       return;
     }
     const clean = normalized(text);
@@ -254,7 +288,7 @@ export class VoiceWorker {
     const key = digest(value.segmentId);
     if (this.seen.has(key)) return;
     if (this.seen.size >= 256) {
-      void this.fail();
+      reject("SEGMENT_LIMIT");
       return;
     }
     this.seen.add(key);
@@ -265,10 +299,11 @@ export class VoiceWorker {
     if (this.speaking) void this.bargeIn();
     this.pending = [this.pending, text].filter(Boolean).join(" ");
     if (Buffer.byteLength(this.pending, "utf8") > 1800) {
-      void this.fail();
+      reject("PENDING_TOO_LARGE");
       return;
     }
     this.pauseUntil = this.clock() + 1500;
+    this.diagnostic({ phase: "stt_final", transcriptResult: "PENDING" });
     this.setState("TRANSCRIBING");
   }
   async tick() {

@@ -18,7 +18,11 @@ import {
   type MediaPort,
   type Transcript,
 } from "./voice-worker.js";
-import { agentDiagnostics, type AgentDiagnostic } from "./diagnostics.js";
+import {
+  agentDiagnostics,
+  type AgentDiagnostic,
+  type MediaFailure,
+} from "./diagnostics.js";
 const hold = () => {
   let release: () => void = () => undefined;
   const wait = new Promise<void>((resolve) => {
@@ -221,8 +225,8 @@ function fixture() {
     connection: (value: boolean) => {
       callbacks?.connected(value);
     },
-    fail: () => {
-      callbacks?.failed();
+    fail: (failure?: MediaFailure) => {
+      callbacks?.failed(failure);
     },
     noClaim: () => {
       claimed = false;
@@ -549,6 +553,87 @@ void test("uncertain/oversized/wrong-language final STT closes to text/manual fa
   f.emit("á".repeat(1000));
   await f.worker.finished;
   assert.equal(f.turns.length, 0);
+});
+void test("final rejection diagnostics identify confidence, language and size without transcript", async () => {
+  for (const [partial, expected] of [
+    [{ confidence: 0.79 }, "LOW_CONFIDENCE"],
+    [{ confidence: Number.NaN }, "INVALID_CONFIDENCE"],
+    [{ confidence: Number.POSITIVE_INFINITY }, "INVALID_CONFIDENCE"],
+    [{ confidence: Number.NEGATIVE_INFINITY }, "INVALID_CONFIDENCE"],
+    [{ confidence: -0.1 }, "INVALID_CONFIDENCE"],
+    [{ confidence: 1.1 }, "INVALID_CONFIDENCE"],
+    [{ language: "en" }, "LANGUAGE_MISMATCH"],
+    [{ language: "PRIVATE_LANGUAGE" }, "LANGUAGE_MISMATCH"],
+  ] as const) {
+    const f = fixture();
+    await f.start();
+    f.emit("PRIVATE_SYNTHETIC_TEXT", partial);
+    await f.worker.finished;
+    const rejected = f.diagnostics.find((d) => d.phase === "stt_final");
+    assert.ok(rejected);
+    assert.equal(rejected.rejection, expected);
+    assert.equal(rejected.transcriptResult, "REJECTED");
+    assert.equal(f.turns.length, 0);
+    assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+    if (expected === "INVALID_CONFIDENCE")
+      assert.equal(Object.hasOwn(rejected, "confidence"), false);
+  }
+  const f = fixture();
+  await f.start();
+  f.emit("x".repeat(2001));
+  await f.worker.finished;
+  assert.equal(
+    f.diagnostics.find((d) => d.phase === "stt_final")?.rejection,
+    "TRANSCRIPT_TOO_LARGE",
+  );
+});
+void test("empty final is distinguished from a rejected final and keeps the worker listening", async () => {
+  const f = fixture();
+  await f.start();
+  f.emit("   ");
+  assert.ok(
+    f.diagnostics.some(
+      (d) => d.phase === "stt_final" && d.transcriptResult === "EMPTY",
+    ),
+  );
+  assert.equal(
+    f.diagnostics.some((d) => d.phase === "agent_stopped"),
+    false,
+  );
+  f.emit("Synthetic greeting", { confidence: 0.8 });
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  await f.worker.stop("USER_ENDED");
+});
+void test("media failures retain their safe source and shutdown does not replace the initial cause", async () => {
+  const f = fixture();
+  await f.start();
+  f.fail({
+    source: "SDK_ERROR",
+    component: "STT",
+    code: "HTTP_4XX",
+    recoverable: false,
+  });
+  await f.worker.finished;
+  f.fail({ source: "SDK_CLOSE" });
+  assert.deepEqual(
+    f.diagnostics.filter((d) => d.phase === "media_failed"),
+    [
+      {
+        phase: "media_failed",
+        source: "SDK_ERROR",
+        component: "STT",
+        code: "HTTP_4XX",
+        recoverable: false,
+      },
+    ],
+  );
+  assert.equal(f.turns.length, 0);
+  assert.equal(
+    f.diagnostics.find((d) => d.phase === "agent_stopped")?.reason,
+    "PROVIDER_FAILURE",
+  );
 });
 void test("echo cannot call Journal or interrupt; real barge-in cuts playback and uses one publication identity", async () => {
   const f = fixture();
