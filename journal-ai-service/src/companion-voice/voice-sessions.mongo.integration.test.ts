@@ -473,6 +473,64 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
   );
 
   await t.test(
+    "a pre-ready heartbeat renews checked authority without activating input or bypassing consent",
+    async () => {
+      const f = await fixture();
+      const started = await f.start();
+      let session = await f.claim(started.voiceSessionId);
+      assert.equal(session.state, "CONNECTING");
+      assert.ok(f.media.ownerConnected && f.media.agentConnected);
+      const originalLease = session.leaseExpiresAt?.getTime() ?? 0;
+      f.advance(2500);
+      const checks = f.checks.length;
+      await assert.rejects(
+        f.service.control(
+          session.voiceSessionId,
+          f.signal(session, 1, "HEARTBEAT", { leaseId: randomUUID() }),
+          randomUUID(),
+        ),
+        rejected("STALE_ATTEMPT"),
+      );
+      assert.equal(f.checks.length, checks);
+      const heartbeat = await f.service.control(
+        session.voiceSessionId,
+        f.signal(session, 1, "HEARTBEAT"),
+        randomUUID(),
+      );
+      assert.equal(heartbeat.action, "CONTINUE");
+      assert.equal(f.checks.length, checks + 1);
+      session = await f.current(session.voiceSessionId);
+      assert.equal(session.state, "CONNECTING");
+      assert.ok((session.leaseExpiresAt?.getTime() ?? 0) > originalLease);
+      assert.equal(session.activeMilliseconds, 0);
+      await f.service.control(
+        session.voiceSessionId,
+        f.signal(session, 2, "MEDIA_READY"),
+        randomUUID(),
+      );
+      assert.equal((await f.current(session.voiceSessionId)).state, "ACTIVE");
+      assert.equal(f.checks.length, checks + 2);
+
+      const revoked = await fixture();
+      const pending = await revoked.start();
+      const claimed = await revoked.claim(pending.voiceSessionId);
+      revoked.revoke();
+      const denied = await revoked.service.control(
+        claimed.voiceSessionId,
+        revoked.signal(claimed, 1, "HEARTBEAT"),
+        randomUUID(),
+      );
+      assert.equal(denied.action, "STOP");
+      assert.equal(denied.control.payload.reason, "VOICE_CONSENT_REVOKED");
+      assert.equal(
+        (await revoked.current(claimed.voiceSessionId)).state,
+        "FAILED",
+      );
+      assert.equal(revoked.media.rooms.size, 0);
+    },
+  );
+
+  await t.test(
     "reply registration rechecks authority without extending the acknowledged worker lease",
     async () => {
       const f = await fixture();

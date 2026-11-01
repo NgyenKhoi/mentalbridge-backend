@@ -610,7 +610,8 @@ export class VoiceSessionsService {
       } else if (
         observed.ownerConnected &&
         observed.agentConnected &&
-        ["CONNECTING", "RECONNECTING"].includes(session.state)
+        (session.state === "RECONNECTING" ||
+          (session.state === "CONNECTING" && input.kind === "MEDIA_READY"))
       ) {
         await this.ledger.transition(id, guard, "ACTIVE", this.clock());
       } else if (!observed.ownerConnected && session.state === "ACTIVE") {

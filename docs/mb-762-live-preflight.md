@@ -83,6 +83,11 @@ provider calls remain sequential, with no retry after a failed/unknown request.
 Request interruption state is reset per turn so a previous barge-in cannot hide
 a later provider failure.
 
+CONNECTING becomes ACTIVE only after MEDIA_READY. A pre-ready heartbeat can
+renew authority but cannot invite speech or start ACTIVE billing. Reconnecting
+recovery keeps its existing heartbeat behavior. This supports the Web readiness
+gate that requires both backend ACTIVE and the current Agent listening hint.
+
 ## Historical status: STT correction under review — 2026-11-01
 
 [PO approval 10329](https://vunguyenkhoi47.atlassian.net/browse/MB-762?focusedCommentId=10329)
