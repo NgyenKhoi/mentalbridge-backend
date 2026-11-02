@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 const migrations = [
   require("../../migrations/010_ai_companion_chat_quotas.cjs"),
   require("../../migrations/012_ai_companion_conversation_context.cjs"),
+  require("../../migrations/017_companion_message_suggestion.cjs"),
 ] as { up(database: unknown): Promise<void> }[];
 
 void test("persists encrypted quota-governed AI Companion conversations with real MongoDB", async () => {
@@ -89,7 +90,9 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     CHAT_PLUS_DAILY_ANSWERS: 7,
     CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: 9,
     CHAT_RATE_LIMIT_PER_MINUTE: 20,
-    CHAT_DAILY_TOKEN_BUDGET: 100_000,
+    CHAT_FREE_DAILY_TOKEN_BUDGET: 100_000,
+    CHAT_PLUS_DAILY_TOKEN_BUDGET: 250_000,
+    CHAT_PREMIUM_DAILY_TOKEN_BUDGET: 600_000,
     CHAT_DEFAULT_TIMEZONE: "Asia/Ho_Chi_Minh",
     CHAT_ROUTING_POLICY_VERSION: "companion-chat-routing-v1",
   };
@@ -117,6 +120,8 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
   let plan: ServicePlan = "FREE";
   let consentAuthorized = true;
   let providerFails = false;
+  let replyOutputTokens = 10;
+  let rendezvous: (() => void)[] | null = null;
   const app = await createApplication(configuration, {
     readinessProbe: { check: () => Promise.resolve() },
     companionChat: {
@@ -145,14 +150,33 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
           }),
       },
       provider: {
-        reply: () =>
-          providerFails
-            ? Promise.reject(new Error("synthetic provider timeout"))
-            : Promise.resolve({
-                message: "Phản hồi tổng hợp được giới hạn.",
-                inputTokens: 20,
-                outputTokens: 10,
-              }),
+        reply: async () => {
+          if (providerFails) throw new Error("synthetic provider timeout");
+          // Holds concurrent sends inside provider work until both arrive.
+          const waiting = rendezvous;
+          if (waiting)
+            await new Promise<void>((release) => {
+              waiting.push(release);
+              if (waiting.length === 2) for (const resume of waiting) resume();
+            });
+          return {
+            message: "Phản hồi tổng hợp được giới hạn.",
+            inputTokens: 20,
+            outputTokens: replyOutputTokens,
+            suggestion: { destination: "RESOURCE", resourceRef: "R1" },
+          };
+        },
+      },
+      catalog: {
+        items: () =>
+          Promise.resolve([
+            {
+              ref: "R1",
+              resourceId: "33333333-3333-4333-8333-333333333333",
+              category: "BREATHING",
+              title: "Thở 4-7-8",
+            },
+          ]),
       },
     },
   });
@@ -318,7 +342,18 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
 
     now = new Date("2026-09-20T17:03:00.000Z");
     configuration.CHAT_RATE_LIMIT_PER_MINUTE = 20;
-    configuration.CHAT_DAILY_TOKEN_BUDGET = 60;
+    // The pre-call estimate must fit, so the race is decided by the reply's spend.
+    replyOutputTokens = 20_000;
+    const premiumUsed =
+      (
+        await database
+          .collection<{ ownerAccountId: string; usedTokens: number }>(
+            "ai_companion_quota_ledgers",
+          )
+          .findOne({ ownerAccountId: otherOwnerId })
+      )?.usedTokens ?? 0;
+    configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET = premiumUsed + 25_000;
+    rendezvous = [];
     const tokenAttempts = await Promise.all(
       ["0001", "0002"].map((suffix) =>
         request(server)
@@ -349,6 +384,71 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     };
     assert.equal(premiumBody.quota.remaining, null);
     assert.equal(premiumBody.quota.limitDisplayed, false);
+    rendezvous = null;
+    const premiumLedger = await database
+      .collection<{
+        ownerAccountId: string;
+        usedTokens: number;
+        reservations: string[];
+      }>("ai_companion_quota_ledgers")
+      .findOne({ ownerAccountId: otherOwnerId });
+    assert.equal(premiumLedger?.usedTokens, premiumUsed + 20_020);
+    assert.deepEqual(premiumLedger.reservations, []);
+
+    (
+      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
+    ).COMPANION_GUIDANCE_V2_ENABLED = true;
+    configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET = 600_000;
+    replyOutputTokens = 10;
+    const friendSend = () =>
+      request(server)
+        .post(
+          `/api/v1/ai-companion/conversations/${premiumConversationBody.conversationId}/messages`,
+        )
+        .set("Authorization", `Bearer ${otherToken}`)
+        .set("Idempotency-Key", "companion-friend-snapshot-0001")
+        .send({ message: "Ừ, thử bài thở đó coi" });
+    const friendBody = (await friendSend().expect(201)).body as {
+      assistantMessageId: string;
+      suggestion: unknown;
+    };
+    assert.deepEqual(friendBody.suggestion, {
+      destination: "RESOURCE",
+      resourceId: "33333333-3333-4333-8333-333333333333",
+      resourceTitle: "Thở 4-7-8",
+    });
+    const snapshot = await database
+      .collection<{ response: { assistantMessageId: string } | null }>(
+        "ai_companion_commands",
+      )
+      .findOne({
+        "response.assistantMessageId": friendBody.assistantMessageId,
+      });
+    assert.ok(snapshot?.response);
+    const snapshotText = JSON.stringify(snapshot.response);
+    assert.equal(snapshotText.includes("Thở 4-7-8"), false);
+    assert.equal(
+      snapshotText.includes("33333333-3333-4333-8333-333333333333"),
+      false,
+    );
+    const storedMessage = (
+      await database
+        .collection<{
+          _id: string;
+          messages: {
+            messageId: string;
+            suggestion?: { ciphertext: unknown };
+          }[];
+        }>("ai_companion_conversations")
+        .findOne({ _id: premiumConversationBody.conversationId })
+    )?.messages.find(
+      (message) => message.messageId === friendBody.assistantMessageId,
+    );
+    assert.ok(storedMessage?.suggestion?.ciphertext);
+    assert.deepEqual((await friendSend().expect(201)).body, friendBody);
+    (
+      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
+    ).COMPANION_GUIDANCE_V2_ENABLED = false;
 
     await request(server)
       .delete(`/api/v1/ai-companion/conversations/${conversationId}`)
@@ -368,6 +468,98 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     );
   } finally {
     await app.close();
+    if (externalUri) await database.dropDatabase();
+    await client.close();
+    await mongo?.stop();
+  }
+});
+
+void test("migration 017 accepts an encrypted suggestion, rejects a plaintext one and guards its rollback", async () => {
+  const suggestionMigration =
+    require("../../migrations/017_companion_message_suggestion.cjs") as {
+      up(database: unknown): Promise<void>;
+      down(database: unknown): Promise<void>;
+    };
+  const externalUri = process.env.JOURNAL_INTEGRATION_MONGODB_URI;
+  const mongo = externalUri
+    ? undefined
+    : await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  const uri = externalUri ?? mongo?.getUri();
+  assert.ok(uri);
+  const client = new MongoClient(uri);
+  const database = client.db(
+    externalUri
+      ? `companion_suggestion_verify_${String(Date.now())}`
+      : "companion_suggestion_integration",
+  );
+  try {
+    for (const migration of migrations) await migration.up(database);
+    const envelope = () => ({
+      ciphertext: Buffer.from("sealed"),
+      iv: Buffer.alloc(12, 1),
+      tag: Buffer.alloc(16, 2),
+      algorithm: "AES-256-GCM",
+      keyId: "single-key",
+    });
+    const now = new Date("2026-11-03T00:00:00.000Z");
+    const conversation = (id: string, suggestion: unknown) => ({
+      _id: id,
+      ownerAccountId: "11111111-1111-4111-8111-111111111111",
+      title: "Trò chuyện",
+      context: {
+        sources: {
+          plan: true,
+          diary: false,
+          screening: false,
+          resourceIds: [],
+        },
+        updatedAt: now,
+      },
+      messages: [
+        {
+          messageId: "44444444-4444-4444-8444-444444444444",
+          role: "ASSISTANT",
+          content: envelope(),
+          createdAt: now,
+          route: null,
+          contextKinds: [],
+          ...(suggestion === undefined ? {} : { suggestion }),
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: now,
+    });
+    const conversations = database.collection("ai_companion_conversations");
+    await conversations.insertOne(
+      conversation("55555555-5555-4555-8555-555555555555", undefined) as never,
+    );
+    await conversations.insertOne(
+      conversation("66666666-6666-4666-8666-666666666666", envelope()) as never,
+    );
+    await assert.rejects(
+      conversations.insertOne(
+        conversation("77777777-7777-4777-8777-777777777777", {
+          destination: "RESOURCE",
+          resourceId: "33333333-3333-4333-8333-333333333333",
+          resourceTitle: "Thở 4-7-8",
+        }) as never,
+      ),
+    );
+    await assert.rejects(suggestionMigration.down(database), /Cannot remove/u);
+    await conversations.deleteOne({
+      _id: "66666666-6666-4666-8666-666666666666",
+    } as never);
+    await suggestionMigration.down(database);
+    await assert.rejects(
+      conversations.insertOne(
+        conversation(
+          "88888888-8888-4888-8888-888888888888",
+          envelope(),
+        ) as never,
+      ),
+    );
+  } finally {
     if (externalUri) await database.dropDatabase();
     await client.close();
     await mongo?.stop();

@@ -2866,10 +2866,26 @@ components:
     AiContextKind:
       type: string
       enum: [JOURNAL, SUPPORT_PLAN, REASSESSMENT, RESOURCE]
+    AiCompanionSuggestion:
+      type: [object, "null"]
+      additionalProperties: false
+      required: [destination, resourceId, resourceTitle]
+      properties:
+        destination:
+          type: string
+          enum: [RESOURCE, RESOURCE_LIBRARY, JOURNAL, EMOTION_CHECK_IN, SUPPORT_PLAN, SPECIALIST_DISCOVERY]
+        resourceId: { type: [string, "null"], format: uuid }
+        resourceTitle: { type: [string, "null"], minLength: 1, maxLength: 200 }
+      description: >-
+        Optional navigation the server resolved from the TEXT companion reply (ADR 0049). The model chooses only the destination
+        and a catalogue ref; the server maps the ref to a published reviewed Resource. RESOURCE carries resourceId and
+        resourceTitle; every other destination carries null for both. No href or label is sent: clients own routes and copy.
+        Null when guidance v2 is off, the reply offered nothing, or the suggestion was invalid. The destination page performs
+        its own access and package checks.
     AiMessage:
       type: object
       additionalProperties: false
-      required: [messageId, role, content, createdAt, contextKinds]
+      required: [messageId, role, content, createdAt, contextKinds, suggestion]
       properties:
         messageId: { type: string, format: uuid }
         role: { type: string, enum: [USER, ASSISTANT] }
@@ -2880,6 +2896,7 @@ components:
           maxItems: 4
           uniqueItems: true
           items: { $ref: "#/components/schemas/AiContextKind" }
+        suggestion: { $ref: "#/components/schemas/AiCompanionSuggestion" }
     AiConversation:
       type: object
       additionalProperties: false
@@ -2911,11 +2928,11 @@ components:
       required: [plan, policyVersion, remaining, resetAt, limitDisplayed]
       properties:
         plan: { type: string, enum: [FREE, PLUS, PREMIUM] }
-        policyVersion: { type: string, const: companion-quota-v1 }
+        policyVersion: { type: string, enum: [companion-quota-v1, companion-quota-v2] }
         remaining: { type: [integer, "null"], minimum: 0 }
         resetAt: { type: string, format: date-time }
         limitDisplayed: { type: boolean }
-      description: PREMIUM returns null remaining and no displayed daily cap, while hidden server token/rate/fair-use controls still apply.
+      description: companion-quota-v2 applies a per-plan daily provider token budget (FREE 100000, PLUS 250000, PREMIUM 600000 by default) that refuses a request before the provider call when its estimated input would exceed it. PREMIUM returns null remaining and no displayed daily cap, while hidden server token/rate/fair-use controls still apply. companion-quota-v1 may still appear on idempotent replays recorded before v2.
     SendAiMessageResponse:
       type: object
       additionalProperties: false
@@ -2928,6 +2945,7 @@ components:
           createdAt,
           contextKinds,
           quota,
+          suggestion,
         ]
       properties:
         conversationId: { type: string, format: uuid }
@@ -2941,6 +2959,7 @@ components:
           uniqueItems: true
           items: { $ref: "#/components/schemas/AiContextKind" }
         quota: { $ref: "#/components/schemas/AiQuota" }
+        suggestion: { $ref: "#/components/schemas/AiCompanionSuggestion" }
     Emotion:
       type: string
       description: Self-selected, non-clinical label shared with Journal authoring.
