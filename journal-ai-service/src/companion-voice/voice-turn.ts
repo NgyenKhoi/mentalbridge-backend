@@ -113,6 +113,21 @@ const history = (pairs: Pair[], input = ""): Pair[] => {
   if (!fits(selected, input)) throw new VoiceLedgerError("INVALID_REQUEST");
   return selected;
 };
+const trimSelectedText = (
+  selectedText: Pair[],
+  currentCall: Pair[],
+  input = "",
+) => {
+  while (
+    selectedText.length &&
+    (selectedText.length + currentCall.length > 4 ||
+      Buffer.byteLength(JSON.stringify({ selectedText, currentCall }), "utf8") +
+        Buffer.byteLength(input, "utf8") +
+        128 >
+        2000)
+  )
+    selectedText.shift();
+};
 
 export class VoiceTurnService {
   private readonly contexts = new Map<string, Context>();
@@ -280,21 +295,7 @@ export class VoiceTurnService {
     if (input.sequence !== context.sequence + 1)
       throw new VoiceLedgerError("STALE_ATTEMPT");
     const recent = history(context.pairs, input.finalTranscript);
-    while (
-      context.textPairs.length &&
-      (context.textPairs.length + recent.length > 4 ||
-        Buffer.byteLength(
-          JSON.stringify({
-            selectedText: context.textPairs,
-            currentCall: recent,
-          }),
-          "utf8",
-        ) +
-          Buffer.byteLength(input.finalTranscript, "utf8") +
-          128 >
-          2000)
-    )
-      context.textPairs.shift();
+    trimSelectedText(context.textPairs, recent, input.finalTranscript);
     const textHandoff = context.textPairs.length > 0;
     context.busy = true;
     let claimed = false;
@@ -467,6 +468,7 @@ export class VoiceTurnService {
         ...recent,
         { user: input.finalTranscript, assistant: spokenText },
       ]);
+      trimSelectedText(context.textPairs, context.pairs);
       context.latest = { keyHash, fingerprint, response: result };
       report({ outcome: "GENERATED", phase });
       return result;

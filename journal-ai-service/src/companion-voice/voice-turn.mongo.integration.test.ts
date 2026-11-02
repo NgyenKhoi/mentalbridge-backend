@@ -7,6 +7,7 @@ import type { INestApplication } from "@nestjs/common";
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
+import { z } from "zod";
 import type { VoiceObserver } from "../llm-providers/voice-diagnostics.js";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { createApplication } from "../application.js";
@@ -643,6 +644,80 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await f.generate(f.input());
       assert.equal(f.contexts[0], "[]");
       assert.equal(f.handoffToken, undefined);
+    },
+  );
+
+  await t.test(
+    "selected Text and current-call pairs remain within their shared RAM bounds immediately after each reply",
+    async () => {
+      const pair = z.object({ user: z.string(), assistant: z.string() });
+      for (const message of [
+        reply().message,
+        "Mình đang lắng nghe. ".repeat(18).trim(),
+      ]) {
+        const f = await fixture(false, true);
+        f.respond(() => Promise.resolve({ ...reply(), message }));
+        for (let sequence = 1; sequence <= 5; sequence++) {
+          const text = `Tôi muốn chia sẻ thêm câu ${String(sequence)}`;
+          await f.generate(f.input(sequence, text));
+          const outgoing = f.contexts.at(-1) ?? "";
+          const parsed: unknown = JSON.parse(outgoing);
+          const sent = z
+            .union([
+              z.array(pair),
+              z.object({
+                selectedText: z.array(pair),
+                currentCall: z.array(pair),
+              }),
+            ])
+            .parse(parsed);
+          const sentCount = Array.isArray(sent)
+            ? sent.length
+            : sent.selectedText.length + sent.currentCall.length;
+          assert.ok(sentCount <= 4);
+          assert.ok(
+            Buffer.byteLength(outgoing, "utf8") +
+              Buffer.byteLength(text, "utf8") +
+              128 <=
+              2000,
+          );
+          const contexts: unknown = Reflect.get(f.left.turns, "contexts");
+          assert.ok(contexts instanceof Map);
+          const retained = z
+            .object({
+              pairs: z.array(pair),
+              textPairs: z.array(pair),
+            })
+            .parse(contexts.get(f.active.id));
+          assert.ok(retained.textPairs.length + retained.pairs.length <= 4);
+          const content = retained.textPairs.length
+            ? { selectedText: retained.textPairs, currentCall: retained.pairs }
+            : retained.pairs;
+          assert.ok(
+            Buffer.byteLength(JSON.stringify(content), "utf8") + 128 <= 2000,
+          );
+        }
+        await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+      }
+    },
+  );
+
+  await t.test(
+    "a long Vietnamese current input trims selected Text before provider work without exceeding the shared byte cap",
+    async () => {
+      const f = await fixture(false, true);
+      const text = "Tôi ".repeat(360).trim();
+      assert.ok(Buffer.byteLength(text, "utf8") > 1700);
+      await f.generate(f.input(1, text));
+      assert.equal(f.calls(), 1);
+      assert.equal(f.contexts[0], "[]");
+      assert.ok(
+        Buffer.byteLength(f.contexts[0], "utf8") +
+          Buffer.byteLength(text, "utf8") +
+          128 <=
+          2000,
+      );
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
     },
   );
 

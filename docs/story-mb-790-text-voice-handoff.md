@@ -40,7 +40,8 @@ admission and turns. Disabled configuration does not open Voice admission.
 
 Authored coverage includes ticket tamper/owner/snapshot/TTL/provenance bounds,
 single-session hash concurrency and post-settlement replay, optional-context
-turn integration, voice-only isolation and Care v1/v2 idempotency. Web tests
+turn integration, immediate retained-RAM trimming after every reply, long-input
+seed trimming, voice-only isolation and Care v1/v2 idempotency. Web tests
 cover strict BFF payloads and unknown-outcome command preservation. Exact
 executed commands/results are recorded in the PR verification table.
 
