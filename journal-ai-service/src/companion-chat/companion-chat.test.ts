@@ -776,10 +776,15 @@ void test("uses the explicit Bedrock Converse path with structured output and ac
       String((requestBody.system as { text: string }[])[0]?.text),
       /MentalBridge AI Companion/,
     );
-    assert.equal(
-      (requestBody.messages as { content: { text: string }[] }[])[0]?.content[0]
-        ?.text,
-      "Xin hỗ trợ",
+    assert.deepEqual(
+      JSON.parse(
+        (requestBody.messages as { content: { text: string }[] }[])[0]
+          ?.content[0]?.text ?? "null",
+      ),
+      {
+        message: "Xin hỗ trợ",
+        context: { kinds: ["JOURNAL"], data: "Dữ liệu được phép sử dụng" },
+      },
     );
     assert.equal(
       (requestBody.inferenceConfig as { maxTokens: number }).maxTokens,
