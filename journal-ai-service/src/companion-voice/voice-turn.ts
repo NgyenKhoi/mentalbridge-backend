@@ -13,6 +13,7 @@ import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import { selectVoiceProviderRoute } from "./voice-provider.js";
+import type { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import {
   VoiceProviderFailure,
   type VoiceFailureCode,
@@ -57,6 +58,7 @@ interface Context {
   sequence: number;
   busy: boolean;
   pairs: Pair[];
+  textPairs: Pair[];
   controller: AbortController;
   latest: { keyHash: string; fingerprint: string; response: VoiceReply } | null;
 }
@@ -123,6 +125,7 @@ export class VoiceTurnService {
     private readonly clock: () => Date = () => new Date(),
     private readonly telemetry: (metric: VoiceTurnMetric) => void = () =>
       undefined,
+    private readonly handoffs?: Pick<VoiceContextHandoffs, "take">,
   ) {
     this.unsubscribe = sessions.onTermination((id) => {
       this.discard(id);
@@ -140,6 +143,7 @@ export class VoiceTurnService {
     this.contexts.delete(id);
     context.controller.abort();
     context.pairs.length = 0;
+    context.textPairs.length = 0;
     context.latest = null;
   }
   close() {
@@ -261,6 +265,13 @@ export class VoiceTurnService {
         sequence: 0,
         busy: false,
         pairs: [],
+        textPairs: session.contextHandoffHash
+          ? this.handoffs
+            ? this.handoffs.take(session)
+            : (() => {
+                throw new VoiceMediaError();
+              })()
+          : [],
         controller: new AbortController(),
         latest: null,
       };
@@ -269,6 +280,22 @@ export class VoiceTurnService {
     if (input.sequence !== context.sequence + 1)
       throw new VoiceLedgerError("STALE_ATTEMPT");
     const recent = history(context.pairs, input.finalTranscript);
+    while (
+      context.textPairs.length &&
+      (context.textPairs.length + recent.length > 4 ||
+        Buffer.byteLength(
+          JSON.stringify({
+            selectedText: context.textPairs,
+            currentCall: recent,
+          }),
+          "utf8",
+        ) +
+          Buffer.byteLength(input.finalTranscript, "utf8") +
+          128 >
+          2000)
+    )
+      context.textPairs.shift();
+    const textHandoff = context.textPairs.length > 0;
     context.busy = true;
     let claimed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -333,10 +360,18 @@ export class VoiceTurnService {
         reply = await Promise.race([
           this.provider.reply(
             input.finalTranscript,
-            { kinds: [], prompt: JSON.stringify(recent) },
+            {
+              kinds: [],
+              prompt: JSON.stringify(
+                textHandoff
+                  ? { selectedText: context.textPairs, currentCall: recent }
+                  : recent,
+              ),
+            },
             route,
             {
               voice: true,
+              textHandoff,
               signal: requestSignal,
               voiceObserver: (observation) => {
                 phase = observation.phase;

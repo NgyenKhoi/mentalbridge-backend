@@ -223,6 +223,23 @@ assert.equal(
   turnMigration.commandValidator.$jsonSchema.oneOf[1].additionalProperties,
   false,
 );
+const handoffMigration = require("../migrations/016_companion_voice_context_handoff.cjs");
+assert.equal(typeof handoffMigration.up, "function");
+assert.equal(typeof handoffMigration.down, "function");
+assert.equal(
+  handoffMigration.sessionValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  handoffMigration.sessionValidator.$jsonSchema.properties.contextHandoffHash
+    .bsonType,
+  "string",
+);
+for (const field of ["handoffToken", "selectedText", "summary", "transcript"])
+  assert.equal(
+    handoffMigration.sessionValidator.$jsonSchema.properties[field],
+    undefined,
+  );
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs through 015_companion_voice_turn_fences.cjs",
+  "Validated Mongo migrations: 001 through 016_companion_voice_context_handoff.cjs",
 );

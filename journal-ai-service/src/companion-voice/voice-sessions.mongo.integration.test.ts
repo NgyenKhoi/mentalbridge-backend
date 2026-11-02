@@ -184,7 +184,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
                 aiProcessingGranted: aiConsent,
                 voiceProcessingGranted: voiceConsent,
                 authorized: aiConsent && voiceConsent,
-                voiceConsentVersion: "ai-voice-processing-capstone-v1" as const,
+                voiceConsentVersion: "ai-voice-processing-capstone-v2" as const,
               },
               entitlement: {
                 ...binding,
@@ -314,6 +314,60 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
     );
     return f.current(session.voiceSessionId);
   };
+
+  await t.test(
+    "terminal NEW media reconciliation purges pending RAM context before marking STOPPED",
+    async () => {
+      const f = await fixture();
+      const reserved = await f.access.reserve(
+        f.owner,
+        randomUUID(),
+        randomUUID(),
+      );
+      const session = await f.ledger.claimDispatch(
+        reserved.voiceSessionId,
+        f.clock(),
+      );
+      await f.store.ensure(session, f.clock());
+      const pendingContext = new Map([
+        [session.voiceSessionId, ["SYNTHETIC_PENDING_TEXT_CONTEXT"]],
+      ]);
+      const terminated: string[] = [];
+      f.service.onTermination((id) => {
+        terminated.push(id);
+        pendingContext.delete(id);
+      });
+      await f.ledger.requestEnd(
+        f.owner,
+        session.voiceSessionId,
+        "PROVIDER_FAILURE",
+        f.clock(),
+      );
+      assert.ok(session.attemptId && session.leaseId);
+      await f.ledger.settle(
+        session.voiceSessionId,
+        {
+          attemptId: session.attemptId,
+          leaseId: session.leaseId,
+          generation: session.capacityGeneration,
+          sequence: session.lastSequence + 1,
+        },
+        "PROVIDER_CONFIRMED_STOPPED",
+        f.clock(),
+      );
+      assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
+      assert.equal((await f.document(session.voiceSessionId)).phase, "NEW");
+      assert.equal(pendingContext.size, 1);
+      await f.service.reconcile();
+      assert.deepEqual(terminated, [session.voiceSessionId]);
+      assert.equal(pendingContext.size, 0);
+      assert.equal((await f.document(session.voiceSessionId)).phase, "STOPPED");
+      assert.equal(f.media.creates, 0);
+      assert.equal(f.media.dispatches, 0);
+      await f.service.reconcile();
+      assert.deepEqual(terminated, [session.voiceSessionId]);
+    },
+  );
 
   await t.test(
     "turn authorization overlaps independent owner and media reads but requires both",

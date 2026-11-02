@@ -14,8 +14,9 @@ cannot diagnose, prescribe, invent personal facts or execute business actions.
 Provider system messages contain fixed policy and delivery instructions only.
 The message and authorized context are serialized as untrusted JSON in the
 user message, including delimiter-like input. Voice rejects nonempty personal
-context kinds before provider execution and continues to use only current-call
-RAM turns. Text retains its separately authorized owner-selected context.
+context kinds before provider execution. Voice-only uses current-call RAM turns;
+MB-790 optionally attaches bounded owner-selected Text pairs as described below.
+Text retains its separately authorized owner-selected context.
 Voice BRIEF/SUPPORTIVE delivery does not change the shared semantic policy or
 strict response schema; only the validated message can reach TTS.
 
@@ -26,6 +27,22 @@ scope or provider enablement. Existing Text route configuration, pinned Voice
 Sonnet, input counting, quota, deadlines and teardown remain authoritative.
 See the [MB-789 evidence and provenance audit](../docs/story-mb-789-unified-companion-guidance.md)
 for source limits and the separately authorized real-provider comparison rubric.
+
+## MB-790 selected Text-to-Voice context
+
+Set `JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED=true` only after coordinated Care
+Voice v2 and migration 016 rollout; the default is false. This capability does
+not enable Voice admission or providers. Every caller needs current independent
+Voice v2 consent plus unchanged AI_PROCESSING. See
+[the accepted context amendment](../docs/adr/0048-opt-in-text-voice-context.md)
+and [implementation/rollback](../docs/story-mb-790-text-voice-handoff.md).
+
+Preparation accepts only an owner conversation ID. The signed 120-second ticket
+contains no content; admission consumes its HMAC once, revalidates the snapshot
+and binds at most two eligible pairs/1,200 bytes in RAM. Current-call context and
+selected Text share the existing bounds. Keep process affinity for preparation,
+admission and turns: RAM loss fails closed, without historical content recovery.
+Old v1 consent/replays stay historical. Existing quota and provider caps remain.
 
 ## MB-762 scoped Voice provider
 

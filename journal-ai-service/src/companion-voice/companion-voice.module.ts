@@ -22,7 +22,12 @@ import {
 } from "./voice-media-provider.js";
 import { MongoVoiceMediaStore } from "./voice-media-store.js";
 import { VoiceSessionsService } from "./voice-sessions.js";
-import { type ChatProvider } from "../companion-chat/companion-chat.js";
+import {
+  ChatCrypto,
+  type ChatProvider,
+  type Conversation,
+} from "../companion-chat/companion-chat.js";
+import { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import { createVoiceProvider } from "./voice-provider.js";
 import { VoiceTurnService, type VoiceTurnMetric } from "./voice-turn.js";
 import { MongoVoiceTurnStore } from "./voice-turn-store.js";
@@ -100,6 +105,19 @@ export const registerCompanionVoiceModule = (
     configuration.VOICE_PILOT,
   );
   const ledger = dependencies.ledger ?? coreLedger;
+  const handoffs = new VoiceContextHandoffs(
+    configuration.VOICE_TEXT_HANDOFF_ENABLED === true,
+    configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+    {
+      findConversation: (ownerAccountId, _id) =>
+        client
+          .db(configuration.MONGODB_DATABASE)
+          .collection<Conversation>("ai_companion_conversations")
+          .findOne({ _id, ownerAccountId }),
+    },
+    new ChatCrypto(configuration),
+    dependencies.clock,
+  );
   const logger = createLogger(configuration);
   const telemetry =
     dependencies.telemetry ??
@@ -163,6 +181,7 @@ export const registerCompanionVoiceModule = (
     configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
     dependencies.clock,
     telemetry,
+    handoffs,
   );
   const turns = new VoiceTurnService(
     sessions,
@@ -174,6 +193,7 @@ export const registerCompanionVoiceModule = (
       ((metric) => {
         logger.info({ event: "voice_turn", ...metric });
       }),
+    handoffs,
   );
   return {
     module: CompanionVoiceModule,
@@ -189,6 +209,7 @@ export const registerCompanionVoiceModule = (
       { provide: VoiceTurnService, useValue: turns },
       { provide: VoiceSessionsService, useValue: sessions },
       { provide: VoiceAccessService, useValue: service },
+      { provide: VoiceContextHandoffs, useValue: handoffs },
       {
         provide: VoiceMaintenance,
         useValue: new VoiceMaintenance(
@@ -205,6 +226,7 @@ export const registerCompanionVoiceModule = (
           },
           () => {
             turns.close();
+            handoffs.close();
             return client.close();
           },
         ),

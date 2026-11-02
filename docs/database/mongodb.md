@@ -305,6 +305,7 @@ and reservation.
 | `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence` | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing. |
 | `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts. |
 | `createdAt`, `updatedAt`, `expiresAt` | Metadata lifecycle; `expiresAt` is exactly creation plus 30 days and is never extended by activity or settlement. |
+| `contextHandoffHash` (optional) | Migration 016: 43-character HMAC of an owner-bound Text-context ticket. Unique across sessions, including terminal rows; never contains the ticket, conversation ID, content or summary. Absent on voice-only sessions. |
 
 Indexes are `uq_ai_voice_owner_key` (unique owner/key),
 `idx_ai_voice_retention_sweep` (`expiresAt`), and
@@ -312,6 +313,14 @@ Indexes are `uq_ai_voice_owner_key` (unique owner/key),
 The session expiry index is deliberately **not TTL**: deleting a held session
 without scrubbing its capacity slot would leave identifying references behind.
 The reconciliation sweep performs that scrub and deletion transactionally.
+
+MB-790 adds `uq_ai_voice_context_handoff`, a unique partial index on
+`contextHandoffHash` when the field exists (the strict validator permits only
+43-character strings). Ticket expiry is checked at
+admission and is not stored. A competing key/owner cannot consume the same hash;
+an exact accepted retry keeps its original session. Down migration refuses while
+any bound rows remain, preserving replay protection; disable the feature and let
+the ordinary 30-day reconciler remove those rows before schema rollback.
 
 ### `ai_voice_daily_usage`
 

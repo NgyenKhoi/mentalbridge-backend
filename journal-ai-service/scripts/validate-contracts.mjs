@@ -52,8 +52,20 @@ const sessionVoiceValue = (value) => {
   return JSON.parse(text);
 };
 for (const [old, current] of Object.entries(sessionVoiceNames)) {
-  assert.deepEqual(
+  const actual = structuredClone(
     activeVoiceContract.components.schemas[current],
+  );
+  if (current === "VoiceSession") {
+    assert.deepEqual(actual.properties.contextMode, {
+      const: "TEXT_HANDOFF",
+      description:
+        "Present only after server-bound selected Text context; absence means voice-only.",
+    });
+    assert.equal(actual.required.includes("contextMode"), false);
+    delete actual.properties.contextMode;
+  }
+  assert.deepEqual(
+    actual,
     sessionVoiceValue(voiceProposal.components.schemas[old]),
     `Implemented ${current} must preserve MB-755`,
   );
@@ -63,8 +75,20 @@ assert.deepEqual(
   voiceProposal.components.securitySchemes.VoiceWorkerToken,
 );
 for (const name of ["VoiceEligibility", "VoiceQuota", "VoiceProblem"]) {
+  const actual = structuredClone(activeVoiceContract.components.schemas[name]);
+  if (name === "VoiceEligibility") {
+    assert.equal(
+      actual.properties.voiceConsentVersion.const,
+      "ai-voice-processing-capstone-v2",
+    );
+    actual.properties.voiceConsentVersion.const =
+      "ai-voice-processing-capstone-v1";
+    assert.equal(actual.properties.textContextHandoffEnabled.type, "boolean");
+    assert.equal(actual.required.includes("textContextHandoffEnabled"), false);
+    delete actual.properties.textContextHandoffEnabled;
+  }
   assert.deepEqual(
-    activeVoiceContract.components.schemas[name],
+    actual,
     voiceNames(
       voiceProposal.components.schemas[
         name === "VoiceEligibility"
@@ -109,6 +133,7 @@ if (contract.paths["/v1/journals"]) {
 }
 
 const implementedOperations = new Set([
+  "POST /api/v1/ai-companion/voice-context-handoffs",
   "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns",
   "GET /health/live",
   "GET /health/ready",
@@ -152,6 +177,10 @@ const implementedOperations = new Set([
   "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
+  [
+    "POST /api/v1/ai-companion/voice-context-handoffs",
+    new Set(["200", "401", "403", "404", "409", "422", "429", "503"]),
+  ],
   [
     "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns",
     new Set([

@@ -286,6 +286,7 @@ export interface ChatProvider {
     options?: {
       signal?: AbortSignal;
       voice?: boolean;
+      textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
     },
   ): Promise<ProviderReply>;
@@ -1191,6 +1192,7 @@ export class RoutedChatProvider implements ChatProvider {
     options?: {
       signal?: AbortSignal;
       voice?: boolean;
+      textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
     },
   ) {
@@ -1211,6 +1213,7 @@ export class RoutedChatProvider implements ChatProvider {
     }
     let system = companionGuidanceSystem({
       channel: options?.voice ? "VOICE" : "TEXT",
+      ...(options?.voice && options.textHandoff ? { textHandoff: true } : {}),
       ...(options?.voice && this.configuration.VOICE_PILOT?.replyStyle
         ? { replyStyle: this.configuration.VOICE_PILOT.replyStyle }
         : {}),

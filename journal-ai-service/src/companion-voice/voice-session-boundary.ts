@@ -30,6 +30,10 @@ import { Public } from "../security/public.decorator.js";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import { VoiceLedgerError } from "./voice-ledger.js";
 import {
+  VoiceContextHandoffs,
+  voiceStartCommandSchema,
+} from "./voice-context-handoff.js";
+import {
   VoiceSessionsService,
   voiceWorkerSignalSchema,
 } from "./voice-sessions.js";
@@ -201,6 +205,7 @@ export class VoiceGlobalFilter implements ExceptionFilter {
     if (
       path === "/api/v1/ai-companion/voice-eligibility" ||
       path === "/api/v1/ai-companion/voice-sessions" ||
+      path === "/api/v1/ai-companion/voice-context-handoffs" ||
       path.startsWith("/api/v1/ai-companion/voice-sessions/") ||
       path.startsWith("/internal/v1/ai-companion/voice-sessions/")
     ) {
@@ -243,18 +248,55 @@ export class VoiceUserController {
     private readonly access: VoiceAccessService,
     @Inject(VOICE_SESSIONS) private readonly sessions: VoiceSessionOperations,
     @Inject(LOGGER_TOKEN) private readonly logger: Logger,
+    private readonly handoffs: VoiceContextHandoffs,
   ) {}
   @Get("voice-eligibility")
-  eligibility(@Req() request: VoiceRequest) {
-    return this.access.eligibility(
+  async eligibility(@Req() request: VoiceRequest) {
+    const value = await this.access.eligibility(
       subject(request),
       request.id ?? randomUUID(),
     );
+    return this.handoffs.available
+      ? { ...value, textContextHandoffEnabled: true }
+      : value;
+  }
+  @Post("voice-context-handoffs")
+  @HttpCode(200)
+  async contextHandoff(@Req() request: VoiceRequest, @Body() body: unknown) {
+    const parsed = z
+      .object({ conversationId: z.uuid() })
+      .strict()
+      .safeParse(body);
+    if (
+      !parsed.success ||
+      typeof request.headers["content-type"] !== "string" ||
+      request.headers["content-type"].split(";")[0]?.trim().toLowerCase() !==
+        "application/json"
+    )
+      throw new VoiceBoundaryError("INVALID_REQUEST");
+    if (!this.handoffs.available)
+      throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
+    const owner = subject(request),
+      eligibility = await this.access.eligibility(
+        owner,
+        request.id ?? randomUUID(),
+      );
+    if (eligibility.state !== "ELIGIBLE")
+      throw new VoiceAccessError(eligibility.state);
+    return this.handoffs.prepare(owner, parsed.data.conversationId);
   }
   @Post("voice-sessions")
   @HttpCode(202)
   async start(@Req() request: VoiceRequest, @Body() body: unknown) {
-    const key = empty(request, body);
+    const parsed = voiceStartCommandSchema.safeParse(body);
+    if (
+      !parsed.success ||
+      typeof request.headers["content-type"] !== "string" ||
+      request.headers["content-type"].split(";")[0]?.trim().toLowerCase() !==
+        "application/json"
+    )
+      throw new VoiceBoundaryError("INVALID_REQUEST");
+    const key = uuid(request.headers["idempotency-key"]);
     const owner = subject(request);
     const parsedId = z.uuid().safeParse(request.id);
     const correlationId = parsedId.success ? parsedId.data : randomUUID();
@@ -266,7 +308,12 @@ export class VoiceUserController {
       outcome: "RECEIVED",
     });
     try {
-      const result = await this.sessions.start(owner, key, correlationId);
+      const result = await this.sessions.start(
+        owner,
+        key,
+        correlationId,
+        parsed.data,
+      );
       this.logger.info({
         event: "voice_admission_command",
         source: "AUTHENTICATED_USER_REST",

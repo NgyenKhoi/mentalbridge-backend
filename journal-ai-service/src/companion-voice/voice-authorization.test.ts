@@ -30,7 +30,7 @@ const consent = {
   ...binding,
   aiProcessingGranted: true,
   voiceProcessingGranted: true,
-  voiceConsentVersion: "ai-voice-processing-capstone-v1",
+  voiceConsentVersion: "ai-voice-processing-capstone-v2",
   authorized: true,
 };
 const entitlement = {

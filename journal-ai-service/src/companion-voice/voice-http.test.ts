@@ -111,7 +111,7 @@ void test("Voice HTTP boundary isolates JWT/USER checks, no-store and current-ow
               ...binding,
               aiProcessingGranted: true,
               voiceProcessingGranted: voiceGranted,
-              voiceConsentVersion: "ai-voice-processing-capstone-v1",
+              voiceConsentVersion: "ai-voice-processing-capstone-v2",
               authorized: voiceGranted,
             },
             entitlement: {
@@ -273,6 +273,20 @@ void test("Voice credentials are optional when disabled and cannot alias another
     JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: "",
   });
   assert.deepEqual(empty.VOICE_OWNER_TOKENS, { care: null, entitlement: null });
+  assert.equal(empty.VOICE_TEXT_HANDOFF_ENABLED, false);
+  assert.equal(
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: "true",
+    }).VOICE_TEXT_HANDOFF_ENABLED,
+    true,
+  );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: "yes",
+    }),
+  );
   const credential = "synthetic-purpose-only-credential-32-characters";
   assert.throws(() =>
     loadConfiguration({
