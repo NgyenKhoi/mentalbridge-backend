@@ -12,6 +12,10 @@ minutes within ten daily minutes, and PREMIUM three sessions of up to ten
 minutes within thirty daily minutes. Voice uses independent quota, dual Care
 consent and isolated LiveKit agent rooms with no saved audio/transcript.
 Journal/AI owns voice authority; Consultation remains entitlement owner.
+MB-790's accepted [Text-to-Voice amendment](adr/0048-opt-in-text-voice-context.md)
+adds explicit selected-chat opt-in and Care Voice disclosure v2 reacceptance.
+It supersedes only the original no-Text-context clause prospectively; implicit
+private history, saved audio/transcripts and live activation remain prohibited.
 [MB-756](requirements-traceability/stories/mb-756.md) delivers admission/quota and
 current owner authorization; [MB-757](requirements-traceability/stories/mb-757.md)
 adds disabled-by-default public sessions, isolated rooms, explicit dispatch and

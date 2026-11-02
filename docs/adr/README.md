@@ -48,6 +48,11 @@ their original policy/version.
 
 ## Known numeric-prefix collisions
 
+MB-790 prospectively amends only selected Text context and Voice consent through
+[0048-opt-in-text-voice-context.md](0048-opt-in-text-voice-context.md)
+(`MB-TEXT-VOICE-HANDOFF-001`, accepted 2026-11-02). Historical Voice policies and
+consents retain their original versions; quota and provider activation do not change.
+
 The repository historically assigned the same numeric prefix to multiple accepted decisions. Renaming these files would break existing references and provenance, so they remain in place. New ADRs must use a new unused numeric prefix.
 
 | Numeric prefix | File | Decision ID |

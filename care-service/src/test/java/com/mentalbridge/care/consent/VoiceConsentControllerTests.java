@@ -96,9 +96,9 @@ class VoiceConsentControllerTests extends CareTestProperties {
 	@Test
 	void validatesVoiceCommandTypesUnknownFieldsVersionAndUuidIdempotency() throws Exception {
 		var owner = UUID.randomUUID();
-		var valid = "{\"consentVersion\":\"ai-voice-processing-capstone-v1\",\"granted\":true}";
+		var valid = "{\"consentVersion\":\"ai-voice-processing-capstone-v2\",\"granted\":true}";
 		for (var invalid : java.util.List.of("{}", valid.replace("true", "\"true\""),
-				valid.replace("true", "null"), valid.replace("capstone-v1", "capstone-v0"),
+				valid.replace("true", "null"), valid.replace("capstone-v2", "capstone-v0"),
 				valid.replace("}", ",\"ownerId\":\"injected\"}"), valid + " {}",
 				valid.replace("}", ",\"granted\":false}"), valid.replace("true", "1"))) {
 			var result = mvc.perform(post(PATH).with(user(owner)).header("Idempotency-Key", UUID.randomUUID())
@@ -111,6 +111,28 @@ class VoiceConsentControllerTests extends CareTestProperties {
 		mvc.perform(post(PATH).with(user(owner)).contentType(MediaType.APPLICATION_JSON).content(valid))
 				.andExpect(status().isUnprocessableEntity());
 		verifyNoInteractions(service);
+	}
+
+	@Test
+	void legacyExactReplayKeepsHistoricalV1WhileNewV1GrantIsRejectedByOwnerService() throws Exception {
+		var owner = UUID.randomUUID();
+		var key = UUID.randomUUID().toString();
+		var body = "{\"consentVersion\":\"ai-voice-processing-capstone-v1\",\"granted\":true}";
+		when(service.record(owner, key, VoiceConsentService.LEGACY_VERSION, true)).thenReturn(
+				new VoiceConsentService.Consent("AI_VOICE_PROCESSING", VoiceConsentService.LEGACY_VERSION, false, true,
+						Instant.parse("2026-10-31T00:00:00Z"), null));
+		mvc.perform(post(PATH).with(user(owner)).header("Idempotency-Key", key)
+				.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.consentVersion").value(VoiceConsentService.LEGACY_VERSION))
+				.andExpect(jsonPath("$.current").value(false));
+		var freshKey = UUID.randomUUID().toString();
+		when(service.record(owner, freshKey, VoiceConsentService.LEGACY_VERSION, true))
+				.thenThrow(new VoiceApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+						"INVALID_REQUEST", "The current voice disclosure version is required"));
+		mvc.perform(post(PATH).with(user(owner)).header("Idempotency-Key", freshKey)
+				.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isUnprocessableEntity())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 	}
 
 	@Test

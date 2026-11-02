@@ -23,7 +23,8 @@ import com.mentalbridge.care.profile.UserProfileRepository;
 @Service
 public class VoiceConsentService {
 	static final String CONSENT_TYPE = "AI_VOICE_PROCESSING";
-	static final String VERSION = "ai-voice-processing-capstone-v1";
+	static final String VERSION = "ai-voice-processing-capstone-v2";
+	static final String LEGACY_VERSION = "ai-voice-processing-capstone-v1";
 	static final String PURPOSE = "AI_COMPANION_VOICE";
 	private final ConsentDecisionRepository decisions;
 	private final UserProfileRepository profiles;
@@ -42,7 +43,7 @@ public class VoiceConsentService {
 	}
 
 	public Disclosure disclosure() {
-		return new Disclosure(CONSENT_TYPE, VERSION, "vi-VN", disclosureText, Instant.parse("2026-10-23T00:00:00Z"));
+		return new Disclosure(CONSENT_TYPE, VERSION, "vi-VN", disclosureText, Instant.parse("2026-11-02T00:00:00Z"));
 	}
 
 	@Transactional(readOnly = true)
@@ -54,14 +55,14 @@ public class VoiceConsentService {
 
 	@Transactional
 	public Consent record(UUID ownerId, String idempotencyKey, String version, boolean granted) {
-		if (!VERSION.equals(version)) {
+		if (!VERSION.equals(version) && !LEGACY_VERSION.equals(version)) {
 			throw new VoiceApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_REQUEST",
 					"The current voice disclosure version is required");
 		}
 		profiles.findByIdForUpdate(ownerId).orElseThrow(() -> new VoiceApiException(HttpStatus.UNPROCESSABLE_ENTITY,
 				"INVALID_REQUEST", "A Care profile is required"));
 		var storedKey = hmac("voice-consent-key|" + ownerId + "|" + idempotencyKey);
-		var intentHash = hash(CONSENT_TYPE + "|" + VERSION + "|" + granted);
+		var intentHash = hash(CONSENT_TYPE + "|" + version + "|" + granted);
 		var existing = decisions.findByUserIdAndConsentTypeAndIdempotencyKey(ownerId, CONSENT_TYPE, storedKey);
 		if (existing.isPresent()) {
 			var decision = existing.orElseThrow();
@@ -71,6 +72,10 @@ public class VoiceConsentService {
 						"Idempotency key was reused for a different voice decision");
 			}
 			return view(decision);
+		}
+		if (!VERSION.equals(version)) {
+			throw new VoiceApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_REQUEST",
+					"The current voice disclosure version is required");
 		}
 		var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
 		var latest = decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(ownerId, CONSENT_TYPE);
@@ -95,7 +100,7 @@ public class VoiceConsentService {
 	}
 
 	private Consent view(ConsentDecisionEntity decision) {
-		return new Consent(CONSENT_TYPE, VERSION, VERSION.equals(decision.policyVersion()), decision.granted(),
+		return new Consent(CONSENT_TYPE, decision.policyVersion(), VERSION.equals(decision.policyVersion()), decision.granted(),
 				decision.granted() ? decision.decidedAt() : null, decision.granted() ? null : decision.decidedAt());
 	}
 

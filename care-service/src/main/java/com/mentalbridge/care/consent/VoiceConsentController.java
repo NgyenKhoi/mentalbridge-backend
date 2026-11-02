@@ -43,7 +43,8 @@ public class VoiceConsentController {
 			@RequestHeader("Idempotency-Key") @Pattern(regexp = UUID_PATTERN) String idempotencyKey,
 			@RequestBody String body) {
 		var command = object(body, Set.of("consentVersion", "granted"));
-		if (!VoiceConsentService.VERSION.equals(text(command, "consentVersion")) || !command.path("granted").isBoolean()) {
+		if (!Set.of(VoiceConsentService.VERSION, VoiceConsentService.LEGACY_VERSION).contains(text(command, "consentVersion"))
+				|| !command.path("granted").isBoolean()) {
 			throw invalid();
 		}
 		return consents.record(subject(jwt), idempotencyKey, command.path("consentVersion").textValue(),
