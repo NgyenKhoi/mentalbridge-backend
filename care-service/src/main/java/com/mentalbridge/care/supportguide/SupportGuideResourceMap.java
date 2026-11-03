@@ -12,7 +12,7 @@ final class SupportGuideResourceMap {
 
 	private static final String DEPRESSION = "DEPRESSIVE_SYMPTOMS";
 	private static final String ANXIETY = "ANXIETY_SYMPTOMS";
-	private static final Candidate SLOW_BREATHING = new Candidate("00000000-0000-4000-8000-000000000201", "0", ANXIETY);
+	private static final Candidate SLOW_BREATHING = new Candidate("00000000-0000-4000-8000-000000000201", "1", ANXIETY);
 	private static final Candidate GROUNDING = new Candidate("00000000-0000-4000-8000-000000000202", "0", ANXIETY);
 	private static final Candidate DEPRESSION_SIGNS = new Candidate("00000000-0000-4000-8000-000000000205", "0", DEPRESSION);
 	private static final Candidate ANXIETY_SIGNS = new Candidate("00000000-0000-4000-8000-000000000206", "0", ANXIETY);

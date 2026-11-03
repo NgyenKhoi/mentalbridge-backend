@@ -1,5 +1,19 @@
 # Consultation Service
 
+## MB-795 staging scheduler hotfix
+
+Each due video end and room closure runs independently, so one failing item
+does not prevent later items or the closure phase. Under the existing appointment
+lock, an existing `video-ended:<id>` history row targeting `SESSION_ENDED`
+allows a reopened active appointment to restore its ended status, policy and end
+timestamp without another history row or outbox event (2026-11-03 demo ruling).
+History remains immutable and timer end never completes the appointment,
+consumes/releases its HELD credit or creates an earning. Invalid-credit REQUESTED
+expiry remains fail-closed; MB-795 stays open for separately authorized repair
+of the three reported rows after read-only account/period/hold provenance review.
+Follow-ups retain stricter prior-history compatibility validation and independent
+failed-item/concurrent-replay regression coverage. No migration is required.
+
 ## PayOS pay-in (MB-786)
 
 [ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md) selects PayOS

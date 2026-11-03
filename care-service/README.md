@@ -1,5 +1,18 @@
 # Care Service
 
+## MB-794 staging demo pin hotfix
+
+The owner-authorized 2026-11-03 hotfix pins Resource
+`00000000-0000-4000-8000-000000000201` to exact content version `1` in new
+SupportPlan proposals and Support Guide candidates; other template pins stay
+at `0`. Stored draft revalidation keeps its saved exact versions. Exact Content
+eligibility remains mandatory, with no version-0 fallback: without a reviewed
+version-1 publication the candidate is ineligible, and missing required CORE
+content still fails closed. No publication or shared-data repair is included.
+MB-794 stays open for bounded current-version discovery; a later Resource edit
+can invalidate this temporary pin again. The Guide pin extension is explicitly
+included in the demo ruling despite the original brief's narrower scope.
+
 MB-779 rechecks authenticated JWT subjects against Identity before protected
 requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated
 `CARE_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN`; the read uses 250 ms connect and

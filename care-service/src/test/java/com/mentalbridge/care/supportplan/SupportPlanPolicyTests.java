@@ -57,6 +57,8 @@ class SupportPlanPolicyTests {
 	@Test
 	void composesTwoDomainMildProposalDeterministicallyWithinBounds() {
 		var request = policy.request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD));
+		assertThat(request.batch().requests()).allSatisfy(query -> assertThat(query.contentVersion())
+				.isEqualTo(query.resourceId().endsWith("0201") ? "1" : "0"));
 		var first = policy.compose(request, eligible(request));
 		var second = policy.compose(request, eligible(request));
 
