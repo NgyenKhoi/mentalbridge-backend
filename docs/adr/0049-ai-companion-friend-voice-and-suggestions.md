@@ -68,3 +68,38 @@ The signed-off run is the approval evidence for a bumped `PROVIDER_APPROVAL_VERS
 - Voice keeps the v1 tone; a friend voice for Voice is a named follow-up within its 1,900-token cap.
 - The first 30 published Resources are not relevance-ranked; ranking or filtering is a follow-up once the catalogue grows.
 - Web must accept quota v2 and `suggestion` before the backend deploys.
+
+## F1 amendment — spoken friend persona, 2026-11-03
+
+The owner selected the named Voice follow-up in the implementation session.
+This prospectively adds an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
+default `false`. The original TEXT delivery, approvals and historical Voice
+campaigns remain under their original settings.
+
+Voice uses a compact `companion-voice-friend-v1` prompt: natural Vietnamese,
+comfort before advice, a small optional idea only on request, and useful specific
+questions rather than a question after every reply. It avoids stock empathy,
+invented personal facts, emoji, markup, URLs and navigation suggestions. Crisis
+and clinical boundaries remain serious and non-clinical. This is a spoken
+adaptation, not the long TEXT prompt or its catalogue/suggestion schema.
+
+The existing current-call RAM context and explicit selected-Text handoff are
+unchanged. Dual consent, entitlement, quota, lease, idle/session deadlines,
+recording/export controls and retention are unchanged. The prompt version is
+included in the existing Voice route binding.
+
+Friend Voice counts the exact full system/schema/user/context input before
+Bedrock inference, in pilot and non-pilot calls. More than 1,900 input tokens,
+counting failure or missing authorization fails closed, without trimming context,
+retry or fallback. The existing full-JSON output ceilings remain 300 tokens for
+a default pilot, up to 600 for an explicitly approved pilot and 2,000 outside a
+pilot. The 500-character spoken-message
+schema, eight authority fields, provider/voice pins, temperature and END_TURN-only
+completion requirement remain intact. With the flag off, legacy Voice and both
+TEXT request variants remain unchanged.
+
+Source tests prove request/validation boundaries, not model tone quality. Enable
+the flag only after a separately approved, credit-capped listening/evaluation
+window on the real Voice route, safety/clinical/privacy checks and owner tone
+sign-off. The earlier TEXT run 11 does not approve this new spoken persona.
+Applying this amendment does not open a campaign, microphone or provider call.

@@ -107,6 +107,23 @@ email reminders are separate and, under
 with deterministic preference, quiet-hour, lifecycle, and before-start rules.
 AI does not select their recipient, timing, suppression, or retry outcome.
 
+## Spoken friend-persona opt-in (MB-791 F1)
+
+The independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag defaults off. When
+explicitly enabled after an approved real-Voice tone review, spoken guidance
+comforts first, offers advice only when requested and avoids repetitive questions,
+emoji, markup, model-authored links and navigation suggestions. It never invents
+personal facts or takes over clinical, safety, eligibility or business decisions.
+Urgent cues retain serious Help Now guidance.
+
+This changes wording only. Existing dual consent and the current-call/explicit
+Text-handoff scope remain authoritative; no other saved history or catalogue is
+added to Voice. Exact input counting must authorize at most 1,900 tokens before
+inference. Existing quota, deadlines, provider pins, structured response, output
+caps and END_TURN completion validation remain enforced. TEXT friend approval
+does not by itself authorize Voice activation. See the
+[ADR 0049 F1 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
+
 ## Runtime gates
 
 Runtime requires a versioned chat/quota contract, entitlement checks,

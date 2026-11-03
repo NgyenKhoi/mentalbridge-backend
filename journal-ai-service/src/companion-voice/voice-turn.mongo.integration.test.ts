@@ -731,6 +731,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       const f = await fixture(true);
       await assert.rejects(f.generate(f.input(5)), rejected("QUOTA_EXHAUSTED"));
       assert.equal(f.calls(), 0);
+      const exhausted = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(exhausted?.terminalReason, "QUOTA_EXHAUSTED");
+      assert.ok(exhausted.settledAt);
+      assert.equal(exhausted.dispatchState, "STOPPED");
       await assert.rejects(f.generate(f.input(1)));
       assert.equal(f.calls(), 0);
     },
@@ -750,6 +756,26 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       assert.equal(f.calls(), 30);
       await assert.rejects(f.generate(f.input(1)));
       assert.equal(f.calls(), 30);
+    },
+  );
+
+  await t.test(
+    "one-turn pilot preserves the delivered reply and stops the next segment as quota exhaustion without another provider call",
+    async () => {
+      const f = await fixture({ maxSessionSeconds: 90, maxTurns: 1 });
+      const generated = await f.generate(f.input(1));
+      assert.ok(generated.replyId);
+      assert.equal(f.calls(), 1);
+      await assert.rejects(f.generate(f.input(2)), rejected("QUOTA_EXHAUSTED"));
+      const exhausted = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(exhausted?.terminalReason, "QUOTA_EXHAUSTED");
+      assert.ok(exhausted.settledAt);
+      assert.equal(exhausted.dispatchState, "STOPPED");
+      assert.equal(f.calls(), 1);
+      await assert.rejects(f.generate(f.input(1)));
+      assert.equal(f.calls(), 1);
     },
   );
 
@@ -896,6 +922,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           });
         });
         await assert.rejects(f.generate(f.input()));
+        if (mode === "provider-parse-failure") {
+          const failed = await f.db
+            .collection<RawRecord>("ai_voice_sessions")
+            .findOne({ voiceSessionId: f.active.id });
+          assert.equal(failed?.terminalReason, "PROVIDER_FAILURE");
+        }
         const usage = f.metrics.filter(
           (metric) => metric.outcome === "PROVIDER_USAGE",
         );
