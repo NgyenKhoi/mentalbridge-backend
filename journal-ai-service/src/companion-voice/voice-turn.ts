@@ -232,7 +232,7 @@ export class VoiceTurnService {
       this.configuration.VOICE_PILOT &&
       input.sequence > (this.configuration.VOICE_PILOT.maxTurns ?? 4)
     ) {
-      await this.sessions.failTurn(id);
+      await this.sessions.failTurn(id, "QUOTA_EXHAUSTED");
       this.discard(id);
       throw new VoiceLedgerError("QUOTA_EXHAUSTED");
     }
