@@ -1328,6 +1328,9 @@ export class RoutedChatProvider implements ChatProvider {
     }
     let system = companionGuidanceSystem({
       channel: options?.voice ? "VOICE" : "TEXT",
+      ...(options?.voice && this.configuration.VOICE_FRIEND_ENABLED
+        ? { voiceFriend: true }
+        : {}),
       ...(options?.voice && options.textHandoff ? { textHandoff: true } : {}),
       ...(options?.voice && this.configuration.VOICE_PILOT?.replyStyle
         ? { replyStyle: this.configuration.VOICE_PILOT.replyStyle }
@@ -1411,14 +1414,19 @@ export class RoutedChatProvider implements ChatProvider {
       } else if (providerId === "BEDROCK") {
         if (!this.configuration.BEDROCK_API_KEY)
           throw new Error("Bedrock credentials are unavailable");
-        const pilot = options?.voice && this.configuration.VOICE_PILOT;
+        const pilot = options?.voice
+          ? this.configuration.VOICE_PILOT
+          : undefined;
+        const boundedVoice =
+          pilot !== undefined ||
+          (options?.voice === true && this.configuration.VOICE_FRIEND_ENABLED);
         const requestSignal = options?.signal
           ? AbortSignal.any([
               options.signal,
               AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
             ])
           : AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS);
-        if (pilot) {
+        if (boundedVoice) {
           if (route.model !== "global.anthropic.claude-sonnet-4-6")
             throw new Error("Voice pilot route unavailable");
           system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(providerOutputJsonSchema)}`;
@@ -1427,7 +1435,7 @@ export class RoutedChatProvider implements ChatProvider {
             system,
             input,
             requestSignal,
-            options.voiceObserver,
+            options?.voiceObserver,
           );
         }
         const request = bedrockConverseRequest(
@@ -1449,7 +1457,7 @@ export class RoutedChatProvider implements ChatProvider {
               authorization: `Bearer ${this.configuration.BEDROCK_API_KEY}`,
             },
             body: JSON.stringify(
-              pilot ? plainRequest : { ...plainRequest, outputConfig },
+              boundedVoice ? plainRequest : { ...plainRequest, outputConfig },
             ),
             signal: requestSignal,
           },
@@ -1618,7 +1626,10 @@ export class RoutedChatProvider implements ChatProvider {
     let normalized: string;
     try {
       normalized = validatedAssistantMessage(parsedOutput.data.message, {
-        rejectLinks: friend !== undefined,
+        rejectLinks:
+          friend !== undefined ||
+          (options?.voice === true &&
+            this.configuration.VOICE_FRIEND_ENABLED === true),
       });
     } catch (error) {
       if (options?.voice && responseProvider === "BEDROCK")

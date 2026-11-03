@@ -249,16 +249,14 @@ export class VoiceSessionsService {
     );
   }
 
-  async failTurn(id: string) {
+  async failTurn(
+    id: string,
+    reason: "PROVIDER_FAILURE" | "QUOTA_EXHAUSTED" = "PROVIDER_FAILURE",
+  ) {
     const session = await this.current(id);
     const ending = closed(session)
       ? session
-      : await this.ledger.requestEnd(
-          session.ownerId,
-          id,
-          "PROVIDER_FAILURE",
-          this.clock(),
-        );
+      : await this.ledger.requestEnd(session.ownerId, id, reason, this.clock());
     await this.cleanup(ending);
   }
   private guard(session: VoiceSession, sequence: number): VoiceGuard {

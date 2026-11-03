@@ -39,6 +39,19 @@ real-provider conversation eval and owner sign-off ([ADR
 0049](../docs/adr/0049-ai-companion-friend-voice-and-suggestions.md)). The
 per-plan token budgets (`companion-quota-v2`) apply regardless of the flag.
 
+`JOURNAL_AI_VOICE_FRIEND_ENABLED` (default false) independently selects the
+spoken friend persona. It is separate from the TEXT v2 flag and preserves the
+Voice response schema, selected context, consent, admission and quota. Every
+friend-mode Bedrock turn counts its exact input before inference and refuses
+more than 1,900 tokens, including outside pilot mode. Its output cap is 300
+tokens for the complete JSON object when using the default pilot; an explicitly
+approved pilot may set 300 through 600. Non-pilot requests keep their existing
+2,000-output-token ceiling, with the friend flag on or off. This flag
+does not enable Voice admission or a provider.
+Real speech quality remains unverified until an owner-approved live listening
+review of this tone; enabling it requires that review and the existing Voice
+live rollout gates. Existing approval-version configuration is retained.
+
 ## MB-790 selected Text-to-Voice context
 
 Set `JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED=true` only after coordinated Care
@@ -527,6 +540,7 @@ npm start
 | `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                         | Per-owner daily provider token guard for `PLUS`                                                           |
 | `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                         | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
 | `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`       | No                       | `false`                                          | TEXT friend voice, memory, catalogue and suggestion (ADR 0049); needs owner sign-off                      |
+| `JOURNAL_AI_VOICE_FRIEND_ENABLED`                | No                       | `false`                                          | Independent spoken friend persona; existing Voice gates and owner-approved live tone review required      |
 | `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                               | Server-authoritative IANA timezone used for stable quota reset                                            |
 | `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                      | Version persisted with every assistant response                                                           |
 
