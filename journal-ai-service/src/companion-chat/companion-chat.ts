@@ -314,6 +314,13 @@ const unsafeAssistantPatterns = [
 // The server and web own every link; same block as support-plan-companion.ts.
 const linkOrMarkup = /https?:\/\/|www\.|<[^>]+>|\[[^\]]+\]\([^)]+\)/iu;
 
+const withoutCutOffTail = (message: string): string =>
+  /[.!?…”»)\p{Extended_Pictographic}]️?$/u.test(message)
+    ? message
+    : (/^([\s\S]*(?:[.!?…]|\p{Extended_Pictographic}️?))\s+\S[\s\S]*$/u.exec(
+        message,
+      )?.[1] ?? message);
+
 export const validatedAssistantMessage = (
   value: string,
   options?: { rejectLinks?: boolean },
@@ -1594,7 +1601,7 @@ export class RoutedChatProvider implements ChatProvider {
     if (options?.voice && route.provider === "BEDROCK")
       options.voiceObserver?.({ phase: "bedrock_response_validated" });
     return {
-      message: normalized,
+      message: friend ? withoutCutOffTail(normalized) : normalized,
       inputTokens: inputTokens ?? Math.ceil((system.length + input.length) / 4),
       outputTokens: outputTokens ?? Math.ceil(normalized.length / 4),
       ...(options?.voice

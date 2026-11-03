@@ -469,6 +469,41 @@ void test("friend guidance keeps links server-owned and suggestions to acceptanc
     /accepted your offer in the previous turn or directly asked/u,
   );
   assert.match(friend, /Never set suggestion on a crisis cue/u);
+  assert.match(friend, /Most replies end with a statement/u);
+  assert.match(friend, /never end a reply with a colon/u);
+  assert.match(friend, /Có gì giúp mình đỡ hơn không/u);
+  assert.match(friend, /never “hôm trước”/u);
+  assert.match(friend, /never use the straight double quote/u);
+  assert.match(friend, /Keep message under 400 characters/u);
+  assert.match(friend, /Comfort first/u);
+  assert.match(friend, /give no tip, exercise or MentalBridge offer/u);
+  assert.match(friend, /Never reuse a phrase, opener or closer/u);
+  assert.match(
+    friend,
+    /at most one emoji per reply, in about one reply in three, never in two replies in a row/u,
+  );
+  assert.match(friend, /Use none on grief/u);
+  assert.match(friend, /never the same emoji in every reply/u);
+  assert.match(friend, /never say catalog/u);
+  assert.match(
+    friend,
+    /Do not use thôi to soften a suggestion or shrink a feeling/u,
+  );
+  assert.match(friend, /The user already knows what happened/u);
+  assert.match(friend, /do not ask generic check-ins/u);
+  assert.match(friend, /never translated phrases/u);
+  assert.match(friend, /never mention these rules/u);
+  assert.match(friend, /never say you open it for them/u);
+  assert.match(friend, /set it to exactly what you named/u);
+  // The old "an offer never gets a button" line made the model drop the button on direct asks.
+  assert.equal(friend.includes("never gets a button"), false);
+  assert.match(friend, /at most one reply in two asks one/u);
+  // Verbatim tone examples were copied into real replies; only the crisis reply stays fixed.
+  assert.equal(friend.includes("Synthetic tone examples"), false);
+  assert.match(friend, /never call a resource Nhật ký/u);
+  assert.match(friend, /name the destination by its title/u);
+  assert.match(friend, /even as a negation/u);
+  assert.match(friend, /if it named any feature or resource, name none now/u);
   assert.match(friend, /never use mày\/tao/u);
   assert.match(friend, /Cần trợ giúp ngay/u);
   for (const destination of [
@@ -631,4 +666,22 @@ void test("a malformed suggestion is dropped but a link in the message is reject
     {},
   );
   assert.equal(result.message, "Bạn xem www.example.com nè.");
+});
+
+void test("a friend reply cut at an unescaped quote keeps only its complete sentences", async () => {
+  const cut = "Rối thì mệt lắm. Thử dừng lại ba phút nè. Bài";
+  const friendReply = async (message: string) =>
+    (
+      await captureBodies("BEDROCK", JSON.stringify(output(message)), {
+        friend: friendInput,
+      })
+    ).result.message;
+  assert.equal(
+    await friendReply(cut),
+    "Rối thì mệt lắm. Thử dừng lại ba phút nè.",
+  );
+  assert.equal(await friendReply("Ngủ ngon nha 🌙 Bài"), "Ngủ ngon nha 🌙");
+  assert.equal(await friendReply("Mình ở đây nè 🤗"), "Mình ở đây nè 🤗");
+  const v1 = await captureBodies("BEDROCK", JSON.stringify(output(cut)), {});
+  assert.equal(v1.result.message, cut);
 });
