@@ -8,7 +8,10 @@ import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 import { z } from "zod";
-import type { VoiceObserver } from "../llm-providers/voice-diagnostics.js";
+import {
+  VoiceProviderFailure,
+  type VoiceObserver,
+} from "../llm-providers/voice-diagnostics.js";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { createApplication } from "../application.js";
 import {
@@ -861,6 +864,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         "invalid-output",
         "revoked",
         "provider-parse-failure",
+        "output-token-limit",
       ]) {
         const f = await fixture();
         f.respond((observe) => {
@@ -868,10 +872,19 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           observe?.({
             phase: "provider_usage",
             inputTokens: 90,
-            outputTokens: 25,
+            outputTokens: mode === "output-token-limit" ? 300 : 25,
             usageSource: "PROVIDER",
           });
           if (mode === "revoked") f.revoke();
+          if (mode === "output-token-limit") {
+            observe?.({
+              phase: "bedrock_output_validation",
+              stopReason: "MAX_TOKENS",
+            });
+            return Promise.reject(
+              new VoiceProviderFailure("OUTPUT_TOKEN_LIMIT"),
+            );
+          }
           if (mode === "provider-parse-failure")
             return Promise.reject(new Error("PRIVATE_RAW_PROVIDER"));
           return Promise.resolve({
@@ -887,7 +900,25 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         );
         assert.equal(usage.length, 1);
         assert.equal(usage[0]?.inputTokens, 90);
-        assert.equal(usage[0].outputTokens, 25);
+        assert.equal(
+          usage[0].outputTokens,
+          mode === "output-token-limit" ? 300 : 25,
+        );
+        if (mode === "output-token-limit") {
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.outcome === "FAILED" &&
+                metric.phase === "bedrock_output_validation" &&
+                metric.code === "OUTPUT_TOKEN_LIMIT",
+            ),
+            true,
+          );
+          assert.equal(
+            f.metrics.some((metric) => metric.stopReason === "MAX_TOKENS"),
+            true,
+          );
+        }
         assert.equal(
           f.metrics.some((metric) => metric.outcome === "GENERATED"),
           false,

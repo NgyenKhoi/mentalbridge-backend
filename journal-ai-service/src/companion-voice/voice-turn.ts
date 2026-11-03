@@ -18,6 +18,7 @@ import {
   VoiceProviderFailure,
   type VoiceFailureCode,
   type VoiceProviderPhase,
+  type VoiceStopReason,
 } from "../llm-providers/voice-diagnostics.js";
 
 export const voiceTurnSchema = z
@@ -75,6 +76,7 @@ export interface VoiceTurnMetric {
     | "turn_state_rechecked"
     | "reply_registered";
   code?: VoiceFailureCode;
+  stopReason?: VoiceStopReason;
   countedInputTokens?: number;
   sequence?: number;
   elapsedMs?: number;

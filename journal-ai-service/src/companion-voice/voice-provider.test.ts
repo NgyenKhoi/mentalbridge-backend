@@ -69,6 +69,27 @@ void test("Voice pilot environment rejects unsupported reply styles", () => {
     );
 });
 
+void test("Voice pilot output ceiling requires an explicit bounded integer", () => {
+  const pilot = {
+    startsAt: "2026-11-01T00:00:00.000Z",
+    endsAt: "2026-11-01T01:00:00.000Z",
+    ownerIds: ["00000000-0000-4000-8000-000000000001"],
+  };
+  const load = (value: unknown) =>
+    loadConfiguration({
+      ...approved,
+      JOURNAL_AI_VOICE_PILOT: JSON.stringify(value),
+    });
+  assert.equal(load(pilot).VOICE_PILOT?.maxOutputTokens, undefined);
+  for (const maxOutputTokens of [300, 450, 600])
+    assert.equal(
+      load({ ...pilot, maxOutputTokens }).VOICE_PILOT?.maxOutputTokens,
+      maxOutputTokens,
+    );
+  for (const maxOutputTokens of [299, 601, 450.5, "600", true, null])
+    assert.throws(() => load({ ...pilot, maxOutputTokens }));
+});
+
 void test("Voice transport targets the actual Singapore Sonnet Converse endpoint with existing bearer auth", async () => {
   const original = globalThis.fetch;
   const configuration = loadConfiguration({
