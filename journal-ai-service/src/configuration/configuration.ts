@@ -112,6 +112,9 @@ const environmentSchema = z
     JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: z
       .enum(["true", "false"])
       .default("false"),
+    JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
     JOURNAL_AI_VOICE_PILOT: z.preprocess((value) => {
       if (value === undefined || value === "") return undefined;
       if (typeof value !== "string") return null;
@@ -294,12 +297,24 @@ const environmentSchema = z
       .min(1)
       .max(60)
       .default(10),
-    JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET: z.coerce
+    JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET: z.coerce
       .number()
       .int()
       .min(1_000)
       .max(10_000_000)
       .default(100_000),
+    JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10_000_000)
+      .default(250_000),
+    JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10_000_000)
+      .default(600_000),
     JOURNAL_AI_CHAT_DEFAULT_TIMEZONE: z
       .string()
       .min(1)
@@ -588,6 +603,8 @@ const environmentSchema = z
     VOICE_PILOT: environment.JOURNAL_AI_VOICE_PILOT,
     VOICE_TEXT_HANDOFF_ENABLED:
       environment.JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED === "true",
+    COMPANION_GUIDANCE_V2_ENABLED:
+      environment.JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED === "true",
     VOICE_MEDIA: {
       enabled: environment.JOURNAL_AI_VOICE_ENABLED === "true",
       approvedVersion: environment.JOURNAL_AI_VOICE_APPROVAL_VERSION ?? null,
@@ -666,7 +683,12 @@ const environmentSchema = z
       environment.JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS,
     CHAT_RATE_LIMIT_PER_MINUTE:
       environment.JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE,
-    CHAT_DAILY_TOKEN_BUDGET: environment.JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET,
+    CHAT_FREE_DAILY_TOKEN_BUDGET:
+      environment.JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET,
+    CHAT_PLUS_DAILY_TOKEN_BUDGET:
+      environment.JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET,
+    CHAT_PREMIUM_DAILY_TOKEN_BUDGET:
+      environment.JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET,
     CHAT_DEFAULT_TIMEZONE: environment.JOURNAL_AI_CHAT_DEFAULT_TIMEZONE,
     CHAT_ROUTING_POLICY_VERSION:
       environment.JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION,
@@ -679,9 +701,11 @@ export type ServiceConfiguration = Omit<
   | "VOICE_BEDROCK_ROUTE"
   | "VOICE_PILOT"
   | "VOICE_TEXT_HANDOFF_ENABLED"
+  | "COMPANION_GUIDANCE_V2_ENABLED"
 > & {
   readonly VOICE_PILOT?: z.infer<typeof environmentSchema>["VOICE_PILOT"];
   readonly VOICE_TEXT_HANDOFF_ENABLED?: boolean;
+  readonly COMPANION_GUIDANCE_V2_ENABLED?: boolean;
   readonly VOICE_BEDROCK_ROUTE?: z.infer<
     typeof environmentSchema
   >["VOICE_BEDROCK_ROUTE"];

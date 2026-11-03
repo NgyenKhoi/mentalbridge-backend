@@ -64,10 +64,16 @@ void test("warms all five schemas for each distinct configured Bedrock model", a
   ]);
   assert.deepEqual(result, {
     models: 2,
-    schemasPerModel: 5,
-    completedRequests: 10,
+    schemasPerModel: 6,
+    completedRequests: 12,
   });
-  assert.equal(requests.length, 10);
+  assert.equal(requests.length, 12);
+  assert.equal(
+    requests.filter((request) =>
+      JSON.stringify(request.body).includes("RESOURCE_LIBRARY"),
+    ).length,
+    2,
+  );
   assert.ok(
     requests.every(
       (request) => request.authorization === "Bearer test-bedrock-token",

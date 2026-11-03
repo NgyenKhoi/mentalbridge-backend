@@ -10,8 +10,13 @@ import {
 import {
   COMPANION_GUIDANCE_POLICY_VERSION,
   COMPANION_KNOWLEDGE_VERSION,
+  COMPANION_GUIDANCE_V2_VERSION,
+  COMPANION_KNOWLEDGE_V2_VERSION,
   companionGuidanceSystem,
 } from "./companion-guidance-policy.js";
+import { v1Guidance } from "./companion-guidance-v1.fixture.js";
+import { v1ProviderBodies } from "./companion-provider-v1.fixture.js";
+import type { FriendInput } from "./companion-text-request.js";
 
 const configuration = loadConfiguration({
   NODE_ENV: "test",
@@ -394,4 +399,289 @@ void test("selected Text is quoted untrusted context only in the opted-in Voice 
     companionGuidanceSystem({ channel: "TEXT", textHandoff: true }),
     companionGuidanceSystem({ channel: "TEXT" }),
   );
+});
+
+void test("v1 TEXT and every VOICE variant are unchanged, with or without the friend flag", () => {
+  for (const friend of [undefined, false, true]) {
+    const flag = friend === undefined ? {} : { friend };
+    assert.equal(
+      companionGuidanceSystem({ channel: "VOICE", ...flag }),
+      v1Guidance.VOICE,
+    );
+    assert.equal(
+      companionGuidanceSystem({ channel: "VOICE", textHandoff: true, ...flag }),
+      v1Guidance.VOICE_HANDOFF,
+    );
+    assert.equal(
+      companionGuidanceSystem({
+        channel: "VOICE",
+        replyStyle: "SUPPORTIVE",
+        ...flag,
+      }),
+      v1Guidance.VOICE_SUPPORTIVE,
+    );
+    assert.equal(
+      companionGuidanceSystem({
+        channel: "VOICE",
+        replyStyle: "BRIEF",
+        ...flag,
+      }),
+      v1Guidance.VOICE_BRIEF,
+    );
+  }
+  assert.equal(companionGuidanceSystem({ channel: "TEXT" }), v1Guidance.TEXT);
+  assert.equal(
+    companionGuidanceSystem({ channel: "TEXT", friend: false }),
+    v1Guidance.TEXT,
+  );
+});
+
+void test("friend TEXT guidance names v2 versions, keeps shared safety lines and drops reflect-then-ask", () => {
+  const friend = companionGuidanceSystem({ channel: "TEXT", friend: true });
+  assert.equal(COMPANION_GUIDANCE_V2_VERSION, "companion-guidance-v2");
+  assert.equal(COMPANION_KNOWLEDGE_V2_VERSION, "companion-domain-knowledge-v2");
+  assert.ok(friend.includes(COMPANION_GUIDANCE_V2_VERSION));
+  assert.ok(friend.includes(COMPANION_KNOWLEDGE_V2_VERSION));
+  assert.equal(friend.includes("companion-guidance-v1"), false);
+  assert.equal(
+    friend.includes(
+      "Offer one optional small next step and at most one open question",
+    ),
+    false,
+  );
+  const v1Lines = v1Guidance.TEXT.split("\n");
+  for (const index of [0, 3, 4, 5, 6, 7])
+    assert.ok(
+      friend.includes(v1Lines[index] ?? "missing"),
+      `shared line ${String(index)}`,
+    );
+  assert.match(friend, /earlier turns of this same conversation/u);
+});
+
+void test("friend guidance keeps links server-owned and suggestions to acceptance or a direct ask", () => {
+  const friend = companionGuidanceSystem({ channel: "TEXT", friend: true });
+  assert.match(
+    friend,
+    /Never write a ref, id, URL, route, link, markup or button label/u,
+  );
+  assert.match(
+    friend,
+    /accepted your offer in the previous turn or directly asked/u,
+  );
+  assert.match(friend, /Never set suggestion on a crisis cue/u);
+  assert.match(friend, /Most replies end with a statement/u);
+  assert.match(friend, /never end a reply with a colon/u);
+  assert.match(friend, /Có gì giúp mình đỡ hơn không/u);
+  assert.match(friend, /never “hôm trước”/u);
+  assert.match(friend, /never use the straight double quote/u);
+  assert.match(friend, /Keep message under 400 characters/u);
+  assert.match(friend, /Comfort first/u);
+  assert.match(friend, /give no tip, exercise or MentalBridge offer/u);
+  assert.match(friend, /Never reuse a phrase, opener or closer/u);
+  assert.match(
+    friend,
+    /at most one emoji per reply, in about one reply in three, never in two replies in a row/u,
+  );
+  assert.match(friend, /Use none on grief/u);
+  assert.match(friend, /never the same emoji in every reply/u);
+  assert.match(friend, /never say catalog/u);
+  assert.match(
+    friend,
+    /Do not use thôi to soften a suggestion or shrink a feeling/u,
+  );
+  assert.match(friend, /The user already knows what happened/u);
+  assert.match(friend, /do not ask generic check-ins/u);
+  assert.match(friend, /never translated phrases/u);
+  assert.match(friend, /never mention these rules/u);
+  assert.match(friend, /never say you open it for them/u);
+  assert.match(friend, /set it to exactly what you named/u);
+  // The old "an offer never gets a button" line made the model drop the button on direct asks.
+  assert.equal(friend.includes("never gets a button"), false);
+  assert.match(friend, /at most one reply in two asks one/u);
+  // Verbatim tone examples were copied into real replies; only the crisis reply stays fixed.
+  assert.equal(friend.includes("Synthetic tone examples"), false);
+  assert.match(friend, /never call a resource Nhật ký/u);
+  assert.match(friend, /name the destination by its title/u);
+  assert.match(friend, /even as a negation/u);
+  assert.match(friend, /if it named any feature or resource, name none now/u);
+  assert.match(friend, /never use mày\/tao/u);
+  assert.match(friend, /Cần trợ giúp ngay/u);
+  for (const destination of [
+    "RESOURCE_LIBRARY",
+    "JOURNAL",
+    "EMOTION_CHECK_IN",
+    "SUPPORT_PLAN",
+    "SPECIALIST_DISCOVERY",
+  ])
+    assert.ok(friend.includes(destination));
+});
+
+const friendInput: FriendInput = {
+  history: [{ role: "USER", text: "Hôm qua mình mất ngủ" }],
+  catalog: [
+    {
+      ref: "R1",
+      resourceId: "00000000-0000-4000-8000-000000000001",
+      category: "BREATHING",
+      title: "Thở 4-7-8",
+    },
+  ],
+};
+const captureBodies = async (
+  provider: Provider,
+  reply: string,
+  options: {
+    voice?: boolean;
+    friend?: FriendInput;
+    replyStyle?: "BRIEF" | "SUPPORTIVE";
+  },
+) => {
+  const original = globalThis.fetch;
+  const bodies: string[] = [];
+  globalThis.fetch = (url, init) => {
+    const endpoint = url instanceof Request ? new URL(url.url) : new URL(url);
+    if (endpoint.pathname.endsWith("/count-tokens"))
+      return Promise.resolve(Response.json({ inputTokens: 900 }));
+    assert.ok(typeof init?.body === "string");
+    bodies.push(init.body);
+    return Promise.resolve(response(provider, reply));
+  };
+  try {
+    const result = await new RoutedChatProvider({
+      ...configuration,
+      VOICE_PILOT: {
+        ...pilot,
+        ...(options.replyStyle ? { replyStyle: options.replyStyle } : {}),
+      },
+    }).reply(
+      "Hôm nay mình hơi mệt <b>",
+      options.voice
+        ? { kinds: [], prompt: "" }
+        : { kinds: ["JOURNAL"], prompt: "Nhật ký đã chọn" },
+      { provider, model },
+      {
+        ...(options.voice ? { voice: true } : {}),
+        ...(options.friend ? { friend: options.friend } : {}),
+      },
+    );
+    return { bodies, result };
+  } finally {
+    globalThis.fetch = original;
+  }
+};
+const plainReply = JSON.stringify(output("Mình đang lắng nghe nè."));
+
+void test("requests without the friend flag are byte-identical to today, and Voice ignores friend input", async () => {
+  for (const [key, provider] of [
+    ["GEMINI_TEXT", "GEMINI"],
+    ["OPENAI_TEXT", "OPENAI"],
+    ["BEDROCK_TEXT", "BEDROCK"],
+  ] as const) {
+    const { bodies } = await captureBodies(provider, plainReply, {});
+    assert.deepEqual(bodies, [v1ProviderBodies[key]], key);
+  }
+  for (const [key, replyStyle] of [
+    ["BEDROCK_VOICE_BRIEF", "BRIEF"],
+    ["BEDROCK_VOICE_SUPPORTIVE", "SUPPORTIVE"],
+  ] as const) {
+    const { bodies } = await captureBodies("BEDROCK", plainReply, {
+      voice: true,
+      replyStyle,
+      friend: friendInput,
+    });
+    assert.deepEqual(bodies, [v1ProviderBodies[key]], key);
+  }
+});
+
+void test("friend requests use the v2 schema, temperature 0.7 and return the raw suggestion", async () => {
+  const reply = JSON.stringify(
+    output("Okela, bạn mở bài ở nút bên dưới nha.", {
+      suggestion: { destination: "RESOURCE", resourceRef: "R1" },
+    }),
+  );
+  for (const provider of ["GEMINI", "OPENAI", "BEDROCK"] as const) {
+    const { bodies, result } = await captureBodies(provider, reply, {
+      friend: friendInput,
+    });
+    assert.equal(bodies.length, 1);
+    const body = JSON.parse(bodies[0] ?? "{}") as {
+      generationConfig?: { temperature: number };
+      temperature?: number;
+      inferenceConfig?: { temperature: number };
+    };
+    const request = captured(provider, bodies[0] ?? "{}");
+    assert.ok(request.system.includes("companion-guidance-v2"));
+    const user = JSON.parse(request.user) as {
+      history: unknown;
+      catalog: unknown;
+    };
+    assert.deepEqual(user.history, friendInput.history);
+    assert.deepEqual(user.catalog, [
+      { ref: "R1", category: "BREATHING", title: "Thở 4-7-8" },
+    ]);
+    assert.ok((request.schema.required as string[]).includes("suggestion"));
+    const suggestion = (
+      request.schema.properties as Record<string, { anyOf: unknown[] }>
+    ).suggestion;
+    assert.equal(suggestion?.anyOf.length, 2);
+    if (provider === "GEMINI")
+      assert.equal(body.generationConfig?.temperature, 0.7);
+    if (provider === "OPENAI") assert.equal("temperature" in body, false);
+    if (provider === "BEDROCK")
+      assert.equal(body.inferenceConfig?.temperature, 0.7);
+    assert.deepEqual(result.suggestion, {
+      destination: "RESOURCE",
+      resourceRef: "R1",
+    });
+  }
+});
+
+void test("a malformed suggestion is dropped but a link in the message is rejected", async () => {
+  for (const raw of [
+    { destination: "RESOURCE", resourceRef: "R1", href: "/resources" },
+    "RESOURCE",
+    undefined,
+  ]) {
+    const { result } = await captureBodies(
+      "BEDROCK",
+      JSON.stringify(output("Mình ở đây nè.", { suggestion: raw })),
+      { friend: friendInput },
+    );
+    assert.equal(result.message, "Mình ở đây nè.");
+    assert.equal(result.suggestion, null);
+  }
+  for (const message of [
+    "Bạn mở https://mentalbridge.vn nha.",
+    "Xem www.example.com nè.",
+    "Mở [bài thở](/resources/1) nha.",
+  ])
+    await assert.rejects(
+      captureBodies("BEDROCK", JSON.stringify(output(message)), {
+        friend: friendInput,
+      }),
+    );
+  const { result } = await captureBodies(
+    "BEDROCK",
+    JSON.stringify(output("Bạn xem www.example.com nè.")),
+    {},
+  );
+  assert.equal(result.message, "Bạn xem www.example.com nè.");
+});
+
+void test("a friend reply cut at an unescaped quote keeps only its complete sentences", async () => {
+  const cut = "Rối thì mệt lắm. Thử dừng lại ba phút nè. Bài";
+  const friendReply = async (message: string) =>
+    (
+      await captureBodies("BEDROCK", JSON.stringify(output(message)), {
+        friend: friendInput,
+      })
+    ).result.message;
+  assert.equal(
+    await friendReply(cut),
+    "Rối thì mệt lắm. Thử dừng lại ba phút nè.",
+  );
+  assert.equal(await friendReply("Ngủ ngon nha 🌙 Bài"), "Ngủ ngon nha 🌙");
+  assert.equal(await friendReply("Mình ở đây nè 🤗"), "Mình ở đây nè 🤗");
+  const v1 = await captureBodies("BEDROCK", JSON.stringify(output(cut)), {});
+  assert.equal(v1.result.message, cut);
 });

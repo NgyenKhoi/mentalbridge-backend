@@ -2,6 +2,7 @@ import type { ServiceConfiguration } from "../configuration/configuration.js";
 import {
   companionMaxOutputTokens,
   providerOutputJsonSchema,
+  providerOutputJsonSchemaV2,
 } from "../companion-chat/companion-chat.js";
 import { exactRevisionOutputJsonSchema } from "../prompts/exact-revision.js";
 import { longitudinalOutputJsonSchema } from "../prompts/longitudinal.js";
@@ -38,6 +39,12 @@ const warmupSchemas = [
     workload: "COMPANION_CHAT",
     name: "mentalbridge_companion_reply",
     schema: providerOutputJsonSchema,
+    maxTokens: companionMaxOutputTokens,
+  },
+  {
+    workload: "COMPANION_CHAT",
+    name: "mentalbridge_companion_reply",
+    schema: providerOutputJsonSchemaV2,
     maxTokens: companionMaxOutputTokens,
   },
 ] as const;

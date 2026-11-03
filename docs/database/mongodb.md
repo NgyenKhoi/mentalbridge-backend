@@ -154,6 +154,10 @@ indexes for four Journal/AI collections:
   raw provider responses, and hidden reasoning are never fields. Owner/update
   cursor indexes support deterministic history and `expiresAt` has a TTL index
   for the configured retention period.
+  Migration `017_companion_message_suggestion.cjs` (ADR 0049) adds an optional
+  `suggestion` envelope on assistant messages: the resolved destination,
+  Resource ID and title, encrypted with the same key and an AAD that ends in
+  `:suggestion`.
 - `ai_companion_commands` stores the keyed idempotency hash and fingerprint plus
   an immutable success or failure snapshot. The unique owner/key index makes an
   exact retry stable and rejects a key reused with different input. Deleting a

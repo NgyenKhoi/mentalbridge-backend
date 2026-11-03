@@ -36,10 +36,11 @@ export const bedrockConverseRequest = (
   schema: unknown,
   schemaName: string,
   maxTokens: number,
+  temperature = 0.2,
 ) => ({
   system: [{ text: system }],
   messages: [{ role: "user", content: [{ text: user }] }],
-  inferenceConfig: { temperature: 0.2, maxTokens },
+  inferenceConfig: { temperature, maxTokens },
   outputConfig: {
     textFormat: {
       type: "json_schema",

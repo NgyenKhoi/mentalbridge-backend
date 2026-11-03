@@ -240,6 +240,18 @@ for (const field of ["handoffToken", "selectedText", "summary", "transcript"])
     handoffMigration.sessionValidator.$jsonSchema.properties[field],
     undefined,
   );
+const suggestionMigration = require("../migrations/017_companion_message_suggestion.cjs");
+assert.equal(typeof suggestionMigration.up, "function");
+assert.equal(typeof suggestionMigration.down, "function");
+const suggestionMessage =
+  suggestionMigration.conversationValidator.$jsonSchema.properties.messages
+    .items;
+assert.equal(suggestionMessage.additionalProperties, false);
+assert.equal(suggestionMessage.required.includes("suggestion"), false);
+assert.deepEqual(
+  suggestionMessage.properties.suggestion,
+  suggestionMessage.properties.content,
+);
 console.log(
-  "Validated Mongo migrations: 001 through 016_companion_voice_context_handoff.cjs",
+  "Validated Mongo migrations: 001 through 017_companion_message_suggestion.cjs",
 );

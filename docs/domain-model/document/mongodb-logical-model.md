@@ -133,7 +133,9 @@ update time, assistant route provenance, context-kind labels (including
 assembled prompts, selected source plaintext, bearer credentials, raw provider
 output, and hidden reasoning are not fields. Migration
 `012_ai_companion_conversation_context.cjs` backfills the default context before
-enforcing the strict validator.
+enforcing the strict validator. Migration `017_companion_message_suggestion.cjs`
+adds an optional encrypted `suggestion` on assistant messages (destination,
+Resource ID and title; ADR 0049).
 
 ### AI Companion Command — ACTIVE
 

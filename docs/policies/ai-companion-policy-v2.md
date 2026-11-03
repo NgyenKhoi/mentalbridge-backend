@@ -13,6 +13,7 @@
 | Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
 | Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
 | Amends | [AI Companion policy v1](ai-companion-policy-v1.md) |
+| Prospective TEXT amendment | [ADR 0049](../adr/0049-ai-companion-friend-voice-and-suggestions.md) (`MB-AI-COMPANION-FRIEND-001`, flag-gated) |
 
 The v1 exact-source consent, one-provider-per-run, bounded retry, normalized
 result, provenance, deletion coupling, and no-hidden-reasoning rules remain in
@@ -33,6 +34,11 @@ AI does not score PHQ-9/GAD-7, diagnose, decide safety, determine clinical
 improvement, decide entitlement or resource eligibility, create or mutate a
 SupportPlan, provide the user's explicit reassessment self-report, schedule
 reminders, complete an appointment, consume credits, or create earnings.
+
+Under ADR 0049, offering a published reviewed Resource or an app area as a
+server-resolved suggestion is not deciding resource eligibility or package
+access; the destination page performs its own checks and the user decides
+whether to open it.
 
 ## Package behavior
 

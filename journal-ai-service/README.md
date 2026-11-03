@@ -28,6 +28,17 @@ Sonnet, input counting, quota, deadlines and teardown remain authoritative.
 See the [MB-789 evidence and provenance audit](../docs/story-mb-789-unified-companion-guidance.md)
 for source limits and the separately authorized real-provider comparison rubric.
 
+## MB-791 Text friend voice and suggestions
+
+`JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED` (default false) switches TEXT chat to
+`companion-guidance-v2`: friend persona, the last 8 messages of the same
+conversation as memory, a cached list of up to 30 published Resources sent as
+`R<n>` refs, and a closed-enum `suggestion` that the server resolves and stores
+encrypted. Voice is unchanged. Enable it only after migration 017, the
+real-provider conversation eval and owner sign-off ([ADR
+0049](../docs/adr/0049-ai-companion-friend-voice-and-suggestions.md)). The
+per-plan token budgets (`companion-quota-v2`) apply regardless of the flag.
+
 ## MB-790 selected Text-to-Voice context
 
 Set `JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED=true` only after coordinated Care
@@ -499,7 +510,10 @@ npm start
 | `JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS`             | No                       | `30`                                             | Configurable successfully delivered answers per local day for `PLUS`                                      |
 | `JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS` | No                       | `200`                                            | Hidden backend fair-use ceiling for `PREMIUM`; never displayed as a daily quota                           |
 | `JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE`          | No                       | `10`                                             | Per-owner bounded request-rate control                                                                    |
-| `JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET`             | No                       | `100000`                                         | Per-owner provider token/cost guard across all plans                                                      |
+| `JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET`        | No                       | `100000`                                         | Per-owner daily provider token guard for `FREE` (`companion-quota-v2`)                                    |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                         | Per-owner daily provider token guard for `PLUS`                                                           |
+| `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                         | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
+| `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`       | No                       | `false`                                          | TEXT friend voice, memory, catalogue and suggestion (ADR 0049); needs owner sign-off                      |
 | `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                               | Server-authoritative IANA timezone used for stable quota reset                                            |
 | `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                      | Version persisted with every assistant response                                                           |
 
