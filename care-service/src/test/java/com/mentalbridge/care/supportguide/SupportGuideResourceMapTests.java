@@ -60,7 +60,8 @@ class SupportGuideResourceMapTests {
 		assertThat(row).isNotEmpty().hasSizeLessThanOrEqualTo(4);
 		for (var candidate : row) {
 			assertThat(identities.add(candidate.key())).as("duplicate %s", candidate.key()).isTrue();
-			assertThat(candidate.contentVersion()).isEqualTo("0");
+			assertThat(candidate.contentVersion())
+					.isEqualTo("00000000-0000-4000-8000-000000000201".equals(candidate.resourceId()) ? "1" : "0");
 			var declaration = REVIEWED_PRIMARY.get(candidate.resourceId() + ":" + candidate.domain());
 			assertThat(declaration).as("PRIMARY declaration for %s", candidate).isNotNull();
 			var level = "DEPRESSIVE_SYMPTOMS".equals(candidate.domain()) ? phq9 : gad7;

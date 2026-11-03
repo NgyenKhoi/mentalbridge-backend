@@ -2,6 +2,8 @@ package com.mentalbridge.consultation.video;
 
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -9,6 +11,8 @@ import com.mentalbridge.consultation.shared.ApiException;
 
 @Service
 public class VideoSessionService {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(VideoSessionService.class);
 
 	private final VideoSessionTransactions transactions;
 	private final VideoProvider provider;
@@ -37,8 +41,22 @@ public class VideoSessionService {
 
 	@Scheduled(fixedDelay = 5000)
 	public void closeDueSessions() {
-		for (var id : transactions.dueEndIds()) transactions.end(id);
-		for (var id : transactions.dueCloseIds()) close(id);
+		for (var id : transactions.dueEndIds()) {
+			try {
+				transactions.end(id);
+			}
+			catch (RuntimeException exception) {
+				LOGGER.error("Video session end failed for appointmentId={}", id, exception);
+			}
+		}
+		for (var id : transactions.dueCloseIds()) {
+			try {
+				close(id);
+			}
+			catch (RuntimeException exception) {
+				LOGGER.error("Video room close failed for appointmentId={}", id, exception);
+			}
+		}
 	}
 
 	public void close(UUID id) {
