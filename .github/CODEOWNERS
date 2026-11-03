@@ -6,6 +6,7 @@
 /.codex/skills/ @NgyenKhoi
 /.github/ @NgyenKhoi
 /scripts/pr-overlap.mjs @NgyenKhoi
+/scripts/codex-auto-merge.mjs @NgyenKhoi
 /docs/domain-model/ @NgyenKhoi
 /docs/requirements-traceability.md @NgyenKhoi
 /docs/requirements-traceability/ @NgyenKhoi
