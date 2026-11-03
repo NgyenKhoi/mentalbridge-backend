@@ -4,7 +4,10 @@ export type VoiceProviderPhase =
   | "bedrock_requested"
   | "bedrock_response_received"
   | "provider_usage"
+  | "bedrock_output_validation"
   | "bedrock_response_validated";
+export type VoiceStopReason =
+  "END_TURN" | "MAX_TOKENS" | "STOP_SEQUENCE" | "OTHER" | "MISSING";
 export type VoiceFailureCode =
   | "TIMEOUT"
   | "ABORTED"
@@ -12,6 +15,12 @@ export type VoiceFailureCode =
   | "HTTP_5XX"
   | "TRANSPORT"
   | "INVALID_RESPONSE"
+  | "OUTPUT_TOKEN_LIMIT"
+  | "UNEXPECTED_STOP_REASON"
+  | "RESPONSE_ENVELOPE_INVALID"
+  | "OUTPUT_JSON_INVALID"
+  | "OUTPUT_SCHEMA_INVALID"
+  | "OUTPUT_SAFETY_REJECTED"
   | "INPUT_BUDGET_EXCEEDED"
   | "AUTHORITY_OR_STATE"
   | "INTERNAL";
@@ -22,11 +31,26 @@ export interface VoiceProviderObservation {
   inputTokens?: number;
   outputTokens?: number;
   usageSource?: "PROVIDER";
+  stopReason?: VoiceStopReason;
 }
 export type VoiceObserver = (value: VoiceProviderObservation) => void;
 export class VoiceProviderFailure extends Error {
   constructor(readonly code: VoiceFailureCode) {
     super(code);
+  }
+}
+export function voiceStopReason(body: unknown): VoiceStopReason {
+  if (typeof body !== "object" || body === null || !("stopReason" in body))
+    return "MISSING";
+  switch (body.stopReason) {
+    case "end_turn":
+      return "END_TURN";
+    case "max_tokens":
+      return "MAX_TOKENS";
+    case "stop_sequence":
+      return "STOP_SEQUENCE";
+    default:
+      return "OTHER";
   }
 }
 export function providerUsage(

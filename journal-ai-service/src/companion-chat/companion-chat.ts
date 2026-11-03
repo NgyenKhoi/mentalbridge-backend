@@ -34,6 +34,7 @@ import { z } from "zod";
 import {
   VoiceProviderFailure,
   providerUsage,
+  voiceStopReason,
   type VoiceObserver,
 } from "../llm-providers/voice-diagnostics.js";
 import { authorizeVoiceInput } from "../llm-providers/bedrock-voice-token-budget.js";
@@ -1434,7 +1435,7 @@ export class RoutedChatProvider implements ChatProvider {
           input,
           outputJsonSchema,
           "mentalbridge_companion_reply",
-          pilot ? 300 : companionMaxOutputTokens,
+          pilot ? (pilot.maxOutputTokens ?? 300) : companionMaxOutputTokens,
           temperature,
         );
         const { outputConfig, ...plainRequest } = request;
@@ -1489,17 +1490,29 @@ export class RoutedChatProvider implements ChatProvider {
     try {
       body = await response.json();
     } catch {
+      if (options?.voice && route.provider === "BEDROCK")
+        throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
       throw new ChatProblem(
         503,
         "CHAT_PROVIDER_INVALID_RESPONSE",
         "AI response is invalid",
       );
     }
-    if (options?.voice && route.provider === "BEDROCK")
+    if (options?.voice && route.provider === "BEDROCK") {
       options.voiceObserver?.({
         phase: "provider_usage",
         ...providerUsage(body),
       });
+      const stopReason = voiceStopReason(body);
+      options.voiceObserver?.({
+        phase: "bedrock_output_validation",
+        stopReason,
+      });
+      if (stopReason === "MAX_TOKENS")
+        throw new VoiceProviderFailure("OUTPUT_TOKEN_LIMIT");
+      if (stopReason !== "END_TURN")
+        throw new VoiceProviderFailure("UNEXPECTED_STOP_REASON");
+    }
     let message: string | undefined;
     let inputTokens: number | null = null;
     let outputTokens: number | null = null;
@@ -1545,6 +1558,8 @@ export class RoutedChatProvider implements ChatProvider {
           .find((item) => item.type === "output_text")?.text;
     } else if (responseProvider === "BEDROCK") {
       const parsed = parseBedrockConverseResponse(body);
+      if (!parsed && options?.voice)
+        throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
       message = parsed?.text;
       inputTokens = parsed?.inputTokens ?? null;
       outputTokens = parsed?.outputTokens ?? null;
@@ -1565,6 +1580,8 @@ export class RoutedChatProvider implements ChatProvider {
       }
       output = message ? JSON.parse(message) : undefined;
     } catch {
+      if (options?.voice && responseProvider === "BEDROCK")
+        throw new VoiceProviderFailure("OUTPUT_JSON_INVALID");
       throw new ChatProblem(
         503,
         "CHAT_PROVIDER_INVALID_RESPONSE",
@@ -1589,15 +1606,25 @@ export class RoutedChatProvider implements ChatProvider {
       output = rest;
     }
     const parsedOutput = providerOutputSchema.safeParse(output);
-    if (!parsedOutput.success)
+    if (!parsedOutput.success) {
+      if (options?.voice && responseProvider === "BEDROCK")
+        throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
       throw new ChatProblem(
         503,
         "CHAT_PROVIDER_INVALID_RESPONSE",
         "AI response is invalid",
       );
-    const normalized = validatedAssistantMessage(parsedOutput.data.message, {
-      rejectLinks: friend !== undefined,
-    });
+    }
+    let normalized: string;
+    try {
+      normalized = validatedAssistantMessage(parsedOutput.data.message, {
+        rejectLinks: friend !== undefined,
+      });
+    } catch (error) {
+      if (options?.voice && responseProvider === "BEDROCK")
+        throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+      throw error;
+    }
     if (options?.voice && route.provider === "BEDROCK")
       options.voiceObserver?.({ phase: "bedrock_response_validated" });
     return {

@@ -31,6 +31,210 @@ const route: ChatRoute = {
   model: "global.anthropic.claude-sonnet-4-6",
 };
 
+void test("Voice classifies stopped and invalid output without leaking content or retrying", async () => {
+  const original = globalThis.fetch;
+  const valid = {
+    message:
+      "Bạn có thể chọn một việc nhỏ vừa sức, rồi nghỉ một chút. Mình cùng xem điều nào phù hợp với bạn nhé.",
+    language: "vi",
+    authority: "SUPPORT_ONLY",
+    clinicalAssessment: "NONE",
+    safetyDecision: "NONE",
+    eligibilityDecision: "NONE",
+    businessAction: "NONE",
+    thirdPartyAction: "NONE",
+  };
+  const cases = [
+    { stopReason: "end_turn", text: JSON.stringify(valid), code: null },
+    {
+      stopReason: undefined,
+      text: JSON.stringify(valid),
+      code: "UNEXPECTED_STOP_REASON",
+    },
+    {
+      stopReason: "stop_sequence",
+      text: JSON.stringify(valid),
+      code: "UNEXPECTED_STOP_REASON",
+    },
+    {
+      stopReason: "max_tokens",
+      text: '{"message":"PRIVATE_PARTIAL',
+      code: "OUTPUT_TOKEN_LIMIT",
+    },
+    {
+      stopReason: "max_tokens",
+      text: JSON.stringify(valid),
+      code: "OUTPUT_TOKEN_LIMIT",
+    },
+    {
+      stopReason: "PRIVATE_STOP_REASON",
+      text: JSON.stringify(valid),
+      code: "UNEXPECTED_STOP_REASON",
+    },
+    {
+      stopReason: "end_turn",
+      text: "PRIVATE_INVALID_JSON",
+      code: "OUTPUT_JSON_INVALID",
+    },
+    {
+      stopReason: "end_turn",
+      text: JSON.stringify({ ...valid, authority: "PRIVATE_AUTHORITY" }),
+      code: "OUTPUT_SCHEMA_INVALID",
+    },
+    {
+      stopReason: "end_turn",
+      text: JSON.stringify({
+        ...valid,
+        message: "Tôi chẩn đoán bạn đang mắc trầm cảm",
+      }),
+      code: "OUTPUT_SAFETY_REJECTED",
+    },
+    {
+      stopReason: "end_turn",
+      text: undefined,
+      code: "RESPONSE_ENVELOPE_INVALID",
+    },
+  ];
+  try {
+    for (const item of cases) {
+      let calls = 0;
+      const observations: VoiceProviderObservation[] = [];
+      globalThis.fetch = () => {
+        calls++;
+        return Promise.resolve(
+          Response.json({
+            stopReason: item.stopReason,
+            output: { message: { content: [{ text: item.text }] } },
+            usage: {
+              inputTokens: 1620,
+              outputTokens: item.stopReason === "max_tokens" ? 300 : 144,
+            },
+          }),
+        );
+      };
+      const work = new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "PRIVATE_KEY",
+      }).reply(
+        "PRIVATE_SPEECH",
+        { kinds: [], prompt: "PRIVATE_CONTEXT" },
+        route,
+        { voice: true, voiceObserver: (value) => observations.push(value) },
+      );
+      if (item.code === null) assert.equal((await work).message, valid.message);
+      else
+        await assert.rejects(
+          work,
+          (error) =>
+            error instanceof VoiceProviderFailure && error.code === item.code,
+        );
+      assert.equal(calls, 1);
+      assert.equal(
+        observations.filter((value) => value.phase === "provider_usage").length,
+        1,
+      );
+      assert.equal(
+        observations.some(
+          (value) => value.phase === "bedrock_output_validation",
+        ),
+        true,
+      );
+      if (
+        item.stopReason === undefined ||
+        item.stopReason === "stop_sequence"
+      ) {
+        assert.deepEqual(
+          observations.find(
+            (value) => value.phase === "bedrock_output_validation",
+          ),
+          {
+            phase: "bedrock_output_validation",
+            stopReason:
+              item.stopReason === undefined ? "MISSING" : "STOP_SEQUENCE",
+          },
+        );
+      }
+      assert.equal(
+        observations.some(
+          (value) => value.phase === "bedrock_response_validated",
+        ),
+        item.code === null,
+      );
+      assert.equal(JSON.stringify(observations).includes("PRIVATE"), false);
+      assert.equal(JSON.stringify(observations).includes(valid.message), false);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("Voice output allowance stays 300 unless an explicit bounded pilot opts into 600", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const maxOutputTokens of [undefined, 600] as const) {
+      let calls = 0;
+      globalThis.fetch = (_input, init) => {
+        calls++;
+        if (calls === 1)
+          return Promise.resolve(Response.json({ inputTokens: 1637 }));
+        if (typeof init?.body !== "string")
+          throw new Error("EXPECTED_STRING_BODY");
+        const body = JSON.parse(init.body) as {
+          inferenceConfig: { maxTokens: number };
+        };
+        assert.equal(body.inferenceConfig.maxTokens, maxOutputTokens ?? 300);
+        assert.equal(
+          Object.hasOwn(body.inferenceConfig, "stopSequences"),
+          false,
+        );
+        return Promise.resolve(
+          Response.json({
+            stopReason: "end_turn",
+            output: {
+              message: {
+                content: [
+                  {
+                    text: JSON.stringify({
+                      message: "Mình đang lắng nghe bạn.",
+                      language: "vi",
+                      authority: "SUPPORT_ONLY",
+                      clinicalAssessment: "NONE",
+                      safetyDecision: "NONE",
+                      eligibilityDecision: "NONE",
+                      businessAction: "NONE",
+                      thirdPartyAction: "NONE",
+                    }),
+                  },
+                ],
+              },
+            },
+            usage: {
+              inputTokens: 1620,
+              outputTokens: maxOutputTokens === 600 ? 400 : 200,
+            },
+          }),
+        );
+      };
+      const result = await new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "PRIVATE_KEY",
+        VOICE_PILOT: {
+          startsAt: new Date(),
+          endsAt: new Date(Date.now() + 60000),
+          ownerIds: [randomUUID()],
+          ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+        },
+      }).reply("PRIVATE_SPEECH", { kinds: [], prompt: "" }, route, {
+        voice: true,
+      });
+      assert.equal(calls, 2);
+      assert.equal(result.outputTokens, maxOutputTokens === 600 ? 400 : 200);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 void test("pilot phases identify counting rejection before inference and preserve real usage on invalid Bedrock output", async () => {
   const original = globalThis.fetch;
   const pilot = {
@@ -81,6 +285,7 @@ void test("pilot phases identify counting rejection before inference and preserv
             : mode === "invalid-json"
               ? new Response("PRIVATE_BODY")
               : Response.json({
+                  stopReason: "end_turn",
                   output: {
                     message: {
                       content: [
@@ -148,6 +353,7 @@ void test("voice reuses the Companion Bedrock schema/prompt/validator without to
     body = JSON.parse(init?.body as string) as Record<string, unknown>;
     return Promise.resolve(
       Response.json({
+        stopReason: "end_turn",
         output: {
           message: {
             content: [
@@ -239,6 +445,7 @@ void test("voice decodes one fenced Bedrock JSON object without relaxing schema 
         calls++;
         return Promise.resolve(
           Response.json({
+            stopReason: "end_turn",
             output: { message: { content: [{ text }] } },
             usage: { inputTokens: 120, outputTokens: 30 },
           }),

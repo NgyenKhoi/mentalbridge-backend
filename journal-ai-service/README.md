@@ -90,8 +90,20 @@ Vietnamese sentences, usually 180–280 characters, reflecting only what the
 caller shared, with an optional gentle observation or small next step and at
 most one open question. Ambiguous recognition takes priority and calls for a
 short clarification. The same strict JSON/safety validator, 500-character
-message limit, 1,900-input-token check, 300-output-token ceiling and provider
-pins still apply. AI Text behavior is unchanged.
+message limit, 1,900-input-token check and provider pins still apply. The
+default output ceiling remains 300 tokens for the entire JSON object. An
+explicit pilot `maxOutputTokens` may be an integer from 300 through 600 to
+leave room for the spoken reply plus classification fields. This requires a
+matching approved budget and launcher/fence; omission never expands a prior
+approval or active window. AI Text behavior is unchanged.
+
+Voice observes a closed stop-reason category before output validation. Token
+exhaustion, envelope, JSON, schema and safety rejections have distinct diagnostic
+codes; raw provider bodies, stop strings and conversation content are excluded.
+Only `end_turn` is accepted for Voice completion. Missing reasons and
+`stop_sequence` fail closed as `UNEXPECTED_STOP_REASON`; no stop sequence is
+configured by the Voice request. Valid JSON alone does not authorize speech.
+See [the MB-790 output-validation follow-up](../docs/mb-790-voice-output-validation.md).
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
@@ -99,10 +111,11 @@ can be counted before inference. Bedrock Runtime token counting at the Singapore
 endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
 most 1,900 tokens (100-token headroom under the per-turn
 2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
-to the approved global profile and caps output at 300 tokens. The default four
-turns per call and two admissions bound output to 2,400; an approved extended
-pilot can set at most 30 turns per call, so its budget must account for the
-configured admission and turn limits. This capability/permission needs an actual
+to the approved global profile and caps output at 300 tokens by default, or
+the explicitly configured pilot limit up to 600. The default four turns per
+call and two admissions bound output to 2,400; an approved extended pilot can
+set at most 30 turns per call, so its budget must account for admissions,
+turns and configured output tokens. This capability/permission needs an actual
 authorized runtime check and `bedrock:CountTokens` access, plus the existing
 Bearer-use authorization; unit tests do not establish account access. The
 [Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
