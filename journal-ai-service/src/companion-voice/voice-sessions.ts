@@ -3,6 +3,11 @@ import { z } from "zod";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import { VoiceAuthorizationError } from "./voice-authorization.js";
 import {
+  VoiceContextHandoffs,
+  voiceStartCommandSchema,
+  type VoiceStartCommand,
+} from "./voice-context-handoff.js";
+import {
   MongoVoiceLedger,
   VoiceLedgerError,
   voiceSessionExpiryReason,
@@ -99,6 +104,9 @@ const closed = (session: VoiceSession) =>
   terminal(session) || session.state === "ENDING";
 
 export const voiceSessionView = (session: VoiceSession) => ({
+  ...(session.contextHandoffHash
+    ? { contextMode: "TEXT_HANDOFF" as const }
+    : {}),
   voiceSessionId: session.voiceSessionId,
   policyVersion: session.policyVersion,
   state: session.state,
@@ -122,6 +130,7 @@ export class VoiceSessionsService {
     private readonly secret: Buffer,
     private readonly clock: () => Date = () => new Date(),
     private readonly telemetry: (outcome: string) => void = () => undefined,
+    private readonly handoffs?: VoiceContextHandoffs,
   ) {}
 
   private digest(value: string) {
@@ -163,6 +172,7 @@ export class VoiceSessionsService {
   }
 
   private discardContext(id: string) {
+    this.handoffs?.discard(id);
     for (const listener of this.terminationListeners) listener(id);
   }
 
@@ -262,10 +272,40 @@ export class VoiceSessionsService {
     };
   }
 
-  async start(owner: string, key: string, correlationId: string) {
+  async start(
+    owner: string,
+    key: string,
+    correlationId: string,
+    request: VoiceStartCommand = {},
+  ) {
+    const parsed = voiceStartCommandSchema.safeParse(request);
+    if (!parsed.success) throw new VoiceLedgerError("INVALID_REQUEST");
+    const token = parsed.data.handoffToken;
+    const handoffs = this.handoffs;
+    if (token && !handoffs) throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
+    const handoffHash =
+      token && handoffs ? handoffs.reference(owner, token) : undefined;
+    const prior = token
+      ? await this.ledger.replay(
+          owner,
+          this.digest(`voice:start:${owner}:${key}`),
+          this.clock(),
+        )
+      : null;
+    const prepared =
+      token && handoffs && (!prior || !closed(prior))
+        ? await handoffs.resolveStart(owner, token, prior ?? undefined)
+        : undefined;
     let session: VoiceSession;
     try {
-      session = await this.access.reserve(owner, key, correlationId);
+      session = await this.access.reserve(
+        owner,
+        key,
+        correlationId,
+        token ? { handoffToken: token } : {},
+        handoffHash,
+        token && handoffs ? handoffs.expiresAt(owner, token) : undefined,
+      );
     } catch (error) {
       if (
         !(error instanceof VoiceAccessError) ||
@@ -289,6 +329,9 @@ export class VoiceSessionsService {
       );
       const document = await this.store.ensure(session, this.clock());
       try {
+        if (prepared && token && handoffs)
+          await handoffs.verifySnapshot(owner, token);
+        handoffs?.bind(session, prepared);
         await this.establish(document, correlationId);
       } catch {
         await this.ledger.requestEnd(
@@ -740,6 +783,7 @@ export class VoiceSessionsService {
           );
           if (!session) return;
           if (terminal(session) && document.phase === "NEW") {
+            this.discardContext(session.voiceSessionId);
             await this.store.advance(document, "STOPPED", this.clock());
             return;
           }

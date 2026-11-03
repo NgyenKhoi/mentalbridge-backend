@@ -109,6 +109,9 @@ const environmentSchema = z
     JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_ENABLED: z.enum(["true", "false"]).default("false"),
+    JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
     JOURNAL_AI_VOICE_PILOT: z.preprocess((value) => {
       if (value === undefined || value === "") return undefined;
       if (typeof value !== "string") return null;
@@ -583,6 +586,8 @@ const environmentSchema = z
         environment.JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN ?? null,
     },
     VOICE_PILOT: environment.JOURNAL_AI_VOICE_PILOT,
+    VOICE_TEXT_HANDOFF_ENABLED:
+      environment.JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED === "true",
     VOICE_MEDIA: {
       enabled: environment.JOURNAL_AI_VOICE_ENABLED === "true",
       approvedVersion: environment.JOURNAL_AI_VOICE_APPROVAL_VERSION ?? null,
@@ -669,9 +674,14 @@ const environmentSchema = z
 
 export type ServiceConfiguration = Omit<
   z.infer<typeof environmentSchema>,
-  "VOICE_OWNER_TOKENS" | "VOICE_MEDIA" | "VOICE_BEDROCK_ROUTE" | "VOICE_PILOT"
+  | "VOICE_OWNER_TOKENS"
+  | "VOICE_MEDIA"
+  | "VOICE_BEDROCK_ROUTE"
+  | "VOICE_PILOT"
+  | "VOICE_TEXT_HANDOFF_ENABLED"
 > & {
   readonly VOICE_PILOT?: z.infer<typeof environmentSchema>["VOICE_PILOT"];
+  readonly VOICE_TEXT_HANDOFF_ENABLED?: boolean;
   readonly VOICE_BEDROCK_ROUTE?: z.infer<
     typeof environmentSchema
   >["VOICE_BEDROCK_ROUTE"];

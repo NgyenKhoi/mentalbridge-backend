@@ -13,6 +13,7 @@ import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import { selectVoiceProviderRoute } from "./voice-provider.js";
+import type { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import {
   VoiceProviderFailure,
   type VoiceFailureCode,
@@ -57,6 +58,7 @@ interface Context {
   sequence: number;
   busy: boolean;
   pairs: Pair[];
+  textPairs: Pair[];
   controller: AbortController;
   latest: { keyHash: string; fingerprint: string; response: VoiceReply } | null;
 }
@@ -111,6 +113,21 @@ const history = (pairs: Pair[], input = ""): Pair[] => {
   if (!fits(selected, input)) throw new VoiceLedgerError("INVALID_REQUEST");
   return selected;
 };
+const trimSelectedText = (
+  selectedText: Pair[],
+  currentCall: Pair[],
+  input = "",
+) => {
+  while (
+    selectedText.length &&
+    (selectedText.length + currentCall.length > 4 ||
+      Buffer.byteLength(JSON.stringify({ selectedText, currentCall }), "utf8") +
+        Buffer.byteLength(input, "utf8") +
+        128 >
+        2000)
+  )
+    selectedText.shift();
+};
 
 export class VoiceTurnService {
   private readonly contexts = new Map<string, Context>();
@@ -123,6 +140,7 @@ export class VoiceTurnService {
     private readonly clock: () => Date = () => new Date(),
     private readonly telemetry: (metric: VoiceTurnMetric) => void = () =>
       undefined,
+    private readonly handoffs?: Pick<VoiceContextHandoffs, "take">,
   ) {
     this.unsubscribe = sessions.onTermination((id) => {
       this.discard(id);
@@ -140,6 +158,7 @@ export class VoiceTurnService {
     this.contexts.delete(id);
     context.controller.abort();
     context.pairs.length = 0;
+    context.textPairs.length = 0;
     context.latest = null;
   }
   close() {
@@ -261,6 +280,13 @@ export class VoiceTurnService {
         sequence: 0,
         busy: false,
         pairs: [],
+        textPairs: session.contextHandoffHash
+          ? this.handoffs
+            ? this.handoffs.take(session)
+            : (() => {
+                throw new VoiceMediaError();
+              })()
+          : [],
         controller: new AbortController(),
         latest: null,
       };
@@ -269,6 +295,8 @@ export class VoiceTurnService {
     if (input.sequence !== context.sequence + 1)
       throw new VoiceLedgerError("STALE_ATTEMPT");
     const recent = history(context.pairs, input.finalTranscript);
+    trimSelectedText(context.textPairs, recent, input.finalTranscript);
+    const textHandoff = context.textPairs.length > 0;
     context.busy = true;
     let claimed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -333,10 +361,18 @@ export class VoiceTurnService {
         reply = await Promise.race([
           this.provider.reply(
             input.finalTranscript,
-            { kinds: [], prompt: JSON.stringify(recent) },
+            {
+              kinds: [],
+              prompt: JSON.stringify(
+                textHandoff
+                  ? { selectedText: context.textPairs, currentCall: recent }
+                  : recent,
+              ),
+            },
             route,
             {
               voice: true,
+              textHandoff,
               signal: requestSignal,
               voiceObserver: (observation) => {
                 phase = observation.phase;
@@ -432,6 +468,7 @@ export class VoiceTurnService {
         ...recent,
         { user: input.finalTranscript, assistant: spokenText },
       ]);
+      trimSelectedText(context.textPairs, context.pairs);
       context.latest = { keyHash, fingerprint, response: result };
       report({ outcome: "GENERATED", phase });
       return result;

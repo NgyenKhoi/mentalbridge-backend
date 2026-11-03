@@ -30,6 +30,14 @@ class VoiceConsentContractTests {
 			}
 		}
 		assertThat(schemas.get("VoiceOwnerCheck").getProperties()).containsOnlyKeys("ownerId", "voiceSessionId", "purpose");
+		assertThat(((io.swagger.v3.oas.models.media.Schema<?>) schemas.get("VoiceDisclosure").getProperties().get("consentVersion")).getConst())
+				.isEqualTo("ai-voice-processing-capstone-v2");
+		assertThat(((io.swagger.v3.oas.models.media.Schema<?>) schemas.get("VoiceDualConsentDecision").getProperties().get("voiceConsentVersion")).getConst())
+				.isEqualTo("ai-voice-processing-capstone-v2");
+		for (var schema : List.of("VoiceConsent", "VoiceConsentCommand")) {
+			assertThat(((io.swagger.v3.oas.models.media.Schema<?>) schemas.get(schema).getProperties().get("consentVersion")).getEnum())
+					.isEqualTo(List.of("ai-voice-processing-capstone-v1", "ai-voice-processing-capstone-v2"));
+		}
 		assertThat(schemas.get("VoiceProblem").getAdditionalProperties()).isEqualTo(false);
 		assertThat(schemas.get("VoiceProblem").getProperties()).containsOnlyKeys("type", "title", "status", "code", "correlationId");
 		assertThat(api.getPaths()).doesNotContainKeys("/api/v1/ai-companion/voice-sessions", "/api/v1/ai-companion/voice-eligibility");

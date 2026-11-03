@@ -10,9 +10,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +45,48 @@ class VoiceConsentIntegrationTests extends CareTestProperties {
 	@Autowired ConsentService existing;
 	@Autowired JdbcClient jdbc;
 	@Autowired MockMvc mvc;
+	@Autowired ConsentDecisionRepository decisions;
+	@Autowired VoiceConsentProperties voiceProperties;
+
+	@Test
+	void v1HistoryNeedsV2ReconsentAndExactReplayCannotRelabelOrRestoreIt() throws Exception {
+		var owner = profile();
+		var session = UUID.randomUUID();
+		existing.record(owner, "synthetic-v2-reconsent-ai-key", new ConsentService.DecisionCommand(
+				"AI_PROCESSING", AiProcessingDisclosureService.VERSION, true));
+		var key = UUID.randomUUID().toString();
+		var mac = Mac.getInstance("HmacSHA256");
+		mac.init(new SecretKeySpec(voiceProperties.idempotencyHmacKey().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+		var storedKey = HexFormat.of().formatHex(mac.doFinal(("voice-consent-key|" + owner + "|" + key).getBytes(StandardCharsets.UTF_8)));
+		var hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+				("AI_VOICE_PROCESSING|" + VoiceConsentService.LEGACY_VERSION + "|true").getBytes(StandardCharsets.UTF_8)));
+		var old = decisions.saveAndFlush(new ConsentDecisionEntity(owner, "AI_VOICE_PROCESSING",
+				VoiceConsentService.LEGACY_VERSION, true, storedKey, hash, Instant.parse("2026-10-31T00:00:00Z")));
+		assertThat(voice.current(owner).current()).isFalse();
+		assertThat(voice.current(owner).granted()).isFalse();
+		assertThat(voice.authorize(owner, session).authorized()).isFalse();
+		var legacyReplay = voice.record(owner, key, VoiceConsentService.LEGACY_VERSION, true);
+		assertThat(legacyReplay.consentVersion()).isEqualTo(VoiceConsentService.LEGACY_VERSION);
+		assertThat(legacyReplay.current()).isFalse();
+		assertThat(legacyReplay.acceptedAt()).isEqualTo(old.decidedAt());
+		assertThatThrownBy(() -> voice.record(owner, UUID.randomUUID().toString(), VoiceConsentService.LEGACY_VERSION, true))
+				.isInstanceOfSatisfying(VoiceApiException.class, exception -> assertThat(exception.code()).isEqualTo("INVALID_REQUEST"));
+		assertThatThrownBy(() -> voice.record(owner, key, VoiceConsentService.VERSION, true))
+				.isInstanceOfSatisfying(VoiceApiException.class, exception -> assertThat(exception.code()).isEqualTo("IDEMPOTENCY_CONFLICT"));
+		voice.record(owner, UUID.randomUUID().toString(), VoiceConsentService.VERSION, true);
+		assertThat(voice.authorize(owner, session).authorized()).isTrue();
+		voice.record(owner, key, VoiceConsentService.LEGACY_VERSION, true);
+		assertThat(voice.current(owner).consentVersion()).isEqualTo(VoiceConsentService.VERSION);
+		assertThat(voice.current(owner).granted()).isTrue();
+		voice.record(owner, UUID.randomUUID().toString(), VoiceConsentService.VERSION, false);
+		voice.record(owner, key, VoiceConsentService.LEGACY_VERSION, true);
+		assertThat(voice.authorize(owner, session).authorized()).isFalse();
+		assertThat(existing.authorizeAiProcessing(owner).authorized()).isTrue();
+		assertThat(jdbc.sql("select policy_version from consent_decision where id=:id").param("id", old.id()).query(String.class).single())
+				.isEqualTo(VoiceConsentService.LEGACY_VERSION);
+		assertThat(jdbc.sql("select count(*) from consent_decision where user_id=:owner and consent_type='AI_VOICE_PROCESSING'")
+				.param("owner", owner).query(Long.class).single()).isEqualTo(3);
+	}
 
 	@Test
 	void acceptsWithdrawsAndKeepsTextAndGenericCollectionUnchanged() throws Exception {
@@ -101,7 +150,7 @@ class VoiceConsentIntegrationTests extends CareTestProperties {
 	void realHttpBoundaryUsesOwnedSubjectAndServiceAssertionWithoutUserBearer() throws Exception {
 		var owner = profile();
 		var other = profile();
-		var body = "{\"consentVersion\":\"ai-voice-processing-capstone-v1\",\"granted\":true}";
+		var body = "{\"consentVersion\":\"ai-voice-processing-capstone-v2\",\"granted\":true}";
 		mvc.perform(post(PUBLIC).with(user(owner)).header("Idempotency-Key", UUID.randomUUID())
 				.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk())
 				.andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.acceptedAt").isString());

@@ -14,7 +14,7 @@ const consentSchema = z
     ...ownerBinding,
     aiProcessingGranted: z.boolean(),
     voiceProcessingGranted: z.boolean(),
-    voiceConsentVersion: z.literal("ai-voice-processing-capstone-v1"),
+    voiceConsentVersion: z.literal("ai-voice-processing-capstone-v2"),
     authorized: z.boolean(),
   })
   .strict()

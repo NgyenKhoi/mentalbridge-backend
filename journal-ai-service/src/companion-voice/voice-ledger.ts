@@ -81,6 +81,7 @@ export interface VoiceSession {
   ownerId: string;
   keyHash: string;
   fingerprint: string;
+  contextHandoffHash?: string;
   state: VoiceState;
   policyVersion: string;
   entitlement: VoiceEntitlementSnapshot;
@@ -114,6 +115,8 @@ export interface ReserveVoiceInput {
   ownerId: string;
   keyHash: string;
   fingerprint: string;
+  contextHandoffHash?: string;
+  contextHandoffExpiresAt?: Date;
   now: Date;
   entitlement: VoiceEntitlementSnapshot;
   authorityExpiresAt?: Date;
@@ -449,7 +452,9 @@ export class MongoVoiceLedger {
     if (
       !uuid.test(input.voiceSessionId) ||
       !hash.test(input.keyHash) ||
-      !hash.test(input.fingerprint)
+      !hash.test(input.fingerprint) ||
+      (input.contextHandoffHash !== undefined &&
+        !hash.test(input.contextHandoffHash))
     )
       throw new VoiceLedgerError("INVALID_REQUEST");
     return this.atomic(async (transaction) => {
@@ -458,11 +463,33 @@ export class MongoVoiceLedger {
         { session: transaction },
       );
       if (prior && prior.expiresAt > input.now) {
-        if (prior.fingerprint !== input.fingerprint)
+        if (
+          prior.fingerprint !== input.fingerprint ||
+          prior.contextHandoffHash !== input.contextHandoffHash
+        )
           throw new VoiceLedgerError("IDEMPOTENCY_CONFLICT");
         return publicSession(prior);
       }
       if (prior) throw new VoiceLedgerError("SESSION_EXPIRED");
+      if (
+        input.contextHandoffHash !== undefined &&
+        (await this.sessions.findOne(
+          { contextHandoffHash: input.contextHandoffHash },
+          { session: transaction },
+        ))
+      )
+        throw new VoiceLedgerError("IDEMPOTENCY_CONFLICT");
+      if (
+        (input.contextHandoffHash !== undefined) !==
+          (input.contextHandoffExpiresAt !== undefined) ||
+        (input.contextHandoffExpiresAt !== undefined &&
+          (!(input.contextHandoffExpiresAt instanceof Date) ||
+            !Number.isFinite(input.contextHandoffExpiresAt.getTime()) ||
+            input.contextHandoffExpiresAt <= input.now ||
+            input.contextHandoffExpiresAt.getTime() >
+              input.now.getTime() + 120_000))
+      )
+        throw new VoiceLedgerError("INVALID_REQUEST");
       if (this.pilot) {
         if (!voicePilotAllows(this.pilot, input.ownerId, input.now))
           throw new VoiceLedgerError("QUOTA_EXHAUSTED");
@@ -558,6 +585,9 @@ export class MongoVoiceLedger {
         ownerId: input.ownerId,
         keyHash: input.keyHash,
         fingerprint: input.fingerprint,
+        ...(input.contextHandoffHash !== undefined
+          ? { contextHandoffHash: input.contextHandoffHash }
+          : {}),
         state: "AUTHORIZED",
         policyVersion: VOICE_POLICY_VERSION,
         entitlement: input.entitlement,

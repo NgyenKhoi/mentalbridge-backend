@@ -67,7 +67,7 @@ export interface VoiceEligibility {
     reservedSeconds: number;
   };
   checkedAt: string;
-  voiceConsentVersion: "ai-voice-processing-capstone-v1";
+  voiceConsentVersion: "ai-voice-processing-capstone-v2";
 }
 
 const isTerminal = (session: VoiceSession) =>
@@ -178,7 +178,7 @@ export class VoiceAccessService {
           reservedSeconds: quota.reservedSeconds,
         },
         checkedAt: now.toISOString(),
-        voiceConsentVersion: "ai-voice-processing-capstone-v1",
+        voiceConsentVersion: "ai-voice-processing-capstone-v2",
       };
     } catch (error) {
       throw this.failure(error);
@@ -189,20 +189,41 @@ export class VoiceAccessService {
     ownerId: string,
     idempotencyKey: string,
     correlationId: string,
+    request: { handoffToken?: string } = {},
+    validatedHandoffHash?: string,
+    handoffExpiresAt?: Date,
   ): Promise<VoiceSession> {
+    const parsed = z
+      .object({ handoffToken: z.string().min(1).max(4096).optional() })
+      .strict()
+      .safeParse(request);
     if (
       !z.uuid().safeParse(ownerId).success ||
-      !z.uuid().safeParse(idempotencyKey).success
+      !z.uuid().safeParse(idempotencyKey).success ||
+      !parsed.success ||
+      Boolean(parsed.data.handoffToken) !==
+        (validatedHandoffHash !== undefined) ||
+      (validatedHandoffHash !== undefined &&
+        !/^[A-Za-z0-9_-]{43}$/.test(validatedHandoffHash))
     ) {
       throw new VoiceAccessError("INVALID_REQUEST");
     }
     const keyHash = this.digest(`voice:start:${ownerId}:${idempotencyKey}`);
     const fingerprint = this.digest(
-      `voice:start:${ownerId}:companion-voice-policy-v1:{}`,
+      `voice:start:${ownerId}:companion-voice-policy-v1:${JSON.stringify(
+        parsed.data.handoffToken
+          ? { handoffToken: parsed.data.handoffToken }
+          : {},
+      )}`,
     );
     try {
       const existing = await this.ledger.replay(ownerId, keyHash, this.clock());
       if (existing) {
+        if (
+          existing.fingerprint !== fingerprint ||
+          existing.contextHandoffHash !== validatedHandoffHash
+        )
+          throw new VoiceAccessError("IDEMPOTENCY_CONFLICT");
         return isTerminal(existing) || existing.state === "ENDING"
           ? existing
           : await this.authorizeSession(
@@ -223,6 +244,11 @@ export class VoiceAccessService {
           this.clock(),
         );
         if (!accepted) throw new VoiceAccessError("INVALID_SESSION_STATE");
+        if (
+          accepted.fingerprint !== fingerprint ||
+          accepted.contextHandoffHash !== validatedHandoffHash
+        )
+          throw new VoiceAccessError("IDEMPOTENCY_CONFLICT");
         return isTerminal(accepted) || accepted.state === "ENDING"
           ? accepted
           : await this.authorizeSession(
@@ -235,6 +261,16 @@ export class VoiceAccessService {
         throw new VoiceAccessError("INVALID_SESSION_STATE");
       }
       try {
+        if (
+          (validatedHandoffHash !== undefined) !==
+            (handoffExpiresAt !== undefined) ||
+          (handoffExpiresAt !== undefined &&
+            (!(handoffExpiresAt instanceof Date) ||
+              !Number.isFinite(handoffExpiresAt.getTime()) ||
+              handoffExpiresAt <= this.clock() ||
+              handoffExpiresAt.getTime() > this.clock().getTime() + 120_000))
+        )
+          throw new VoiceAccessError("INVALID_REQUEST");
         const voiceSessionId = randomUUID();
         const decision = await this.authorizer.check(
           ownerId,
@@ -242,6 +278,8 @@ export class VoiceAccessService {
           correlationId,
         );
         const now = this.clock();
+        if (handoffExpiresAt !== undefined && handoffExpiresAt <= now)
+          throw new VoiceAccessError("INVALID_REQUEST");
         const denial = accessDenial(decision, now);
         if (denial) throw new VoiceAccessError(denial);
         if (!this.providerReady(decision.entitlement.packageCode)) {
@@ -252,6 +290,12 @@ export class VoiceAccessService {
           ownerId,
           keyHash,
           fingerprint,
+          ...(validatedHandoffHash !== undefined
+            ? { contextHandoffHash: validatedHandoffHash }
+            : {}),
+          ...(handoffExpiresAt !== undefined
+            ? { contextHandoffExpiresAt: handoffExpiresAt }
+            : {}),
           claimExpiresAt: claim.expiresAt,
           now,
           authorityExpiresAt: authorityDeadline(decision, now),

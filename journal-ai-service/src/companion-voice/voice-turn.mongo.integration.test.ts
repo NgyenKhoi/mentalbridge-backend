@@ -7,17 +7,21 @@ import type { INestApplication } from "@nestjs/common";
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
+import { z } from "zod";
 import type { VoiceObserver } from "../llm-providers/voice-diagnostics.js";
-import { exportSPKI, generateKeyPair } from "jose";
+import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { createApplication } from "../application.js";
 import {
   loadConfiguration,
   type ServiceConfiguration,
 } from "../configuration/configuration.js";
-import type {
-  ChatProvider,
-  ProviderReply,
+import {
+  ChatCrypto,
+  type Conversation,
+  type ChatProvider,
+  type ProviderReply,
 } from "../companion-chat/companion-chat.js";
+import { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import type {
   VoiceMediaProvider,
   VoiceMediaReference,
@@ -39,6 +43,7 @@ const migrations = [
   "013_companion_voice_quota.cjs",
   "014_companion_voice_media.cjs",
   "015_companion_voice_turn_fences.cjs",
+  "016_companion_voice_context_handoff.cjs",
 ].map(
   (file) =>
     require(`../../migrations/${file}`) as {
@@ -83,8 +88,21 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   assert.ok(uri);
   const client = new MongoClient(uri);
   await client.connect();
-  const { publicKey } = await generateKeyPair("RS256", { extractable: true });
+  const { publicKey, privateKey } = await generateKeyPair("RS256", {
+    extractable: true,
+  });
   const publicKeyPem = await exportSPKI(publicKey);
+  const userToken = (owner: string, role = "USER") =>
+    new SignJWT({ roles: [role] })
+      .setProtectedHeader({ alg: "RS256", kid: "synthetic" })
+      .setIssuer("https://identity.voice.test")
+      .setAudience("mentalbridge-api")
+      .setSubject(owner)
+      .setIssuedAt()
+      .setNotBefore("0s")
+      .setExpirationTime("5m")
+      .setJti(randomUUID())
+      .sign(privateKey);
   const databases: Db[] = [];
   const applications: INestApplication[] = [];
   t.after(async () => {
@@ -99,12 +117,36 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   let count = 0;
   const fixture = async (
     pilot: boolean | Pick<VoicePilot, "maxSessionSeconds" | "maxTurns"> = false,
+    withHandoff = false,
+    beforeStart?: (state: {
+      app: INestApplication;
+      db: Db;
+      owner: string;
+      initialStartKey: string;
+      conversationId: string;
+      authentication: string;
+      prepared: {
+        handoffToken: string;
+        expiresAt: string;
+        selectedPairs: number;
+        policyVersion: string;
+      };
+    }) => Promise<string>,
   ) => {
     const name = `voice_turn_verify_${String(Date.now())}_${String(count++)}`;
     assert.match(name, /^voice_turn_verify_\d+_\d+$/);
     const db = client.db(name);
     databases.push(db);
     for (const migration of migrations) await migration.up(db);
+    if (withHandoff) {
+      for (const name of [
+        "010_ai_companion_chat_quotas.cjs",
+        "012_ai_companion_conversation_context.cjs",
+      ])
+        await (
+          require(`../../migrations/${name}`) as { up(db: Db): Promise<void> }
+        ).up(db);
+    }
     let now = new Date();
     const clock = () => new Date(now);
     let ai = true;
@@ -154,6 +196,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     };
     const token = "synthetic-worker-voice-turn-credential-32-characters";
     const owner = randomUUID();
+    const initialStartKey = randomUUID();
     const configuration = loadConfiguration({
       NODE_ENV: "test",
       CI: "true",
@@ -164,6 +207,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       JOURNAL_AI_MONGODB_URI: uri,
       JOURNAL_AI_MONGODB_DATABASE: name,
       JOURNAL_AI_LOG_LEVEL: "silent",
+      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: String(withHandoff),
       JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: token,
       ...(pilot
         ? {
@@ -207,7 +251,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
                   voiceProcessingGranted: voice,
                   authorized: ai && voice,
                   voiceConsentVersion:
-                    "ai-voice-processing-capstone-v1" as const,
+                    "ai-voice-processing-capstone-v2" as const,
                 },
                 entitlement: {
                   ...binding,
@@ -237,11 +281,75 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     };
     const left = await build();
     const right = await build();
-    const start = async () => {
+    let handoffToken: string | undefined;
+    if (withHandoff) {
+      const conversationId = randomUUID(),
+        crypto = new ChatCrypto(config);
+      await db
+        .collection<Conversation>("ai_companion_conversations")
+        .insertOne({
+          _id: conversationId,
+          ownerAccountId: owner,
+          title: "Synthetic handoff",
+          context: {
+            sources: {
+              plan: false,
+              diary: false,
+              screening: false,
+              resourceIds: [],
+            },
+            updatedAt: clock(),
+          },
+          messages: (
+            [
+              ["USER", "Chủ đề học tiếng Việt giả lập"],
+              ["ASSISTANT", "Mình nghe bạn nói về việc học."],
+            ] as const
+          ).map(([role, text]) => {
+            const messageId = randomUUID();
+            return {
+              messageId,
+              role,
+              content: crypto.encrypt(owner, conversationId, messageId, text),
+              createdAt: clock(),
+              route: null,
+              contextKinds: [],
+            };
+          }),
+          createdAt: clock(),
+          updatedAt: clock(),
+          expiresAt: new Date(now.getTime() + 86400000),
+        });
+      const authentication = await userToken(owner);
+      const response = await request(left.app.getHttpServer() as Server)
+        .post("/api/v1/ai-companion/voice-context-handoffs")
+        .set("Authorization", `Bearer ${authentication}`)
+        .send({ conversationId })
+        .expect(200)
+        .expect("Cache-Control", "no-store");
+      const prepared = response.body as {
+        handoffToken: string;
+        expiresAt: string;
+        selectedPairs: number;
+        policyVersion: string;
+      };
+      handoffToken =
+        (await beforeStart?.({
+          app: left.app,
+          db,
+          owner,
+          initialStartKey,
+          conversationId,
+          authentication,
+          prepared,
+        })) ?? prepared.handoffToken;
+    }
+    const start = async (key = randomUUID()) => {
       const started = await left.sessions.start(
         owner,
+        key,
         randomUUID(),
-        randomUUID(),
+        handoffToken ? { handoffToken } : {},
       );
       const id = started.voiceSessionId;
       const document = await db
@@ -273,7 +381,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       );
       return { id, attemptId: lease.attemptId, leaseId: lease.leaseId };
     };
-    const active = await start();
+    const active = await start(initialStartKey);
     const input = (
       sequence = 1,
       text = "Hôm nay tôi thấy hơi lo lắng",
@@ -314,6 +422,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       clock,
       metrics,
       token,
+      handoffToken,
       connected: (value: boolean) => {
         connected = value;
       },
@@ -336,6 +445,281 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     };
   };
+
+  await t.test(
+    "an accepted same-key retry can bind pending Text context without terminating or duplicating the first START",
+    async () => {
+      let retry: ReturnType<VoiceSessionsService["start"]> | undefined;
+      const f = await fixture(
+        false,
+        true,
+        ({ app, owner, initialStartKey, prepared }) => {
+          const handoffs = app.get(VoiceContextHandoffs);
+          const sessions = app.get(VoiceSessionsService);
+          const verifySnapshot = handoffs.verifySnapshot.bind(handoffs);
+          const acceptedBeforeBind = hold();
+          const resumeFirst = hold();
+          let checks = 0;
+          handoffs.verifySnapshot = async (...args) => {
+            await verifySnapshot(...args);
+            if (++checks === 1) {
+              acceptedBeforeBind.release();
+              await resumeFirst.wait;
+            }
+          };
+          retry = (async () => {
+            await acceptedBeforeBind.wait;
+            return sessions.start(owner, initialStartKey, randomUUID(), {
+              handoffToken: prepared.handoffToken,
+            });
+          })().finally(() => {
+            resumeFirst.release();
+          });
+          void retry.catch(() => undefined);
+          return Promise.resolve(prepared.handoffToken);
+        },
+      );
+      assert.ok(retry);
+      assert.equal((await retry).voiceSessionId, f.active.id);
+      const stored = await f.db
+        .collection("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(stored?.state, "ACTIVE");
+      assert.equal(
+        await f.db.collection("ai_voice_sessions").countDocuments(),
+        1,
+      );
+      assert.equal(await f.db.collection("ai_voice_media").countDocuments(), 1);
+      await f.generate(f.input());
+      assert.match(f.contexts[0] ?? "", /selectedText/u);
+      assert.equal(f.calls(), 1);
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "owner HTTP handoff preparation is content-free, does not admit and rejects a changed snapshot before reservation",
+    async () => {
+      const f = await fixture(
+        false,
+        true,
+        async ({
+          app,
+          db,
+          owner,
+          conversationId,
+          authentication,
+          prepared,
+        }) => {
+          const path = "/api/v1/ai-companion/voice-context-handoffs";
+          const server = app.getHttpServer() as Server;
+          const prepare = (body: object, bearer = authentication) =>
+            request(server)
+              .post(path)
+              .set("Authorization", `Bearer ${bearer}`)
+              .send(body);
+          assert.deepEqual(Object.keys(prepared).sort(), [
+            "expiresAt",
+            "handoffToken",
+            "policyVersion",
+            "selectedPairs",
+          ]);
+          assert.equal(prepared.policyVersion, "text-voice-handoff-v1");
+          assert.equal(prepared.selectedPairs, 1);
+          assert.ok(Date.parse(prepared.expiresAt) > Date.now());
+          const opaquePayload = Buffer.from(
+            prepared.handoffToken.split(".")[0] ?? "",
+            "base64url",
+          ).toString("utf8");
+          assert.equal(opaquePayload.includes("Chủ đề học"), false);
+          assert.equal(opaquePayload.includes("Mình nghe"), false);
+          await request(server)
+            .post(path)
+            .send({ conversationId })
+            .expect(401)
+            .expect("Cache-Control", "no-store");
+          await prepare(
+            { conversationId },
+            await userToken(owner, "SPECIALIST"),
+          )
+            .expect(403)
+            .expect("Cache-Control", "no-store");
+          await prepare({ conversationId }, await userToken(randomUUID()))
+            .expect(404)
+            .expect("Cache-Control", "no-store");
+          for (const body of [
+            { conversationId: "not-a-uuid" },
+            { conversationId, ownerId: owner },
+            { conversationId, context: "SYNTHETIC_CLIENT_CONTEXT" },
+          ])
+            await prepare(body).expect(422).expect("Cache-Control", "no-store");
+          await request(server)
+            .post(path)
+            .set("Authorization", `Bearer ${authentication}`)
+            .set("Content-Type", "text/plain")
+            .send(JSON.stringify({ conversationId }))
+            .expect(422)
+            .expect("Cache-Control", "no-store");
+          await db
+            .collection<Conversation>("ai_companion_conversations")
+            .updateOne(
+              { _id: conversationId },
+              { $set: { updatedAt: new Date(Date.now() + 1) } },
+            );
+          const changed = await request(server)
+            .post("/api/v1/ai-companion/voice-sessions")
+            .set("Authorization", `Bearer ${authentication}`)
+            .set("Idempotency-Key", randomUUID())
+            .send({ handoffToken: prepared.handoffToken })
+            .expect(409)
+            .expect("Cache-Control", "no-store");
+          assert.equal(
+            (changed.body as { code: string }).code,
+            "STALE_ATTEMPT",
+          );
+          for (const collection of [
+            "ai_voice_sessions",
+            "ai_voice_daily_usage",
+            "ai_voice_media",
+          ])
+            assert.equal(await db.collection(collection).countDocuments(), 0);
+          const refreshed = await prepare({ conversationId })
+            .expect(200)
+            .expect("Cache-Control", "no-store");
+          return (refreshed.body as { handoffToken: string }).handoffToken;
+        },
+      );
+      assert.equal(f.calls(), 0);
+      assert.equal(
+        await f.db.collection("ai_voice_sessions").countDocuments(),
+        1,
+      );
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "opted-in Text context reaches only the bound Voice RAM and is cleared on revocation",
+    async () => {
+      const f = await fixture(false, true);
+      await f.generate(f.input());
+      assert.match(
+        f.contexts[0] ?? "",
+        /selectedText.*Chủ đề học tiếng Việt giả lập/u,
+      );
+      assert.match(f.contexts[0] ?? "", /currentCall/u);
+      const stored = await f.db
+        .collection("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(typeof stored?.contextHandoffHash, "string");
+      for (const name of [
+        "ai_voice_sessions",
+        "ai_voice_media",
+        "ai_voice_media_commands",
+      ])
+        assert.equal(
+          JSON.stringify(await f.db.collection(name).find().toArray()).includes(
+            "Chủ đề học",
+          ),
+          false,
+        );
+      await assert.rejects(
+        f.right.turns.generate(
+          f.active.id,
+          randomUUID(),
+          f.input(2),
+          randomUUID(),
+        ),
+      );
+      f.revoke();
+      await assert.rejects(f.generate(f.input(2)));
+      assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "voice-only context does not contain stored Text or a previous call",
+    async () => {
+      const f = await fixture();
+      await f.generate(f.input());
+      assert.equal(f.contexts[0], "[]");
+      assert.equal(f.handoffToken, undefined);
+    },
+  );
+
+  await t.test(
+    "selected Text and current-call pairs remain within their shared RAM bounds immediately after each reply",
+    async () => {
+      const pair = z.object({ user: z.string(), assistant: z.string() });
+      for (const message of [
+        reply().message,
+        "Mình đang lắng nghe. ".repeat(18).trim(),
+      ]) {
+        const f = await fixture(false, true);
+        f.respond(() => Promise.resolve({ ...reply(), message }));
+        for (let sequence = 1; sequence <= 5; sequence++) {
+          const text = `Tôi muốn chia sẻ thêm câu ${String(sequence)}`;
+          await f.generate(f.input(sequence, text));
+          const outgoing = f.contexts.at(-1) ?? "";
+          const parsed: unknown = JSON.parse(outgoing);
+          const sent = z
+            .union([
+              z.array(pair),
+              z.object({
+                selectedText: z.array(pair),
+                currentCall: z.array(pair),
+              }),
+            ])
+            .parse(parsed);
+          const sentCount = Array.isArray(sent)
+            ? sent.length
+            : sent.selectedText.length + sent.currentCall.length;
+          assert.ok(sentCount <= 4);
+          assert.ok(
+            Buffer.byteLength(outgoing, "utf8") +
+              Buffer.byteLength(text, "utf8") +
+              128 <=
+              2000,
+          );
+          const contexts: unknown = Reflect.get(f.left.turns, "contexts");
+          assert.ok(contexts instanceof Map);
+          const retained = z
+            .object({
+              pairs: z.array(pair),
+              textPairs: z.array(pair),
+            })
+            .parse(contexts.get(f.active.id));
+          assert.ok(retained.textPairs.length + retained.pairs.length <= 4);
+          const content = retained.textPairs.length
+            ? { selectedText: retained.textPairs, currentCall: retained.pairs }
+            : retained.pairs;
+          assert.ok(
+            Buffer.byteLength(JSON.stringify(content), "utf8") + 128 <= 2000,
+          );
+        }
+        await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+      }
+    },
+  );
+
+  await t.test(
+    "a long Vietnamese current input trims selected Text before provider work without exceeding the shared byte cap",
+    async () => {
+      const f = await fixture(false, true);
+      const text = "Tôi ".repeat(360).trim();
+      assert.ok(Buffer.byteLength(text, "utf8") > 1700);
+      await f.generate(f.input(1, text));
+      assert.equal(f.calls(), 1);
+      assert.equal(f.contexts[0], "[]");
+      assert.ok(
+        Buffer.byteLength(f.contexts[0], "utf8") +
+          Buffer.byteLength(text, "utf8") +
+          128 <=
+          2000,
+      );
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
 
   await t.test(
     "pilot rejects the fifth turn before any provider work and tears down authority",

@@ -12,10 +12,13 @@ import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.HexFormat;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +31,7 @@ import com.mentalbridge.care.profile.UserProfileRepository;
 class VoiceConsentServiceTests {
 	private final ConsentDecisionRepository decisions = mock(ConsentDecisionRepository.class);
 	private final UserProfileRepository profiles = mock(UserProfileRepository.class);
-	private final Instant now = Instant.parse("2026-10-23T10:00:00Z");
+	private final Instant now = Instant.parse("2026-11-02T10:00:00Z");
 	private final UUID owner = UUID.randomUUID();
 	private VoiceConsentService service;
 
@@ -41,20 +44,71 @@ class VoiceConsentServiceTests {
 
 	@Test
 	void publishesTheExactApprovedImmutableVietnameseNotice() throws Exception {
+		assertThat(service.disclosure().disclosureText()).isEqualTo(Files.readString(
+				Path.of("src", "main", "resources", "consent", VoiceConsentService.VERSION + ".txt")).strip());
+		assertThat(service.disclosure().consentVersion()).isEqualTo("ai-voice-processing-capstone-v2");
+		assertThat(service.disclosure().publishedAt()).isEqualTo(Instant.parse("2026-11-02T00:00:00Z"));
+		assertThat(service.disclosure().language()).isEqualTo("vi-VN");
+		assertThat(service.disclosure().disclosureText()).contains("tối đa hai cặp tin nhắn", "không kèm bối cảnh",
+				"không tự đọc nhật ký", "không bị sao chép vào lịch sử Voice", "v1 cần đọc và đồng ý v2");
+	}
+
+	@Test
+	void retainsTheUnchangedHistoricalV1Notice() throws Exception {
 		var policy = Files.readAllLines(Path.of("..", "docs", "policies", "companion-voice-policy-v1.md"));
 		var lines = policy.stream().filter(line -> line.startsWith(">"))
 				.map(line -> line.replaceFirst("^> ?", "").replaceAll("^\\*\\*|\\*\\*$", "")).toList();
-		assertThat(service.disclosure().disclosureText()).isEqualTo(String.join("\n", lines).strip());
-		assertThat(service.disclosure().consentVersion()).isEqualTo(VoiceConsentService.VERSION);
-		assertThat(service.disclosure().language()).isEqualTo("vi-VN");
+		assertThat(Files.readString(Path.of("src", "main", "resources", "consent", VoiceConsentService.LEGACY_VERSION + ".txt")).replace("\r\n", "\n").strip())
+				.isEqualTo(String.join("\n", lines).strip());
 	}
 
 	@Test
 	void missingOrOutdatedVoiceDecisionNeverBecomesAGrant() {
 		when(decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(owner, "AI_VOICE_PROCESSING"))
-				.thenReturn(Optional.empty()).thenReturn(Optional.of(decision("AI_VOICE_PROCESSING", "old-voice-v0", true)));
+				.thenReturn(Optional.empty()).thenReturn(Optional.of(decision("AI_VOICE_PROCESSING", VoiceConsentService.LEGACY_VERSION, true)));
 		assertThat(service.current(owner).current()).isFalse();
 		assertThat(service.current(owner).granted()).isFalse();
+	}
+
+	@Test
+	void legacyVoiceGrantRequiresFreshV2ConsentAndCannotAuthorizeEvenWithCurrentTextConsent() {
+		when(decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(owner, "AI_PROCESSING"))
+				.thenReturn(Optional.of(decision("AI_PROCESSING", AiProcessingDisclosureService.VERSION, true)));
+		when(decisions.findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(owner, "AI_VOICE_PROCESSING"))
+				.thenReturn(Optional.of(decision("AI_VOICE_PROCESSING", VoiceConsentService.LEGACY_VERSION, true)));
+		var current = service.current(owner);
+		assertThat(current.consentVersion()).isEqualTo(VoiceConsentService.VERSION);
+		assertThat(current.current()).isFalse();
+		assertThat(current.granted()).isFalse();
+		var authority = service.authorize(owner, UUID.randomUUID());
+		assertThat(authority.voiceConsentVersion()).isEqualTo(VoiceConsentService.VERSION);
+		assertThat(authority.aiProcessingGranted()).isTrue();
+		assertThat(authority.voiceProcessingGranted()).isFalse();
+		assertThat(authority.authorized()).isFalse();
+	}
+
+	@Test
+	void legacyReplayRetainsItsVersionAndNeverAppendsOrBecomesCurrentV2Authority() throws Exception {
+		prepareRecord();
+		var key = UUID.randomUUID().toString();
+		assertThatThrownBy(() -> service.record(owner, key, VoiceConsentService.LEGACY_VERSION, true))
+				.isInstanceOfSatisfying(VoiceApiException.class, exception -> assertThat(exception.code()).isEqualTo("INVALID_REQUEST"));
+		var storedKey = ArgumentCaptor.forClass(String.class);
+		verify(decisions).findByUserIdAndConsentTypeAndIdempotencyKey(eq(owner), eq("AI_VOICE_PROCESSING"), storedKey.capture());
+		var hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+				("AI_VOICE_PROCESSING|" + VoiceConsentService.LEGACY_VERSION + "|true").getBytes(StandardCharsets.UTF_8)));
+		var historical = new ConsentDecisionEntity(owner, "AI_VOICE_PROCESSING", VoiceConsentService.LEGACY_VERSION,
+				true, storedKey.getValue(), hash, now.minusSeconds(86400));
+		when(decisions.findByUserIdAndConsentTypeAndIdempotencyKey(owner, "AI_VOICE_PROCESSING", storedKey.getValue()))
+				.thenReturn(Optional.of(historical));
+		var replay = service.record(owner, key, VoiceConsentService.LEGACY_VERSION, true);
+		assertThat(replay.consentVersion()).isEqualTo(VoiceConsentService.LEGACY_VERSION);
+		assertThat(replay.current()).isFalse();
+		assertThat(replay.granted()).isTrue();
+		assertThat(replay.acceptedAt()).isEqualTo(historical.decidedAt());
+		assertThatThrownBy(() -> service.record(owner, key, VoiceConsentService.VERSION, true))
+				.isInstanceOfSatisfying(VoiceApiException.class, exception -> assertThat(exception.code()).isEqualTo("IDEMPOTENCY_CONFLICT"));
+		verify(decisions, times(0)).saveAndFlush(any());
 	}
 
 	@Test

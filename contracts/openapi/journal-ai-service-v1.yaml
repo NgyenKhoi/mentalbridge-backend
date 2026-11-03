@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.16.0
+  version: 1.17.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -102,6 +102,53 @@ paths:
           $ref: "#/components/responses/VoiceProblem504"
       tags:
         - AI Companion
+  /api/v1/ai-companion/voice-context-handoffs:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    post:
+      operationId: prepareVoiceContextHandoff
+      summary: Prepare an explicitly selected owner Text conversation for Voice.
+      description: >-
+        Disabled by default. Requires current AI_PROCESSING, Voice disclosure v2 and PLUS/PREMIUM.
+        Return a content-free signed ticket expiring in 120 seconds; no admission, provider or microphone.
+        Only the last two complete adjacent pairs with empty contextKinds and at most 1200 UTF-8 bytes
+        are eligible; stop at an ineligible/oversized pair rather than silently cross a private-context gap.
+        START rechecks owner, current authority and exact unexpired snapshot. A ticket is bound once to one
+        session through the admission transaction. Wrong/missing/deleted/expired conversation returns404;
+        no eligible pair returns422. Errors never contain Text, ticket or owner identifiers. No automatic fallback.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceContextHandoffCommand"
+      responses:
+        "200":
+          description: Expiring content-free context capability; does not authorize media.
+          headers:
+            Cache-Control:
+              schema: { const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceContextHandoff"
+        "401":
+          $ref: "#/components/responses/VoiceProblem401"
+        "403":
+          $ref: "#/components/responses/VoiceProblem403"
+        "404":
+          $ref: "#/components/responses/VoiceProblem404"
+        "409":
+          $ref: "#/components/responses/VoiceProblem409"
+        "422":
+          $ref: "#/components/responses/VoiceProblem422"
+        "429":
+          $ref: "#/components/responses/VoiceProblem429"
+        "503":
+          $ref: "#/components/responses/VoiceProblem503"
+      tags: [AI Companion]
   /api/v1/ai-companion/voice-sessions:
     x-mentalbridge-status: implemented
     x-mentalbridge-owner: journal-ai-service
@@ -112,7 +159,9 @@ paths:
         USER only. Resolve current subject, both consents and entitlement before atomic Mongo admission. Reserve
         user1/global2 and finite session+seconds before any room/dispatch effect. Existing attempt conflict
         SESSION_LIMIT; duplicate same key reuses logical session. Snapshot day/route/deadline; no text quota or
-        financial writes.
+        financial writes. Optional handoffToken is an explicit Text-context opt-in; absence means zero
+        Text context. Same key with changed intent returns409; consumed handoff cannot be reused with another key.
+        Attached content exists only in RAM and shares the existing four-pair/2000-byte context and token caps.
       security:
         - bearerAuth: []
       parameters:
@@ -131,7 +180,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VoiceEmptyCommand"
+              $ref: "#/components/schemas/VoiceStartCommand"
       responses:
         "202":
           description: Owner-authorized response
@@ -1670,6 +1719,9 @@ components:
         - chargedSeconds
         - deliveredSession
       properties:
+        contextMode:
+          const: TEXT_HANDOFF
+          description: Present only after server-bound selected Text context; absence means voice-only.
         voiceSessionId:
           type: string
           format: uuid
@@ -1770,6 +1822,33 @@ components:
           type: string
           pattern: ^va-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
           description: Exact admitted Agent attempt identity. Require ParticipantKind.AGENT in roomName; never select a participant from its attributes.
+    VoiceContextHandoffCommand:
+      type: object
+      additionalProperties: false
+      required: [conversationId]
+      properties:
+        conversationId: { type: string, format: uuid }
+    VoiceContextHandoff:
+      type: object
+      additionalProperties: false
+      required: [handoffToken, expiresAt, selectedPairs, policyVersion]
+      properties:
+        handoffToken:
+          type: string
+          minLength: 40
+          maxLength: 4096
+          description: Opaque one-session capability; no Text content; keep in RAM and never log or cache.
+        expiresAt: { type: string, format: date-time }
+        selectedPairs: { type: integer, minimum: 1, maximum: 2 }
+        policyVersion: { const: text-voice-handoff-v1 }
+    VoiceStartCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        handoffToken:
+          type: string
+          minLength: 40
+          maxLength: 4096
     VoiceEmptyCommand:
       type: object
       additionalProperties: false
@@ -2264,7 +2343,10 @@ components:
           type: string
           format: date-time
         voiceConsentVersion:
-          const: ai-voice-processing-capstone-v1
+          const: ai-voice-processing-capstone-v2
+        textContextHandoffEnabled:
+          type: boolean
+          description: Optional capability hint; absent or false means handoff is disabled, not an authorization grant.
         maxSessionSeconds:
           type: integer
           enum:
