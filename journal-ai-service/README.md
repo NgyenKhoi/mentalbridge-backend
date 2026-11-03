@@ -100,6 +100,9 @@ approval or active window. AI Text behavior is unchanged.
 Voice observes a closed stop-reason category before output validation. Token
 exhaustion, envelope, JSON, schema and safety rejections have distinct diagnostic
 codes; raw provider bodies, stop strings and conversation content are excluded.
+Only `end_turn` is accepted for Voice completion. Missing reasons and
+`stop_sequence` fail closed as `UNEXPECTED_STOP_REASON`; no stop sequence is
+configured by the Voice request. Valid JSON alone does not authorize speech.
 See [the MB-790 output-validation follow-up](../docs/mb-790-voice-output-validation.md).
 
 Pilot Voice uses the same safety schema/validator with the schema included in

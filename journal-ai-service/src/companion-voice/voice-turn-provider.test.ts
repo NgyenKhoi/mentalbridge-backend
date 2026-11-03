@@ -47,6 +47,16 @@ void test("Voice classifies stopped and invalid output without leaking content o
   const cases = [
     { stopReason: "end_turn", text: JSON.stringify(valid), code: null },
     {
+      stopReason: undefined,
+      text: JSON.stringify(valid),
+      code: "UNEXPECTED_STOP_REASON",
+    },
+    {
+      stopReason: "stop_sequence",
+      text: JSON.stringify(valid),
+      code: "UNEXPECTED_STOP_REASON",
+    },
+    {
       stopReason: "max_tokens",
       text: '{"message":"PRIVATE_PARTIAL',
       code: "OUTPUT_TOKEN_LIMIT",
@@ -129,6 +139,21 @@ void test("Voice classifies stopped and invalid output without leaking content o
         ),
         true,
       );
+      if (
+        item.stopReason === undefined ||
+        item.stopReason === "stop_sequence"
+      ) {
+        assert.deepEqual(
+          observations.find(
+            (value) => value.phase === "bedrock_output_validation",
+          ),
+          {
+            phase: "bedrock_output_validation",
+            stopReason:
+              item.stopReason === undefined ? "MISSING" : "STOP_SEQUENCE",
+          },
+        );
+      }
       assert.equal(
         observations.some(
           (value) => value.phase === "bedrock_response_validated",
@@ -158,6 +183,10 @@ void test("Voice output allowance stays 300 unless an explicit bounded pilot opt
           inferenceConfig: { maxTokens: number };
         };
         assert.equal(body.inferenceConfig.maxTokens, maxOutputTokens ?? 300);
+        assert.equal(
+          Object.hasOwn(body.inferenceConfig, "stopSequences"),
+          false,
+        );
         return Promise.resolve(
           Response.json({
             stopReason: "end_turn",
@@ -256,6 +285,7 @@ void test("pilot phases identify counting rejection before inference and preserv
             : mode === "invalid-json"
               ? new Response("PRIVATE_BODY")
               : Response.json({
+                  stopReason: "end_turn",
                   output: {
                     message: {
                       content: [
@@ -323,6 +353,7 @@ void test("voice reuses the Companion Bedrock schema/prompt/validator without to
     body = JSON.parse(init?.body as string) as Record<string, unknown>;
     return Promise.resolve(
       Response.json({
+        stopReason: "end_turn",
         output: {
           message: {
             content: [
@@ -414,6 +445,7 @@ void test("voice decodes one fenced Bedrock JSON object without relaxing schema 
         calls++;
         return Promise.resolve(
           Response.json({
+            stopReason: "end_turn",
             output: { message: { content: [{ text }] } },
             usage: { inputTokens: 120, outputTokens: 30 },
           }),

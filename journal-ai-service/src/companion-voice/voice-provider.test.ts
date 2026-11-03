@@ -114,6 +114,7 @@ void test("Voice transport targets the actual Singapore Sonnet Converse endpoint
     );
     return Promise.resolve(
       Response.json({
+        stopReason: "end_turn",
         output: {
           message: {
             content: [
@@ -330,6 +331,7 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
         }
         return Promise.resolve(
           Response.json({
+            stopReason: "end_turn",
             output: {
               message: {
                 content: [
@@ -397,6 +399,7 @@ void test("supportive pilot allows short clarification and preserves strict resp
         converses++;
         return Promise.resolve(
           Response.json({
+            stopReason: "end_turn",
             output: {
               message: {
                 content: [

@@ -1510,7 +1510,7 @@ export class RoutedChatProvider implements ChatProvider {
       });
       if (stopReason === "MAX_TOKENS")
         throw new VoiceProviderFailure("OUTPUT_TOKEN_LIMIT");
-      if (stopReason === "OTHER")
+      if (stopReason !== "END_TURN")
         throw new VoiceProviderFailure("UNEXPECTED_STOP_REASON");
     }
     let message: string | undefined;

@@ -20,6 +20,7 @@ import {
 } from "../configuration/configuration.js";
 import {
   ChatCrypto,
+  RoutedChatProvider,
   type Conversation,
   type ChatProvider,
   type ProviderReply,
@@ -930,6 +931,109 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         assert.equal(JSON.stringify(f.metrics).includes("PRIVATE"), false);
         for (let index = 0; index < f.metrics.length; index++)
           assert.equal(f.metrics[index]?.sequence, index + 1);
+      }
+    },
+  );
+
+  await t.test(
+    "otherwise valid Bedrock output without END_TURN cannot register or publish a reply",
+    async () => {
+      for (const stopReason of [undefined, "stop_sequence"] as const) {
+        const f = await fixture();
+        const original = globalThis.fetch;
+        let requests = 0;
+        const message = "Mình đang lắng nghe câu thử riêng của bạn.";
+        f.respond((voiceObserver) =>
+          new RoutedChatProvider({
+            ...f.config,
+            BEDROCK_API_KEY: "PRIVATE_KEY",
+          }).reply(
+            "PRIVATE_SPEECH",
+            { kinds: [], prompt: "PRIVATE_CONTEXT" },
+            {
+              provider: "BEDROCK",
+              model: "global.anthropic.claude-sonnet-4-6",
+            },
+            { voice: true, ...(voiceObserver ? { voiceObserver } : {}) },
+          ),
+        );
+        globalThis.fetch = () => {
+          requests++;
+          return Promise.resolve(
+            Response.json({
+              ...(stopReason === undefined ? {} : { stopReason }),
+              output: {
+                message: {
+                  content: [
+                    {
+                      text: JSON.stringify({
+                        message,
+                        language: "vi",
+                        authority: "SUPPORT_ONLY",
+                        clinicalAssessment: "NONE",
+                        safetyDecision: "NONE",
+                        eligibilityDecision: "NONE",
+                        businessAction: "NONE",
+                        thirdPartyAction: "NONE",
+                      }),
+                    },
+                  ],
+                },
+              },
+              usage: { inputTokens: 90, outputTokens: 25 },
+            }),
+          );
+        };
+        try {
+          await assert.rejects(f.generate(f.input()));
+          assert.equal(requests, 1);
+          assert.equal(f.calls(), 1);
+          const usage = f.metrics.filter(
+            (metric) => metric.outcome === "PROVIDER_USAGE",
+          );
+          assert.equal(usage.length, 1);
+          assert.equal(usage[0]?.inputTokens, 90);
+          assert.equal(usage[0].outputTokens, 25);
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.stopReason ===
+                (stopReason === undefined ? "MISSING" : "STOP_SEQUENCE"),
+            ),
+            true,
+          );
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.outcome === "FAILED" &&
+                metric.code === "UNEXPECTED_STOP_REASON" &&
+                metric.phase === "bedrock_output_validation",
+            ),
+            true,
+          );
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.phase === "bedrock_response_validated" ||
+                metric.phase === "publication_authorized" ||
+                metric.phase === "reply_registered" ||
+                metric.outcome === "GENERATED",
+            ),
+            false,
+          );
+          assert.equal(JSON.stringify(f.metrics).includes("PRIVATE"), false);
+          assert.equal(JSON.stringify(f.metrics).includes(message), false);
+          assert.equal(
+            (
+              await f.db
+                .collection<RawRecord>("ai_voice_sessions")
+                .findOne({ _id: f.active.id })
+            )?.state,
+            "FAILED",
+          );
+        } finally {
+          globalThis.fetch = original;
+        }
       }
     },
   );

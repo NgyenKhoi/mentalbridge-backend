@@ -59,6 +59,7 @@ const response = (provider: Provider, text: string) =>
       : provider === "OPENAI"
         ? { output: [{ content: [{ type: "output_text", text }] }] }
         : {
+            stopReason: "end_turn",
             output: { message: { content: [{ text }] } },
             usage: { inputTokens: 900, outputTokens: 100 },
           },

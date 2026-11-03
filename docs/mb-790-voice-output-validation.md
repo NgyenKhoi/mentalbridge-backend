@@ -23,9 +23,12 @@ No transcript or provider response is requested from the person testing.
 - Voice reports the closed stop categories END_TURN, MAX_TOKENS,
   STOP_SEQUENCE, OTHER or MISSING at bedrock_output_validation. Raw provider
   stop strings, response bodies, transcripts and error messages are excluded.
-- MAX_TOKENS fails as OUTPUT_TOKEN_LIMIT, even if the returned text happens to
-  parse. Other abnormal stops, envelope, JSON, schema and safety failures have
-  separate closed codes. Observed token usage is accounted before validation.
+- Only END_TURN is an accepted Voice completion state. MAX_TOKENS fails as
+  OUTPUT_TOKEN_LIMIT; MISSING, STOP_SEQUENCE and OTHER fail as
+  UNEXPECTED_STOP_REASON, even if the returned JSON is otherwise valid. No stop
+  sequence is configured for this request. Envelope, JSON, schema and safety
+  failures have separate closed codes. Observed token usage is accounted before
+  validation.
 - No retry, repair of incomplete output, provider fallback or unchecked speech
   is introduced. Text output policy, input counting, consent, quota, leases,
   session deadlines and recording/export controls are unchanged.
@@ -56,8 +59,9 @@ this follow-up; it does not republish the earlier MB-790/MB-791 feature commits.
 - Journal formatting, lint, non-emitting TypeScript, build, contracts and
   migrations: PASS, including the current migration 017 validation.
 - Complete Journal unit/HTTP/provider suite: 277/277 PASS.
-- Real disposable Mongo replica-set Voice turn integration: 24/24 PASS,
-  including output-token failure usage/diagnostic and zero reply publication.
+- Real disposable Mongo replica-set Voice turn integration: 25/25 PASS,
+  including output-token failure and missing/stop-sequence completion, retained
+  usage/diagnostic and zero reply publication.
 - Documentation links/ownership and repository paired-change policy: PASS.
 - Independent source review: no confirmed privacy, correctness or compatibility
   defect; the prior live failure remains probable token exhaustion rather than
@@ -66,3 +70,22 @@ this follow-up; it does not republish the earlier MB-790/MB-791 feature commits.
 These results validate the source fix, not a new live campaign. Old caps and
 fences remain immutable; a later 600-token pilot needs a matching new manifest
 and budget before admission. The old 300-token fence would reject it.
+
+## Completion-state review correction
+
+The initial b302984e guard rejected MAX_TOKENS and OTHER but incorrectly let
+MISSING and STOP_SEQUENCE continue. Source review identified this fail-closed
+gap despite the earlier green checks. Completion now requires END_TURN before
+envelope/JSON/schema/safety validation. MAX_TOKENS keeps its specific code;
+every other completion category rejects as UNEXPECTED_STOP_REASON.
+
+Regressions use otherwise valid JSON with missing/stop-sequence completion.
+They exercise the actual provider adapter through Journal and real disposable
+Mongo fixtures, checking one request, one usage observation, failed settlement,
+no validated response, no publication authorization or reply registration, no
+retry and no private content in observations. Existing successful Voice fixtures
+now explicitly declare end_turn. Text-only fixtures keep their prior behavior.
+
+After this review correction, the full 277-test Journal suite, 25-test Mongo
+suite, format/lint/typecheck/build, contracts, migrations, documentation and
+repository checks passed again. No provider call or budget approval is implied.
