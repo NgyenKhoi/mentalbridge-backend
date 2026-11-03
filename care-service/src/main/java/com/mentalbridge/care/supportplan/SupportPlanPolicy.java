@@ -40,6 +40,7 @@ class SupportPlanPolicy {
 	private static final String ACTIVITY_ANXIETY = "00000000-0000-4000-8000-000000000201";
 	private static final String SLEEP_ADJUNCT = "00000000-0000-4000-8000-000000000207";
 	private static final String JOURNAL_ADJUNCT = "00000000-0000-4000-8000-000000000212";
+	private static final Map<String, String> PINNED_VERSIONS = Map.of(ACTIVITY_ANXIETY, "1");
 
 	ProposalRequest request(EvaluationView evaluation) {
 		return request(evaluation, null);
@@ -285,7 +286,7 @@ class SupportPlanPolicy {
 	}
 
 	private ResourceEligibilityQuery query(SlotSpec slot, String resourceId) {
-		return query(slot, resourceId, "0");
+		return query(slot, resourceId, PINNED_VERSIONS.getOrDefault(resourceId, "0"));
 	}
 
 	private ResourceEligibilityQuery query(SlotSpec slot, String resourceId, String contentVersion) {

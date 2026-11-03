@@ -143,7 +143,8 @@ class NativeSupportPlanProposalTests {
 				.doesNotContain("JOURNAL", "PROFESSIONAL_SUPPORT", "ROUTINE_SELF_MANAGEMENT", "SELF_REPORT_REVIEW");
 		assertThat(ofType("RESOURCE")).hasSize(4).allSatisfy(action -> {
 			assertThat(action.sourceOwner()).isEqualTo("CONTENT");
-			assertThat(action.sourceRevision()).isEqualTo("0");
+			assertThat(action.sourceRevision())
+					.isEqualTo("00000000-0000-4000-8000-000000000201".equals(action.sourceId()) ? "1" : "0");
 			assertThat(action.sourcePublicationId()).isNotNull();
 		});
 		assertThat(ofType("EMOTION_CHECK_IN")).singleElement().satisfies(action -> {
