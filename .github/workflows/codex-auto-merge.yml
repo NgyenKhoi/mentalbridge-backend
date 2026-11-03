@@ -1,0 +1,47 @@
+name: Codex auto-merge
+
+# Merges open PRs into dev whose current head Codex reviewed clean, whose PR-template checklist is fully
+# ticked, and which GitHub reports mergeable (required quality-gate green, up to date with dev, code-owner
+# review where CODEOWNERS applies). Label a PR `no-auto-merge` to keep it for a person.
+# Only default-branch triggers: a PR-context event would run workflow YAML edited by the PR with a write token.
+# The default branch must be dev, and the file must exist there.
+on:
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: [Backend quality gate]
+    types: [completed]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: codex-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Merge Codex-reviewed PRs
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Run the reviewed script from dev, never from the PR being merged.
+      - name: Check out dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          persist-credentials: false
+
+      - name: Test the merge decision
+        run: node --test scripts/codex-auto-merge.test.mjs
+
+      - name: Merge eligible PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODEX_REVIEWER_LOGIN: ${{ vars.CODEX_REVIEWER_LOGIN }}
+        run: node scripts/codex-auto-merge.mjs
