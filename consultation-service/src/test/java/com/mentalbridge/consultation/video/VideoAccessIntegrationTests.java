@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -227,6 +228,23 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 		assertThat(credit(fixture)).isEqualTo("HELD");
 		assertThat(jdbc.sql("select count(*) from specialist_earning where appointment_id=:id").param("id", fixture.id)
 				.query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void reopenedEndedRowNeitherDuplicatesItsEndNorStallsLaterDueSessions() throws Exception {
+		var reopened = fixture();
+		var later = fixture();
+		setSchedule(reopened.id, Instant.now().minusSeconds(3601));
+		sessions.closeDueSessions();
+		jdbc.sql("update appointment set status='CONFIRMED', session_ended_at=null, session_policy_version=null where id=:id").param("id", reopened.id).update();
+		setSchedule(later.id, Instant.now().minusSeconds(3601));
+		sessions.closeDueSessions();
+		for (var id : List.of(reopened.id, later.id)) {
+			assertThat(jdbc.sql("select status from appointment where id=:id").param("id", id).query(String.class).single())
+					.isEqualTo("SESSION_ENDED");
+			assertThat(jdbc.sql("select count(*) from appointment_status_history where appointment_id=:id and idempotency_key=:key")
+					.param("id", id).param("key", "video-ended:" + id).query(Long.class).single()).isOne();
+		}
 	}
 
 	@Test

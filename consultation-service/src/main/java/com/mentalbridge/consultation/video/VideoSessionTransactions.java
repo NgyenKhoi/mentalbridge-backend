@@ -108,8 +108,15 @@ class VideoSessionTransactions {
 		appointment.policy = POLICY;
 		appointment.endedAt = actualEnd;
 		appointment.updatedAt = clock.instant();
-		entities.persist(new VideoStatusHistory(appointment, from, actor, reason,
-				"video-ended:" + appointment.id, appointment.updatedAt));
+		var key = "video-ended:" + appointment.id;
+		if (entities.createQuery("""
+				select count(h) from VideoStatusHistory h
+				where h.appointmentId = :id and h.key = :key and h.toStatus = 'SESSION_ENDED'
+				""", Long.class).setParameter("id", appointment.id).setParameter("key", key).getSingleResult() > 0) {
+			entities.flush();
+			return;
+		}
+		entities.persist(new VideoStatusHistory(appointment, from, actor, reason, key, appointment.updatedAt));
 		entities.flush();
 		outbox.record(appointment.id, UUID.randomUUID(), appointment.updatedAt);
 	}
