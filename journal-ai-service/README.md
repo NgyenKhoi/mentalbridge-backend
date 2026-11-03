@@ -2,6 +2,31 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-789 shared Text and Voice guidance
+
+Both real-provider paths use `companion-guidance-v1` and the reviewed,
+non-personal product facts in `companion-domain-knowledge-v1`. The policy
+supports empathetic Vietnamese reflection, clarification and navigation to
+existing Support Guide/help controls. Care retains assessment, safety and
+SupportPlan authority; Consultation retains entitlement authority. The model
+cannot diagnose, prescribe, invent personal facts or execute business actions.
+
+Provider system messages contain fixed policy and delivery instructions only.
+The message and authorized context are serialized as untrusted JSON in the
+user message, including delimiter-like input. Voice rejects nonempty personal
+context kinds before provider execution and continues to use only current-call
+RAM turns. Text retains its separately authorized owner-selected context.
+Voice BRIEF/SUPPORTIVE delivery does not change the shared semantic policy or
+strict response schema; only the validated message can reach TTS.
+
+The persisted `companion-chat-v1` wrapper/schema identifier remains unchanged;
+the separate guidance and knowledge versions are explicit in the system prompt.
+This feature adds no model, RAG service, training pipeline, migration, consent
+scope or provider enablement. Existing Text route configuration, pinned Voice
+Sonnet, input counting, quota, deadlines and teardown remain authoritative.
+See the [MB-789 evidence and provenance audit](../docs/story-mb-789-unified-companion-guidance.md)
+for source limits and the separately authorized real-provider comparison rubric.
+
 ## MB-762 scoped Voice provider
 
 Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
