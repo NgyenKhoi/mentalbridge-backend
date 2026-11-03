@@ -16,14 +16,26 @@ is [care-service-v1.yaml](../contracts/openapi/care-service-v1.yaml). Journal
 voice admission, media, worker execution and actual voice enablement remain
 separate downstream work.
 
-`AI_VOICE_PROCESSING` uses the exact Vietnamese
-`ai-voice-processing-capstone-v1` notice. Existing `AI_PROCESSING` v2 is unchanged.
+MB-790 advances `AI_VOICE_PROCESSING` to the immutable Vietnamese
+`ai-voice-processing-capstone-v2` notice, published 2026-11-02. Existing
+`AI_PROCESSING` v2 is unchanged. Every former Voice v1 user must accept Voice v2
+before a new call; the historical v1 resource/decisions are retained without
+backfill. The v2 notice permits optional, explicit continuation from one selected
+Text conversation, or a call with zero Text context. The selected snapshot is
+at most two eligible recent pairs; pairs that used personal source context are
+excluded. Journal enforces the combined current-call bound of four pairs/2,000
+UTF-8 bytes and the existing counted 1,900-input-token ceiling, then purges the
+RAM snapshot on end/withdrawal. Consent alone never attaches context, authorizes
+another conversation, starts media or expands access to Journal, assessments,
+SupportPlan, private notes or all chats.
 The generic consent API still exposes only privacy and AI-processing streams;
 its enum, two-item collection and existing clients are unchanged. Voice writes
 require an existing owned Care profile, serialize on that profile, keep immutable
 decision history and persist an HMAC of the owner-scoped idempotency UUID rather
-than the raw key. An exact replay returns its original decision without making
-that historical decision current authority. Current authorization always reads
+than the raw key. A new v1 command is rejected. An exact historical v1 replay
+retains its actual v1 version and reports `current: false`; changing its version
+or intent under the same key conflicts. Replays do not append, upgrade or restore
+authority, including after withdrawal. Current authorization always reads
 the latest two independent grants in one repeatable-read snapshot.
 
 `GET /api/v1/ai-voice-processing-disclosure` and
@@ -57,7 +69,11 @@ Migration `032-ai-voice-processing-consent.sql` only extends the owner check
 constraint and preserves existing rows/checksums. Apply through Liquibase to
 the owner database before enabling voice consent writes; never execute the
 documentation-only logical model. No provider call, transcript, audio, Kafka
-message, text-quota change or financial side effect is introduced.
+message, text-quota change or financial side effect is introduced. MB-790's
+disclosure-version advancement needs no new schema/migration because existing
+`policy_version` already stores immutable version strings. New handoff runtime
+remains a Journal-owned, disabled-by-default capability and separate from Care's
+versioned grants; consent data contains no handoff content or transcript.
 
 MB-375 adds the Care-authoritative reassessment review and the single audited,
 idempotent, atomic SupportPlan replacement path described below.

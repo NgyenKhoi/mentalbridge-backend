@@ -41,12 +41,18 @@ still planned. Native-only credential ingress is the scoped
 | [0045-home-next-step-read.md](0045-home-next-step-read.md) | `MB-HOME-NEXT-STEP-001` | Accepted for MB-672 implementation | Care-owned Home read embedding the unchanged journey with ordered current-plan focus and bounded completed-plan context |
 | [0046-ai-voice-companion-contract.md](0046-ai-voice-companion-contract.md) | `MB-AI-VOICE-COMPANION-001` | Accepted target for MB-755; runtime not implemented | AI Companion voice, independent finite quotas, Care dual consent, ephemeral content, isolated LiveKit agents and planned owner/worker contracts |
 | [0047-payos-active-gateway-momo-dormant.md](0047-payos-active-gateway-momo-dormant.md) | `MB-PAYOS-PAYIN-001` | Accepted by owner | PayOS staging-only collect with unchanged 5k/10k test prices, in-app VietQR and verified reconciliation; MoMo dormant; production and payout remain gated |
+| [0049-ai-companion-friend-voice-and-suggestions.md](0049-ai-companion-friend-voice-and-suggestions.md) | `MB-AI-COMPANION-FRIEND-001` | Accepted for MB-791 implementation; flag off until owner sign-off | TEXT friend voice, same-conversation memory, non-personal Resource catalogue, closed-enum server-resolved suggestion with encrypted persistence, per-plan token budget |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, ADR 0034, or [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md), the relevant
 latest amendment is the current prospective authority. Historical records keep
 their original policy/version.
 
 ## Known numeric-prefix collisions
+
+MB-790 prospectively amends only selected Text context and Voice consent through
+[0048-opt-in-text-voice-context.md](0048-opt-in-text-voice-context.md)
+(`MB-TEXT-VOICE-HANDOFF-001`, accepted 2026-11-02). Historical Voice policies and
+consents retain their original versions; quota and provider activation do not change.
 
 The repository historically assigned the same numeric prefix to multiple accepted decisions. Renaming these files would break existing references and provenance, so they remain in place. New ADRs must use a new unused numeric prefix.
 

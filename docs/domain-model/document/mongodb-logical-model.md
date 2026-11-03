@@ -133,7 +133,9 @@ update time, assistant route provenance, context-kind labels (including
 assembled prompts, selected source plaintext, bearer credentials, raw provider
 output, and hidden reasoning are not fields. Migration
 `012_ai_companion_conversation_context.cjs` backfills the default context before
-enforcing the strict validator.
+enforcing the strict validator. Migration `017_companion_message_suggestion.cjs`
+adds an optional encrypted `suggestion` on assistant messages (destination,
+Resource ID and title; ADR 0049).
 
 ### AI Companion Command — ACTIVE
 
@@ -173,6 +175,12 @@ fingerprint, policy and frozen admission entitlement provenance, closed lifecycl
 frozen Vietnam quota day/admitted seconds/hard deadline, short authority lease,
 dispatch/attempt/generation/sequence fences, first-publication flag, accumulated
 ACTIVE milliseconds, timer cuts, terminal settlement, and creation-bound expiry.
+MB-790 migration 016 adds optional `contextHandoffHash`: a 43-character keyed
+reference consumed by a unique partial index during admission. It binds an
+explicit selected-Text handoff to exactly one session without storing the ticket,
+conversation selector, selected messages or summary. Ticket expiry is a transient
+admission input, not a persisted field. The hash survives settlement until normal
+creation-bound metadata cleanup; disabling the feature never frees it for reuse.
 Authority renewal uses current owner decisions without rewriting admission
 provenance. The first trusted connected-owner publication consumes one session;
 settlement rounds summed ACTIVE time once and refunds unused reservations. An

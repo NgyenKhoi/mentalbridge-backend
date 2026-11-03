@@ -1,5 +1,6 @@
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
+import { voicePilotSchema } from "../companion-voice/voice-pilot.js";
 
 const nodeEnvironments = ["development", "test", "production"] as const;
 const providerModes = ["DETERMINISTIC_FAKE", "APPROVED_REAL"] as const;
@@ -108,6 +109,34 @@ const environmentSchema = z
     JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_ENABLED: z.enum(["true", "false"]).default("false"),
+    JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
+    JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
+    JOURNAL_AI_VOICE_PILOT: z.preprocess((value) => {
+      if (value === undefined || value === "") return undefined;
+      if (typeof value !== "string") return null;
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        return null;
+      }
+    }, voicePilotSchema.optional()),
+    JOURNAL_AI_VOICE_PROVIDER_MODE: z
+      .enum(["DISABLED", "APPROVED_BEDROCK"])
+      .default("DISABLED"),
+    JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().regex(versionPattern).optional(),
+    ),
+    JOURNAL_AI_VOICE_BEDROCK_MODEL: z
+      .literal("global.anthropic.claude-sonnet-4-6")
+      .default("global.anthropic.claude-sonnet-4-6"),
+    JOURNAL_AI_VOICE_BEDROCK_REGION: z
+      .literal("ap-southeast-1")
+      .default("ap-southeast-1"),
     JOURNAL_AI_VOICE_APPROVAL_VERSION: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z.string().regex(versionPattern).optional(),
@@ -268,12 +297,24 @@ const environmentSchema = z
       .min(1)
       .max(60)
       .default(10),
-    JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET: z.coerce
+    JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET: z.coerce
       .number()
       .int()
       .min(1_000)
       .max(10_000_000)
       .default(100_000),
+    JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10_000_000)
+      .default(250_000),
+    JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10_000_000)
+      .default(600_000),
     JOURNAL_AI_CHAT_DEFAULT_TIMEZONE: z
       .string()
       .min(1)
@@ -285,6 +326,20 @@ const environmentSchema = z
       .default("companion-chat-routing-v1"),
   })
   .superRefine((environment, context) => {
+    if (environment.JOURNAL_AI_VOICE_PROVIDER_MODE === "APPROVED_BEDROCK") {
+      for (const key of [
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION",
+      ] as const) {
+        if (!environment[key])
+          context.addIssue({
+            code: "custom",
+            path: [key],
+            message:
+              "Approved Voice Bedrock route requires its credential and approval",
+          });
+      }
+    }
     const voiceTokens = [
       "JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN",
       "JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN",
@@ -311,6 +366,13 @@ const environmentSchema = z
       }
     }
     if (environment.JOURNAL_AI_VOICE_ENABLED === "true") {
+      if (environment.JOURNAL_AI_VOICE_PROVIDER_MODE !== "APPROVED_BEDROCK") {
+        context.addIssue({
+          code: "custom",
+          path: ["JOURNAL_AI_VOICE_PROVIDER_MODE"],
+          message: "Live Voice requires the scoped approved Bedrock route",
+        });
+      }
       if (environment.NODE_ENV === "test" || environment.CI === "true") {
         context.addIssue({
           code: "custom",
@@ -538,6 +600,11 @@ const environmentSchema = z
       entitlement:
         environment.JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN ?? null,
     },
+    VOICE_PILOT: environment.JOURNAL_AI_VOICE_PILOT,
+    VOICE_TEXT_HANDOFF_ENABLED:
+      environment.JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED === "true",
+    COMPANION_GUIDANCE_V2_ENABLED:
+      environment.JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED === "true",
     VOICE_MEDIA: {
       enabled: environment.JOURNAL_AI_VOICE_ENABLED === "true",
       approvedVersion: environment.JOURNAL_AI_VOICE_APPROVAL_VERSION ?? null,
@@ -547,6 +614,17 @@ const environmentSchema = z
       agentName: environment.JOURNAL_AI_VOICE_AGENT_NAME,
       workerToken: environment.JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN ?? null,
     },
+    VOICE_BEDROCK_ROUTE:
+      environment.JOURNAL_AI_VOICE_PROVIDER_MODE === "APPROVED_BEDROCK"
+        ? {
+            model: environment.JOURNAL_AI_VOICE_BEDROCK_MODEL,
+            region: environment.JOURNAL_AI_VOICE_BEDROCK_REGION,
+            approvedVersion:
+              environment.JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION ?? null,
+            inputCostMicroUsdPerMillionTokens: 3000000,
+            outputCostMicroUsdPerMillionTokens: 15000000,
+          }
+        : null,
     PROVIDER_MODE: environment.JOURNAL_AI_PROVIDER_MODE,
     ROUTING_POLICY_VERSION: environment.JOURNAL_AI_ROUTING_POLICY_VERSION,
     PROVIDER_APPROVAL_VERSION:
@@ -605,7 +683,12 @@ const environmentSchema = z
       environment.JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS,
     CHAT_RATE_LIMIT_PER_MINUTE:
       environment.JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE,
-    CHAT_DAILY_TOKEN_BUDGET: environment.JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET,
+    CHAT_FREE_DAILY_TOKEN_BUDGET:
+      environment.JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET,
+    CHAT_PLUS_DAILY_TOKEN_BUDGET:
+      environment.JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET,
+    CHAT_PREMIUM_DAILY_TOKEN_BUDGET:
+      environment.JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET,
     CHAT_DEFAULT_TIMEZONE: environment.JOURNAL_AI_CHAT_DEFAULT_TIMEZONE,
     CHAT_ROUTING_POLICY_VERSION:
       environment.JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION,
@@ -613,8 +696,19 @@ const environmentSchema = z
 
 export type ServiceConfiguration = Omit<
   z.infer<typeof environmentSchema>,
-  "VOICE_OWNER_TOKENS" | "VOICE_MEDIA"
+  | "VOICE_OWNER_TOKENS"
+  | "VOICE_MEDIA"
+  | "VOICE_BEDROCK_ROUTE"
+  | "VOICE_PILOT"
+  | "VOICE_TEXT_HANDOFF_ENABLED"
+  | "COMPANION_GUIDANCE_V2_ENABLED"
 > & {
+  readonly VOICE_PILOT?: z.infer<typeof environmentSchema>["VOICE_PILOT"];
+  readonly VOICE_TEXT_HANDOFF_ENABLED?: boolean;
+  readonly COMPANION_GUIDANCE_V2_ENABLED?: boolean;
+  readonly VOICE_BEDROCK_ROUTE?: z.infer<
+    typeof environmentSchema
+  >["VOICE_BEDROCK_ROUTE"];
   readonly VOICE_MEDIA?: z.infer<typeof environmentSchema>["VOICE_MEDIA"];
   readonly VOICE_OWNER_TOKENS?: {
     readonly care: string | null;

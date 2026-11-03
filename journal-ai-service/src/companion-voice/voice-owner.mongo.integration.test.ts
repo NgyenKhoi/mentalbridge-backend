@@ -284,7 +284,7 @@ void test("contract-backed synthetic owner HTTP decisions govern the real Mongo 
                   ...binding,
                   aiProcessingGranted: state.aiGranted,
                   voiceProcessingGranted: state.voiceGranted,
-                  voiceConsentVersion: "ai-voice-processing-capstone-v1",
+                  voiceConsentVersion: "ai-voice-processing-capstone-v2",
                   authorized: state.aiGranted && state.voiceGranted,
                   checkedAt: now.toISOString(),
                 }

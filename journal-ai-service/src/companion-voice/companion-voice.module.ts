@@ -7,7 +7,7 @@ import {
 import { MongoClient } from "mongodb";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { createLogger } from "../observability/logger.js";
-import { CONFIGURATION_TOKEN } from "../observability/tokens.js";
+import { CONFIGURATION_TOKEN, LOGGER_TOKEN } from "../observability/tokens.js";
 import { IdentityJwtVerifier } from "../security/identity-jwt-verifier.js";
 import {
   CurrentVoiceOwnerAuthorizer,
@@ -23,9 +23,12 @@ import {
 import { MongoVoiceMediaStore } from "./voice-media-store.js";
 import { VoiceSessionsService } from "./voice-sessions.js";
 import {
-  RoutedChatProvider,
+  ChatCrypto,
   type ChatProvider,
+  type Conversation,
 } from "../companion-chat/companion-chat.js";
+import { VoiceContextHandoffs } from "./voice-context-handoff.js";
+import { createVoiceProvider } from "./voice-provider.js";
 import { VoiceTurnService, type VoiceTurnMetric } from "./voice-turn.js";
 import { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import {
@@ -99,8 +102,22 @@ export const registerCompanionVoiceModule = (
   const coreLedger = new MongoVoiceLedger(
     client,
     configuration.MONGODB_DATABASE,
+    configuration.VOICE_PILOT,
   );
   const ledger = dependencies.ledger ?? coreLedger;
+  const handoffs = new VoiceContextHandoffs(
+    configuration.VOICE_TEXT_HANDOFF_ENABLED === true,
+    configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+    {
+      findConversation: (ownerAccountId, _id) =>
+        client
+          .db(configuration.MONGODB_DATABASE)
+          .collection<Conversation>("ai_companion_conversations")
+          .findOne({ _id, ownerAccountId }),
+    },
+    new ChatCrypto(configuration),
+    dependencies.clock,
+  );
   const logger = createLogger(configuration);
   const telemetry =
     dependencies.telemetry ??
@@ -110,12 +127,20 @@ export const registerCompanionVoiceModule = (
   const service = new VoiceAccessService(
     ledger,
     dependencies.authorizer ??
-      new CurrentVoiceOwnerAuthorizer({
-        careBaseUrl: configuration.CARE_BASE_URL,
-        consultationBaseUrl: configuration.CONSULTATION_BASE_URL,
-        careToken: configuration.VOICE_OWNER_TOKENS?.care ?? null,
-        entitlementToken: configuration.VOICE_OWNER_TOKENS?.entitlement ?? null,
-      }),
+      new CurrentVoiceOwnerAuthorizer(
+        {
+          careBaseUrl: configuration.CARE_BASE_URL,
+          consultationBaseUrl: configuration.CONSULTATION_BASE_URL,
+          careToken: configuration.VOICE_OWNER_TOKENS?.care ?? null,
+          entitlementToken:
+            configuration.VOICE_OWNER_TOKENS?.entitlement ?? null,
+        },
+        undefined,
+        undefined,
+        (diagnostic) => {
+          logger.info({ event: "voice_owner_authorization", ...diagnostic });
+        },
+      ),
     configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
     dependencies.providerReady ??
       (() =>
@@ -131,6 +156,7 @@ export const registerCompanionVoiceModule = (
         )),
     dependencies.clock,
     telemetry,
+    configuration.VOICE_PILOT,
   );
   const disabled = () => Promise.reject(new VoiceMediaError());
   const mediaConfiguration = configuration.VOICE_MEDIA;
@@ -155,23 +181,26 @@ export const registerCompanionVoiceModule = (
     configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
     dependencies.clock,
     telemetry,
+    handoffs,
   );
   const turns = new VoiceTurnService(
     sessions,
     new MongoVoiceTurnStore(client, configuration.MONGODB_DATABASE),
-    dependencies.turnProvider ?? new RoutedChatProvider(configuration),
+    dependencies.turnProvider ?? createVoiceProvider(configuration),
     configuration,
     dependencies.clock,
     dependencies.turnTelemetry ??
       ((metric) => {
         logger.info({ event: "voice_turn", ...metric });
       }),
+    handoffs,
   );
   return {
     module: CompanionVoiceModule,
     controllers: [VoiceUserController, VoiceWorkerController],
     providers: [
       { provide: CONFIGURATION_TOKEN, useValue: configuration },
+      { provide: LOGGER_TOKEN, useValue: logger },
       IdentityJwtVerifier,
       VoiceUserGuard,
       VoiceWorkerGuard,
@@ -180,6 +209,7 @@ export const registerCompanionVoiceModule = (
       { provide: VoiceTurnService, useValue: turns },
       { provide: VoiceSessionsService, useValue: sessions },
       { provide: VoiceAccessService, useValue: service },
+      { provide: VoiceContextHandoffs, useValue: handoffs },
       {
         provide: VoiceMaintenance,
         useValue: new VoiceMaintenance(
@@ -196,6 +226,7 @@ export const registerCompanionVoiceModule = (
           },
           () => {
             turns.close();
+            handoffs.close();
             return client.close();
           },
         ),

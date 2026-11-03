@@ -20,14 +20,19 @@ import {
 } from "@nestjs/common";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import type { Logger } from "pino";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { ProblemDetailsFilter } from "../http/problem-details.filter.js";
-import { CONFIGURATION_TOKEN } from "../observability/tokens.js";
+import { CONFIGURATION_TOKEN, LOGGER_TOKEN } from "../observability/tokens.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
 import { IdentityJwtVerifier } from "../security/identity-jwt-verifier.js";
 import { Public } from "../security/public.decorator.js";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import { VoiceLedgerError } from "./voice-ledger.js";
+import {
+  VoiceContextHandoffs,
+  voiceStartCommandSchema,
+} from "./voice-context-handoff.js";
 import {
   VoiceSessionsService,
   voiceWorkerSignalSchema,
@@ -200,6 +205,7 @@ export class VoiceGlobalFilter implements ExceptionFilter {
     if (
       path === "/api/v1/ai-companion/voice-eligibility" ||
       path === "/api/v1/ai-companion/voice-sessions" ||
+      path === "/api/v1/ai-companion/voice-context-handoffs" ||
       path.startsWith("/api/v1/ai-companion/voice-sessions/") ||
       path.startsWith("/internal/v1/ai-companion/voice-sessions/")
     ) {
@@ -241,23 +247,91 @@ export class VoiceUserController {
   constructor(
     private readonly access: VoiceAccessService,
     @Inject(VOICE_SESSIONS) private readonly sessions: VoiceSessionOperations,
+    @Inject(LOGGER_TOKEN) private readonly logger: Logger,
+    private readonly handoffs: VoiceContextHandoffs,
   ) {}
   @Get("voice-eligibility")
-  eligibility(@Req() request: VoiceRequest) {
-    return this.access.eligibility(
+  async eligibility(@Req() request: VoiceRequest) {
+    const value = await this.access.eligibility(
       subject(request),
       request.id ?? randomUUID(),
     );
+    return this.handoffs.available
+      ? { ...value, textContextHandoffEnabled: true }
+      : value;
+  }
+  @Post("voice-context-handoffs")
+  @HttpCode(200)
+  async contextHandoff(@Req() request: VoiceRequest, @Body() body: unknown) {
+    const parsed = z
+      .object({ conversationId: z.uuid() })
+      .strict()
+      .safeParse(body);
+    if (
+      !parsed.success ||
+      typeof request.headers["content-type"] !== "string" ||
+      request.headers["content-type"].split(";")[0]?.trim().toLowerCase() !==
+        "application/json"
+    )
+      throw new VoiceBoundaryError("INVALID_REQUEST");
+    if (!this.handoffs.available)
+      throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
+    const owner = subject(request),
+      eligibility = await this.access.eligibility(
+        owner,
+        request.id ?? randomUUID(),
+      );
+    if (eligibility.state !== "ELIGIBLE")
+      throw new VoiceAccessError(eligibility.state);
+    return this.handoffs.prepare(owner, parsed.data.conversationId);
   }
   @Post("voice-sessions")
   @HttpCode(202)
-  start(@Req() request: VoiceRequest, @Body() body: unknown) {
-    const key = empty(request, body);
-    return this.sessions.start(
-      subject(request),
-      key,
-      request.id ?? randomUUID(),
-    );
+  async start(@Req() request: VoiceRequest, @Body() body: unknown) {
+    const parsed = voiceStartCommandSchema.safeParse(body);
+    if (
+      !parsed.success ||
+      typeof request.headers["content-type"] !== "string" ||
+      request.headers["content-type"].split(";")[0]?.trim().toLowerCase() !==
+        "application/json"
+    )
+      throw new VoiceBoundaryError("INVALID_REQUEST");
+    const key = uuid(request.headers["idempotency-key"]);
+    const owner = subject(request);
+    const parsedId = z.uuid().safeParse(request.id);
+    const correlationId = parsedId.success ? parsedId.data : randomUUID();
+    this.logger.info({
+      event: "voice_admission_command",
+      source: "AUTHENTICATED_USER_REST",
+      command: "START",
+      correlationId,
+      outcome: "RECEIVED",
+    });
+    try {
+      const result = await this.sessions.start(
+        owner,
+        key,
+        correlationId,
+        parsed.data,
+      );
+      this.logger.info({
+        event: "voice_admission_command",
+        source: "AUTHENTICATED_USER_REST",
+        command: "START",
+        correlationId,
+        outcome: "ACKNOWLEDGED",
+      });
+      return result;
+    } catch (error) {
+      this.logger.info({
+        event: "voice_admission_command",
+        source: "AUTHENTICATED_USER_REST",
+        command: "START",
+        correlationId,
+        outcome: "REJECTED",
+      });
+      throw error;
+    }
   }
   @Get("voice-sessions/:voiceSessionId")
   status(@Req() request: VoiceRequest, @Param("voiceSessionId") id: string) {

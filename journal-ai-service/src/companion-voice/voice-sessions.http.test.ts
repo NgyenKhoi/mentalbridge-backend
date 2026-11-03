@@ -13,6 +13,8 @@ import { VoiceAccessError, type VoiceAccessCode } from "./voice-access.js";
 import { VoiceLedgerError } from "./voice-ledger.js";
 import type { VoiceSessionOperations } from "./voice-session-boundary.js";
 import { VoiceTurnError } from "./voice-turn.js";
+import type { Logger } from "pino";
+import { LOGGER_TOKEN } from "../observability/tokens.js";
 
 interface ContractValidator {
   (value: unknown): boolean;
@@ -72,7 +74,7 @@ const responseSchemas = async () => {
   };
 };
 
-void test("Voice public and worker REST separate identities, validate closed commands and sanitize every documented failure", async () => {
+void test("Voice public and worker REST separate identities, validate closed commands and sanitize every documented failure", async (t) => {
   const assertContract = await responseSchemas();
   const owner = randomUUID();
   const id = randomUUID();
@@ -232,6 +234,11 @@ void test("Voice public and worker REST separate identities, validate closed com
     },
   });
   await app.init();
+  const audit = t.mock.method(
+    app.get<Logger>(LOGGER_TOKEN),
+    "info",
+    () => undefined,
+  );
   const server = app.getHttpServer() as Server;
   const token = await jwt();
   const root = "/api/v1/ai-companion/voice-sessions";
@@ -496,6 +503,30 @@ void test("Voice public and worker REST separate identities, validate closed com
       "AUTHENTICATION_REQUIRED",
     );
   } finally {
+    const records = audit.mock.calls
+      .map((call) => call.arguments[0])
+      .filter(
+        (value): value is Record<string, unknown> =>
+          typeof value === "object" &&
+          value !== null &&
+          "event" in value &&
+          value.event === "voice_admission_command",
+      );
+    assert.ok(records.length > 0);
+    for (const record of records) {
+      assert.deepEqual(Object.keys(record).sort(), [
+        "command",
+        "correlationId",
+        "event",
+        "outcome",
+        "source",
+      ]);
+      assert.equal(record.source, "AUTHENTICATED_USER_REST");
+      assert.match(String(record.correlationId), /^[0-9a-f-]{36}$/u);
+      assert.equal(JSON.stringify(record).includes(owner), false);
+      assert.equal(JSON.stringify(record).includes(worker), false);
+      assert.equal(JSON.stringify(record).includes(key), false);
+    }
     await app.close();
   }
 });

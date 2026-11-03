@@ -2,6 +2,11 @@
 
 ## Policy metadata
 
+Prospective MB-790 amendment: [MB-TEXT-VOICE-HANDOFF-001](../adr/0048-opt-in-text-voice-context.md)
+authorizes explicit bounded selected Text context and requires current Voice
+disclosure v2 for every new call. The v1 values below remain the MB-755 historical
+baseline. Quota/provider activation and historical consent evidence are unchanged.
+
 | Field                      | Value                                                                                         |
 | -------------------------- | --------------------------------------------------------------------------------------------- |
 | Decision                   | `MB-AI-VOICE-COMPANION-001`                                                                   |

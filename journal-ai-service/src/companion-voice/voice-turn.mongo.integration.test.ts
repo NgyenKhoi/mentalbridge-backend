@@ -7,16 +7,25 @@ import type { INestApplication } from "@nestjs/common";
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
-import { exportSPKI, generateKeyPair } from "jose";
+import { z } from "zod";
+import {
+  VoiceProviderFailure,
+  type VoiceObserver,
+} from "../llm-providers/voice-diagnostics.js";
+import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { createApplication } from "../application.js";
 import {
   loadConfiguration,
   type ServiceConfiguration,
 } from "../configuration/configuration.js";
-import type {
-  ChatProvider,
-  ProviderReply,
+import {
+  ChatCrypto,
+  RoutedChatProvider,
+  type Conversation,
+  type ChatProvider,
+  type ProviderReply,
 } from "../companion-chat/companion-chat.js";
+import { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import type {
   VoiceMediaProvider,
   VoiceMediaReference,
@@ -30,6 +39,7 @@ import {
   type VoiceTurn,
   type VoiceTurnMetric,
 } from "./voice-turn.js";
+import type { VoicePilot } from "./voice-pilot.js";
 
 type RawRecord = Record<string, unknown> & { _id: string };
 const require = createRequire(import.meta.url);
@@ -37,6 +47,7 @@ const migrations = [
   "013_companion_voice_quota.cjs",
   "014_companion_voice_media.cjs",
   "015_companion_voice_turn_fences.cjs",
+  "016_companion_voice_context_handoff.cjs",
 ].map(
   (file) =>
     require(`../../migrations/${file}`) as {
@@ -81,8 +92,21 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   assert.ok(uri);
   const client = new MongoClient(uri);
   await client.connect();
-  const { publicKey } = await generateKeyPair("RS256", { extractable: true });
+  const { publicKey, privateKey } = await generateKeyPair("RS256", {
+    extractable: true,
+  });
   const publicKeyPem = await exportSPKI(publicKey);
+  const userToken = (owner: string, role = "USER") =>
+    new SignJWT({ roles: [role] })
+      .setProtectedHeader({ alg: "RS256", kid: "synthetic" })
+      .setIssuer("https://identity.voice.test")
+      .setAudience("mentalbridge-api")
+      .setSubject(owner)
+      .setIssuedAt()
+      .setNotBefore("0s")
+      .setExpirationTime("5m")
+      .setJti(randomUUID())
+      .sign(privateKey);
   const databases: Db[] = [];
   const applications: INestApplication[] = [];
   t.after(async () => {
@@ -95,12 +119,38 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     }
   });
   let count = 0;
-  const fixture = async () => {
+  const fixture = async (
+    pilot: boolean | Pick<VoicePilot, "maxSessionSeconds" | "maxTurns"> = false,
+    withHandoff = false,
+    beforeStart?: (state: {
+      app: INestApplication;
+      db: Db;
+      owner: string;
+      initialStartKey: string;
+      conversationId: string;
+      authentication: string;
+      prepared: {
+        handoffToken: string;
+        expiresAt: string;
+        selectedPairs: number;
+        policyVersion: string;
+      };
+    }) => Promise<string>,
+  ) => {
     const name = `voice_turn_verify_${String(Date.now())}_${String(count++)}`;
     assert.match(name, /^voice_turn_verify_\d+_\d+$/);
     const db = client.db(name);
     databases.push(db);
     for (const migration of migrations) await migration.up(db);
+    if (withHandoff) {
+      for (const name of [
+        "010_ai_companion_chat_quotas.cjs",
+        "012_ai_companion_conversation_context.cjs",
+      ])
+        await (
+          require(`../../migrations/${name}`) as { up(db: Db): Promise<void> }
+        ).up(db);
+    }
     let now = new Date();
     const clock = () => new Date(now);
     let ai = true;
@@ -132,7 +182,8 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     let calls = 0;
     let cancelled = 0;
     const contexts: string[] = [];
-    let respond: () => Promise<ProviderReply> = () => Promise.resolve(reply());
+    let respond: (observe?: VoiceObserver) => Promise<ProviderReply> = () =>
+      Promise.resolve(reply());
     const provider: ChatProvider = {
       reply: (_text, context, _route, options) => {
         calls++;
@@ -144,10 +195,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           },
           { once: true },
         );
-        return respond();
+        return respond(options?.voiceObserver);
       },
     };
     const token = "synthetic-worker-voice-turn-credential-32-characters";
+    const owner = randomUUID();
+    const initialStartKey = randomUUID();
     const configuration = loadConfiguration({
       NODE_ENV: "test",
       CI: "true",
@@ -158,7 +211,18 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       JOURNAL_AI_MONGODB_URI: uri,
       JOURNAL_AI_MONGODB_DATABASE: name,
       JOURNAL_AI_LOG_LEVEL: "silent",
+      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: String(withHandoff),
       JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: token,
+      ...(pilot
+        ? {
+            JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+              startsAt: new Date(now.getTime() - 1000).toISOString(),
+              endsAt: new Date(now.getTime() + 3600000).toISOString(),
+              ownerIds: [owner],
+              ...(typeof pilot === "object" ? pilot : {}),
+            }),
+          }
+        : {}),
     });
     const config: ServiceConfiguration = {
       ...configuration,
@@ -191,7 +255,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
                   voiceProcessingGranted: voice,
                   authorized: ai && voice,
                   voiceConsentVersion:
-                    "ai-voice-processing-capstone-v1" as const,
+                    "ai-voice-processing-capstone-v2" as const,
                 },
                 entitlement: {
                   ...binding,
@@ -221,12 +285,75 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     };
     const left = await build();
     const right = await build();
-    const owner = randomUUID();
-    const start = async () => {
+    let handoffToken: string | undefined;
+    if (withHandoff) {
+      const conversationId = randomUUID(),
+        crypto = new ChatCrypto(config);
+      await db
+        .collection<Conversation>("ai_companion_conversations")
+        .insertOne({
+          _id: conversationId,
+          ownerAccountId: owner,
+          title: "Synthetic handoff",
+          context: {
+            sources: {
+              plan: false,
+              diary: false,
+              screening: false,
+              resourceIds: [],
+            },
+            updatedAt: clock(),
+          },
+          messages: (
+            [
+              ["USER", "Chủ đề học tiếng Việt giả lập"],
+              ["ASSISTANT", "Mình nghe bạn nói về việc học."],
+            ] as const
+          ).map(([role, text]) => {
+            const messageId = randomUUID();
+            return {
+              messageId,
+              role,
+              content: crypto.encrypt(owner, conversationId, messageId, text),
+              createdAt: clock(),
+              route: null,
+              contextKinds: [],
+            };
+          }),
+          createdAt: clock(),
+          updatedAt: clock(),
+          expiresAt: new Date(now.getTime() + 86400000),
+        });
+      const authentication = await userToken(owner);
+      const response = await request(left.app.getHttpServer() as Server)
+        .post("/api/v1/ai-companion/voice-context-handoffs")
+        .set("Authorization", `Bearer ${authentication}`)
+        .send({ conversationId })
+        .expect(200)
+        .expect("Cache-Control", "no-store");
+      const prepared = response.body as {
+        handoffToken: string;
+        expiresAt: string;
+        selectedPairs: number;
+        policyVersion: string;
+      };
+      handoffToken =
+        (await beforeStart?.({
+          app: left.app,
+          db,
+          owner,
+          initialStartKey,
+          conversationId,
+          authentication,
+          prepared,
+        })) ?? prepared.handoffToken;
+    }
+    const start = async (key = randomUUID()) => {
       const started = await left.sessions.start(
         owner,
+        key,
         randomUUID(),
-        randomUUID(),
+        handoffToken ? { handoffToken } : {},
       );
       const id = started.voiceSessionId;
       const document = await db
@@ -258,7 +385,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       );
       return { id, attemptId: lease.attemptId, leaseId: lease.leaseId };
     };
-    const active = await start();
+    const active = await start(initialStartKey);
     const input = (
       sequence = 1,
       text = "Hôm nay tôi thấy hơi lo lắng",
@@ -299,12 +426,13 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       clock,
       metrics,
       token,
+      handoffToken,
       connected: (value: boolean) => {
         connected = value;
       },
       calls: () => calls,
       cancelled: () => cancelled,
-      respond: (fn: () => Promise<ProviderReply>) => {
+      respond: (fn: (observe?: VoiceObserver) => Promise<ProviderReply>) => {
         respond = fn;
       },
       advance: (ms: number) => {
@@ -321,6 +449,309 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     };
   };
+
+  await t.test(
+    "an accepted same-key retry can bind pending Text context without terminating or duplicating the first START",
+    async () => {
+      let retry: ReturnType<VoiceSessionsService["start"]> | undefined;
+      const f = await fixture(
+        false,
+        true,
+        ({ app, owner, initialStartKey, prepared }) => {
+          const handoffs = app.get(VoiceContextHandoffs);
+          const sessions = app.get(VoiceSessionsService);
+          const verifySnapshot = handoffs.verifySnapshot.bind(handoffs);
+          const acceptedBeforeBind = hold();
+          const resumeFirst = hold();
+          let checks = 0;
+          handoffs.verifySnapshot = async (...args) => {
+            await verifySnapshot(...args);
+            if (++checks === 1) {
+              acceptedBeforeBind.release();
+              await resumeFirst.wait;
+            }
+          };
+          retry = (async () => {
+            await acceptedBeforeBind.wait;
+            return sessions.start(owner, initialStartKey, randomUUID(), {
+              handoffToken: prepared.handoffToken,
+            });
+          })().finally(() => {
+            resumeFirst.release();
+          });
+          void retry.catch(() => undefined);
+          return Promise.resolve(prepared.handoffToken);
+        },
+      );
+      assert.ok(retry);
+      assert.equal((await retry).voiceSessionId, f.active.id);
+      const stored = await f.db
+        .collection("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(stored?.state, "ACTIVE");
+      assert.equal(
+        await f.db.collection("ai_voice_sessions").countDocuments(),
+        1,
+      );
+      assert.equal(await f.db.collection("ai_voice_media").countDocuments(), 1);
+      await f.generate(f.input());
+      assert.match(f.contexts[0] ?? "", /selectedText/u);
+      assert.equal(f.calls(), 1);
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "owner HTTP handoff preparation is content-free, does not admit and rejects a changed snapshot before reservation",
+    async () => {
+      const f = await fixture(
+        false,
+        true,
+        async ({
+          app,
+          db,
+          owner,
+          conversationId,
+          authentication,
+          prepared,
+        }) => {
+          const path = "/api/v1/ai-companion/voice-context-handoffs";
+          const server = app.getHttpServer() as Server;
+          const prepare = (body: object, bearer = authentication) =>
+            request(server)
+              .post(path)
+              .set("Authorization", `Bearer ${bearer}`)
+              .send(body);
+          assert.deepEqual(Object.keys(prepared).sort(), [
+            "expiresAt",
+            "handoffToken",
+            "policyVersion",
+            "selectedPairs",
+          ]);
+          assert.equal(prepared.policyVersion, "text-voice-handoff-v1");
+          assert.equal(prepared.selectedPairs, 1);
+          assert.ok(Date.parse(prepared.expiresAt) > Date.now());
+          const opaquePayload = Buffer.from(
+            prepared.handoffToken.split(".")[0] ?? "",
+            "base64url",
+          ).toString("utf8");
+          assert.equal(opaquePayload.includes("Chủ đề học"), false);
+          assert.equal(opaquePayload.includes("Mình nghe"), false);
+          await request(server)
+            .post(path)
+            .send({ conversationId })
+            .expect(401)
+            .expect("Cache-Control", "no-store");
+          await prepare(
+            { conversationId },
+            await userToken(owner, "SPECIALIST"),
+          )
+            .expect(403)
+            .expect("Cache-Control", "no-store");
+          await prepare({ conversationId }, await userToken(randomUUID()))
+            .expect(404)
+            .expect("Cache-Control", "no-store");
+          for (const body of [
+            { conversationId: "not-a-uuid" },
+            { conversationId, ownerId: owner },
+            { conversationId, context: "SYNTHETIC_CLIENT_CONTEXT" },
+          ])
+            await prepare(body).expect(422).expect("Cache-Control", "no-store");
+          await request(server)
+            .post(path)
+            .set("Authorization", `Bearer ${authentication}`)
+            .set("Content-Type", "text/plain")
+            .send(JSON.stringify({ conversationId }))
+            .expect(422)
+            .expect("Cache-Control", "no-store");
+          await db
+            .collection<Conversation>("ai_companion_conversations")
+            .updateOne(
+              { _id: conversationId },
+              { $set: { updatedAt: new Date(Date.now() + 1) } },
+            );
+          const changed = await request(server)
+            .post("/api/v1/ai-companion/voice-sessions")
+            .set("Authorization", `Bearer ${authentication}`)
+            .set("Idempotency-Key", randomUUID())
+            .send({ handoffToken: prepared.handoffToken })
+            .expect(409)
+            .expect("Cache-Control", "no-store");
+          assert.equal(
+            (changed.body as { code: string }).code,
+            "STALE_ATTEMPT",
+          );
+          for (const collection of [
+            "ai_voice_sessions",
+            "ai_voice_daily_usage",
+            "ai_voice_media",
+          ])
+            assert.equal(await db.collection(collection).countDocuments(), 0);
+          const refreshed = await prepare({ conversationId })
+            .expect(200)
+            .expect("Cache-Control", "no-store");
+          return (refreshed.body as { handoffToken: string }).handoffToken;
+        },
+      );
+      assert.equal(f.calls(), 0);
+      assert.equal(
+        await f.db.collection("ai_voice_sessions").countDocuments(),
+        1,
+      );
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "opted-in Text context reaches only the bound Voice RAM and is cleared on revocation",
+    async () => {
+      const f = await fixture(false, true);
+      await f.generate(f.input());
+      assert.match(
+        f.contexts[0] ?? "",
+        /selectedText.*Chủ đề học tiếng Việt giả lập/u,
+      );
+      assert.match(f.contexts[0] ?? "", /currentCall/u);
+      const stored = await f.db
+        .collection("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(typeof stored?.contextHandoffHash, "string");
+      for (const name of [
+        "ai_voice_sessions",
+        "ai_voice_media",
+        "ai_voice_media_commands",
+      ])
+        assert.equal(
+          JSON.stringify(await f.db.collection(name).find().toArray()).includes(
+            "Chủ đề học",
+          ),
+          false,
+        );
+      await assert.rejects(
+        f.right.turns.generate(
+          f.active.id,
+          randomUUID(),
+          f.input(2),
+          randomUUID(),
+        ),
+      );
+      f.revoke();
+      await assert.rejects(f.generate(f.input(2)));
+      assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "voice-only context does not contain stored Text or a previous call",
+    async () => {
+      const f = await fixture();
+      await f.generate(f.input());
+      assert.equal(f.contexts[0], "[]");
+      assert.equal(f.handoffToken, undefined);
+    },
+  );
+
+  await t.test(
+    "selected Text and current-call pairs remain within their shared RAM bounds immediately after each reply",
+    async () => {
+      const pair = z.object({ user: z.string(), assistant: z.string() });
+      for (const message of [
+        reply().message,
+        "Mình đang lắng nghe. ".repeat(18).trim(),
+      ]) {
+        const f = await fixture(false, true);
+        f.respond(() => Promise.resolve({ ...reply(), message }));
+        for (let sequence = 1; sequence <= 5; sequence++) {
+          const text = `Tôi muốn chia sẻ thêm câu ${String(sequence)}`;
+          await f.generate(f.input(sequence, text));
+          const outgoing = f.contexts.at(-1) ?? "";
+          const parsed: unknown = JSON.parse(outgoing);
+          const sent = z
+            .union([
+              z.array(pair),
+              z.object({
+                selectedText: z.array(pair),
+                currentCall: z.array(pair),
+              }),
+            ])
+            .parse(parsed);
+          const sentCount = Array.isArray(sent)
+            ? sent.length
+            : sent.selectedText.length + sent.currentCall.length;
+          assert.ok(sentCount <= 4);
+          assert.ok(
+            Buffer.byteLength(outgoing, "utf8") +
+              Buffer.byteLength(text, "utf8") +
+              128 <=
+              2000,
+          );
+          const contexts: unknown = Reflect.get(f.left.turns, "contexts");
+          assert.ok(contexts instanceof Map);
+          const retained = z
+            .object({
+              pairs: z.array(pair),
+              textPairs: z.array(pair),
+            })
+            .parse(contexts.get(f.active.id));
+          assert.ok(retained.textPairs.length + retained.pairs.length <= 4);
+          const content = retained.textPairs.length
+            ? { selectedText: retained.textPairs, currentCall: retained.pairs }
+            : retained.pairs;
+          assert.ok(
+            Buffer.byteLength(JSON.stringify(content), "utf8") + 128 <= 2000,
+          );
+        }
+        await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+      }
+    },
+  );
+
+  await t.test(
+    "a long Vietnamese current input trims selected Text before provider work without exceeding the shared byte cap",
+    async () => {
+      const f = await fixture(false, true);
+      const text = "Tôi ".repeat(360).trim();
+      assert.ok(Buffer.byteLength(text, "utf8") > 1700);
+      await f.generate(f.input(1, text));
+      assert.equal(f.calls(), 1);
+      assert.equal(f.contexts[0], "[]");
+      assert.ok(
+        Buffer.byteLength(f.contexts[0], "utf8") +
+          Buffer.byteLength(text, "utf8") +
+          128 <=
+          2000,
+      );
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "pilot rejects the fifth turn before any provider work and tears down authority",
+    async () => {
+      const f = await fixture(true);
+      await assert.rejects(f.generate(f.input(5)), rejected("QUOTA_EXHAUSTED"));
+      assert.equal(f.calls(), 0);
+      await assert.rejects(f.generate(f.input(1)));
+      assert.equal(f.calls(), 0);
+    },
+  );
+
+  await t.test(
+    "extended pilot allows thirty ordered turns and rejects the thirty-first before provider work",
+    async () => {
+      const f = await fixture({ maxSessionSeconds: 600, maxTurns: 30 });
+      for (let sequence = 1; sequence <= 30; sequence++)
+        await f.generate(f.input(sequence));
+      assert.equal(f.calls(), 30);
+      await assert.rejects(
+        f.generate(f.input(31)),
+        rejected("QUOTA_EXHAUSTED"),
+      );
+      assert.equal(f.calls(), 30);
+      await assert.rejects(f.generate(f.input(1)));
+      assert.equal(f.calls(), 30);
+    },
+  );
 
   await t.test(
     "five ordered Vietnamese turns use bounded recent context; exact live replay returns one stable reply without Text quota",
@@ -381,7 +812,15 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await assert.rejects(turnMigration.down(f.db), /safely purged/u);
       assert.equal(JSON.stringify(f.metrics).includes(text), false);
       assert.equal(JSON.stringify(f.metrics).includes(reply().message), false);
-      assert.equal(f.metrics.length, 5);
+      assert.equal(
+        f.metrics.filter((metric) => metric.outcome === "GENERATED").length,
+        5,
+      );
+      assert.equal(
+        f.metrics.filter((metric) => metric.outcome === "PROVIDER_USAGE")
+          .length,
+        5,
+      );
       const savedFence = await f.db
         .collection<RawRecord>("ai_voice_media_commands")
         .findOne({ operation: "turn" });
@@ -416,6 +855,186 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await assert.rejects(f.generate(input, key), rejected("STALE_ATTEMPT"));
       await assert.rejects(f.generate(f.input(2)), rejected("STALE_ATTEMPT"));
       assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "provider usage survives validation failure and consent withdrawal without publication or duplicate counting",
+    async () => {
+      for (const mode of [
+        "invalid-output",
+        "revoked",
+        "provider-parse-failure",
+        "output-token-limit",
+      ]) {
+        const f = await fixture();
+        f.respond((observe) => {
+          observe?.({ phase: "bedrock_requested" });
+          observe?.({
+            phase: "provider_usage",
+            inputTokens: 90,
+            outputTokens: mode === "output-token-limit" ? 300 : 25,
+            usageSource: "PROVIDER",
+          });
+          if (mode === "revoked") f.revoke();
+          if (mode === "output-token-limit") {
+            observe?.({
+              phase: "bedrock_output_validation",
+              stopReason: "MAX_TOKENS",
+            });
+            return Promise.reject(
+              new VoiceProviderFailure("OUTPUT_TOKEN_LIMIT"),
+            );
+          }
+          if (mode === "provider-parse-failure")
+            return Promise.reject(new Error("PRIVATE_RAW_PROVIDER"));
+          return Promise.resolve({
+            ...reply(),
+            ...(mode === "invalid-output"
+              ? { message: "PRIVATE_BAD_OUTPUT" }
+              : {}),
+          });
+        });
+        await assert.rejects(f.generate(f.input()));
+        const usage = f.metrics.filter(
+          (metric) => metric.outcome === "PROVIDER_USAGE",
+        );
+        assert.equal(usage.length, 1);
+        assert.equal(usage[0]?.inputTokens, 90);
+        assert.equal(
+          usage[0].outputTokens,
+          mode === "output-token-limit" ? 300 : 25,
+        );
+        if (mode === "output-token-limit") {
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.outcome === "FAILED" &&
+                metric.phase === "bedrock_output_validation" &&
+                metric.code === "OUTPUT_TOKEN_LIMIT",
+            ),
+            true,
+          );
+          assert.equal(
+            f.metrics.some((metric) => metric.stopReason === "MAX_TOKENS"),
+            true,
+          );
+        }
+        assert.equal(
+          f.metrics.some((metric) => metric.outcome === "GENERATED"),
+          false,
+        );
+        assert.equal(
+          f.metrics.some((metric) => metric.phase === "reply_registered"),
+          false,
+        );
+        assert.equal(JSON.stringify(f.metrics).includes("PRIVATE"), false);
+        for (let index = 0; index < f.metrics.length; index++)
+          assert.equal(f.metrics[index]?.sequence, index + 1);
+      }
+    },
+  );
+
+  await t.test(
+    "otherwise valid Bedrock output without END_TURN cannot register or publish a reply",
+    async () => {
+      for (const stopReason of [undefined, "stop_sequence"] as const) {
+        const f = await fixture();
+        const original = globalThis.fetch;
+        let requests = 0;
+        const message = "Mình đang lắng nghe câu thử riêng của bạn.";
+        f.respond((voiceObserver) =>
+          new RoutedChatProvider({
+            ...f.config,
+            BEDROCK_API_KEY: "PRIVATE_KEY",
+          }).reply(
+            "PRIVATE_SPEECH",
+            { kinds: [], prompt: "PRIVATE_CONTEXT" },
+            {
+              provider: "BEDROCK",
+              model: "global.anthropic.claude-sonnet-4-6",
+            },
+            { voice: true, ...(voiceObserver ? { voiceObserver } : {}) },
+          ),
+        );
+        globalThis.fetch = () => {
+          requests++;
+          return Promise.resolve(
+            Response.json({
+              ...(stopReason === undefined ? {} : { stopReason }),
+              output: {
+                message: {
+                  content: [
+                    {
+                      text: JSON.stringify({
+                        message,
+                        language: "vi",
+                        authority: "SUPPORT_ONLY",
+                        clinicalAssessment: "NONE",
+                        safetyDecision: "NONE",
+                        eligibilityDecision: "NONE",
+                        businessAction: "NONE",
+                        thirdPartyAction: "NONE",
+                      }),
+                    },
+                  ],
+                },
+              },
+              usage: { inputTokens: 90, outputTokens: 25 },
+            }),
+          );
+        };
+        try {
+          await assert.rejects(f.generate(f.input()));
+          assert.equal(requests, 1);
+          assert.equal(f.calls(), 1);
+          const usage = f.metrics.filter(
+            (metric) => metric.outcome === "PROVIDER_USAGE",
+          );
+          assert.equal(usage.length, 1);
+          assert.equal(usage[0]?.inputTokens, 90);
+          assert.equal(usage[0].outputTokens, 25);
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.stopReason ===
+                (stopReason === undefined ? "MISSING" : "STOP_SEQUENCE"),
+            ),
+            true,
+          );
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.outcome === "FAILED" &&
+                metric.code === "UNEXPECTED_STOP_REASON" &&
+                metric.phase === "bedrock_output_validation",
+            ),
+            true,
+          );
+          assert.equal(
+            f.metrics.some(
+              (metric) =>
+                metric.phase === "bedrock_response_validated" ||
+                metric.phase === "publication_authorized" ||
+                metric.phase === "reply_registered" ||
+                metric.outcome === "GENERATED",
+            ),
+            false,
+          );
+          assert.equal(JSON.stringify(f.metrics).includes("PRIVATE"), false);
+          assert.equal(JSON.stringify(f.metrics).includes(message), false);
+          assert.equal(
+            (
+              await f.db
+                .collection<RawRecord>("ai_voice_sessions")
+                .findOne({ _id: f.active.id })
+            )?.state,
+            "FAILED",
+          );
+        } finally {
+          globalThis.fetch = original;
+        }
+      }
     },
   );
 
@@ -658,8 +1277,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         sequence: number,
         kind: "HEARTBEAT" | "PLAYBACK_STARTED",
         payload: Record<string, unknown>,
-      ) =>
-        f.left.sessions.control(
+      ) => {
+        const current = await f.db
+          .collection<RawRecord>("ai_voice_sessions")
+          .findOne({ _id: f.active.id });
+        assert.ok(current?.leaseExpiresAt instanceof Date);
+        return f.left.sessions.control(
           f.active.id,
           voiceWorkerSignalSchema.parse({
             schemaVersion: 1,
@@ -669,11 +1292,17 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
             attemptId: f.active.attemptId,
             sequence,
             issuedAt: f.clock().toISOString(),
-            expiresAt: new Date(f.clock().getTime() + 5000).toISOString(),
+            expiresAt: new Date(
+              Math.min(
+                current.leaseExpiresAt.getTime(),
+                f.clock().getTime() + 4000,
+              ),
+            ).toISOString(),
             payload: { leaseId: f.active.leaseId, ...payload },
           }),
           randomUUID(),
         );
+      };
       await control(2, "PLAYBACK_STARTED", {
         turnId: first.turnId,
         replyId: initial.replyId,
@@ -685,6 +1314,10 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       }
       f.advance(4000);
       const spokenAt = f.clock().getTime();
+      const acknowledged = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(acknowledged?.leaseExpiresAt instanceof Date);
       const gate = hold();
       f.respond(async () => {
         await gate.wait;
@@ -708,6 +1341,14 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       } finally {
         gate.release();
       }
+      const registered = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(registered?.leaseExpiresAt instanceof Date);
+      assert.equal(
+        registered.leaseExpiresAt.getTime(),
+        acknowledged.leaseExpiresAt.getTime(),
+      );
       await control(sequence, "HEARTBEAT", { observedState: "ACTIVE" });
       f.advance(1000);
       assert.deepEqual(await f.generate(input, key), result);
@@ -749,6 +1390,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       await waitFor(() =>
         f.metrics.some((metric) => metric.outcome === "FAILED"),
       );
+      assert.ok(
+        f.metrics.some(
+          (metric) => metric.outcome === "FAILED" && metric.code === "ABORTED",
+        ),
+      );
       assert.equal(f.calls(), 1);
     },
   );
@@ -767,8 +1413,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         outputCostMicroUsdPerMillionTokens: 15000000,
       };
       await f.generate(f.input());
-      assert.equal(f.metrics[0]?.usageSource, "PROVIDER");
-      assert.equal(f.metrics[0].costMicroUsd, 645);
+      const usage = f.metrics.find(
+        (metric) => metric.outcome === "PROVIDER_USAGE",
+      );
+      assert.equal(usage?.usageSource, "PROVIDER");
+      assert.equal(usage.costMicroUsd, 645);
       f.config.FREE_PLUS_ROUTE = {
         ...f.config.FREE_PLUS_ROUTE,
         model: "global.anthropic.claude-opus-4-6-v1",

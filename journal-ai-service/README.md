@@ -2,6 +2,132 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-789 shared Text and Voice guidance
+
+Both real-provider paths use `companion-guidance-v1` and the reviewed,
+non-personal product facts in `companion-domain-knowledge-v1`. The policy
+supports empathetic Vietnamese reflection, clarification and navigation to
+existing Support Guide/help controls. Care retains assessment, safety and
+SupportPlan authority; Consultation retains entitlement authority. The model
+cannot diagnose, prescribe, invent personal facts or execute business actions.
+
+Provider system messages contain fixed policy and delivery instructions only.
+The message and authorized context are serialized as untrusted JSON in the
+user message, including delimiter-like input. Voice rejects nonempty personal
+context kinds before provider execution. Voice-only uses current-call RAM turns;
+MB-790 optionally attaches bounded owner-selected Text pairs as described below.
+Text retains its separately authorized owner-selected context.
+Voice BRIEF/SUPPORTIVE delivery does not change the shared semantic policy or
+strict response schema; only the validated message can reach TTS.
+
+The persisted `companion-chat-v1` wrapper/schema identifier remains unchanged;
+the separate guidance and knowledge versions are explicit in the system prompt.
+This feature adds no model, RAG service, training pipeline, migration, consent
+scope or provider enablement. Existing Text route configuration, pinned Voice
+Sonnet, input counting, quota, deadlines and teardown remain authoritative.
+See the [MB-789 evidence and provenance audit](../docs/story-mb-789-unified-companion-guidance.md)
+for source limits and the separately authorized real-provider comparison rubric.
+
+## MB-791 Text friend voice and suggestions
+
+`JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED` (default false) switches TEXT chat to
+`companion-guidance-v2`: friend persona, the last 8 messages of the same
+conversation as memory, a cached list of up to 30 published Resources sent as
+`R<n>` refs, and a closed-enum `suggestion` that the server resolves and stores
+encrypted. Voice is unchanged. Enable it only after migration 017, the
+real-provider conversation eval and owner sign-off ([ADR
+0049](../docs/adr/0049-ai-companion-friend-voice-and-suggestions.md)). The
+per-plan token budgets (`companion-quota-v2`) apply regardless of the flag.
+
+## MB-790 selected Text-to-Voice context
+
+Set `JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED=true` only after coordinated Care
+Voice v2 and migration 016 rollout; the default is false. This capability does
+not enable Voice admission or providers. Every caller needs current independent
+Voice v2 consent plus unchanged AI_PROCESSING. See
+[the accepted context amendment](../docs/adr/0048-opt-in-text-voice-context.md)
+and [implementation/rollback](../docs/story-mb-790-text-voice-handoff.md).
+
+Preparation accepts only an owner conversation ID. The signed 120-second ticket
+contains no content; admission consumes its HMAC once, revalidates the snapshot
+and binds at most two eligible pairs/1,200 bytes in RAM. Current-call context and
+selected Text share the existing bounds. Keep process affinity for preparation,
+admission and turns: RAM loss fails closed, without historical content recovery.
+Old v1 consent/replays stay historical. Existing quota and provider caps remain.
+
+## MB-762 scoped Voice provider
+
+Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
+`ap-southeast-1` using `JOURNAL_AI_VOICE_PROVIDER_MODE=APPROVED_BEDROCK`,
+`JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION` and the existing
+`AWS_BEARER_TOKEN_BEDROCK`. The model and region are validated by the dedicated
+`JOURNAL_AI_VOICE_BEDROCK_MODEL` / `JOURNAL_AI_VOICE_BEDROCK_REGION` keys.
+This configuration does not change AI Text, benchmark selection, consent,
+entitlement or admission. `JOURNAL_AI_VOICE_ENABLED` remains false until the
+[real preflight](../docs/mb-762-live-preflight.md) and LIVE_APPROVED gate pass.
+Live Voice inference cannot fall back to fake, Gemini, Opus or another region. Existing
+nonproduction deterministic tests remain available only while Voice is disabled.
+
+For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
+`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Optional
+`maxSessionSeconds` (integer 1–600) and `maxTurns` (integer 1–30) retain defaults
+of 90 seconds and four turns when omitted. These operational limits need an
+approved budget/window; they do not enable Voice. Never change
+the window to retry this campaign. Existing retained session rows count every
+admission in the window, including failed or refunded calls, in the same Mongo
+transaction as the global capacity write. Each allowlisted owner has at most
+one admission in that window even after a refund; the campaign still has two
+total admissions. Replays do not allocate again. The
+session deadline is frozen at admission, bounded by the configured pilot cap,
+remaining daily quota and window end. Product policy still limits PLUS to 300
+seconds and PREMIUM to 600 seconds per session;
+daily Text/Voice policy and financial credits are unchanged. No new collection
+or migration is introduced.
+
+Optional pilot `replyStyle` accepts `BRIEF` (the existing default) or
+`SUPPORTIVE`. The supportive spoken prompt requests two or three natural
+Vietnamese sentences, usually 180–280 characters, reflecting only what the
+caller shared, with an optional gentle observation or small next step and at
+most one open question. Ambiguous recognition takes priority and calls for a
+short clarification. The same strict JSON/safety validator, 500-character
+message limit, 1,900-input-token check and provider pins still apply. The
+default output ceiling remains 300 tokens for the entire JSON object. An
+explicit pilot `maxOutputTokens` may be an integer from 300 through 600 to
+leave room for the spoken reply plus classification fields. This requires a
+matching approved budget and launcher/fence; omission never expands a prior
+approval or active window. AI Text behavior is unchanged.
+
+Voice observes a closed stop-reason category before output validation. Token
+exhaustion, envelope, JSON, schema and safety rejections have distinct diagnostic
+codes; raw provider bodies, stop strings and conversation content are excluded.
+Only `end_turn` is accepted for Voice completion. Missing reasons and
+`stop_sequence` fail closed as `UNEXPECTED_STOP_REASON`; no stop sequence is
+configured by the Voice request. Valid JSON alone does not authorize speech.
+See [the MB-790 output-validation follow-up](../docs/mb-790-voice-output-validation.md).
+
+Pilot Voice uses the same safety schema/validator with the schema included in
+the system prompt, and omits provider-side `outputConfig` so the complete input
+can be counted before inference. Bedrock Runtime token counting at the Singapore
+endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
+most 1,900 tokens (100-token headroom under the per-turn
+2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
+to the approved global profile and caps output at 300 tokens by default, or
+the explicitly configured pilot limit up to 600. The default four turns per
+call and two admissions bound output to 2,400; an approved extended pilot can
+set at most 30 turns per call, so its budget must account for admissions,
+turns and configured output tokens. This capability/permission needs an actual
+authorized runtime check and `bedrock:CountTokens` access, plus the existing
+Bearer-use authorization; unit tests do not establish account access. The
+[Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+supports Runtime CountTokens and explicitly excludes Mantle. The prior Mantle
+403 did not establish an IAM deficiency. After the owner applied the scoped IAM
+policy, the separately approved recheck in Jira 10295 returned HTTP 200,
+`inputTokens: 53`, in 440 ms on 2026-10-30. This supersedes the earlier unavailable
+result; do not repeat IAM or synthetic CountTokens checks during preparation.
+Admission and Agent remain OFF pending explicit `LIVE_APPROVED`. Actual inference stays on the approved Singapore Converse
+endpoint with the global profile, separately from the counting model ID. There is
+no fallback or retry when counting/inference fails. Text requests are unchanged.
+
 ## Current scope
 
 MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for
@@ -78,6 +204,24 @@ Care/Consultation base URLs, enforce a fixed two-second read deadline, reject
 redirects, malformed/stale responses and mismatched owner/session/purpose, and
 require `no-store`. They do not forward or persist the user's bearer, replicate
 grants, query another owner's database or retry a stale positive decision.
+
+Java and Node wall clocks can differ by a few milliseconds even on the same
+Windows host. A response at most 25 ms ahead may wait for the client's clock
+to reach its original `checkedAt`, within the same two-second read deadline.
+It is never accepted while future-dated, and no REST request is repeated.
+Both owner decisions are checked again at the common return time: age must be
+0..2,000 ms and a paid entitlement must still be unexpired. Large clock skew,
+clock rollback, stale decisions and missing authority continue to fail closed.
+`voice_owner_authorization` diagnostics expose only the owner-service enum,
+closed rejection/catch-up reason, bounded elapsed/age and optional HTTP status;
+no response body, headers, error text, owner ID or token is recorded.
+
+The Voice Bedrock decoder accepts a single whole-response JSON code fence as
+an encoding wrapper. The same exact object schema, Vietnamese language,
+authority and message-safety validators still run; surrounding prose, trailing
+objects, incomplete fences and unsafe fields remain rejected. Pilot prompts
+explicitly request JSON without fences. No provider retry or Text change is
+introduced by this Voice-only decoding rule.
 
 Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
 owns the three closed, content-free MongoDB collections described in the
@@ -379,7 +523,10 @@ npm start
 | `JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS`             | No                       | `30`                                             | Configurable successfully delivered answers per local day for `PLUS`                                      |
 | `JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS` | No                       | `200`                                            | Hidden backend fair-use ceiling for `PREMIUM`; never displayed as a daily quota                           |
 | `JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE`          | No                       | `10`                                             | Per-owner bounded request-rate control                                                                    |
-| `JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET`             | No                       | `100000`                                         | Per-owner provider token/cost guard across all plans                                                      |
+| `JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET`        | No                       | `100000`                                         | Per-owner daily provider token guard for `FREE` (`companion-quota-v2`)                                    |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                         | Per-owner daily provider token guard for `PLUS`                                                           |
+| `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                         | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
+| `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`       | No                       | `false`                                          | TEXT friend voice, memory, catalogue and suggestion (ADR 0049); needs owner sign-off                      |
 | `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                               | Server-authoritative IANA timezone used for stable quota reset                                            |
 | `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                      | Version persisted with every assistant response                                                           |
 

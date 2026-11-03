@@ -17,11 +17,50 @@ import {
   TrackSource,
   type RemoteParticipant,
   type RemoteTrackPublication,
+  type AudioFrame,
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
+import { PilotSpeechBudget } from "./pilot-speech-budget.js";
 import type { Dispatch } from "./contract.js";
 import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
 import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
+import type { AgentDiagnostic } from "./diagnostics.js";
+import { mediaFailure } from "./diagnostics.js";
+
+export function speechUsage(metrics: {
+  type: string;
+  audioDurationMs?: number;
+  charactersCount?: number;
+  cancelled?: boolean;
+}): AgentDiagnostic | null {
+  if (
+    !["stt_metrics", "tts_metrics"].includes(metrics.type) ||
+    typeof metrics.audioDurationMs !== "number" ||
+    !Number.isFinite(metrics.audioDurationMs) ||
+    metrics.audioDurationMs < 0
+  )
+    return null;
+  if (metrics.type === "stt_metrics")
+    return {
+      phase: "speech_usage",
+      component: "STT",
+      audioDurationMs: metrics.audioDurationMs,
+    };
+  if (
+    typeof metrics.charactersCount !== "number" ||
+    !Number.isSafeInteger(metrics.charactersCount) ||
+    metrics.charactersCount < 0 ||
+    typeof metrics.cancelled !== "boolean"
+  )
+    return null;
+  return {
+    phase: "speech_usage",
+    component: "TTS",
+    audioDurationMs: metrics.audioDurationMs,
+    charactersCount: metrics.charactersCount,
+    cancelled: metrics.cancelled,
+  };
+}
 
 export const sessionOptions = {
   turnHandling: {
@@ -53,6 +92,11 @@ export const startOptions = {
     syncTranscription: false,
   },
 };
+export const sttModelOptions = {
+  endpointing: 500,
+  interim_results: true,
+  punctuate: true,
+};
 export function microphoneSubscriptions(
   publications: Iterable<
     Pick<RemoteTrackPublication, "kind" | "source" | "setSubscribed">
@@ -65,6 +109,59 @@ export function microphoneSubscriptions(
         publication.kind === TrackKind.KIND_AUDIO &&
         publication.source === TrackSource.SOURCE_MICROPHONE,
     );
+}
+export function recognitionLanguage(language: string): string {
+  try {
+    return new Intl.Locale(language).language === "vi" ? "vi" : language;
+  } catch {
+    return language;
+  }
+}
+export async function* inputAudioLevel(
+  audio: AsyncIterable<AudioFrame>,
+  receive: (value: AgentDiagnostic) => void,
+) {
+  let samples = 0;
+  let power = 0;
+  let peakAmplitude = 0;
+  let audioDurationMs = 0;
+  const emit = () => {
+    if (!samples) return;
+    receive({
+      phase: "input_audio_level",
+      component: "STT",
+      rms:
+        Math.round(Math.min(1, Math.sqrt(power / samples)) * 1000000) / 1000000,
+      peakAmplitude: Math.round(peakAmplitude * 1000000) / 1000000,
+      audioDurationMs: Math.round(audioDurationMs),
+    });
+    samples = power = peakAmplitude = audioDurationMs = 0;
+  };
+  try {
+    for await (const frame of audio) {
+      if (
+        Number.isSafeInteger(frame.sampleRate) &&
+        frame.sampleRate > 0 &&
+        frame.sampleRate <= 384000 &&
+        Number.isSafeInteger(frame.channels) &&
+        frame.channels > 0 &&
+        frame.channels <= 32
+      ) {
+        const sampleDurationMs = 1000 / (frame.sampleRate * frame.channels);
+        for (const pcm of frame.data) {
+          const amplitude = pcm / 32768;
+          samples++;
+          power += amplitude * amplitude;
+          peakAmplitude = Math.max(peakAmplitude, Math.abs(amplitude));
+          audioDurationMs += sampleDurationMs;
+          if (audioDurationMs >= 1000) emit();
+        }
+      }
+      yield frame;
+    }
+  } finally {
+    emit();
+  }
 }
 export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
   return new TransformStream<
@@ -82,7 +179,7 @@ export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
           receive({
             text: first.text,
             final: event.type === stt.SpeechEventType.FINAL_TRANSCRIPT,
-            language: first.language,
+            language: recognitionLanguage(first.language),
             confidence: first.confidence,
             segmentId: createHash("sha256")
               .update(
@@ -145,6 +242,7 @@ async function verifyPublication(
   else if (!signal.aborted) throw new AgentFailure("PROVIDER_FAILED");
 }
 export class LiveKitMedia implements MediaPort {
+  private readonly pilotSpeechBudget: PilotSpeechBudget;
   private session: voice.AgentSession | undefined;
   private agent: voice.Agent | undefined;
   private speech: voice.SpeechHandle | undefined;
@@ -152,14 +250,19 @@ export class LiveKitMedia implements MediaPort {
   private owner: string | undefined;
   private closed = false;
   private inputEnabled = false;
-  private started = false;
   private display: AgentStatePublisher | undefined;
   private readonly cleanup: (() => void)[] = [];
   constructor(
     private readonly context: JobContext,
     private readonly dispatch: Dispatch,
     private readonly configuration: AgentConfiguration,
-  ) {}
+    private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
+      undefined,
+  ) {
+    this.pilotSpeechBudget = new PilotSpeechBudget(
+      configuration.pilotTtsMaxCharacters ?? 1200,
+    );
+  }
   async start(callbacks: MediaCallbacks) {
     initializeLogger({ pretty: false, level: "silent" });
     this.callbacks = callbacks;
@@ -169,7 +272,7 @@ export class LiveKitMedia implements MediaPort {
         context.room.isRecording ||
         context.room.metadata !== this.dispatch.dispatchId
       ) {
-        callbacks.failed();
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
         return;
       }
       const people = [...context.room.remoteParticipants.values()];
@@ -186,12 +289,12 @@ export class LiveKitMedia implements MediaPort {
             ),
         )
       ) {
-        callbacks.failed();
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
         return;
       }
       const person = people[0];
       if (person && this.owner && person.identity !== this.owner) {
-        callbacks.failed();
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
         return;
       }
       if (person) this.owner = person.identity;
@@ -268,11 +371,7 @@ export class LiveKitMedia implements MediaPort {
       language: "vi",
       apiKey,
       apiSecret,
-      modelOptions: {
-        endpointing: 1500,
-        interim_results: true,
-        punctuate: true,
-      },
+      modelOptions: sttModelOptions,
       connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
     });
     const ttsModel = new inference.TTS({
@@ -289,14 +388,22 @@ export class LiveKitMedia implements MediaPort {
       stt: sttModel,
       tts: ttsModel,
     });
+    this.session.on(
+      voice.AgentSessionEventTypes.MetricsCollected,
+      ({ metrics }) => {
+        const filtered = speechUsage(metrics);
+        if (filtered) this.diagnostic(filtered);
+      },
+    );
     this.session.input.setAudioEnabled(false);
+    const diagnostic = this.diagnostic;
     this.agent = voice.Agent.create({
       instructions: "",
       llm: null,
       async *sttNode(ctx, audio, settings) {
         const events = await voice.Agent.default.sttNode(
           ctx.agent,
-          audio,
+          inputAudioLevel(audio, diagnostic),
           settings,
         );
         if (!events) return;
@@ -307,11 +414,11 @@ export class LiveKitMedia implements MediaPort {
       },
       llmNode: () => null,
     });
-    this.session.on(voice.AgentSessionEventTypes.Error, () => {
-      callbacks.failed();
+    this.session.on(voice.AgentSessionEventTypes.Error, (event) => {
+      callbacks.failed(mediaFailure("SDK_ERROR", event));
     });
-    this.session.on(voice.AgentSessionEventTypes.Close, () => {
-      if (!this.closed) callbacks.failed();
+    this.session.on(voice.AgentSessionEventTypes.Close, (event) => {
+      if (!this.closed) callbacks.failed(mediaFailure("SDK_CLOSE", event));
     });
     const disconnected = (p: RemoteParticipant) => {
       if (p.identity === this.owner) callbacks.connected(false);
@@ -320,8 +427,11 @@ export class LiveKitMedia implements MediaPort {
       guard();
       if (p.identity === this.owner) callbacks.connected(true);
     };
-    const ownDisconnect = () => {
-      callbacks.failed();
+    const reconnecting = () => {
+      callbacks.failed(mediaFailure("ROOM_RECONNECTING"));
+    };
+    const disconnectedRoom = () => {
+      callbacks.failed(mediaFailure("ROOM_DISCONNECTED"));
     };
     const muted = (_track: unknown, p: { identity: string }) => {
       if (p.identity === this.owner) callbacks.muted(true);
@@ -331,15 +441,15 @@ export class LiveKitMedia implements MediaPort {
     };
     context.room.on(RoomEvent.ParticipantDisconnected, disconnected);
     context.room.on(RoomEvent.ParticipantConnected, connected);
-    context.room.on(RoomEvent.Reconnecting, ownDisconnect);
-    context.room.on(RoomEvent.Disconnected, ownDisconnect);
+    context.room.on(RoomEvent.Reconnecting, reconnecting);
+    context.room.on(RoomEvent.Disconnected, disconnectedRoom);
     context.room.on(RoomEvent.TrackMuted, muted);
     context.room.on(RoomEvent.TrackUnmuted, unmuted);
     this.cleanup.push(() => {
       context.room.off(RoomEvent.ParticipantDisconnected, disconnected);
       context.room.off(RoomEvent.ParticipantConnected, connected);
-      context.room.off(RoomEvent.Reconnecting, ownDisconnect);
-      context.room.off(RoomEvent.Disconnected, ownDisconnect);
+      context.room.off(RoomEvent.Reconnecting, reconnecting);
+      context.room.off(RoomEvent.Disconnected, disconnectedRoom);
       context.room.off(RoomEvent.TrackMuted, muted);
       context.room.off(RoomEvent.TrackUnmuted, unmuted);
     });
@@ -357,7 +467,6 @@ export class LiveKitMedia implements MediaPort {
       await this.session.close();
       throw new AgentFailure("AUTHORITY_EXPIRED");
     }
-    this.started = true;
     callbacks.muted(
       [...person.trackPublications.values()].some((t) => t.muted),
     );
@@ -379,13 +488,11 @@ export class LiveKitMedia implements MediaPort {
   private isClosed() {
     return this.closed;
   }
-  clearInput() {
-    if (this.started) this.session?.clearUserTurn();
-  }
   async speak(text: string, started: () => Promise<void>, signal: AbortSignal) {
     const session = this.session;
     if (!session || this.closed || signal.aborted)
       throw new AgentFailure("AUTHORITY_EXPIRED");
+    if (this.configuration.pilot) this.pilotSpeechBudget.reserve(text);
     const output = session.output.audio;
     if (!output) throw new AgentFailure("PROVIDER_FAILED");
     try {
@@ -404,12 +511,11 @@ export class LiveKitMedia implements MediaPort {
           this.interrupt();
         },
         () => {
-          this.callbacks?.failed();
+          this.callbacks?.failed(mediaFailure("PLAYBACK_PUBLICATION"));
         },
       );
     } finally {
       this.speech = undefined;
-      this.clearInput();
     }
   }
   interrupt() {
@@ -421,12 +527,10 @@ export class LiveKitMedia implements MediaPort {
     try {
       this.input(false);
       this.interrupt();
-      this.clearInput();
       for (const callback of this.cleanup.splice(0)) callback();
       await this.display?.close();
       await this.session?.close();
     } finally {
-      this.started = false;
       this.session = undefined;
       this.agent = undefined;
       this.callbacks = undefined;

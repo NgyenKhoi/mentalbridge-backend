@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHmac } from "node:crypto";
 
 import {
   VoiceAccessError,
@@ -28,7 +29,7 @@ const decision = (): VoiceOwnerDecision => ({
     purpose: "AI_COMPANION_VOICE",
     aiProcessingGranted: true,
     voiceProcessingGranted: true,
-    voiceConsentVersion: "ai-voice-processing-capstone-v1",
+    voiceConsentVersion: "ai-voice-processing-capstone-v2",
     authorized: true,
     checkedAt: now.toISOString(),
   },
@@ -66,7 +67,9 @@ const session = (): VoiceSession => ({
   voiceSessionId: sessionId,
   ownerId,
   keyHash: "opaque",
-  fingerprint: "opaque",
+  fingerprint: createHmac("sha256", secret)
+    .update(`voice:start:${ownerId}:companion-voice-policy-v1:{}`)
+    .digest("base64url"),
   state: "AUTHORIZED",
   policyVersion: "companion-voice-policy-v1",
   entitlement: {
@@ -222,6 +225,40 @@ void test("paid and DEMO PLUS/PREMIUM use current owner package and fresh check-
     }
 });
 
+void test("pilot eligibility retains default 90 seconds and bounds extended sessions by plan, remaining quota and window", async () => {
+  for (const row of [
+    { plan: "PREMIUM", remaining: 1800, window: 900, expected: 90 },
+    { plan: "PREMIUM", remaining: 1800, window: 900, cap: 600, expected: 600 },
+    { plan: "PLUS", remaining: 600, window: 900, cap: 600, expected: 300 },
+    { plan: "PREMIUM", remaining: 120, window: 900, cap: 600, expected: 120 },
+    { plan: "PREMIUM", remaining: 1800, window: 75, cap: 600, expected: 75 },
+  ] as const) {
+    const d = decision();
+    d.entitlement.packageCode = row.plan;
+    const service = new VoiceAccessService(
+      ledger({
+        snapshot: () =>
+          Promise.resolve({ ...quota(), remainingSeconds: row.remaining }),
+      }),
+      { check: () => Promise.resolve(d) },
+      secret,
+      () => true,
+      () => now,
+      undefined,
+      {
+        startsAt: new Date(now.getTime() - 1000),
+        endsAt: new Date(now.getTime() + row.window * 1000),
+        ownerIds: [ownerId],
+        ...("cap" in row ? { maxSessionSeconds: row.cap } : {}),
+      },
+    );
+    const result = await service.eligibility(ownerId, key);
+    assert.equal(result.state, "ELIGIBLE");
+    assert.equal(result.availableSessionSeconds, row.expected);
+    assert.equal(result.maxSessionSeconds, row.plan === "PLUS" ? 300 : 600);
+  }
+});
+
 for (const [label, patch, state] of [
   ["same owner on another device", { ownerActive: true }, "SESSION_LIMIT"],
   ["global demo slots", { globalAvailable: 0 }, "GLOBAL_CAPACITY_FULL"],
@@ -363,6 +400,8 @@ void test("admission binds the checked session, protects command keys and freeze
   assert.notEqual(captured.keyHash, key);
   assert.equal(captured.authorityExpiresAt?.getTime(), now.getTime() + 10_000);
   assert.equal(captured.claimExpiresAt?.getTime(), now.getTime() + 10_000);
+  assert.equal(captured.fingerprint, session().fingerprint);
+  assert.equal(Object.hasOwn(captured, "contextHandoffHash"), false);
   assert.equal(JSON.stringify(captured).includes(key), false);
 });
 
@@ -390,6 +429,238 @@ void test("accepted replay reauthorizes without spending another start attempt",
     sessionId,
   );
   assert.equal(checks, 1);
+});
+
+void test("validated handoff admission persists only its opaque binding and request fingerprint", async () => {
+  const handoffToken = "synthetic-private-handoff-ticket";
+  const handoffHash = "h".repeat(43);
+  let captured: Parameters<VoiceAccessLedger["reserve"]>[0] | undefined;
+  const service = new VoiceAccessService(
+    ledger({
+      reserve: (value) => {
+        captured = value;
+        return Promise.resolve({
+          ...session(),
+          fingerprint: value.fingerprint,
+          ...(value.contextHandoffHash !== undefined
+            ? { contextHandoffHash: value.contextHandoffHash }
+            : {}),
+        });
+      },
+    }),
+    { check: () => Promise.resolve(decision()) },
+    secret,
+    () => true,
+    () => now,
+  );
+  await service.reserve(
+    ownerId,
+    key,
+    key,
+    { handoffToken },
+    handoffHash,
+    new Date(now.getTime() + 120_000),
+  );
+  assert.ok(captured);
+  assert.equal(captured.contextHandoffHash, handoffHash);
+  assert.equal(
+    captured.fingerprint,
+    createHmac("sha256", secret)
+      .update(
+        `voice:start:${ownerId}:companion-voice-policy-v1:${JSON.stringify({ handoffToken })}`,
+      )
+      .digest("base64url"),
+  );
+  assert.notEqual(captured.fingerprint, session().fingerprint);
+  assert.equal(JSON.stringify(captured).includes(handoffToken), false);
+  assert.equal(
+    captured.contextHandoffExpiresAt?.getTime(),
+    now.getTime() + 120_000,
+  );
+});
+
+void test("handoff requests require prior validation and reject malformed or unexpected fields before any ledger or owner reads", async () => {
+  let calls = 0;
+  const service = new VoiceAccessService(
+    ledger({
+      replay: () => {
+        calls++;
+        return Promise.resolve(null);
+      },
+    }),
+    {
+      check: () => {
+        calls++;
+        return Promise.resolve(decision());
+      },
+    },
+    secret,
+    () => true,
+    () => now,
+  );
+  for (const [request, hash] of [
+    [{ handoffToken: "synthetic-ticket" }, undefined],
+    [{}, "h".repeat(43)],
+    [{ handoffToken: "" }, "h".repeat(43)],
+    [{ handoffToken: "a".repeat(4097) }, "h".repeat(43)],
+    [{ handoffToken: "synthetic-ticket" }, "invalid"],
+    [{ handoffToken: "synthetic-ticket", ownerId }, "h".repeat(43)],
+  ] as const)
+    await assert.rejects(
+      service.reserve(
+        ownerId,
+        key,
+        key,
+        request as { handoffToken?: string },
+        hash,
+      ),
+      (error: unknown) =>
+        error instanceof VoiceAccessError && error.code === "INVALID_REQUEST",
+    );
+  assert.equal(calls, 0);
+});
+
+void test("both accepted start replay paths bind the exact handoff request and preserve legacy replay", async () => {
+  const handoffToken = "synthetic-private-handoff-ticket";
+  const hash = "h".repeat(43);
+  const fingerprint = createHmac("sha256", secret)
+    .update(
+      `voice:start:${ownerId}:companion-voice-policy-v1:${JSON.stringify({ handoffToken })}`,
+    )
+    .digest("base64url");
+  for (const acceptedClaim of [false, true]) {
+    for (const changed of ["none", "ticket", "hash", "removed"] as const) {
+      let replays = 0;
+      let checks = 0;
+      const prior = { ...session(), fingerprint, contextHandoffHash: hash };
+      const service = new VoiceAccessService(
+        ledger({
+          replay: () =>
+            Promise.resolve(acceptedClaim && replays++ === 0 ? null : prior),
+          recordStartAttempt: () => Promise.resolve({ status: "ACCEPTED" }),
+          reserve: () => {
+            throw new Error("A replay must not reserve quota again");
+          },
+        }),
+        {
+          check: () => {
+            checks++;
+            return Promise.resolve(decision());
+          },
+        },
+        secret,
+        () => true,
+        () => now,
+      );
+      const work = service.reserve(
+        ownerId,
+        key,
+        key,
+        changed === "removed"
+          ? {}
+          : {
+              handoffToken:
+                changed === "ticket" ? "different-ticket" : handoffToken,
+            },
+        changed === "removed"
+          ? undefined
+          : changed === "hash"
+            ? "g".repeat(43)
+            : hash,
+        new Date(now.getTime() - 1),
+      );
+      if (changed === "none") {
+        assert.equal((await work).voiceSessionId, sessionId);
+        assert.equal(checks, 1);
+      } else {
+        await assert.rejects(
+          work,
+          (error: unknown) =>
+            error instanceof VoiceAccessError &&
+            error.code === "IDEMPOTENCY_CONFLICT",
+        );
+        assert.equal(checks, 0);
+      }
+    }
+  }
+});
+
+void test("new handoff admission requires an unexpired bounded lifetime and rechecks expiry after owner reads", async () => {
+  const handoffToken = "synthetic-private-handoff-ticket";
+  const handoffHash = "h".repeat(43);
+  for (const expires of [
+    undefined,
+    new Date("invalid"),
+    now,
+    new Date(now.getTime() + 120_001),
+  ]) {
+    let reserved = 0;
+    let released = 0;
+    const service = new VoiceAccessService(
+      ledger({
+        reserve: () => {
+          reserved++;
+          return Promise.resolve(session());
+        },
+        releaseStartAttempt: () => {
+          released++;
+          return Promise.resolve();
+        },
+      }),
+      { check: () => Promise.resolve(decision()) },
+      secret,
+      () => true,
+      () => now,
+    );
+    await assert.rejects(
+      service.reserve(
+        ownerId,
+        key,
+        key,
+        { handoffToken },
+        handoffHash,
+        expires,
+      ),
+      (error: unknown) =>
+        error instanceof VoiceAccessError && error.code === "INVALID_REQUEST",
+    );
+    assert.equal(reserved, 0);
+    assert.equal(released, 1);
+  }
+  let clock = new Date(now);
+  let reserved = 0;
+  const expiresAt = new Date(now.getTime() + 1000);
+  const service = new VoiceAccessService(
+    ledger({
+      reserve: (input) => {
+        reserved++;
+        assert.equal(input.contextHandoffExpiresAt, expiresAt);
+        return Promise.resolve(session());
+      },
+    }),
+    {
+      check: () => {
+        clock = expiresAt;
+        return Promise.resolve(decision());
+      },
+    },
+    secret,
+    () => true,
+    () => clock,
+  );
+  await assert.rejects(
+    service.reserve(
+      ownerId,
+      key,
+      key,
+      { handoffToken },
+      handoffHash,
+      expiresAt,
+    ),
+    (error: unknown) =>
+      error instanceof VoiceAccessError && error.code === "INVALID_REQUEST",
+  );
+  assert.equal(reserved, 0);
 });
 
 void test("concurrent pending retries never fan out owner reads or release another claim", async () => {
@@ -489,13 +760,16 @@ void test("every renewal/turn/reconnect authority request observes both consents
     () => now,
   );
   await service.authorizeSession(ownerId, sessionId, key);
+  const authority = await service.authorizeTurn(ownerId, sessionId, key);
+  assert.equal(authority.consent, d.consent);
+  assert.equal(authority.entitlement, d.entitlement);
   d.consent.voiceProcessingGranted = false;
   d.consent.authorized = false;
   await assert.rejects(
     service.authorizeSession(ownerId, sessionId, key),
     VoiceAccessError,
   );
-  assert.equal(checks, 2);
+  assert.equal(checks, 3);
   assert.deepEqual(reasons, ["VOICE_CONSENT_REVOKED"]);
 });
 

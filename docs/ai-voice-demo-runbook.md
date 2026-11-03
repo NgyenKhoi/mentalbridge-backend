@@ -110,8 +110,16 @@ Local tests do not establish Vietnamese pronunciation/noise quality or a real
 spoken reply. The opt-in QA story records exact SHA, approved provider/model/voice,
 device/microphone/headphone modes, echo cancellation/noise suppression and
 interrupt/stop behavior without recording or attaching conversation content.
-If speech is uncertain or unavailable, end safely and offer explicit text/manual
-push-to-talk in the client; MB-759 does not implement client controls.
+A bounded Vietnamese final with finite confidence in0..1 below0.8 is an
+input-quality rejection, not a provider outage. Discard that final and its
+unsubmitted pending utterance without calling Journal or interrupting approved
+playback/in-flight work. Record only the closed DISCARDED/LOW_CONFIDENCE outcome;
+never record the rejected words or invent a reply. Existing idle, lease, quota
+and hard-stop enforcement continues. A fresh valid user utterance can proceed
+under the same authority, without retrying an unknown provider request.
+Malformed confidence, unsupported language, oversized final input and actual
+STT/provider unavailability still end safely and permit explicit text/manual
+push-to-talk re-entry; MB-759 does not implement client controls.
 
 ## MB-758 turn checkpoint
 

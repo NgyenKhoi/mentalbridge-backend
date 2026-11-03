@@ -23,9 +23,14 @@ export class JournalClient {
     schema: z.ZodType<T>,
     signal?: AbortSignal,
     key?: string,
+    timeoutMs?: number,
   ): Promise<T> {
     if (!this.configuration.journalToken)
       throw new AgentFailure("JOURNAL_UNAVAILABLE");
+    const timeout = AbortSignal.timeout(
+      timeoutMs ?? (path === "turns" ? 30000 : 2000),
+    );
+    let received = false;
     try {
       const response = await this.transport(
         new URL(
@@ -44,14 +49,16 @@ export class JournalClient {
             ...(key ? { "Idempotency-Key": key } : {}),
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.any([
-            AbortSignal.timeout(path === "turns" ? 30000 : 2000),
-            ...(signal ? [signal] : []),
-          ]),
+          signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
         },
       );
+      received = true;
+      if (!response.ok)
+        throw new AgentFailure(
+          "JOURNAL_UNAVAILABLE",
+          response.status >= 500 ? "HTTP_5XX" : "HTTP_4XX",
+        );
       if (
-        !response.ok ||
         response.headers.get("cache-control") !== "no-store" ||
         !response.headers.get("content-type")?.startsWith("application/json")
       )
@@ -74,9 +81,25 @@ export class JournalClient {
         await reader.cancel();
         reader.releaseLock();
       }
-      return schema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-    } catch {
-      throw new AgentFailure("JOURNAL_UNAVAILABLE");
+      const value = schema.parse(
+        JSON.parse(Buffer.concat(chunks).toString("utf8")),
+      );
+      if (signal?.aborted || timeout.aborted)
+        throw new AgentFailure("JOURNAL_UNAVAILABLE");
+      return value;
+    } catch (error) {
+      throw new AgentFailure(
+        "JOURNAL_UNAVAILABLE",
+        signal?.aborted
+          ? "ABORTED"
+          : timeout.aborted
+            ? "TIMEOUT"
+            : error instanceof AgentFailure && error.failure
+              ? error.failure
+              : received
+                ? "INVALID_RESPONSE"
+                : "TRANSPORT",
+      );
     }
   }
   async claim(dispatch: Dispatch, signal?: AbortSignal): Promise<Lease> {
@@ -99,13 +122,22 @@ export class JournalClient {
     return value;
   }
   async control(dispatch: Dispatch, signal: Signal, abort?: AbortSignal) {
+    const remainingMs = Date.parse(signal.expiresAt) - this.clock();
+    if (!Number.isFinite(remainingMs) || remainingMs <= 0)
+      throw new AgentFailure("AUTHORITY_EXPIRED");
+    if (abort?.aborted)
+      throw new AgentFailure("JOURNAL_UNAVAILABLE", "ABORTED");
     const value = await this.post(
       dispatch.voiceSessionId,
       "agent-control",
       signal,
       controlSchema,
       abort,
+      undefined,
+      Math.min(3500, remainingMs),
     );
+    if (Date.parse(signal.expiresAt) <= this.clock())
+      throw new AgentFailure("AUTHORITY_EXPIRED");
     if (
       value.control.voiceSessionId !== dispatch.voiceSessionId ||
       value.control.attemptId !== dispatch.attemptId ||

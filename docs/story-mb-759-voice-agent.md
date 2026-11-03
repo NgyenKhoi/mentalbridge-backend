@@ -46,7 +46,13 @@ and [ADR 0046](adr/0046-ai-voice-companion-contract.md).
 | MUTED | Disable input and clear pending speech; stop active playback | Stale pending input on unmute | Mute test |
 | DISCONNECTED | Between turns, same owner may return within 30 seconds after fresh control | New quota, extended hard stop, late reconnect | Reconnect and late-deadline tests |
 | ENDING / ENDED / revoked or expired | Stop locally, cancel provider/Journal work, close room input and drop RAM | Timer-based capacity release or late audio | Expiry, grant STOP, stale sequence, failure and teardown tests |
-| Uncertain STT/provider/HTTP outage | Safe end, explicit client text/manual fallback | Fabricated speech, silent model switch or sensitive provider error | Low-confidence/language/budget, timeout/refusal/malformed/oversize tests |
+| Bounded Vietnamese final, finite confidence0..1 below0.8 | Discard final and unsubmitted pending utterance; keep authorized playback/current turn and call alive | Journal/TTS from rejected words, fabricated speech, interruption, idle/quota/deadline extension | Low-confidence discard, pending-prefix, active-playback and expiry regressions |
+| Invalid STT confidence/language/size or actual provider/HTTP outage | Safe end, explicit client text/manual fallback | Fabricated speech, silent model switch or sensitive provider error | Invalid-confidence/language/budget, timeout/refusal/malformed/oversize tests |
+
+MB-762 corrects the earlier blanket uncertain-final shutdown: a low-confidence
+input-quality segment is discarded, while provider failures and invalid input
+remain fatal. The confidence threshold for generation stays0.8. This does not
+reopen a consumed admission or relax authority, privacy or runtime limits.
 
 ## Verification and delivery
 

@@ -19,6 +19,13 @@ import {
   type Conversation,
   type SendResult,
 } from "./companion-chat.js";
+import { companionGuidanceSystem } from "./companion-guidance-policy.js";
+import {
+  companionUserInput,
+  estimateInputTokens,
+  type FriendInput,
+} from "./companion-text-request.js";
+import type { CatalogItem } from "./resource-catalog.js";
 
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const otherOwnerId = "22222222-2222-4222-8222-222222222222";
@@ -32,7 +39,9 @@ const configuration = loadConfiguration({
   JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS: "7",
   JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: "9",
   JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE: "20",
-  JOURNAL_AI_CHAT_DAILY_TOKEN_BUDGET: "10000",
+  JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET: "10000",
+  JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET: "10000",
+  JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET: "10000",
 });
 
 class MemoryRepository implements ChatRepository {
@@ -214,6 +223,7 @@ const subject = (
     consent?: ConsentClient;
     context?: ChatContextAssembler;
     provider?: ChatProvider;
+    catalog?: { items: () => Promise<CatalogItem[]> };
   } = {},
   runtimeConfiguration: ServiceConfiguration = configuration,
 ) => {
@@ -235,6 +245,7 @@ const subject = (
     overrides.provider ?? provider,
     { now: () => new Date(now) },
     runtimeConfiguration,
+    overrides.catalog ?? { items: () => Promise.resolve([]) },
   );
   return {
     repository,
@@ -437,7 +448,7 @@ void test("enforces request-rate and token controls without consuming an answer"
           }),
       },
     },
-    { ...configuration, CHAT_DAILY_TOKEN_BUDGET: 1_000 },
+    { ...configuration, CHAT_PREMIUM_DAILY_TOKEN_BUDGET: 1_000 },
   );
   const tokenConversation = await create(tokenLimited.service);
   await assert.rejects(
@@ -450,6 +461,506 @@ void test("enforces request-rate and token controls without consuming an answer"
       error instanceof HttpException && error.getStatus() === 429,
   );
   assert.equal([...tokenLimited.repository.quota.values()][0]?.successes, 0);
+});
+
+void test("token budget follows the package plan", async () => {
+  const costly: ChatProvider = {
+    reply: () =>
+      Promise.resolve({
+        message: "Phản hồi theo gói.",
+        inputTokens: 700,
+        outputTokens: 400,
+      }),
+  };
+  const budgets = {
+    ...configuration,
+    CHAT_FREE_DAILY_TOKEN_BUDGET: 1_000,
+    CHAT_PLUS_DAILY_TOKEN_BUDGET: 5_000,
+  };
+  const free = subject("FREE", { provider: costly }, budgets);
+  const freeConversation = await create(free.service);
+  await assert.rejects(
+    () =>
+      free.service.send(
+        request({ message: "Gói miễn phí" }, "chat-plan-budget-0001"),
+        freeConversation.conversationId,
+      ),
+    (error: unknown) =>
+      error instanceof HttpException && error.getStatus() === 429,
+  );
+  const plus = subject("PLUS", { provider: costly }, budgets);
+  const plusConversation = await create(plus.service);
+  const sent = await plus.service.send(
+    request({ message: "Gói Plus" }, "chat-plan-budget-0002"),
+    plusConversation.conversationId,
+  );
+  assert.equal(sent.assistant, "Phản hồi theo gói.");
+  assert.equal(sent.quota.policyVersion, "companion-quota-v2");
+});
+
+void test("per-plan token budgets and the guidance v2 flag have bounded defaults", () => {
+  const base = {
+    NODE_ENV: "test",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: "test-public-key",
+  };
+  const defaults = loadConfiguration(base);
+  assert.equal(defaults.CHAT_FREE_DAILY_TOKEN_BUDGET, 100_000);
+  assert.equal(defaults.CHAT_PLUS_DAILY_TOKEN_BUDGET, 250_000);
+  assert.equal(defaults.CHAT_PREMIUM_DAILY_TOKEN_BUDGET, 600_000);
+  assert.equal(defaults.COMPANION_GUIDANCE_V2_ENABLED, false);
+  assert.equal(
+    loadConfiguration({
+      ...base,
+      JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "true",
+    }).COMPANION_GUIDANCE_V2_ENABLED,
+    true,
+  );
+  for (const name of [
+    "JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET",
+    "JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET",
+    "JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET",
+  ])
+    assert.throws(() => loadConfiguration({ ...base, [name]: "999" }));
+  assert.throws(() =>
+    loadConfiguration({
+      ...base,
+      JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "yes",
+    }),
+  );
+});
+
+const breathing: CatalogItem = {
+  ref: "R1",
+  resourceId: "33333333-3333-4333-8333-333333333333",
+  category: "BREATHING",
+  title: "Thở 4-7-8",
+};
+const friendConfiguration = {
+  ...configuration,
+  COMPANION_GUIDANCE_V2_ENABLED: true,
+};
+const recordingProvider = (
+  suggestion: { destination: string; resourceRef: string | null } | null,
+  message = "Ừ, mình mở bài thở cho bạn nha.",
+) => {
+  const calls: { friend?: FriendInput }[] = [];
+  const value: ChatProvider = {
+    reply: (_message, _context, _route, options) => {
+      calls.push({ ...(options?.friend ? { friend: options.friend } : {}) });
+      return Promise.resolve({
+        message,
+        inputTokens: 20,
+        outputTokens: 10,
+        suggestion,
+      });
+    },
+  };
+  return { calls, value };
+};
+
+void test("flag on sends recent turns and the catalogue and returns the resolved suggestion", async () => {
+  const recorder = recordingProvider({
+    destination: "RESOURCE",
+    resourceRef: "R1",
+  });
+  const { service } = subject(
+    "FREE",
+    {
+      provider: recorder.value,
+      catalog: { items: () => Promise.resolve([breathing]) },
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  await service.send(
+    request({ message: "Hôm nay mình buồn" }, "chat-friend-command-0001"),
+    conversation.conversationId,
+  );
+  const second = await service.send(
+    request({ message: "Ừ, thử bài thở đó coi" }, "chat-friend-command-0002"),
+    conversation.conversationId,
+  );
+  const [first, secondCall] = recorder.calls;
+  assert.ok(first?.friend && secondCall?.friend);
+  assert.deepEqual(first.friend.history, []);
+  assert.deepEqual(secondCall.friend.history, [
+    { role: "USER", text: "Hôm nay mình buồn" },
+    { role: "ASSISTANT", text: "Ừ, mình mở bài thở cho bạn nha." },
+  ]);
+  assert.deepEqual(secondCall.friend.catalog, [breathing]);
+  assert.deepEqual(second.suggestion, {
+    destination: "RESOURCE",
+    resourceId: breathing.resourceId,
+    resourceTitle: "Thở 4-7-8",
+  });
+});
+
+void test("a suggestion is stored encrypted and survives reload", async () => {
+  const { service, repository } = subject(
+    "FREE",
+    {
+      provider: recordingProvider({
+        destination: "RESOURCE",
+        resourceRef: "R1",
+      }).value,
+      catalog: { items: () => Promise.resolve([breathing]) },
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  await service.send(
+    request({ message: "Ừ, thử bài thở đó coi" }, "chat-stored-sugg-0001"),
+    conversation.conversationId,
+  );
+  const stored = repository.conversations[0]?.messages;
+  assert.equal(stored?.[0]?.suggestion, undefined);
+  const envelope = stored?.[1]?.suggestion;
+  assert.ok(envelope);
+  assert.equal(
+    Buffer.from(envelope.ciphertext as Buffer).includes("Thở 4-7-8"),
+    false,
+  );
+  const reloaded = await service.get(
+    request({}, "unused-get-key-00001"),
+    conversation.conversationId,
+  );
+  assert.deepEqual(
+    reloaded.messages.map((message) => message.suggestion),
+    [
+      null,
+      {
+        destination: "RESOURCE",
+        resourceId: breathing.resourceId,
+        resourceTitle: "Thở 4-7-8",
+      },
+    ],
+  );
+});
+
+void test("content and suggestion envelopes do not open under each other's AAD", () => {
+  const crypto = new ChatCrypto(configuration);
+  const content = crypto.encrypt(ownerId, "conversation-1", "message-1", "{}");
+  const suggestion = crypto.encryptSuggestion(
+    ownerId,
+    "conversation-1",
+    "message-1",
+    {
+      destination: "JOURNAL",
+      resourceId: null,
+      resourceTitle: null,
+    },
+  );
+  const message = (value: Partial<ChatMessage>): ChatMessage => ({
+    messageId: "message-1",
+    role: "ASSISTANT",
+    content,
+    createdAt: new Date(0),
+    route: null,
+    contextKinds: [],
+    ...value,
+  });
+  assert.equal(
+    crypto.decryptSuggestion(
+      ownerId,
+      "conversation-1",
+      message({ suggestion: content }),
+    ),
+    null,
+  );
+  assert.deepEqual(
+    crypto.decryptSuggestion(
+      ownerId,
+      "conversation-1",
+      message({ suggestion }),
+    ),
+    { destination: "JOURNAL", resourceId: null, resourceTitle: null },
+  );
+  assert.throws(() =>
+    crypto.decrypt(ownerId, "conversation-1", message({ content: suggestion })),
+  );
+});
+
+void test("flag off sends no friend input and returns suggestion null", async () => {
+  const recorder = recordingProvider({
+    destination: "JOURNAL",
+    resourceRef: null,
+  });
+  const { service } = subject("FREE", {
+    provider: recorder.value,
+    catalog: { items: () => Promise.reject(new Error("must not be read")) },
+  });
+  const conversation = await create(service);
+  const sent = await service.send(
+    request({ message: "Mình mệt" }, "chat-friend-off-0001"),
+    conversation.conversationId,
+  );
+  assert.deepEqual(recorder.calls, [{}]);
+  assert.equal(sent.suggestion, null);
+});
+
+void test("an invalid suggestion keeps the reply", async () => {
+  for (const [index, raw] of [
+    { destination: "RESOURCE", resourceRef: "R9" },
+    { destination: "RESOURCE", resourceRef: null },
+    { destination: "JOURNAL", resourceRef: "R1" },
+    { destination: "SETTINGS", resourceRef: null },
+  ].entries()) {
+    const { service } = subject(
+      "FREE",
+      {
+        provider: recordingProvider(raw).value,
+        catalog: { items: () => Promise.resolve([breathing]) },
+      },
+      friendConfiguration,
+    );
+    const conversation = await create(service);
+    const sent = await service.send(
+      request(
+        { message: "Có gì giúp mình không" },
+        `chat-invalid-sugg-000${String(index)}`,
+      ),
+      conversation.conversationId,
+    );
+    assert.equal(sent.assistant, "Ừ, mình mở bài thở cho bạn nha.");
+    assert.equal(sent.suggestion, null);
+  }
+});
+
+void test("a link in a v2 reply is an invalid response", async () => {
+  const { service, repository } = subject(
+    "FREE",
+    {
+      provider: recordingProvider(
+        null,
+        "Bạn mở https://example.com/thu-gian nha.",
+      ).value,
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  await assert.rejects(
+    () =>
+      service.send(
+        request({ message: "Cho mình link" }, "chat-friend-link-0001"),
+        conversation.conversationId,
+      ),
+    (error: unknown) =>
+      error instanceof HttpException && error.getStatus() === 503,
+  );
+  assert.equal(
+    repository.commands[0]?.failureCode,
+    "CHAT_PROVIDER_INVALID_RESPONSE",
+  );
+});
+
+void test("an over-budget estimate refuses before the provider call", async () => {
+  const recorder = recordingProvider(null);
+  const { service, repository } = subject(
+    "FREE",
+    { provider: recorder.value },
+    { ...friendConfiguration, CHAT_FREE_DAILY_TOKEN_BUDGET: 1_000 },
+  );
+  const conversation = await create(service);
+  await assert.rejects(
+    () =>
+      service.send(
+        request({ message: "ệ".repeat(1_500) }, "chat-estimate-0001"),
+        conversation.conversationId,
+      ),
+    (error: unknown) =>
+      error instanceof HttpException && error.getStatus() === 429,
+  );
+  assert.equal(recorder.calls.length, 0);
+  assert.equal(repository.commands[0]?.state, "FAILED");
+  assert.equal(
+    repository.commands[0].failureCode,
+    "CHAT_TOKEN_BUDGET_EXHAUSTED",
+  );
+  const quota = [...repository.quota.values()][0];
+  assert.equal(quota?.tokens, 0);
+  assert.equal(quota.reservations.size, 0);
+});
+
+void test("the command replay snapshot holds no plaintext suggestion and replay restores it", async () => {
+  const recorder = recordingProvider({
+    destination: "RESOURCE",
+    resourceRef: "R1",
+  });
+  const { service, repository } = subject(
+    "FREE",
+    {
+      provider: recorder.value,
+      catalog: { items: () => Promise.resolve([breathing]) },
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  const body = { message: "Ừ, thử bài thở đó coi" };
+  const sent = await service.send(
+    request(body, "chat-replay-sugg-0001"),
+    conversation.conversationId,
+  );
+  const snapshot = JSON.stringify(repository.commands[0]?.response);
+  assert.equal(snapshot.includes("Thở 4-7-8"), false);
+  assert.equal(snapshot.includes(breathing.resourceId), false);
+  assert.equal(repository.commands[0]?.response?.suggestion, null);
+
+  const replayed = await service.send(
+    request(body, "chat-replay-sugg-0001"),
+    conversation.conversationId,
+  );
+  assert.deepEqual(replayed, sent);
+  assert.equal(recorder.calls.length, 1);
+});
+
+void test("an unreadable suggestion reads as null and keeps the conversation", async () => {
+  const { service, repository } = subject(
+    "FREE",
+    {
+      provider: recordingProvider({
+        destination: "RESOURCE",
+        resourceRef: "R1",
+      }).value,
+      catalog: { items: () => Promise.resolve([breathing]) },
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  await service.send(
+    request({ message: "Ừ, thử bài thở đó coi" }, "chat-unreadable-0001"),
+    conversation.conversationId,
+  );
+  const assistant = repository.conversations[0]?.messages[1];
+  assert.ok(assistant?.suggestion);
+  const crypto = new ChatCrypto(configuration);
+  const owner = repository.conversations[0]?.ownerAccountId ?? "";
+  for (const replacement of [
+    { ...assistant.suggestion, tag: Buffer.alloc(16, 9) },
+    assistant.content,
+    crypto.encrypt(
+      owner,
+      conversation.conversationId,
+      `${assistant.messageId}:suggestion`,
+      "not json",
+    ),
+  ]) {
+    assistant.suggestion = replacement;
+    const read = await service.get(
+      request({}, "unused-get-key-00002"),
+      conversation.conversationId,
+    );
+    const [, reply] = read.messages;
+    assert.ok(reply);
+    assert.equal(reply.content, "Ừ, mình mở bài thở cho bạn nha.");
+    assert.equal(reply.suggestion, null);
+  }
+});
+
+void test("the pre-call estimate counts tokens already used today", async () => {
+  for (const [used, expected] of [
+    [99_500, 429],
+    [0, 201],
+  ] as const) {
+    const recorder = recordingProvider(null);
+    const { service, repository } = subject(
+      "FREE",
+      { provider: recorder.value },
+      { ...friendConfiguration, CHAT_FREE_DAILY_TOKEN_BUDGET: 100_000 },
+    );
+    repository.quota.set(`${ownerId}:2026-09-20`, {
+      successes: 0,
+      tokens: used,
+      reservations: new Set(),
+    });
+    const conversation = await create(service);
+    const attempt = service.send(
+      request(
+        { message: "Hôm nay mình mệt" },
+        `chat-used-tokens-${String(used)}`,
+      ),
+      conversation.conversationId,
+    );
+    if (expected === 429) {
+      await assert.rejects(
+        () => attempt,
+        (error: unknown) =>
+          error instanceof HttpException && error.getStatus() === 429,
+      );
+      assert.equal(recorder.calls.length, 0);
+      assert.equal(
+        repository.commands[0]?.failureCode,
+        "CHAT_TOKEN_BUDGET_EXHAUSTED",
+      );
+      const quota = repository.quota.get(`${ownerId}:2026-09-20`);
+      assert.equal(quota?.tokens, 99_500);
+      assert.equal(quota.reservations.size, 0);
+    } else {
+      await attempt;
+      assert.equal(recorder.calls.length, 1);
+    }
+  }
+});
+
+void test("the pre-call estimate includes conversation history", async () => {
+  const budget = 100_000;
+  const message = "Ừ, mình muốn thử";
+  const first = "ệ".repeat(1_400);
+  const estimate = (history: FriendInput["history"]) =>
+    estimateInputTokens(
+      companionGuidanceSystem({ channel: "TEXT", friend: true }),
+      companionUserInput({
+        message,
+        context: {
+          kinds: ["SUPPORT_PLAN"],
+          prompt: "Approved current plan summary",
+        },
+        friend: { history, catalog: [] },
+      }),
+    );
+  const history: FriendInput["history"] = [
+    { role: "USER", text: first },
+    { role: "ASSISTANT", text: "Ừ, mình mở bài thở cho bạn nha." },
+  ];
+  assert.ok(estimate(history) > estimate([]));
+  // Fits without history, exceeds with it; the control leaves room for both.
+  for (const [used, expected] of [
+    [budget - estimate([]), 429],
+    [budget - estimate(history), 201],
+  ] as const) {
+    const recorder = recordingProvider(null);
+    const { service, repository } = subject(
+      "FREE",
+      { provider: recorder.value },
+      { ...friendConfiguration, CHAT_FREE_DAILY_TOKEN_BUDGET: budget },
+    );
+    const conversation = await create(service);
+    await service.send(
+      request({ message: first }, `chat-history-est-a-${String(expected)}`),
+      conversation.conversationId,
+    );
+    const key = `${ownerId}:2026-09-20`;
+    const quota = repository.quota.get(key);
+    assert.ok(quota);
+    quota.tokens = used;
+    const attempt = service.send(
+      request({ message }, `chat-history-est-b-${String(expected)}`),
+      conversation.conversationId,
+    );
+    if (expected === 429) {
+      await assert.rejects(
+        () => attempt,
+        (error: unknown) =>
+          error instanceof HttpException && error.getStatus() === 429,
+      );
+      assert.equal(recorder.calls.length, 1);
+    } else {
+      await attempt;
+      assert.equal(recorder.calls.length, 2);
+    }
+  }
 });
 
 void test("rejects an idempotency key reused for different content", async () => {
@@ -776,10 +1287,15 @@ void test("uses the explicit Bedrock Converse path with structured output and ac
       String((requestBody.system as { text: string }[])[0]?.text),
       /MentalBridge AI Companion/,
     );
-    assert.equal(
-      (requestBody.messages as { content: { text: string }[] }[])[0]?.content[0]
-        ?.text,
-      "Xin hỗ trợ",
+    assert.deepEqual(
+      JSON.parse(
+        (requestBody.messages as { content: { text: string }[] }[])[0]
+          ?.content[0]?.text ?? "null",
+      ),
+      {
+        message: "Xin hỗ trợ",
+        context: { kinds: ["JOURNAL"], data: "Dữ liệu được phép sử dụng" },
+      },
     );
     assert.equal(
       (requestBody.inferenceConfig as { maxTokens: number }).maxTokens,

@@ -23,6 +23,11 @@ const require = createRequire(import.meta.url);
 const migration = require("../../migrations/013_companion_voice_quota.cjs") as {
   up(database: Db): Promise<void>;
 };
+const handoffMigration =
+  require("../../migrations/016_companion_voice_context_handoff.cjs") as {
+    up(database: Db): Promise<void>;
+    down(database: Db): Promise<void>;
+  };
 const start = new Date("2026-10-23T16:59:55.000Z");
 const at = (milliseconds: number) => new Date(start.getTime() + milliseconds);
 const entitlement = (
@@ -35,7 +40,10 @@ const entitlement = (
   checkedAt: now,
   validUntil: new Date(now.getTime() + 86_400_000),
 });
-const input = (ownerId = randomUUID(), now = start): ReserveVoiceInput => ({
+const input = (
+  ownerId: string = randomUUID(),
+  now = start,
+): ReserveVoiceInput => ({
   voiceSessionId: randomUUID(),
   ownerId,
   keyHash: Buffer.from(randomUUID()).toString("base64url").slice(0, 43),
@@ -167,6 +175,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
     databases.push(database);
     assert.equal((await database.listCollections().toArray()).length, 0);
     await migration.up(database);
+    await handoffMigration.up(database);
     return {
       databaseName,
       database,
@@ -174,6 +183,193 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
       b: new MongoVoiceLedger(second, databaseName),
     };
   };
+
+  await t.test(
+    "pilot serializes two lifetime admissions, never refunds attempts and freezes 90 seconds",
+    async () => {
+      const { databaseName, database } = await fixture();
+      const owners = [randomUUID(), randomUUID()];
+      const first = clients[0];
+      const second = clients[1];
+      assert.ok(first && second);
+      const pilot = {
+        startsAt: at(-1000),
+        endsAt: at(3600000),
+        ownerIds: owners,
+      };
+      const a = new MongoVoiceLedger(first, databaseName, pilot);
+      const b = new MongoVoiceLedger(second, databaseName, pilot);
+      const requests = owners.map((owner) => input(owner));
+      const results = await Promise.all(
+        requests.map((request, index) => (index ? b : a).reserve(request)),
+      );
+      for (const session of results) {
+        assert.equal(session.admittedSeconds, 90);
+        assert.equal(session.hardStopAt.getTime(), start.getTime() + 90000);
+        await a.requestEnd(
+          session.ownerId,
+          session.voiceSessionId,
+          "PROVIDER_FAILURE",
+          at(100),
+        );
+        await a.settle(
+          session.voiceSessionId,
+          null,
+          "NEVER_DISPATCHED",
+          at(100),
+        );
+      }
+      const request = requests[0];
+      const owner = owners[0];
+      assert.ok(request && owner);
+      assert.equal(
+        (await b.reserve(request)).voiceSessionId,
+        results[0]?.voiceSessionId,
+      );
+      await assert.rejects(
+        new MongoVoiceLedger(first, databaseName, pilot).reserve(
+          input(owner, at(200)),
+        ),
+        code("QUOTA_EXHAUSTED"),
+      );
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments(),
+        2,
+      );
+      await assert.rejects(
+        a.reserve(input(randomUUID())),
+        code("QUOTA_EXHAUSTED"),
+      );
+      await assert.rejects(
+        a.reserve(input(owner, pilot.endsAt)),
+        code("QUOTA_EXHAUSTED"),
+      );
+    },
+  );
+
+  await t.test(
+    "pilot does not restore an owner's admission after failed delivery refunds daily quota",
+    async () => {
+      const { databaseName, database } = await fixture();
+      const owner = randomUUID();
+      const other = randomUUID();
+      const first = clients[0];
+      const second = clients[1];
+      assert.ok(first && second);
+      const pilot = {
+        startsAt: at(-1000),
+        endsAt: at(3600000),
+        ownerIds: [owner, other],
+      };
+      const a = new MongoVoiceLedger(first, databaseName, pilot);
+      const request = input(owner);
+      const admitted = await a.reserve(request);
+      await a.requestEnd(
+        owner,
+        admitted.voiceSessionId,
+        "PROVIDER_FAILURE",
+        at(100),
+      );
+      await a.settle(
+        admitted.voiceSessionId,
+        null,
+        "NEVER_DISPATCHED",
+        at(100),
+      );
+      const quota = await a.snapshot(owner, "PLUS", at(200));
+      assert.equal(quota.remainingSessions, 2);
+      assert.equal(quota.remainingSeconds, 600);
+      assert.equal(quota.reservedSessions, 0);
+      const restarted = new MongoVoiceLedger(second, databaseName, pilot);
+      await assert.rejects(
+        restarted.reserve(input(owner, at(200))),
+        code("QUOTA_EXHAUSTED"),
+      );
+      assert.equal(
+        (await restarted.reserve(request)).voiceSessionId,
+        admitted.voiceSessionId,
+      );
+      const next = await restarted.reserve(input(other, at(200)));
+      assert.equal(next.ownerId, other);
+      assert.equal(next.admittedSeconds, 90);
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments(),
+        2,
+      );
+    },
+  );
+
+  await t.test(
+    "extended pilot reservations remain bounded by product plan, daily quota and window without restoring owner admissions",
+    async () => {
+      for (const row of [
+        { plan: "PREMIUM", usedSeconds: 0, window: 900, expected: 600 },
+        { plan: "PLUS", usedSeconds: 0, window: 900, expected: 300 },
+        { plan: "PREMIUM", usedSeconds: 1680, window: 900, expected: 120 },
+        { plan: "PREMIUM", usedSeconds: 0, window: 75, expected: 75 },
+      ] as const) {
+        const { databaseName, database, a: unrestricted } = await fixture();
+        const owner = randomUUID();
+        const first = clients[0];
+        const second = clients[1];
+        assert.ok(first && second);
+        const pilot = {
+          startsAt: at(-1000),
+          endsAt: at(row.window * 1000),
+          ownerIds: [owner],
+          maxSessionSeconds: 600,
+          maxTurns: 30,
+        };
+        const a = new MongoVoiceLedger(first, databaseName, pilot);
+        const b = new MongoVoiceLedger(second, databaseName, pilot);
+        const request = input(owner);
+        request.entitlement = entitlement(start, row.plan);
+        await unrestricted.recordStartAttempt(owner, start, request.keyHash);
+        await database.collection("ai_voice_daily_usage").updateOne(
+          { ownerId: owner },
+          {
+            $set: {
+              usedSessions: row.usedSeconds ? 1 : 0,
+              usedSeconds: row.usedSeconds,
+            },
+          },
+        );
+        const admitted = await a.reserve(request);
+        assert.equal(admitted.admittedSeconds, row.expected);
+        assert.equal(
+          admitted.hardStopAt.getTime(),
+          start.getTime() + row.expected * 1000,
+        );
+        await a.requestEnd(
+          owner,
+          admitted.voiceSessionId,
+          "PROVIDER_FAILURE",
+          at(100),
+        );
+        await a.settle(
+          admitted.voiceSessionId,
+          null,
+          "NEVER_DISPATCHED",
+          at(100),
+        );
+        await assert.rejects(
+          b.reserve({
+            ...input(owner, at(200)),
+            entitlement: entitlement(at(200), row.plan),
+          }),
+          code("QUOTA_EXHAUSTED"),
+        );
+        assert.equal(
+          (await b.reserve(request)).voiceSessionId,
+          admitted.voiceSessionId,
+        );
+        assert.equal(
+          await database.collection("ai_voice_sessions").countDocuments(),
+          1,
+        );
+      }
+    },
+  );
 
   await t.test(
     "display snapshots cannot reserve the final slot or bypass concurrent admission",
@@ -199,7 +395,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
                     purpose: "AI_COMPANION_VOICE",
                     aiProcessingGranted: true,
                     voiceProcessingGranted: true,
-                    voiceConsentVersion: "ai-voice-processing-capstone-v1",
+                    voiceConsentVersion: "ai-voice-processing-capstone-v2",
                     authorized: true,
                     checkedAt: start.toISOString(),
                   },
@@ -1341,11 +1537,228 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
   );
 
   await t.test(
+    "handoff consumption is atomic, globally unique and retained after settlement",
+    async () => {
+      const { a, b, database } = await fixture();
+      const contextHandoffHash = "h".repeat(43);
+      const requests = [
+        { ...input(), contextHandoffHash, contextHandoffExpiresAt: at(120000) },
+        { ...input(), contextHandoffHash, contextHandoffExpiresAt: at(120000) },
+      ];
+      const [firstRequest, secondRequest] = requests;
+      assert.ok(firstRequest && secondRequest);
+      const results = await Promise.allSettled([
+        a.reserve(firstRequest),
+        b.reserve(secondRequest),
+      ]);
+      const accepted = results.filter(
+        (value): value is PromiseFulfilledResult<VoiceSession> =>
+          value.status === "fulfilled",
+      );
+      const denied = results.filter(
+        (value): value is PromiseRejectedResult => value.status === "rejected",
+      );
+      assert.equal(accepted.length, 1);
+      assert.equal(denied.length, 1);
+      assert.ok(code("IDEMPOTENCY_CONFLICT")(denied[0]?.reason));
+      const session = accepted[0]?.value;
+      assert.ok(session);
+      assert.equal(session.contextHandoffHash, contextHandoffHash);
+      const winningRequest = requests.find(
+        (value) => value.voiceSessionId === session.voiceSessionId,
+      );
+      assert.ok(winningRequest);
+      assert.equal(
+        (await a.reserve(winningRequest)).voiceSessionId,
+        session.voiceSessionId,
+      );
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments({}),
+        1,
+      );
+      assert.equal(
+        (
+          await database.collection("ai_voice_daily_usage").find().toArray()
+        ).reduce((total, row) => total + Number(row.reservedSessions), 0),
+        1,
+      );
+      await a.requestEnd(
+        session.ownerId,
+        session.voiceSessionId,
+        "USER_ENDED",
+        at(1),
+      );
+      await a.settle(session.voiceSessionId, null, "NEVER_DISPATCHED", at(2));
+      await assert.rejects(
+        b.reserve({ ...input(session.ownerId, at(3)), contextHandoffHash }),
+        code("IDEMPOTENCY_CONFLICT"),
+      );
+      await assert.rejects(handoffMigration.down(database));
+      assert.equal(
+        (
+          await database.collection("ai_voice_sessions").findOne({
+            contextHandoffHash,
+          })
+        )?.contextHandoffHash,
+        contextHandoffHash,
+      );
+      const quotaAfter = await a.snapshot(session.ownerId, "PLUS", at(3));
+      assert.equal(quotaAfter.reservedSessions, 0);
+      assert.equal(quotaAfter.usedSessions, 0);
+      assert.equal(quotaAfter.usedSeconds, 0);
+    },
+  );
+
+  await t.test(
+    "failed admission does not consume a handoff or quota",
+    async () => {
+      const { a, database } = await fixture();
+      const capacity = await Promise.all([
+        a.reserve(input()),
+        a.reserve(input()),
+      ]);
+      const request = {
+        ...input(),
+        contextHandoffHash: "h".repeat(43),
+        contextHandoffExpiresAt: at(120000),
+      };
+      await assert.rejects(a.reserve(request), code("GLOBAL_CAPACITY_FULL"));
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments({
+          contextHandoffHash: request.contextHandoffHash,
+        }),
+        0,
+      );
+      assert.equal(
+        (await a.snapshot(request.ownerId, "PLUS", start)).reservedSessions,
+        0,
+      );
+      const first = capacity[0];
+      assert.ok(first);
+      await a.requestEnd(
+        first.ownerId,
+        first.voiceSessionId,
+        "USER_ENDED",
+        at(1),
+      );
+      await a.settle(first.voiceSessionId, null, "NEVER_DISPATCHED", at(2));
+      assert.equal(
+        (
+          await a.reserve({
+            ...request,
+            now: at(3),
+            entitlement: entitlement(at(3)),
+          })
+        ).contextHandoffHash,
+        request.contextHandoffHash,
+      );
+    },
+  );
+
+  await t.test(
+    "a failed quota write rolls back the inserted handoff session and capacity",
+    async () => {
+      const { a, database } = await fixture();
+      await a.reserve(input());
+      const usage = database.collection("ai_voice_daily_usage");
+      await usage.createIndex(
+        { reservedSessions: 1 },
+        {
+          name: "test_force_usage_write_failure",
+          unique: true,
+          partialFilterExpression: { reservedSessions: 1 },
+        },
+      );
+      const request = {
+        ...input(),
+        contextHandoffHash: "h".repeat(43),
+        contextHandoffExpiresAt: at(120000),
+      };
+      await assert.rejects(
+        a.reserve(request),
+        (error: unknown) =>
+          error instanceof MongoServerError && error.code === 11000,
+      );
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments({}),
+        1,
+      );
+      assert.equal(
+        await database.collection("ai_voice_sessions").countDocuments({
+          contextHandoffHash: request.contextHandoffHash,
+        }),
+        0,
+      );
+      const afterFailure = await a.snapshot(request.ownerId, "PLUS", start);
+      assert.equal(afterFailure.reservedSessions, 0);
+      assert.equal(afterFailure.globalAvailable, 1);
+      await usage.dropIndex("test_force_usage_write_failure");
+      assert.equal(
+        (await a.reserve(request)).contextHandoffHash,
+        request.contextHandoffHash,
+      );
+    },
+  );
+
+  await t.test(
+    "handoff migration preserves legacy rows, permits only opaque hashes and rolls back only before consumption",
+    async () => {
+      const { a, database } = await fixture();
+      const reserved = await a.reserve(input());
+      assert.equal(Object.hasOwn(reserved, "contextHandoffHash"), false);
+      await handoffMigration.up(database);
+      const sessions = database.collection<{ _id: string }>(
+        "ai_voice_sessions",
+      );
+      for (const forbidden of [
+        { contextHandoffHash: "raw-ticket-or-conversation" },
+        { handoffToken: "private-ticket" },
+        { conversationId: randomUUID() },
+        { transferredText: "private text" },
+      ])
+        await assert.rejects(
+          sessions.updateOne(
+            { _id: reserved.voiceSessionId },
+            { $set: forbidden },
+          ),
+          (error: unknown) =>
+            error instanceof MongoServerError && error.code === 121,
+        );
+      const indexes = await sessions.indexes();
+      const unique = indexes.find(
+        (value) => value.name === "uq_ai_voice_context_handoff",
+      );
+      assert.ok(unique);
+      assert.equal(unique.unique, true);
+      assert.deepEqual(unique.partialFilterExpression, {
+        contextHandoffHash: { $exists: true },
+      });
+      await handoffMigration.down(database);
+      await assert.rejects(
+        sessions.updateOne(
+          { _id: reserved.voiceSessionId },
+          {
+            $set: {
+              contextHandoffHash: "h".repeat(43),
+              contextHandoffExpiresAt: at(120000),
+            },
+          },
+        ),
+        (error: unknown) =>
+          error instanceof MongoServerError && error.code === 121,
+      );
+      await handoffMigration.up(database);
+      assert.equal(await sessions.countDocuments({}), 1);
+    },
+  );
+
+  await t.test(
     "migration is repeatable and rejects content fields without TTL capacity release",
     async () => {
       const { a, database } = await fixture();
       const reserved = await a.reserve(input());
       await migration.up(database);
+      await handoffMigration.up(database);
       const indexes = await database.collection("ai_voice_capacity").indexes();
       assert.equal(
         indexes.some((index) => index.expireAfterSeconds !== undefined),

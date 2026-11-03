@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.9.0
+  version: 1.10.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -44,7 +44,7 @@ paths:
     "get":
       "operationId": "getVoiceDisclosure"
       "summary": "getVoiceDisclosure"
-      "description": "Care publishes the exact immutable Vietnamese ai-voice-processing-capstone-v1 title and content. Requires authenticated USER; no microphone or provider call."
+      "description": "Care publishes the exact immutable Vietnamese ai-voice-processing-capstone-v2 title and content, including optional explicit bounded Text-to-Voice continuation. Existing v1 Voice users must accept v2 before further Voice access; AI_PROCESSING and Text consent are unchanged. Requires authenticated USER; no microphone or provider call."
       "security":
         -
           "bearerAuth": []
@@ -72,7 +72,7 @@ paths:
     "get":
       "operationId": "getCurrentVoiceConsent"
       "summary": "getCurrentVoiceConsent"
-      "description": "Read only the authenticated owner current voice decision. Missing/outdated decision returns current=false and granted=false. current indicates policy-version freshness; an old POST replay never restores authority."
+      "description": "Read only the authenticated owner current v2 voice decision. Missing/outdated v1 decision returns v2 with current=false and granted=false. current indicates policy-version freshness; an old POST replay never restores authority or enables context attachment."
       "security":
         -
           "bearerAuth": []
@@ -97,7 +97,7 @@ paths:
     "post":
       "operationId": "recordVoiceConsentDecision"
       "summary": "recordVoiceConsentDecision"
-      "description": "Append a separate AI_VOICE_PROCESSING decision for the authenticated owner with an existing Care profile; no paid plan or text grant is required. Exact UUID idempotency replay returns the immutable original decision without restoring a revoked grant. Store only purpose/owner-scoped HMAC of the key and safe intent digest. Withdrawal preserves historical decisions. Unknown/invalid fields return INVALID_REQUEST (422)."
+      "description": "Append a separate current v2 AI_VOICE_PROCESSING decision for the authenticated owner with an existing Care profile; no paid plan or text grant is required. A new v1 command is rejected with INVALID_REQUEST (422); an exact historical v1 UUID replay may return its original v1 decision with current=false, never a v2 grant. Changed intent/version under the same key returns IDEMPOTENCY_CONFLICT (409). Store only purpose/owner-scoped HMAC of the key and safe intent digest. Withdrawal preserves historical decisions. Context attachment additionally requires explicit per-call selection and Journal owner/session authorization. Unknown/invalid fields return INVALID_REQUEST (422)."
       "security":
         -
           "bearerAuth": []
@@ -3549,7 +3549,7 @@ components:
         "consentType":
           "const": "AI_VOICE_PROCESSING"
         "consentVersion":
-          "const": "ai-voice-processing-capstone-v1"
+          "const": "ai-voice-processing-capstone-v2"
         "language":
           "const": "vi-VN"
         "disclosureText":
@@ -3839,7 +3839,9 @@ components:
         "consentType":
           "const": "AI_VOICE_PROCESSING"
         "consentVersion":
-          "const": "ai-voice-processing-capstone-v1"
+          "type": "string"
+          "enum": ["ai-voice-processing-capstone-v1", "ai-voice-processing-capstone-v2"]
+          "description": "v2 for current reads/new decisions; v1 only for an exact immutable historical POST replay, always current=false."
         "current":
           "type": "boolean"
         "granted":
@@ -3890,7 +3892,9 @@ components:
         - "granted"
       "properties":
         "consentVersion":
-          "const": "ai-voice-processing-capstone-v1"
+          "type": "string"
+          "enum": ["ai-voice-processing-capstone-v1", "ai-voice-processing-capstone-v2"]
+          "description": "New decisions require v2. v1 is accepted only when the owner-scoped idempotency key and exact historical intent already exist; it never appends/restores a grant."
         "granted":
           "type": "boolean"
     "VoiceOwnerCheck":
@@ -3935,7 +3939,7 @@ components:
         "voiceProcessingGranted":
           "type": "boolean"
         "voiceConsentVersion":
-          "const": "ai-voice-processing-capstone-v1"
+          "const": "ai-voice-processing-capstone-v2"
         "authorized":
           "type": "boolean"
         "checkedAt":
