@@ -159,6 +159,18 @@ the ordinary Gemini, OpenAI, or Bedrock request timeout. Operators rerun it
 after model/schema changes and before traffic when the provider's 24-hour
 schema cache may be cold.
 
+## Spoken friend persona (MB-791 F1)
+
+MB-791 F1 adds a separate default-OFF spoken friend-persona flag. It selects a
+compact Voice prompt and route prompt version, retaining current-call/explicit
+Text-handoff context and existing consent/quota/safety. Exact runtime input
+counting applies before friend Voice inference even outside a pilot; the full
+JSON output keeps the existing pilot 300/approved 600 and non-pilot 2,000 ceilings.
+No Voice suggestions, catalogue, provider switch, storage or API change is added.
+Source/fixture checks do not establish real-model tone quality; activation needs
+an approved live listening/evaluation window. Details are in
+[ADR 0049](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
+
 ## Story 6201 authoring decision
 
 Journal authoring remains bounded plain text. The approved mood vocabulary is

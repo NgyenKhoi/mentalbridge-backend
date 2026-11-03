@@ -24,6 +24,23 @@ const approved = {
   AWS_BEARER_TOKEN_BEDROCK: "synthetic-bedrock-credential",
 };
 
+void test("Voice friend tone defaults off and accepts only its explicit boolean flag", () => {
+  assert.equal(loadConfiguration(identity).VOICE_FRIEND_ENABLED, false);
+  const configuration = loadConfiguration({
+    ...identity,
+    JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
+  });
+  assert.equal(configuration.VOICE_FRIEND_ENABLED, true);
+  assert.equal(configuration.COMPANION_GUIDANCE_V2_ENABLED, false);
+  assert.equal(configuration.VOICE_MEDIA?.enabled, false);
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_FRIEND_ENABLED: "yes",
+    }),
+  );
+});
+
 void test("Voice pins Sonnet independently of fake/Gemini Text while admission remains disabled", () => {
   const configuration = loadConfiguration(approved);
   assert.equal(configuration.VOICE_MEDIA?.enabled, false);

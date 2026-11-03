@@ -5,11 +5,14 @@ import {
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { VoicePlan } from "./voice-policy.js";
 import { VoiceMediaError } from "./voice-media-provider.js";
+import { VOICE_FRIEND_GUIDANCE_VERSION } from "../companion-chat/companion-voice-guidance.js";
 
 export const selectVoiceProviderRoute = (
   configuration: ServiceConfiguration,
   plan: VoicePlan,
-): ReturnType<typeof selectCompanionProviderRoute> => {
+): Omit<ReturnType<typeof selectCompanionProviderRoute>, "promptVersion"> & {
+  promptVersion: "companion-chat-v1" | typeof VOICE_FRIEND_GUIDANCE_VERSION;
+} => {
   const voice = configuration.VOICE_BEDROCK_ROUTE;
   if (voice?.approvedVersion && configuration.BEDROCK_API_KEY) {
     return {
@@ -17,7 +20,9 @@ export const selectVoiceProviderRoute = (
       model: voice.model,
       providerApprovalVersion: voice.approvedVersion,
       routingPolicyVersion: "companion-voice-sonnet-v1",
-      promptVersion: "companion-chat-v1",
+      promptVersion: configuration.VOICE_FRIEND_ENABLED
+        ? VOICE_FRIEND_GUIDANCE_VERSION
+        : "companion-chat-v1",
     };
   }
   if (

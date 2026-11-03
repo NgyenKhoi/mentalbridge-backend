@@ -1,7 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
-  selectCompanionProviderRoute,
   validatedAssistantMessage,
   type ChatProvider,
   type ProviderReply,
@@ -237,7 +236,7 @@ export class VoiceTurnService {
       this.discard(id);
       throw new VoiceLedgerError("QUOTA_EXHAUSTED");
     }
-    let route: ReturnType<typeof selectCompanionProviderRoute>;
+    let route: ReturnType<typeof selectVoiceProviderRoute>;
     try {
       route = this.route(entitlement.packageCode);
     } catch (error) {
