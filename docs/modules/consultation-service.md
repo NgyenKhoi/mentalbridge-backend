@@ -22,7 +22,7 @@ delivery, or SupportPlan state.
 | Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | Booking requires an allowed package, `AVAILABLE` credit, reservation capacity, and selectable slot; reschedule replaces one logical reservation; at 60 minutes record `SESSION_ENDED`, while only accepted server/provider evidence completes and consumes credit |
 | Brief, summary, and next steps | Expose a user-approved pre-session `ConsultationBrief`; create post-session `SessionSummary`/`AgreedNextSteps`; submit resource proposal | No raw journals/answers/full AI history; reuse requires user approval; resource proposal becomes Care-owned `PlanChangeRequest`, not another plan |
 | Specialist client continuity | Return a bounded authority projection of the authenticated approved specialist's confirmed, in-flight, and recent appointment relationships | Maximum 200 rows and 90 recent days; appointment facts only; suspension fails closed; every list attempt is content-free audited; never a general user directory |
-| Payout | Encrypt immutable bank revisions; manually confirm the exact current account as ADMIN; submit specialist-initiated validated one-item PAYOS batches on separately ready staging; retain FAKE and dormant MoMo | [ADR 0047 payout amendment](../adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04): matched authenticated child proof only; 24h UNKNOWN/NEEDS_REVIEW keeps funds reserved; explicit provider-affine FAILED-only admin retry; no synthetic redemption or production enablement |
+| Payout | Encrypt immutable bank revisions; manually confirm the exact current account as ADMIN; submit specialist-initiated validated one-item PAYOS batches on separately ready staging; retain FAKE and dormant MoMo | [ADR 0047 payout amendment](../adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04): matched authenticated child proof only; 24h UNKNOWN/NEEDS_REVIEW keeps funds reserved; explicit provider-affine FAILED-only admin retry; [MB-812](../adr/0047-payos-active-gateway-momo-dormant.md#mb-812-funded-staging-demo-amendment-2026-11-04) permits only newly verified-funded staging demo earnings; legacy synthetic redemption and production remain blocked |
 | Consented view/dashboard | Show the specialist's current Consultation-owned workload; add separately authorized owner projections only when required | Profile eligibility fails closed; every metric exposes source/freshness; no health-data fabrication, cross-service database query, or remote call inside transaction |
 | Review/moderation | One review after completed appointment; owner applies reviewed action | Participant/completion verified; duplicate rejected; evidence minimized; action/history auditable |
 
@@ -32,6 +32,18 @@ until ADMIN promotion atomically updates it. Approved-content version history
 and exact amendment revision/review provenance are append-only; normal amendments
 never modify appointments/credits/availability. See
 [ADR 0033](../adr/0033-reviewed-specialist-profile-amendment.md).
+
+MB-812 adds a default-off staging-only funded-demo earning policy and provenance
+FK. Two downward whole-VND roundings derive 70% of collected price per frozen
+plan credit (PLUS 875, PREMIUM 700/session). Only exact verified real PAYOS
+funding can redeem through staging PAYOS; baseline/FAKE/legacy remain excluded.
+The configured demo minimum/hold may be 2000/PT10M; production/default retains
+100000/P7D lower bounds and existing 300000/210000 economics. Migration,
+canonical model, data dictionary and contract change together. Web must sync
+dynamic minimum/exact hold seconds before screen-based MB-788 QA; mobile has
+no affected surface. [Operator values](../../consultation-service/README.md#mb-812-funded-staging-demo-payout)
+and [story traceability](../requirements-traceability/stories/mb-812.md) retain
+the provider-minimum open item and evidence boundaries.
 
 ## Implementation design
 

@@ -16,6 +16,7 @@ public class PayoutProperties implements EnvironmentAware {
 	private String mode = "FAKE";
 	private Duration settlementHold = Duration.ofDays(7);
 	private long minimumWithdrawalVnd = 100_000;
+	private boolean stagingDemoEnabled;
 	private String encryptionKey = "";
 	private String encryptionKeyVersion = "v1";
 	private String momoPartnerCode = "";
@@ -39,10 +40,32 @@ public class PayoutProperties implements EnvironmentAware {
 		}
 		this.mode = mode;
 	}
-	public Duration getSettlementHold() { return settlementHold; }
-	public void setSettlementHold(Duration settlementHold) { this.settlementHold = settlementHold; }
-	public long getMinimumWithdrawalVnd() { return minimumWithdrawalVnd; }
-	public void setMinimumWithdrawalVnd(long minimumWithdrawalVnd) { this.minimumWithdrawalVnd = minimumWithdrawalVnd; }
+	public Duration getSettlementHold() {
+		return !stagingDemoEnabled() && settlementHold.compareTo(Duration.ofDays(7)) < 0
+				? Duration.ofDays(7) : settlementHold;
+	}
+	public void setSettlementHold(Duration settlementHold) {
+		if (settlementHold == null || settlementHold.compareTo(Duration.ofSeconds(1)) < 0
+				|| settlementHold.getNano() != 0) {
+			throw new IllegalArgumentException("Payout settlement hold must be a positive whole number of seconds");
+		}
+		this.settlementHold = settlementHold;
+	}
+	public long getMinimumWithdrawalVnd() {
+		return stagingDemoEnabled() ? minimumWithdrawalVnd : Math.max(100_000, minimumWithdrawalVnd);
+	}
+	public void setMinimumWithdrawalVnd(long minimumWithdrawalVnd) {
+		if (minimumWithdrawalVnd <= 0) {
+			throw new IllegalArgumentException("Payout minimum withdrawal must be positive");
+		}
+		this.minimumWithdrawalVnd = minimumWithdrawalVnd;
+	}
+	public void setStagingDemoEnabled(boolean value) { stagingDemoEnabled = value; }
+	public boolean isStagingDemoEnabled() { return stagingDemoEnabled; }
+	boolean stagingDemoEnabled() {
+		return stagingDemoEnabled && environment != null && environment.acceptsProfiles(Profiles.of("staging"))
+				&& !environment.acceptsProfiles(Profiles.of("prod", "production"));
+	}
 	public String getEncryptionKey() { return encryptionKey; }
 	public void setEncryptionKey(String encryptionKey) { this.encryptionKey = encryptionKey; }
 	public String getEncryptionKeyVersion() { return encryptionKeyVersion; }

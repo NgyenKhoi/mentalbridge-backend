@@ -8,11 +8,60 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
 class PayoutPropertiesTests {
+
+	@Test
+	void demoRulesRequireExplicitFlagAndOnlyTheStagingProfile() {
+		var properties = new PayoutProperties();
+		assertThat(properties.getMinimumWithdrawalVnd()).isEqualTo(100_000);
+		assertThat(properties.getSettlementHold()).isEqualTo(Duration.ofDays(7));
+		properties.setMinimumWithdrawalVnd(2_000);
+		properties.setSettlementHold(Duration.ofMinutes(10));
+		var environment = new MockEnvironment();
+		properties.setEnvironment(environment);
+		environment.setActiveProfiles("staging");
+		assertThat(properties.stagingDemoEnabled()).isFalse();
+		assertThat(properties.getMinimumWithdrawalVnd()).isEqualTo(100_000);
+		assertThat(properties.getSettlementHold()).isEqualTo(Duration.ofDays(7));
+		properties.setStagingDemoEnabled(true);
+		assertThat(properties.stagingDemoEnabled()).isTrue();
+		assertThat(properties.getMinimumWithdrawalVnd()).isEqualTo(2_000);
+		assertThat(properties.getSettlementHold()).isEqualTo(Duration.ofMinutes(10));
+		for (var profiles : List.of(new String[0], new String[]{"dev"}, new String[]{"test"},
+				new String[]{"prod"}, new String[]{"production"}, new String[]{"staging", "prod"},
+				new String[]{"staging", "production"})) {
+			environment.setActiveProfiles(profiles);
+			assertThat(properties.stagingDemoEnabled()).as(String.join(",", profiles)).isFalse();
+			assertThat(properties.getMinimumWithdrawalVnd()).isEqualTo(100_000);
+			assertThat(properties.getSettlementHold()).isEqualTo(Duration.ofDays(7));
+		}
+		properties.setEnvironment(null);
+		assertThat(properties.stagingDemoEnabled()).isFalse();
+		properties.setMinimumWithdrawalVnd(200_000);
+		properties.setSettlementHold(Duration.ofDays(14));
+		assertThat(properties.getMinimumWithdrawalVnd()).isEqualTo(200_000);
+		assertThat(properties.getSettlementHold()).isEqualTo(Duration.ofDays(14));
+	}
+
+	@Test
+	void configurationRejectsNonpositiveMinimumAndNonpositiveFractionalOrMissingHold() {
+		var properties = new PayoutProperties();
+		for (var amount : List.of(0L, -1L)) {
+			assertThatThrownBy(() -> properties.setMinimumWithdrawalVnd(amount))
+					.isInstanceOf(IllegalArgumentException.class);
+		}
+		for (var hold : List.of(Duration.ZERO, Duration.ofSeconds(-1), Duration.ofMillis(500),
+				Duration.ofMillis(1_500), Duration.ofMillis(600_500))) {
+			assertThatThrownBy(() -> properties.setSettlementHold(hold))
+					.isInstanceOf(IllegalArgumentException.class);
+		}
+		assertThatThrownBy(() -> properties.setSettlementHold(null)).isInstanceOf(IllegalArgumentException.class);
+	}
 
 	@Test
 	void realPayosRequiresSeparateCompleteCredentialsEncryptionAndOnlyStaging() {

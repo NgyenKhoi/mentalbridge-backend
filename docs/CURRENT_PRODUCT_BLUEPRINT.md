@@ -319,11 +319,20 @@ permits separately ready staging PAYOS bank payout only for eligible funded
 earnings; synthetic test earnings remain non-redeemable. Live interoperability
 and funded earning QA belong to MB-788.
 
+The subsequent owner-approved [MB-812 amendment to ADR 0032](adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+and [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+permits only new, positively verified real-PayOS-funded demo earnings behind
+an explicit default-off staging gate. That policy derives the earning from
+collected VND per frozen plan credit, with downward rounding, and allows
+configured demo minimum/hold. Production/default economics and legacy/FAKE
+synthetic exclusion stay unchanged. Detailed rules remain in the ADR/policy.
+
 The owner-approved MB-622 sandbox amendment to ADR 0032 makes new test upgrades
 charge the full 10,000 VND PREMIUM price with zero offset under the explicit
 `sandbox-full-price-v1` policy. Existing ordinary offsets and historical facts
-are preserved. Sandbox allocations/earnings are synthetic and cannot be paid
-through a real provider.
+are preserved. Nominal sandbox allocations and legacy earnings are synthetic;
+only the prospective MB-812 funded earning exception can enter staging PAYOS
+payout.
 
 Detailed amendment: [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
 

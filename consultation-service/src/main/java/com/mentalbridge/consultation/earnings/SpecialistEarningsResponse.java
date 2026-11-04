@@ -7,7 +7,8 @@ import java.util.UUID;
 public record SpecialistEarningsResponse(String currency, String earningPolicyVersion,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String payoutProvider,
 		int settlementHoldDays, long minimumWithdrawalVnd, Instant generatedAt, Balance balance,
-		Destination destination, List<Earning> earnings, List<Payout> payouts, Availability payoutAvailability) {
+		Destination destination, List<Earning> earnings, List<Payout> payouts, Availability payoutAvailability,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Long settlementHoldSeconds) {
 
 	public record Availability(String mode, boolean ready, String reasonCode) {
 	}

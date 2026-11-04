@@ -484,7 +484,7 @@ Immutable price, allocation, credit, revenue-share, and cancellation policy purc
 | `version` | Immutable version within the plan; published versions are never rewritten. |
 | `currency` | Contract-fixed `VND` currency for every amount. |
 | `price_minor` | Immutable monthly VND price. New MB-622 sandbox versions use PLUS 5,000/PREMIUM 10,000; retired v2 versions retain 1,390,000/3,490,000 without historical rewriting. |
-| `pricing_policy_version` | Immutable rule: ordinary/historical `upgrade-offset-v1` or synthetic `sandbox-full-price-v1`; sandbox upgrade applies zero offset and cannot enable real payout. |
+| `pricing_policy_version` | Immutable rule: ordinary/historical `upgrade-offset-v1` or `sandbox-full-price-v1`; sandbox upgrade applies zero offset. Pricing alone never proves payout funding; only the separate MB-812 verified-funded earning snapshot permits staging PAYOS redemption. |
 | `billing_period_months` | Calendar-month period count; MB-515 supports exactly one month. |
 | `consultation_credits_per_period` | Credits granted for the active period: FREE 0, PLUS 4, or PREMIUM 10; unused credits never roll over. |
 | `max_active_reservations` | Frozen active appointment cap: FREE 0, PLUS 2, or PREMIUM 4. |
@@ -738,6 +738,14 @@ transaction as an evidence-backed `COMPLETED` appointment and exact credit
 consumption. Elapsed time, `SESSION_ENDED`, no-show, cancellation, and released
 or forfeited credits do not create an earning.
 
+MB-812 adds prospective funded staging provenance through migration
+`20261104100000-staging-demo-payout.sql`. Existing rows keep baseline policy,
+null funding payment and unchanged amounts. The paired check allows only
+baseline/null or staging-demo/non-null. The payment FK proves local identity;
+the service additionally verifies exact processed successful PayOS receipt and
+immutable paid-credit lineage at earning creation and payout preparation/retry.
+No raw receipt or bank information is copied into earnings.
+
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable earning UUID shown in specialist/admin history. |
@@ -746,15 +754,17 @@ or forfeited credits do not create an earning.
 | `consumed_credit_id` | Unique consumed credit whose allocation funds the earning. |
 | `specialist_account_id` | Specialist who completed the appointment and owns the payable amount. |
 | `plan_version` | Entitlement/plan version snapshotted from the consumed credit period. |
+| `earning_policy_version` | Required immutable calculation/provenance policy: default `specialist-earning-v1` preserves historical semantics; `staging-demo-paid-v1` records the explicitly gated real-funded demo calculation. Paired with funding_payment_id by CHECK. |
+| `funding_payment_id` | Nullable same-owner FK to payment_transaction, required only for staging-demo-paid-v1. Binds the exact succeeded real PAYOS funding payment for reproducible amount and receipt eligibility; null for baseline/legacy rows. Never populated by backfill. |
 | `currency` | ISO 4217 currency of all amounts in the earning. |
-| `credit_allocation_minor` | Exact fixed allocation snapshot, currently 300,000 VND per consumed credit. |
+| `credit_allocation_minor` | Immutable whole-VND earning allocation: baseline 300,000; funded staging demo floor(actual collected amount / frozen purchased-plan credit count). Nominal period allocation is not rewritten. |
 | `specialist_share_bps` | Revenue-share snapshot, currently 7000 (70%). |
-| `specialist_amount_minor` | Exact specialist amount, currently 210,000 VND. It is never derived from subscription price. |
-| `platform_allocation_minor` | Remaining 90,000 VND allocation. This is not represented or described as platform profit. |
+| `specialist_amount_minor` | Whole-VND floor(credit_allocation_minor * specialist_share_bps / 10000), baseline 210,000; funded demo PLUS 875 or PREMIUM 700. Both demo division stages round down; total specialist earnings cannot exceed 70% of real collected money. |
+| `platform_allocation_minor` | Earning allocation less the rounded specialist share; baseline 90,000 VND. This is not represented or described as platform profit. |
 | `idempotency_source` | Stable completion-fact source preventing duplicate creation on settlement replay. |
 | `status` | Settlement/payout state. `PAID` requires a linked payout with verified `SUCCEEDED` provider outcome. |
 | `earned_at` | UTC appointment-completion instant. |
-| `settlement_available_at` | UTC instant seven days after earning at which it becomes payout eligible. |
+| `settlement_available_at` | Immutable UTC earned_at plus configured hold. Baseline minimum P7D; effective staging demo may use PT10M. Elapsed hold alone does not bypass dispute, provenance or destination eligibility. |
 | `paid_at` | UTC verified payout-success instant; null until `PAID`. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest settlement/payout/reversal state change. |
@@ -791,8 +801,9 @@ never in events, logs, list responses or the specialist read model.
 
 Idempotent provider payout request and its reconciled current outcome. Local/CI
 uses FAKE. PAYOS is staging-only under ADR 0047's payout amendment with separate
-credentials/readiness. Production and synthetic-earning redemption remain
-blocked. Runtime FX is not allowed. Exact specialist command replay observes
+credentials/readiness. Production and legacy/FAKE synthetic redemption remain
+blocked; MB-812 permits only exact verified-funded staging demo snapshots.
+Runtime FX is not allowed. Exact specialist command replay observes
 the existing logical payout, including FAILED, without creating an attempt.
 
 | Field | Purpose |
@@ -801,7 +812,7 @@ the existing logical payout, including FAILED, without creating an attempt.
 | `specialist_account_id` | Specialist receiving the attached available earnings. |
 | `destination_id` | Immutable confirmed encrypted destination revision fixed for every attempt; an edit cannot retarget an existing payout. |
 | `currency` | ISO 4217 currency shared by every attached earning. |
-| `amount_minor` | Exact positive requested amount in minor units, equal to attached payout items. |
+| `amount_minor` | Exact positive whole-VND requested amount, equal to attached payout items. MB-812 relaxes the DB floor additively from 100,000 to >0; service enforces configured minimum, at least 100,000 outside the effective staging demo gate (demo fallback 2,000). |
 | `payout_provider` | Immutable `FAKE`/`MOMO`/`PAYOS` namespace used for every attempt and reconciliation, independent of the mode selected for new payouts. |
 | `status` | `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or uncertainty-preserving `UNKNOWN`. |
 | `idempotency_key` | Specialist-scoped command key preventing duplicate logical payout creation. Provider attempts derive separate keys. |

@@ -67,6 +67,10 @@ consultations use in-app chat/video only; and real payment/payout uses VND with
 price, allocation and credential gates. ADR 0047 permits the unchanged
 5,000/10,000 VND test catalogue through PayOS collect on staging only; production
 and real payout remain separately gated and fixture earnings non-redeemable.
+[MB-812](adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+prospectively permits only new exact verified-funded demo earnings behind a
+default-off staging gate, with configured demo minimum/hold. It retains all
+production, baseline and historical economics and synthetic exclusions.
 
 The Support Guide is a persisted immutable historical snapshot for one
 screening context, not ephemeral data and not a lifecycle aggregate. New
@@ -250,7 +254,10 @@ authorization contract. See ADR 0021.
    manual ADMIN confirmation, using authenticated matched child proof and
    provider-affine reconciliation. At 24h uncertainty retains reserved funds
    for review; only explicit ADMIN retry after definite FAILED can create a
-   new attempt. Synthetic redemption and production enablement remain blocked.
+   new attempt. Legacy/FAKE synthetic redemption and production enablement remain
+   blocked. MB-812 permits only new verified-funded staging demo snapshots,
+   revalidated on prepare/retry; the calculation and provenance stay local to
+   Consultation's transaction and no provider call is added to that transaction.
 
 ## 6. Security and privacy
 

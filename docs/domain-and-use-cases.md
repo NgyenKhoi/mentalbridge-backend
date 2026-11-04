@@ -243,7 +243,9 @@ For new target periods governed by `consultation-credit-v2`:
   upgrade. Downgrade and user-initiated refund APIs are unsupported.
 - Each credit snapshots a fixed VND `creditAllocation`; a completed appointment
   creates a 70% specialist share of that allocation. It is never 70% of the
-  package price.
+  entire package price. The prospective [MB-812 staging exception](adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+  derives only new verified-funded demo earning allocations from collected
+  price divided by frozen plan credits, rounding both stages down to whole VND.
 - The production-planned prices are 1,390,000 VND for `PLUS` and 3,490,000 VND
   for `PREMIUM`; both allocate 300,000 VND per consumed credit and therefore
   create a 210,000 VND specialist earning. Planned values are documentation and
@@ -251,7 +253,10 @@ For new target periods governed by `consultation-credit-v2`:
 - [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md) permits PayOS collect
   on staging only using the unchanged 5,000/10,000 VND test catalogue and
   full-price/zero-offset upgrade policy. MoMo remains dormant. Production and
-  real payout require separate approval; fixture earnings stay non-redeemable.
+  real payout require separate approval; fixture/legacy synthetic earnings stay
+  non-redeemable. MB-812 permits only new exact verified-funded demo snapshots
+  through explicitly gated staging PAYOS, with configured minimum/hold and no
+  production or historical changes.
   Settlement requires fully matched verified webhook or authenticated PayOS
   reconciliation through the same atomic path.
 - Resources have no package-specific count limit. AI token/request quota,
@@ -398,7 +403,9 @@ maximum of four. At the scheduled end, the server closes the channel and
 records `SESSION_ENDED`. Accepted server/provider evidence is still required
 for `COMPLETED`; only then does Consultation consume one credit and produce the
 completion fact used by settlement to create one earning equal to 70% of its
-fixed `creditAllocation`.
+snapshotted allocation. MB-812's default-off staging-only funded policy derives
+that earning allocation from the exact real PayOS receipt per frozen plan
+credit, preserving nominal period allocations and baseline production rules.
 
 **Exceptions and acceptance:** concurrent booking or upgrade against scarce
 credit/slot/reservation capacity yields one consistent winner; mutations and
@@ -548,7 +555,7 @@ open where explicitly stated.
 6. Consent text/versioning, retention periods, deletion SLA, export scope, and applicable Vietnamese regulation review before public real-user data collection. Synthetic controlled demos do not require these values to publish a questionnaire.
 7. Chat/video duration and the separation of `SESSION_ENDED` from completion are fixed. Video signaling/provider, presence evidence, recording prohibition, reconnect/failure behavior, and exact completion evidence remain open contract work.
 8. Dataset licenses, label mapping, train/test leakage controls, and research ethics approval. PhoBERT additionally requires an approved narrow classification task, deterministic preprocessing, and a compatible versioned fine-tuned checkpoint before implementation.
-9. Production provider enablement, credential/key rotation, chargeback reconciliation and financial retention. ADR 0032 fixes planned VND prices/allocation/settlement hold; ADR 0047 fixes staging-only PayOS pay-in and the unchanged test-catalogue exception. Its accepted [2026-11-04 payout amendment](adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) unblocks separately ready staging bank payout in MB-787, with exact manual ADMIN account confirmation, validated one-item batches, matched authenticated child proof and provider-affine reconciliation. At 24h uncertain funds remain reserved for review; explicit FAILED-only ADMIN retry preserves frozen lineage. Synthetic redemption and production stay blocked; MB-788 owns funded live interoperability. Runtime FX, downgrade, user refund and credit rollover remain unsupported.
+9. Production provider enablement, credential/key rotation, chargeback reconciliation and financial retention. ADR 0032 fixes planned VND prices/allocation/settlement hold; ADR 0047 fixes staging-only PayOS pay-in and the unchanged test-catalogue exception. Its accepted [2026-11-04 payout amendment](adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) unblocks separately ready staging bank payout in MB-787, with exact manual ADMIN account confirmation, validated one-item batches, matched authenticated child proof and provider-affine reconciliation. At 24h uncertain funds remain reserved for review; explicit FAILED-only ADMIN retry preserves frozen lineage. [MB-812](adr/0047-payos-active-gateway-momo-dormant.md#mb-812-funded-staging-demo-amendment-2026-11-04) permits only new verified-funded staging demo earnings with explicit config; legacy/FAKE synthetic redemption and production stay blocked. MB-788 owns provider-minimum confirmation and funded live interoperability. Runtime FX, downgrade, user refund and credit rollover remain unsupported.
 10. Whether WBS 28-29 are end-user/research benchmark views distinct from admin WBS 155-156, or duplicate functions that should share one admin-only workflow.
 
 The domain correction is recorded in [ADR 0012](adr/0012-two-domain-screening-and-system-proposed-support-plans.md); current cross-feature scope is governed by [ADR 0017](adr/0017-product-scope-v2.md) as amended by [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
