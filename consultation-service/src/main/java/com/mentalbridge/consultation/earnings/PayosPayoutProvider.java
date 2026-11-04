@@ -74,6 +74,9 @@ class PayosPayoutProvider {
 		catch (APIException exception) {
 			var status = exception.getStatusCode().orElse(0);
 			var code = exception.getErrorCode().orElse("");
+			if (status == 401 || status == 403) {
+				return result("FAILED", null, "PAYOUT_PROVIDER_ACCESS_DENIED", null);
+			}
 			if ((status == 200 || (status >= 400 && status < 500)) && DEFINITE_REJECTION_CODES.contains(code)) {
 				return result("FAILED", null, rejectionCode(code), null);
 			}

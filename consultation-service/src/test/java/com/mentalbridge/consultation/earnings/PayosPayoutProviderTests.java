@@ -182,6 +182,54 @@ class PayosPayoutProviderTests {
 	}
 
 	@Test
+	void initialAuthenticationOrIpRejectionIsDefiniteFailureWithoutRetry() throws Exception {
+		try (var fixture = new Fixture()) {
+			for (var status : List.of(401, 403)) {
+				fixture.httpStatus = status;
+				fixture.code = Integer.toString(status);
+				var result = fixture.provider.submit(command());
+				assertThat(result.status()).isEqualTo("FAILED");
+				assertThat(result.failureCode()).isEqualTo("PAYOUT_PROVIDER_ACCESS_DENIED");
+				assertThat(result.providerReference()).isNull();
+				assertThat(result.childReference()).isNull();
+			}
+			assertThat(fixture.paths).containsExactly("/v1/payouts/batch", "/v1/payouts/batch");
+		}
+	}
+
+	@Test
+	void authenticationFailureDuringObservationCannotDisprovePreviousCreation() throws Exception {
+		try (var fixture = new Fixture()) {
+			for (var status : List.of(401, 403)) {
+				fixture.httpStatus = status;
+				fixture.code = Integer.toString(status);
+				for (var reference : java.util.Arrays.asList(null, "outer-payout")) {
+					var result = fixture.provider.query(query(reference));
+					assertThat(result.status()).isEqualTo("UNKNOWN");
+					assertThat(result.failureCode()).isEqualTo("PAYOUT_SUBMISSION_UNKNOWN");
+					assertThat(result.providerReference()).isEqualTo(reference);
+				}
+			}
+			assertThat(fixture.paths).hasSize(4).noneMatch(path -> path.endsWith("/batch"));
+		}
+	}
+
+	@Test
+	void authLikeCodesWithoutRejectionStatusAndOtherHttpFailuresRemainUncertain() throws Exception {
+		try (var fixture = new Fixture()) {
+			for (var status : List.of(200, 400, 408, 409, 429, 500, 503)) {
+				fixture.httpStatus = status;
+				for (var code : List.of("401", "403")) {
+					fixture.code = code;
+					assertThat(fixture.provider.submit(command()).status()).as("HTTP %s/code %s", status, code)
+							.isEqualTo("UNKNOWN");
+				}
+			}
+			assertThat(fixture.paths).hasSize(14);
+		}
+	}
+
+	@Test
 	void transportServerDuplicateAndInterruptionErrorsNeverReleaseOrAutomaticallyResubmit() throws Exception {
 		try (var fixture = new Fixture()) {
 			for (var code : List.of("604", "605", "606", "632", "633", "634", "duplicate-key", "unfamiliar")) {
