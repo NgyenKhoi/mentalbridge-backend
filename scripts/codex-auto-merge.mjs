@@ -66,15 +66,23 @@ export function decide({ pr, bot, reviews, comments, threads, overlap }) {
   const codexThreads = threads.filter((t) => isBot(t.author));
   if (codexThreads.some((t) => !t.isResolved)) return skip('unresolved Codex review comments');
 
-  // Never let an older clean review override a pending Codex change request.
-  if (reviews.some((r) => isBot(r.user?.login) && r.state === 'CHANGES_REQUESTED'))
-    return skip('outstanding Codex changes request');
+  // Reviews arrive chronologically. Only a subsequent exact-head approval or
+  // dismissal can supersede an earlier Codex change request; a COMMENTED review cannot.
+  let outstandingChanges = false;
+  for (const review of reviews.filter((r) => isBot(r.user?.login))) {
+    if (review.state === 'CHANGES_REQUESTED') outstandingChanges = true;
+    else if (review.state === 'DISMISSED' ||
+      (review.state === 'APPROVED' && review.commit_id === head))
+      outstandingChanges = false;
+  }
+  if (outstandingChanges) return skip('outstanding Codex changes request');
   const headReviews = reviews.filter((r) => isBot(r.user?.login) && r.commit_id === head &&
     ['COMMENTED', 'APPROVED'].includes(r.state));
   const namesHead = (value) => (String(value ?? '').match(/\b[0-9a-f]{7,40}\b/gi) ?? [])
     .some((sha) => head.startsWith(sha.toLowerCase()));
+  // Issue comments are oldest-first; the latest exact-head receipt is authoritative.
   const summary = comments.filter((c) => isBot(c.user?.login))
-    .map((c) => codexSummary(c.body)).find((value) => value?.commit_sha === head);
+    .map((c) => codexSummary(c.body)).filter((value) => value?.commit_sha === head).at(-1);
   if (summary && (summary.status !== 'completed' || summary.has_any_findings !== false ||
       summary.has_unresolved_findings !== false))
     return skip('Codex review reports findings or is incomplete');
@@ -120,7 +128,17 @@ export function currentFileOverlap(number, command = run) {
   const open = api('repos/{owner}/{repo}/pulls?state=open&base=dev&per_page=100', command);
   if (!open.some((pr) => pr.number === number))
     throw new Error('candidate missing from current open dev PRs');
-  const files = (id) => api(`repos/{owner}/{repo}/pulls/${id}/files?per_page=100`, command).map((f) => f.filename);
+  const files = (id) => {
+    const detail = JSON.parse(command('gh', ['api', `repos/{owner}/{repo}/pulls/${id}`]));
+    // GitHub truncates file lists at 3000 entries. A partial inventory is unsafe.
+    if (!Number.isSafeInteger(detail.changed_files) || detail.changed_files < 1 ||
+      detail.changed_files > 3000) throw new Error('PR file count unavailable or exceeds API limit');
+    const inventory = api(`repos/{owner}/{repo}/pulls/${id}/files?per_page=100`, command);
+    if (inventory.length !== detail.changed_files ||
+        inventory.some((f) => typeof f.filename !== 'string'))
+      throw new Error('incomplete PR file inventory');
+    return inventory.map((f) => f.filename);
+  };
   const mine = files(number);
   if (!mine.length || mine.some((p) => typeof p !== 'string'))
     throw new Error('candidate file list missing');
