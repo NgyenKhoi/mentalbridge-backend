@@ -9,14 +9,18 @@
 // Needs an authenticated `gh` (GH_TOKEN in CI). CODEX_REVIEWER_LOGIN overrides the Codex bot login.
 // Same script lives in mentalbridge-backend and mentalbridge-frontend; keep them identical.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export const OPT_OUT_LABEL = 'no-auto-merge';
 const DEFAULT_BOT = 'chatgpt-codex-connector[bot]';
 const CLEAN_TEXT = /didn['’]t find any major issues/i;
-const OVERLAP_MARKER = '<!-- pr-overlap -->';
-const OVERLAP_FINDING = 'Files also changed by other open PRs';
+// Validate every required item from the repository's real PR template.
+const REQUIRED_TEMPLATE_ITEMS = readFileSync(
+  new URL('../.github/pull_request_template.md', import.meta.url), 'utf8',
+).split(/\r?\n/).filter((line) => /^\s*-\s+\[ \]\s+/.test(line))
+  .map((line) => line.replace(/^\s*-\s+\[ \]\s+/, '').trim());
+if (REQUIRED_TEMPLATE_ITEMS.length < 10) throw new Error('PR template checklist missing or too short');
 
 // GraphQL reports app logins without the "[bot]" suffix that REST uses.
 const login = (value) => String(value ?? '').replace(/\[bot\]$/, '').toLowerCase();
@@ -26,8 +30,22 @@ const CHECKED_ITEM = taskItem('[xX]');
 // Fail closed: any one-character box other than x/X (space, tab, anything else) is not done.
 const UNCHECKED_ITEM = taskItem('[^xX\\]\\n]');
 
+const completeTemplate = (body) => {
+  const checked = new Set(body.split(/\r?\n/)
+    .filter((line) => CHECKED_ITEM.test(line))
+    .map((line) => line.replace(/^[ \t>]*(?:[-+*]|\d{1,9}[.)])[ \t]+\[[xX]\]\s+/, '').trim()));
+  return REQUIRED_TEMPLATE_ITEMS.every((item) => checked.has(item));
+};
+
+// Codex emits a machine-readable receipt scoped to the exact reviewed commit.
+export function codexSummary(body) {
+  const match = String(body ?? '').match(/<!-- codex-review-state:v1 (\{[^\n]+\}) -->/);
+  if (!match) return null;
+  try { return JSON.parse(match[1]).code_review ?? null; } catch { return null; }
+}
+
 // Clean evidence must name the exact head: reactions and timestamps cannot tell which push Codex reviewed.
-export function decide({ pr, bot, reviews, comments, threads }) {
+export function decide({ pr, bot, reviews, comments, threads, overlap }) {
   const isBot = (user) => login(user) === login(bot);
   const head = pr.head.sha;
   const skip = (reason) => ({ merge: false, reason });
@@ -40,17 +58,28 @@ export function decide({ pr, bot, reviews, comments, threads }) {
   if (!CHECKED_ITEM.test(body)) return skip('PR template checklist missing');
   if (UNCHECKED_ITEM.test(body)) return skip('Definition of Done checklist has unchecked items');
 
-  const overlap = comments.find((c) => c.body?.startsWith(OVERLAP_MARKER));
-  if (overlap?.body.includes(OVERLAP_FINDING)) return skip('shares files with another open PR; merge order needs a person');
+  if (!completeTemplate(body)) return skip('required PR template checklist items missing');
+  if (!overlap?.checked) return skip('current file overlap not verified');
+  if (overlap.conflictingPulls.length > 0)
+    return skip('shares files with current open PRs: ' + overlap.conflictingPulls.join(', '));
 
   const codexThreads = threads.filter((t) => isBot(t.author));
   if (codexThreads.some((t) => !t.isResolved)) return skip('unresolved Codex review comments');
 
-  const headReviews = reviews.filter((r) => isBot(r.user?.login) && r.commit_id === head && ['COMMENTED', 'APPROVED'].includes(r.state));
-  const namesHead = (text) => (text.match(/\b[0-9a-f]{7,40}\b/gi) ?? []).some((sha) => head.startsWith(sha.toLowerCase()));
-  const clean =
-    // A head review with findings counts once every one of its threads was resolved (a reasoned decline).
-    headReviews.some((r) => CLEAN_TEXT.test(r.body ?? '') || codexThreads.some((t) => t.commit === head)) ||
+  // Never let an older clean review override a pending Codex change request.
+  if (reviews.some((r) => isBot(r.user?.login) && r.state === 'CHANGES_REQUESTED'))
+    return skip('outstanding Codex changes request');
+  const headReviews = reviews.filter((r) => isBot(r.user?.login) && r.commit_id === head &&
+    ['COMMENTED', 'APPROVED'].includes(r.state));
+  const namesHead = (value) => (String(value ?? '').match(/\b[0-9a-f]{7,40}\b/gi) ?? [])
+    .some((sha) => head.startsWith(sha.toLowerCase()));
+  const summary = comments.filter((c) => isBot(c.user?.login))
+    .map((c) => codexSummary(c.body)).find((value) => value?.commit_sha === head);
+  if (summary && (summary.status !== 'completed' || summary.has_any_findings !== false ||
+      summary.has_unresolved_findings !== false))
+    return skip('Codex review reports findings or is incomplete');
+  const clean = Boolean(summary) ||
+    headReviews.some((r) => CLEAN_TEXT.test(r.body ?? '')) ||
     comments.some((c) => isBot(c.user?.login) && CLEAN_TEXT.test(c.body ?? '') && namesHead(c.body));
   if (!clean) return skip(`waiting for a clean Codex review of ${head.slice(0, 7)}`);
 
@@ -86,6 +115,23 @@ export function reviewThreads(number, command = run) {
     .map((t) => ({ isResolved: t.isResolved, author: t.comments.nodes[0]?.author?.login, commit: t.comments.nodes[0]?.originalCommit?.oid }));
 }
 
+// Re-evaluate the current open PR file inventory; old overlap comments may be stale.
+export function currentFileOverlap(number, command = run) {
+  const open = api('repos/{owner}/{repo}/pulls?state=open&base=dev&per_page=100', command);
+  if (!open.some((pr) => pr.number === number))
+    throw new Error('candidate missing from current open dev PRs');
+  const files = (id) => api(`repos/{owner}/{repo}/pulls/${id}/files?per_page=100`, command).map((f) => f.filename);
+  const mine = files(number);
+  if (!mine.length || mine.some((p) => typeof p !== 'string'))
+    throw new Error('candidate file list missing');
+  const seen = new Set(mine);
+  const conflictingPulls = [];
+  for (const other of open) {
+    if (other.number === number || other.base?.ref !== 'dev') continue;
+    if (files(other.number).some((path) => seen.has(path))) conflictingPulls.push(other.number);
+  }
+  return { checked: true, conflictingPulls };
+}
 export function evaluate(number, bot, command = run) {
   const pr = JSON.parse(command('gh', ['api', `repos/{owner}/{repo}/pulls/${number}`]));
   return {
@@ -96,12 +142,17 @@ export function evaluate(number, bot, command = run) {
       reviews: api(`repos/{owner}/{repo}/pulls/${number}/reviews?per_page=100`, command),
       comments: api(`repos/{owner}/{repo}/issues/${number}/comments?per_page=100`, command),
       threads: reviewThreads(number, command),
+      overlap: currentFileOverlap(number, command),
     }),
   };
 }
 
 function main(argv) {
   const dryRun = argv.includes('--dry-run');
+  if (!dryRun && process.env.CODEX_AUTO_MERGE_ENABLED !== 'true') {
+    console.log('Codex auto-merge disabled; enable only after owner verification.');
+    return;
+  }
   const bot = process.env.CODEX_REVIEWER_LOGIN || DEFAULT_BOT;
   const open = api('repos/{owner}/{repo}/pulls?state=open&base=dev&per_page=100', run);
   const lines = ['### Codex auto-merge', ''];
