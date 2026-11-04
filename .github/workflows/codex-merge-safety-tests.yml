@@ -1,0 +1,30 @@
+name: Codex merge safety tests
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'scripts/codex-auto-merge.mjs'
+      - 'scripts/codex-auto-merge.test.mjs'
+      - '.github/pull_request_template.md'
+      - '.github/workflows/codex-auto-merge.yml'
+      - '.github/workflows/codex-merge-safety-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-tests:
+    name: Codex merge safety tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check script syntax
+        run: node --check scripts/codex-auto-merge.mjs
+      - name: Run Codex merge safety regressions
+        run: node --test scripts/codex-auto-merge.test.mjs
