@@ -6,6 +6,8 @@ spring:
       enabled: false
   liquibase:
     enabled: true
+    # Skips context:seed changesets (dev/staging ADMIN seed); tests insert their own ADMIN fixtures.
+    contexts: test
   jpa:
     hibernate:
       # Same as main: entity mappings must match the Liquibase schema.

@@ -72,7 +72,7 @@ See [MB-691 evidence](../story-mb-691-community-notification-evidence.md).
 
 - `account.email` is unique and normalized by `citext`.
 - Refresh tokens and one-time tokens store hashes only.
-- Each account stores exactly one immutable `role_code`. Public accounts are `USER` or `SPECIALIST`; a partial unique index permits at most one dedicated, operator-provisioned `ADMIN` account. Runtime role promotion and replacement are not supported.
+- Each account stores exactly one immutable `role_code`. Public accounts are `USER` or `SPECIALIST`; a partial unique index permits at most one dedicated `ADMIN` account, seeded in capstone dev/staging under the [ADR 0008 amendment](../adr/0008-single-role-accounts-and-admin-bootstrap.md#amendment-2026-11-04-capstone-devstaging-admin-seed) and operator-provisioned in production. Runtime role promotion and replacement are not supported.
 
 ### Consent
 

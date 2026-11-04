@@ -15,3 +15,5 @@ databaseChangeLog:
       file: db/changelog/changes/007-retention-execution-stale-status.sql
   - include:
       file: db/changelog/changes/008-deletion-request-previous-status.sql
+  - include:
+      file: db/changelog/changes/009-staging-admin-seed.sql

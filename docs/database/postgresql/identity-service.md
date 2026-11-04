@@ -19,7 +19,7 @@ Authoritative login account and lifecycle state owned by Identity Service.
 | `id` | Immutable UUID exposed as the opaque account identifier in REST and Kafka contracts. |
 | `email` | Case-insensitive normalized login and recovery address; unique because one address identifies one account. |
 | `password_hash` | One-way password hash used for local authentication; plaintext is never persisted. |
-| `role_code` | Authoritative immutable actor category `USER`, `SPECIALIST`, or `ADMIN`. Public registration writes only `USER` or `SPECIALIST`; deployment provisioning creates the sole `ADMIN`, and a partial unique index permits at most one. |
+| `role_code` | Authoritative immutable actor category `USER`, `SPECIALIST`, or `ADMIN`. Public registration writes only `USER` or `SPECIALIST`; the context `seed` changeset `identity-011-staging-admin-seed` creates the sole dev/staging `ADMIN` (`admin@mentalbridge.online`, BCrypt hash only; ADR 0008 amendment), and a partial unique index permits at most one. |
 | `status` | Authoritative lifecycle state: `PENDING_EMAIL_VERIFICATION`, `ACTIVE`, `DISABLED`, `DELETION_PENDING`, or terminal `DELETED`; temporary credential locking is deliberately separate. |
 | `email_verified_at` | UTC instant at which email ownership was verified; null until verification succeeds. |
 | `failed_login_count` | Consecutive failed-login counter used by the lockout policy and reset after successful authentication. |
