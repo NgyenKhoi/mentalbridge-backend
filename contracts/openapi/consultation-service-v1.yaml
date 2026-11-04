@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.21.0
+  version: 1.22.0
   description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, admin-confirmed bank destinations and provider-affine payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
@@ -5743,9 +5743,9 @@ components:
         appointmentId: { type: string, format: uuid }
         consumedCreditId: { type: string, format: uuid }
         planVersion: { type: string, minLength: 1, maxLength: 64 }
-        creditAllocationVnd: { type: integer, format: int64, minimum: 1, maximum: 1000000000, description: Allocation snapshot from the consumed credit period. }
+        creditAllocationVnd: { type: integer, format: int64, minimum: 1, maximum: 1000000000, description: 'Default allocation snapshot from the consumed credit period. Under staging-demo-paid-v1 this earning-only snapshot is floor of verified collected VND divided by frozen plan credits; the nominal period allocation stays unchanged.' }
         sharePercent: { type: integer, const: 70 }
-        earningAmountVnd: { type: integer, format: int64, minimum: 1, description: Exactly 70 percent of creditAllocationVnd under specialist-earning-v1. }
+        earningAmountVnd: { type: integer, format: int64, minimum: 1, description: 'Floor of 70 percent of creditAllocationVnd. The default policy uses the credit allocation; staging-demo-paid-v1 uses floor of verified collected VND divided by frozen plan credits, under the explicit staging-only gate.' }
         status: { type: string, enum: [PENDING_SETTLEMENT, AVAILABLE, PROCESSING, PAID, REVERSED] }
         earnedAt: { type: string, format: date-time }
         settlementAvailableAt: { type: string, format: date-time }
@@ -5848,7 +5848,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         destinationId: { type: string, format: uuid }
-        amountVnd: { type: integer, format: int64, minimum: 100000 }
+        amountVnd: { type: integer, format: int64, minimum: 1, description: 'Must meet the server-configured minimum; production remains at least 100000 VND. Smaller payouts require the explicit staging demo gate.' }
         provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
         providerReference: { type: [string, 'null'], maxLength: 128 }
@@ -5864,6 +5864,16 @@ components:
       additionalProperties: false
       required: [currency, earningPolicyVersion, settlementHoldDays, minimumWithdrawalVnd, generatedAt, balance, earnings, payouts]
       examples:
+        -
+          currency: VND
+          earningPolicyVersion: staging-demo-paid-v1
+          settlementHoldDays: 0
+          settlementHoldSeconds: 600
+          minimumWithdrawalVnd: 2000
+          generatedAt: '2026-11-04T03:00:00Z'
+          balance: { pendingSettlementVnd: 0, availableVnd: 2625, retryPendingVnd: 0, processingVnd: 0, paidVnd: 0 }
+          earnings: []
+          payouts: []
         -
           currency: "VND"
           earningPolicyVersion: "specialist-earning-v1"
@@ -5910,11 +5920,12 @@ components:
               reviewRequiredAt: null
       properties:
         currency: { type: string, const: VND }
-        earningPolicyVersion: { type: string, const: specialist-earning-v1 }
+        earningPolicyVersion: { type: string, enum: [specialist-earning-v1, staging-demo-paid-v1] }
         payoutProvider: { type: string, enum: [FAKE, MOMO, PAYOS], description: Optional additive field identifying the configured withdrawal adapter; omitted in DISABLED mode. Identifies the provider even before a destination exists. FAKE is synthetic and does not move money. }
         payoutAvailability: { $ref: '#/components/schemas/PayoutAvailability' }
-        settlementHoldDays: { type: integer, const: 7 }
-        minimumWithdrawalVnd: { type: integer, format: int64, const: 100000 }
+        settlementHoldDays: { type: integer, minimum: 0, description: 'Whole days in the configured hold, rounded down for compatibility. Use settlementHoldSeconds for exact sub-day duration; each earning has an exact settlementAvailableAt. Production remains at least seven days.' }
+        settlementHoldSeconds: { type: integer, format: int64, minimum: 1, description: 'Optional exact configured hold in seconds, emitted only in effective staging demo mode. PT10M is 600. Default and production payloads omit this field and retain settlementHoldDays.' }
+        minimumWithdrawalVnd: { type: integer, format: int64, minimum: 1, description: 'Server-configured minimum. Production remains at least 100000; staging demo uses 2000 pending live-provider confirmation.' }
         generatedAt: { type: string, format: date-time }
         balance: { $ref: '#/components/schemas/SpecialistEarningBalance' }
         destination:
@@ -6080,7 +6091,7 @@ components:
         payoutId: { type: string, format: uuid }
         specialistAccountId: { type: string, format: uuid }
         destinationHint: { type: string, maxLength: 64 }
-        amountVnd: { type: integer, format: int64, minimum: 100000 }
+        amountVnd: { type: integer, format: int64, minimum: 1, description: 'Frozen payout total meeting the server-configured minimum. Production remains at least 100000 VND.' }
         currency: { type: string, const: VND }
         provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }

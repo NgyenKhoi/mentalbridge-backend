@@ -135,6 +135,30 @@ class ConsultationOpenApiContractTests {
 	}
 
 	@Test
+	void earningsContractCarriesConfiguredDemoValuesAndAnExactOptionalShortHold() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var earnings = schemas.path("SpecialistEarnings");
+		var properties = earnings.path("properties");
+		assertThat(properties.path("settlementHoldDays").has("const")).isFalse();
+		assertThat(properties.path("settlementHoldDays").path("minimum").asInt()).isZero();
+		assertThat(properties.path("minimumWithdrawalVnd").has("const")).isFalse();
+		assertThat(properties.path("minimumWithdrawalVnd").path("minimum").asInt()).isOne();
+		assertThat(properties.path("settlementHoldSeconds").path("type").asText()).isEqualTo("integer");
+		assertThat(earnings.path("required").toString()).doesNotContain("settlementHoldSeconds");
+		assertThat(properties.path("earningPolicyVersion").path("enum").toString())
+				.contains("specialist-earning-v1", "staging-demo-paid-v1");
+		var demo = earnings.path("examples").get(0);
+		assertThat(demo.path("minimumWithdrawalVnd").asInt()).isEqualTo(2_000);
+		assertThat(demo.path("settlementHoldSeconds").asInt()).isEqualTo(600);
+		for (var schema : Set.of("SpecialistPayout", "AdminPayout")) {
+			assertThat(schemas.path(schema).path("properties").path("amountVnd").path("minimum").asInt())
+					.as(schema).isOne();
+		}
+	}
+
+	@Test
 	void contractIsValidAndMatchesTheImplementedSurface() {
 		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toAbsolutePath();
 		var options = new ParseOptions();

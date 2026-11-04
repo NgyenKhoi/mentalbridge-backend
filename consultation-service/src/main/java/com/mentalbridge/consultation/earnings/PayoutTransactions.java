@@ -189,10 +189,13 @@ class PayoutTransactions {
 
 	private void assertNoSyntheticEarnings(UUID owner,String name,UUID payoutId) {
 		if("FAKE".equals(name)) return;
+		var demoAllowed=properties.stagingDemoEnabled() && "PAYOS".equals(name);
 		var sql="""
-				select count(*) from specialist_earning e join subscription_plan_version v on v.id::text=e.plan_version
-				where e.specialist_account_id=:owner and v.pricing_policy_version='sandbox-full-price-v1'
-				"""+(payoutId==null?" and e.status in('AVAILABLE','PENDING_SETTLEMENT') and not exists(select 1 from specialist_payout_item linked where linked.earning_id=e.id and linked.released_at is null)":" and exists(select 1 from specialist_payout_item i where i.earning_id=e.id and i.payout_id=:p and i.released_at is null)");
+				select count(*) from specialist_earning e left join subscription_plan_version v on v.id::text=e.plan_version
+				where e.specialist_account_id=:owner
+				"""+(demoAllowed?" and not ("+StagingDemoEarningSource.ELIGIBLE_EARNING+")"
+						:" and (v.pricing_policy_version='sandbox-full-price-v1' or e.earning_policy_version='staging-demo-paid-v1')")
+				+(payoutId==null?" and e.status in('AVAILABLE','PENDING_SETTLEMENT') and not exists(select 1 from specialist_payout_item linked where linked.earning_id=e.id and linked.released_at is null)":" and exists(select 1 from specialist_payout_item i where i.earning_id=e.id and i.payout_id=:p and i.released_at is null)");
 		var q=jdbc.sql(sql).param("owner",owner);
 		if(payoutId!=null) q=q.param("p",payoutId);
 		if(q.query(Long.class).single()>0) throw conflict("SANDBOX_EARNINGS_REAL_PAYOUT_DISABLED");

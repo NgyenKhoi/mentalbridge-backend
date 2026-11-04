@@ -89,6 +89,7 @@ mentalbridge:
       retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
     payout:
       mode: ${CONSULTATION_PAYOUT_MODE:FAKE}
+      staging-demo-enabled: ${CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED:false}
       settlement-hold: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:P7D}
       minimum-withdrawal-vnd: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:100000}
       encryption-key: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY:}

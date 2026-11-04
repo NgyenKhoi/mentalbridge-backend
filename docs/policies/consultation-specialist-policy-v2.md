@@ -12,6 +12,7 @@
 | Chat owner | Realtime |
 | Base decision | [ADR 0017](../adr/0017-product-scope-v2.md) |
 | Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
+| Staging funded-demo amendment | [ADR 0032 MB-812](../adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04), `MB-STAGING-DEMO-PAYOUT-001`, accepted 2026-11-04; production and historical earnings unchanged |
 | Discovery decision | [ADR 0027](../adr/0027-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
 | Appointment email reminder decision | [ADR 0030](../adr/0030-one-appointment-email-reminder.md) (`MB-APPOINTMENT-EMAIL-REMINDER-001`) |
 | Historical credit implementation | [ADR 0020 consultation-credit v1](../adr/0020-service-plan-consultation-credits.md) |
@@ -342,7 +343,8 @@ and full-price/zero-offset upgrade policy. Its accepted 2026-11-04 payout
 amendment separately permits staging PAYOS bank withdrawal to the exact
 current manually admin-confirmed revision. Provider readiness is independent
 of collect and confirmation is not a per-withdrawal approval. Synthetic fixture
-earnings stay non-redeemable; production stays blocked. Settlement requires a fully matched verified webhook or
+earnings stay non-redeemable except for the prospective funded staging rule
+below; production stays blocked. Settlement requires a fully matched verified webhook or
 authenticated signed-response-verified PayOS reconciliation through the same
 atomic settlement path. Purchase/upgrade, no refunds, immutable history and
 per-credit earning semantics remain unchanged. Bank revisions and payout
@@ -354,6 +356,40 @@ FAILED and revalidated original eligibility. Linked failed-payout earnings are
 excluded from new withdrawals and shown separately as retryPendingVnd.
 Audited ADMIN exact destination inspection is the only raw account/name
 projection; broad projections remain masked and sensitive data is never logged.
+
+### MB-812 funded staging demo exception
+
+`CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED` defaults false and is effective only
+with profile `staging` and neither `prod` nor `production`, including mixed
+profiles. Only new `sandbox-full-price-v1` earnings with exact PAID credit-period
+lineage to a succeeded PAYOS payment and matching processed successful verified
+receipt may use `staging-demo-paid-v1`. Bind the original user, subscription,
+frozen plan/credit count, period/payment timing, amount, order, payment link and
+transaction reference; a later upgrade cannot change a held credit's source.
+Persist the policy version and payment FK with the immutable earning.
+
+For those earnings only, allocation is `floor(collected VND / frozen plan credits)`
+and specialist amount is `floor(allocation * 7000 / 10000)`, both rounded down
+to whole VND with undistributed remainders. This caps the total specialist
+amount at 70% of real receipts. Nominal plan/period allocations stay unchanged.
+PLUS 5,000 / four gives 875 VND per session; PREMIUM 10,000 / ten gives 700 VND.
+Legacy/default `specialist-earning-v1` rows retain their amounts and null
+funding reference; there is no revaluation or retrospective eligibility.
+
+Only separately ready staging PAYOS payout may redeem the funded exception,
+and prepare/retry revalidate the effective gate and exact verified lineage.
+FAKE, fixture, unverified, mismatched and legacy synthetic sources stay blocked
+from real payout. The configured staging minimum is 2,000 VND and hold PT10M;
+outside the gate minimum/hold cannot fall below 100,000/P7D. Existing dispute
+checks remain in force. The positive database amount floor does not replace
+the service's configured minimum. MB-787's other rules, including daily cap,
+confirmation, idempotency, polling, reservation and close/retry, do not change.
+
+The offline pinned SDK does not confirm PayOS's minimum. MB-788 must confirm
+provider acceptance of the owner-directed 2,000 VND fallback before live
+transfer. Two PLUS sessions total only 1,750; three total 2,625 and three
+PREMIUM sessions total 2,100. No price, credit-count or share adjustment is
+authorized to force a one/two-session withdrawal.
 
 
 MB-787 failed-destination recovery amendment (2026-11-04): an explicit keyed

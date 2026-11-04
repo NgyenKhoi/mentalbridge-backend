@@ -65,3 +65,5 @@ databaseChangeLog:
       file: db/changelog/changes/20261104080000-payos-specialist-payout.sql
   - include:
       file: db/changelog/changes/20261104090000-close-failed-payout.sql
+  - include:
+      file: db/changelog/changes/20261104100000-staging-demo-payout.sql

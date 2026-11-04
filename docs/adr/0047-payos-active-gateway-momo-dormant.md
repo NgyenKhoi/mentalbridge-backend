@@ -4,6 +4,7 @@
 - Status: Accepted by owner
 - Date: 2026-10-30
 - Delivery: MB-786 pay-in; MB-787 payout remains blocked; MB-788 live staging QA
+- Later amendments: MB-787 below authorizes staging payout; [MB-812](#mb-812-funded-staging-demo-amendment-2026-11-04) adds the prospective funded-demo exception. Earlier baseline clauses remain historical context where amended.
 
 ## Context
 
@@ -219,3 +220,32 @@ minimum and daily-cap gates; closure never releases UNKNOWN/active/review money.
 Migration `20261104090000-close-failed-payout.sql` must precede new writers, and
 legacy writers must be drained before closure is enabled. Claude must sync the
 contract and add the admin action; MB-788 still owns live interoperability.
+
+## MB-812 funded staging demo amendment (2026-11-04)
+
+- Decision ID: `MB-STAGING-DEMO-PAYOUT-001`
+- Status: Accepted by owner; MB-788 owns provider minimum confirmation and live QA.
+
+This prospectively amends D1's synthetic-only earning and unchanged hold/minimum
+clauses, the MB-787 blanket sandbox exclusion, and ADR 0032's fixed allocation
+and baseline hold/minimum only for the explicit staging demo gate. The exact
+rule, rounding and compatibility authority is the
+[ADR 0032 MB-812 amendment](0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04).
+
+The flag defaults false and requires `staging` without `prod`/`production`, even
+for mixed profiles. Newly created `staging-demo-paid-v1` earnings bind an exact
+succeeded real PAYOS payment and matching processed successful verified receipt
+to the paid credit's immutable purchased plan. Allocation rounds collected
+VND per frozen plan credit down, then the 70% specialist share rounds down.
+Legacy, FAKE, fixture and unverified earnings remain non-redeemable. Only
+separately ready PAYOS payout may redeem the funded exception; prepare and
+explicit retry revalidate the gate and lineage. No production rule or older
+earning snapshot changes.
+
+Configured staging minimum `2000` and hold `PT10M` permit three PLUS sessions
+(2,625 VND) or three PREMIUM sessions (2,100 VND) to qualify. SDK 2.0.1 offline
+material does not confirm the provider floor, so MB-788 must verify acceptance
+of the owner-directed 2,000 VND fallback before any live transfer. This does
+not authorize deployment, migration execution or provider calls in MB-812.
+MB-787's daily cap, exact destination confirmation, idempotency, provider
+affinity, signed child proof, polling and close/retry rules stay unchanged.

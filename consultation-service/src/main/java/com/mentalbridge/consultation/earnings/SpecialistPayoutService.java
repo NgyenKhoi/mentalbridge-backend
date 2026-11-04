@@ -87,11 +87,14 @@ public class SpecialistPayoutService {
 				row.getString("last_failure_code"), row.getTimestamp("requested_at").toInstant(),
 				instant(row, "completed_at"), row.getString("reconciliation_status"),
 				instant(row, "next_reconciliation_at"), instant(row, "review_required_at"), instant(row, "closed_at"))).list();
-		return new SpecialistEarningsResponse("VND", SpecialistEarningService.POLICY_VERSION, "DISABLED".equals(properties.getMode()) ? null : properties.getMode(),
+		return new SpecialistEarningsResponse("VND", properties.stagingDemoEnabled()
+				? StagingDemoEarningSource.POLICY_VERSION : SpecialistEarningService.POLICY_VERSION,
+				"DISABLED".equals(properties.getMode()) ? null : properties.getMode(),
 				(int) properties.getSettlementHold().toDays(), properties.getMinimumWithdrawalVnd(), clock.instant(),
 				totals, destination, earnings, payouts, new SpecialistEarningsResponse.Availability(properties.getMode(),
 						properties.ready(), properties.ready() ? null : ("DISABLED".equals(properties.getMode())
-								? "REAL_PAYOUT_DISABLED" : "PAYOUT_PROVIDER_UNAVAILABLE")));
+								? "REAL_PAYOUT_DISABLED" : "PAYOUT_PROVIDER_UNAVAILABLE")),
+				properties.stagingDemoEnabled() ? properties.getSettlementHold().toSeconds() : null);
 	}
 
 	private void assertApprovedSpecialist(UUID specialistId) {

@@ -11,6 +11,15 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-812 extends Consultation OpenAPI to `1.22.0`: earnings settings carry the
+configured minimum and whole-day hold plus optional exact `settlementHoldSeconds`.
+Only the explicit staging demo gate permits smaller funded PayOS earnings and
+payouts. Production remains at least 100,000 VND / P7D. Before MB-788 screen QA,
+the web consumer must run `npm run contracts:sync`, remove its 7/100000 validator
+constants, accept `staging-demo-paid-v1`, and display the exact short hold.
+No mobile earnings consumer is currently implemented. See the MB-812 amendment
+in [ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md).
+
 MB-787 extends Consultation OpenAPI to `1.21.0` under the accepted
 [ADR 0047 payout amendment](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04):
 current pending bank revisions, manual exact ADMIN account confirmation,

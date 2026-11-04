@@ -563,6 +563,8 @@ CREATE TABLE consultation.specialist_earning (
     consumed_credit_id uuid NOT NULL UNIQUE REFERENCES consultation.service_credit(id),
     specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
     plan_version varchar(64) NOT NULL,
+    earning_policy_version varchar(64) NOT NULL DEFAULT 'specialist-earning-v1',
+    funding_payment_id uuid REFERENCES consultation.payment_transaction(id),
     currency char(3) NOT NULL,
     credit_allocation_minor bigint NOT NULL,
     specialist_share_bps integer NOT NULL,
@@ -575,7 +577,11 @@ CREATE TABLE consultation.specialist_earning (
     paid_at timestamptz,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
-    version bigint NOT NULL
+    version bigint NOT NULL,
+    CHECK (
+        (earning_policy_version = 'specialist-earning-v1' AND funding_payment_id IS NULL)
+        OR (earning_policy_version = 'staging-demo-paid-v1' AND funding_payment_id IS NOT NULL)
+    )
 );
 
 CREATE TABLE consultation.specialist_payout_destination (
@@ -604,7 +610,7 @@ CREATE TABLE consultation.specialist_payout (
     specialist_account_id uuid NOT NULL REFERENCES consultation.specialist_profile(account_id),
     destination_id uuid NOT NULL REFERENCES consultation.specialist_payout_destination(id),
     currency char(3) NOT NULL,
-    amount_minor bigint NOT NULL,
+    amount_minor bigint NOT NULL CHECK (amount_minor > 0),
     payout_provider varchar(16) NOT NULL,
     status varchar(16) NOT NULL,
     idempotency_key varchar(128) NOT NULL,

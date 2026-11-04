@@ -317,8 +317,9 @@ and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 | `PAYOS_PAYOUT_API_KEY` | PAYOS payout | Separate payout channel API key | empty; injected secret |
 | `PAYOS_PAYOUT_CHECKSUM_KEY` | PAYOS payout | Separate payout signing and response-verification key | empty; injected secret |
 | `PAYOS_PAYOUT_BASE_URL` | PAYOS payout | Approved HTTPS payout origin; defaults to the official merchant API | `https://api-merchant.payos.vn` |
-| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Evidence-backed earning settlement/dispute hold | `P7D` |
-| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Minimum server-authoritative withdrawal | `100000` |
+| `CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED` | No | Default-off MB-812 funded-demo exception, effective only with staging and neither prod nor production | `false` |
+| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Positive evidence-backed settlement/dispute hold; cannot be below P7D outside the effective staging demo gate | `P7D` (demo `PT10M`) |
+| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Positive server-authoritative VND minimum; cannot be below 100000 outside the effective staging demo gate | `100000` (demo fallback `2000`) |
 | `CONSULTATION_PAYOUT_ENCRYPTION_KEY` | Destination setup | Base64-encoded 32-byte AES key protecting payout destination data | local secret |
 | `CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION` | No | Key identifier retained with ciphertext for controlled rotation | `v1` |
 | `MOMO_PAYOUT_PARTNER_CODE` / `MOMO_PAYOUT_ACCESS_KEY` / `MOMO_PAYOUT_SECRET_KEY` | Signed sandbox callback only | MoMo sandbox callback verification credentials; do not enable real payout | injected sandbox secrets |
@@ -382,8 +383,9 @@ VND sandbox versions. The owner-approved sandbox upgrade charges 10,000 VND
 with zero offset and records `sandbox-full-price-v1` plus the nominal held-credit
 value. Existing held appointment credits and ordinary/historical prices/offsets
 are preserved. Mixed pricing policies fail closed. New paid credit periods
-snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
-amounts are demonstration facts and may use FAKE payout only, never real money.
+snapshot the exact purchased plan-version UUID and allocation. Legacy synthetic
+sandbox earnings may use FAKE payout only; the prospective MB-812 verified-funded
+exception below requires a new earning policy snapshot and exact PayOS evidence.
 Apply migration 021 and drain old billing writers before enabling new offers.
 
 Migration 022 permits a null checkout URL. Roll out the nullable-URL consumer
@@ -545,7 +547,9 @@ Manual confirmation applies to the exact current revision and creates no
 transfer. Subsequent specialist-initiated eligible withdrawals to that account
 dispatch automatically; no per-withdrawal admin approval is added. The server
 derives the full amount from eligible unlinked earnings and retains the
-seven-day hold, 100,000 VND minimum and one logical request per server day.
+baseline seven-day hold, 100,000 VND minimum and one logical request per server
+day. MB-812 below permits only the explicit funded staging exception to the
+minimum/hold and synthetic exclusion.
 Failed-payout earnings remain linked to their original logical payout even
 when AVAILABLE and appear as retryPendingVnd, excluded from new withdrawals.
 
@@ -671,3 +675,63 @@ minimum and daily-cap gates; closure never releases UNKNOWN/active/review money.
 Migration `20261104090000-close-failed-payout.sql` must precede new writers, and
 legacy writers must be drained before closure is enabled. Claude must sync the
 contract and add the admin action; MB-788 still owns live interoperability.
+
+## MB-812 funded staging demo payout
+
+Approved authority is [ADR 0032](../docs/adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+and [ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-812-funded-staging-demo-amendment-2026-11-04).
+Production/default rules retain 300,000 VND nominal allocation, 210,000 VND
+earning, at least 100,000 VND withdrawal and P7D hold. The flag defaults false
+and is effective only with `staging` and neither `prod` nor `production` active.
+All synthetic baseline/FAKE/legacy earnings remain excluded from real payout.
+
+New completed `sandbox-full-price-v1` credits can instead create
+`staging-demo-paid-v1` earnings with a `funding_payment_id` only when their
+exact original PAID period, frozen purchased plan and succeeded PAYOS payment
+match a processed successful verified receipt. A later upgrade does not change
+an older held credit's plan or funding. Allocation is
+`floor(actual collected VND / frozen plan credits)`, then specialist amount is
+`floor(allocation * 7000 / 10000)`. Both round down to whole VND; remainders
+are not distributed and nominal period allocation is unchanged. No existing
+earning is revalued or made redeemable retrospectively. Prepare and explicit
+retry recheck the effective staging gate, PAYOS payout and exact funded lineage.
+
+For later authorized staging activation, set these non-secret values:
+
+| Environment name | Value |
+| --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `staging` (no `prod`/`production`) |
+| `CONSULTATION_SPRING_PROFILES_ACTIVE` | `staging` (when using the existing Compose mapping) |
+| `SPRINGDOTENV_ENABLED` | `false` |
+| `CONSULTATION_BILLING_MODE` | `PAYOS` |
+| `CONSULTATION_PAYOUT_MODE` | `PAYOS` |
+| `CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED` | `true` |
+| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | `2000` |
+| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | `PT10M` |
+
+Existing independent collect/payout credentials, approved HTTPS URLs, encryption
+and exact current ADMIN-confirmed bank revision remain required. Apply additive
+`20261104100000-staging-demo-payout.sql` before new writers and drain older
+earning/payout writers before enabling the exception. Its positive database
+floor permits small staging amounts; service validation preserves the configured
+minimum in every environment. No shared database or provider action is part of
+this implementation job.
+
+| Purchase | Per completed session | Two sessions | First qualifying balance at 2,000 minimum | All credits |
+| --- | ---: | ---: | ---: | ---: |
+| PLUS 5,000 VND / four credits | 875 | 1,750 | Three: 2,625 | 3,500 |
+| PREMIUM 10,000 VND / ten credits | 700 | 1,400 | Three: 2,100 | 7,000 |
+
+The pinned offline SDK does not establish the PayOS payout minimum. 2,000 VND
+is the owner-directed fallback; MB-788 must confirm provider acceptance before
+live money movement. Neither one nor two approved demo sessions reaches that
+fallback, so QA requires three. PT10M only shortens the hold; dispute, daily
+cap, destination confirmation, idempotency, polling and close/retry stay intact.
+
+The API returns dynamic minimum/hold and optional exact `settlementHoldSeconds`;
+`settlementHoldDays` remains integer whole days (PT10M reports zero). Configured
+holds must be positive whole seconds. Web
+follow-up is required before screen-based QA: synchronize the owner contract,
+remove fixed 100000/7 validator constants and display sub-day hold accurately.
+No mobile earnings/payout surface is affected. Automated evidence uses only
+Testcontainers and synthetic provider transport; MB-788 owns live evidence.
