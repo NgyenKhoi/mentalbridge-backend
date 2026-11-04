@@ -735,3 +735,30 @@ follow-up is required before screen-based QA: synchronize the owner contract,
 remove fixed 100000/7 validator constants and display sub-day hold accurately.
 No mobile earnings/payout surface is affected. Automated evidence uses only
 Testcontainers and synthetic provider transport; MB-788 owns live evidence.
+
+## MB-813 definite PayOS submission rejection
+
+An HTTP 401 or 403 from the initial PayOS payout submission is a definite
+access rejection: store `FAILED / PAYOUT_PROVIDER_ACCESS_DENIED` and reconciliation
+`COMPLETE`. The existing terminal-failure transaction returns reserved earnings
+to AVAILABLE while retaining their original payout ownership; only the existing
+explicit ADMIN retry can create another attempt after all original gates pass.
+This classification relies on one submission per persisted attempt, disabled SDK
+and HTTP retries/redirects, and command replay observing the original attempt.
+
+Query authentication failures and an empty authenticated `list(referenceId)`
+remain UNKNOWN with funds reserved. The [published PayOS API](https://payos.vn/docs/api/)
+defines the reference filter and separate idempotency header without a bounded
+list-visibility guarantee; no grace window proves non-creation. The existing
+24-hour UNKNOWN/NEEDS_REVIEW behavior and prohibition on retrying uncertainty
+remain in force. No manual resolution endpoint is added.
+
+Provider diagnostics record operation, payout/attempt UUIDs, HTTP status and a
+bounded sanitized PayOS code. They exclude exception messages, provider text,
+payloads, credentials and bank details. HTTP status and code are available from
+the pinned [SDK APIException](https://raw.githubusercontent.com/payOSHQ/payos-lib-java/v2.0.1/src/main/java/vn/payos/exception/APIException.java).
+The existing OpenAPI `failureCode` string accepts the new safe value; response
+shapes, consumers and generated contracts require no change. MB-813 has no
+migration or web slice and deploys only consultation. MB-787/MB-812 eligibility,
+destination confirmation, provider affinity and exact signed-child proof remain
+unchanged; MB-788 continues to own funded live interoperability.

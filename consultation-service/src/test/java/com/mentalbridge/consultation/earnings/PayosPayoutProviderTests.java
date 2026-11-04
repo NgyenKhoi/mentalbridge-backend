@@ -13,10 +13,14 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import vn.payos.core.ClientOptions;
 
 class PayosPayoutProviderTests {
@@ -182,6 +186,54 @@ class PayosPayoutProviderTests {
 	}
 
 	@Test
+	void initialAuthenticationOrIpRejectionIsDefiniteFailureWithoutRetry() throws Exception {
+		try (var fixture = new Fixture()) {
+			for (var status : List.of(401, 403)) {
+				fixture.httpStatus = status;
+				fixture.code = Integer.toString(status);
+				var result = fixture.provider.submit(command());
+				assertThat(result.status()).isEqualTo("FAILED");
+				assertThat(result.failureCode()).isEqualTo("PAYOUT_PROVIDER_ACCESS_DENIED");
+				assertThat(result.providerReference()).isNull();
+				assertThat(result.childReference()).isNull();
+			}
+			assertThat(fixture.paths).containsExactly("/v1/payouts/batch", "/v1/payouts/batch");
+		}
+	}
+
+	@Test
+	void authenticationFailureDuringObservationCannotDisprovePreviousCreation() throws Exception {
+		try (var fixture = new Fixture()) {
+			for (var status : List.of(401, 403)) {
+				fixture.httpStatus = status;
+				fixture.code = Integer.toString(status);
+				for (var reference : java.util.Arrays.asList(null, "outer-payout")) {
+					var result = fixture.provider.query(query(reference));
+					assertThat(result.status()).isEqualTo("UNKNOWN");
+					assertThat(result.failureCode()).isEqualTo("PAYOUT_SUBMISSION_UNKNOWN");
+					assertThat(result.providerReference()).isEqualTo(reference);
+				}
+			}
+			assertThat(fixture.paths).hasSize(4).noneMatch(path -> path.endsWith("/batch"));
+		}
+	}
+
+	@Test
+	void authLikeCodesWithoutRejectionStatusAndOtherHttpFailuresRemainUncertain() throws Exception {
+		try (var fixture = new Fixture()) {
+			for (var status : List.of(200, 400, 408, 409, 429, 500, 503)) {
+				fixture.httpStatus = status;
+				for (var code : List.of("401", "403")) {
+					fixture.code = code;
+					assertThat(fixture.provider.submit(command()).status()).as("HTTP %s/code %s", status, code)
+							.isEqualTo("UNKNOWN");
+				}
+			}
+			assertThat(fixture.paths).hasSize(14);
+		}
+	}
+
+	@Test
 	void transportServerDuplicateAndInterruptionErrorsNeverReleaseOrAutomaticallyResubmit() throws Exception {
 		try (var fixture = new Fixture()) {
 			for (var code : List.of("604", "605", "606", "632", "633", "634", "duplicate-key", "unfamiliar")) {
@@ -232,6 +284,80 @@ class PayosPayoutProviderTests {
 			assertThat(fixture.provider.query(query(null)).status()).isEqualTo("UNKNOWN");
 			assertThat(fixture.paths).hasSize(5).allMatch(path -> path.startsWith("/v1/payouts?"));
 		}
+	}
+
+	@Test
+	void providerDiagnosticsKeepOnlySafeCodesStatusAndLocalIds() throws Exception {
+		try (var logs = new LogCapture(); var fixture = new Fixture()) {
+			fixture.httpStatus = 403;
+			fixture.code = "403";
+			fixture.errorBodyOnly = true;
+			var result = fixture.provider.submit(command());
+			assertThat(result.status()).isEqualTo("FAILED");
+			assertThat(result.failureCode()).isEqualTo("PAYOUT_PROVIDER_ACCESS_DENIED");
+			fixture.code = "403\n1234567890";
+			assertThat(fixture.provider.query(query(null)).status()).isEqualTo("UNKNOWN");
+			fixture.httpStatus = 500;
+			fixture.code = "9".repeat(100);
+			assertThat(fixture.provider.submit(command()).status()).isEqualTo("UNKNOWN");
+			assertThat(logs.messages()).hasSize(3);
+			assertThat(logs.messages().getFirst()).contains("operation=submit", "httpStatus=403", "payosCode=403");
+			assertThat(logs.messages().get(1)).contains("operation=query", "httpStatus=403", "payosCode=UNRECOGNIZED");
+			assertThat(logs.messages().getLast()).contains("operation=submit", "httpStatus=500", "payosCode=UNRECOGNIZED");
+			assertSafeDiagnostics(logs);
+			assertThat(fixture.paths).hasSize(3);
+		}
+	}
+
+	@Test
+	void transportDiagnosticsNeverIncludeSdkExceptionText() throws Exception {
+		try (var logs = new LogCapture(); var fixture = new Fixture()) {
+			fixture.disconnect = true;
+			assertThat(fixture.provider.submit(command()).status()).isEqualTo("UNKNOWN");
+			assertThat(fixture.provider.query(query("outer-payout")).status()).isEqualTo("UNKNOWN");
+			assertThat(logs.messages()).hasSize(2).allSatisfy(message ->
+					assertThat(message).contains("httpStatus=0", "payosCode=UNAVAILABLE"));
+			assertSafeDiagnostics(logs);
+			assertThat(fixture.paths).hasSize(2);
+		}
+	}
+
+	@Test
+	void successfulEmptyLookupLogsItsUncertainObservationWithoutAnotherCreate() throws Exception {
+		try (var logs = new LogCapture(); var fixture = new Fixture()) {
+			fixture.listItems = List.of();
+			var result = fixture.provider.query(query(null));
+			assertThat(result.status()).isEqualTo("UNKNOWN");
+			assertThat(result.failureCode()).isEqualTo("PAYOUT_SUBMISSION_UNKNOWN");
+			assertThat(logs.messages()).singleElement().satisfies(message ->
+					assertThat(message).contains("operation=lookup", "httpStatus=200", "payosCode=00"));
+			assertSafeDiagnostics(logs);
+			assertThat(fixture.paths).singleElement().asString().startsWith("/v1/payouts?");
+		}
+	}
+
+	private void assertSafeDiagnostics(LogCapture logs) {
+		assertThat(logs.messages()).allSatisfy(message -> assertThat(message)
+				.contains("payoutId=" + payoutId, "attemptId=" + attemptId)
+				.doesNotContain(requestId, "1234567890", "970436", "SYNTHETIC HOLDER", "synthetic provider text",
+						properties.getPayosClientId(), properties.getPayosApiKey(), properties.getPayosChecksumKey(),
+						"outer-payout", "Exception", "\n", "9".repeat(100)));
+		assertThat(logs.events.list).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+	}
+
+	private static final class LogCapture implements AutoCloseable {
+		private final Logger logger = (Logger) LoggerFactory.getLogger(PayosPayoutProvider.class);
+		private final ListAppender<ILoggingEvent> events = new ListAppender<>();
+
+		LogCapture() {
+			events.start();
+			logger.addAppender(events);
+		}
+
+		List<String> messages() { return events.list.stream().map(ILoggingEvent::getFormattedMessage).toList(); }
+
+		@Override
+		public void close() { logger.detachAppender(events); events.stop(); }
 	}
 
 	@Test
@@ -321,6 +447,7 @@ class PayosPayoutProviderTests {
 		volatile boolean hasMore;
 		volatile boolean duplicateAmount;
 		volatile boolean disconnect;
+		volatile boolean errorBodyOnly;
 
 		Fixture() throws Exception {
 			server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -337,7 +464,9 @@ class PayosPayoutProviderTests {
 							"total", items.size(), "count", items.size(), "hasMore", hasMore));
 				}
 				if (!omitSignature) exchange.getResponseHeaders().add("x-signature", tamper ? "invalid" : sign(responseData));
-				var body = json.writeValueAsString(Map.of("code", code, "desc", "synthetic provider text must never escape", "data", responseData));
+				var body = json.writeValueAsString(errorBodyOnly
+						? Map.of("code", code, "desc", "synthetic provider text must never escape")
+						: Map.of("code", code, "desc", "synthetic provider text must never escape", "data", responseData));
 				if (duplicateAmount) body = body.replace("\"amount\":210000", "\"amount\":210000,\"amount\":210000");
 				var bytes = body.getBytes(StandardCharsets.UTF_8);
 				exchange.sendResponseHeaders(httpStatus, bytes.length);
