@@ -11,6 +11,16 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-787 extends Consultation OpenAPI to `1.21.0` under the accepted
+[ADR 0047 payout amendment](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04):
+current pending bank revisions, manual exact ADMIN account confirmation,
+independent PAYOS readiness, bank-list proxy, provider-affine reconciliation
+and explicit FAILED-only ADMIN retry. Existing response additions are optional
+for compatibility; synchronized web consumers must accept PAYOS and pending
+verification before the mode is enabled. No payout callback is added. The
+existing administration-audit fact adds four content-free payout inspection,
+confirmation, retry and definite-failure closure event types in the existing SPECIALIST_REVIEW domain.
+
 MB-782 amends the accepted Voice target to `1.1.0` and active Journal OpenAPI
 to `1.16.0`: display-only quota-aware duration previews and exact admitted
 room/Agent connection bindings. The [Web handoff](../docs/story-mb-782-voice-web-prerequisite.md)

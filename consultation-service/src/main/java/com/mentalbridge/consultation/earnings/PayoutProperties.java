@@ -1,11 +1,17 @@
 package com.mentalbridge.consultation.earnings;
 
+import java.net.URI;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.Set;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.EnvironmentAware;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 @ConfigurationProperties("mentalbridge.consultation.payout")
-public class PayoutProperties {
+public class PayoutProperties implements EnvironmentAware {
 
 	private String mode = "FAKE";
 	private Duration settlementHold = Duration.ofDays(7);
@@ -20,9 +26,19 @@ public class PayoutProperties {
 	private String momoStoreId = "";
 	private String momoPublicKey = "";
 	private String momoIpnUrl = "";
+	private String payosClientId = "";
+	private String payosApiKey = "";
+	private String payosChecksumKey = "";
+	private String payosBaseUrl = "https://api-merchant.payos.vn";
+	private Environment environment;
 
 	public String getMode() { return mode; }
-	public void setMode(String mode) { this.mode = mode; }
+	public void setMode(String mode) {
+		if (mode == null || !Set.of("DISABLED", "FAKE", "MOMO", "PAYOS").contains(mode)) {
+			throw new IllegalArgumentException("Payout mode must be DISABLED, FAKE, MOMO or PAYOS");
+		}
+		this.mode = mode;
+	}
 	public Duration getSettlementHold() { return settlementHold; }
 	public void setSettlementHold(Duration settlementHold) { this.settlementHold = settlementHold; }
 	public long getMinimumWithdrawalVnd() { return minimumWithdrawalVnd; }
@@ -47,9 +63,66 @@ public class PayoutProperties {
 	public void setMomoPublicKey(String momoPublicKey) { this.momoPublicKey = momoPublicKey; }
 	public String getMomoIpnUrl() { return momoIpnUrl; }
 	public void setMomoIpnUrl(String momoIpnUrl) { this.momoIpnUrl = momoIpnUrl; }
+	public String getPayosClientId() { return payosClientId; }
+	public void setPayosClientId(String value) { payosClientId = value; }
+	public String getPayosApiKey() { return payosApiKey; }
+	public void setPayosApiKey(String value) { payosApiKey = value; }
+	public String getPayosChecksumKey() { return payosChecksumKey; }
+	public void setPayosChecksumKey(String value) { payosChecksumKey = value; }
+	public String getPayosBaseUrl() { return payosBaseUrl; }
+	public void setPayosBaseUrl(String value) { payosBaseUrl = present(value) ? value : "https://api-merchant.payos.vn"; }
+	@Override
+	public void setEnvironment(Environment value) { environment = value; }
+
+	boolean ready() { return submitReady(mode); }
+
+	boolean submitReady(String provider) {
+		return !"DISABLED".equals(mode) && verificationReady(provider);
+	}
+
+	boolean verificationReady(String provider) {
+		if (provider == null) return false;
+		return switch (provider) {
+			case "FAKE" -> true;
+			case "MOMO" -> momoVerificationReady();
+			case "PAYOS" -> payosVerificationReady();
+			default -> false;
+		};
+	}
+
+	boolean payosReady() { return "PAYOS".equals(mode) && submitReady("PAYOS"); }
+
+	boolean payosVerificationReady() {
+		return environment != null && environment.acceptsProfiles(Profiles.of("staging"))
+				&& !environment.acceptsProfiles(Profiles.of("prod", "production"))
+				&& present(payosClientId) && present(payosApiKey) && present(payosChecksumKey)
+				&& approvedPayosOrigin() && encryptionReady();
+	}
+
+	boolean encryptionReady() {
+		try {
+			return present(encryptionKeyVersion) && Base64.getDecoder().decode(encryptionKey).length == 32;
+		}
+		catch (IllegalArgumentException | NullPointerException ignored) { return false; }
+	}
+
+	private boolean approvedPayosOrigin() {
+		try {
+			var uri = URI.create(payosBaseUrl);
+			return "https".equalsIgnoreCase(uri.getScheme()) && "api-merchant.payos.vn".equalsIgnoreCase(uri.getHost())
+					&& uri.getUserInfo() == null && (uri.getPort() == -1 || uri.getPort() == 443)
+					&& (uri.getPath().isEmpty() || "/".equals(uri.getPath()))
+					&& uri.getQuery() == null && uri.getFragment() == null;
+		}
+		catch (IllegalArgumentException | NullPointerException ignored) { return false; }
+	}
 
 	boolean momoReady() {
-		return mode.equals("MOMO") && productionApproved && present(momoPartnerCode) && present(momoAccessKey)
+		return mode.equals("MOMO") && submitReady("MOMO");
+	}
+
+	boolean momoVerificationReady() {
+		return productionApproved && present(momoPartnerCode) && present(momoAccessKey)
 				&& present(momoSecretKey) && present(momoStoreId) && present(momoPublicKey)
 				&& https(momoBaseUrl) && https(momoIpnUrl);
 	}

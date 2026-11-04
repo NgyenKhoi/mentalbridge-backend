@@ -32,7 +32,7 @@ public record AdminCommercialDiscrepancyResponse(
 			String provider,
 			String status,
 			String failureCode,
-			Instant requestedAt) {
+			Instant requestedAt, String reconciliationStatus, Instant reviewRequiredAt) {
 	}
 
 	public record HeldEarningDiscrepancy(

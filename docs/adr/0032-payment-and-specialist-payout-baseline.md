@@ -4,6 +4,7 @@
 - Status: Accepted
 - Date: 2026-10-06
 - Fixture-provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`) explicitly permits unchanged 5,000/10,000 VND test prices through PayOS on staging only; synthetic earnings remain non-redeemable.
+- Payout amendment: [ADR 0047, 2026-11-04](0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) permits separately ready staging PAYOS bank payout after exact manual admin confirmation; synthetic earnings remain non-redeemable and production stays blocked.
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md),
   [ADR 0017](0017-product-scope-v2.md), and
   [ADR 0022](0022-current-product-blueprint-amendments.md)
@@ -37,8 +38,11 @@ earning is never calculated from subscription price.
 
 The settlement/dispute hold is seven days. Minimum withdrawal is 100,000 VND.
 Payout is specialist-initiated and limited to one logical request per specialist
-per server day. Real payout remains disabled until explicit production approval
-and provider credentials exist.
+per server day. Production payout remains disabled until explicit production
+approval and provider credentials exist. The 2026-11-04 ADR 0047 amendment
+separately permits staging-only PAYOS bank payout with its own complete
+readiness, exact current bank confirmation and authenticated matching evidence;
+this does not make test earnings redeemable.
 
 The current runtime integration-test catalogue is exactly:
 

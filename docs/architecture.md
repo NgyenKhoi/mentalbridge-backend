@@ -244,9 +244,13 @@ authorization contract. See ADR 0021.
    creates `SessionSummary` and `AgreedNextSteps` only afterward; reuse requires
    explicit user approval. A resource suggestion becomes a Care-owned
    `PlanChangeRequest`, never another SupportPlan.
-7. Available earnings may enter one idempotent MoMo Disbursement payout.
-   Real-money payment and payout remain disabled until exact VND prices,
-   `creditAllocation`, and credentials are approved and configured.
+7. Eligible unlinked earnings may enter one specialist-initiated immutable
+   provider payout. [ADR 0047's payout amendment](adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04)
+   permits separately ready staging PAYOS bank payout after exact current
+   manual ADMIN confirmation, using authenticated matched child proof and
+   provider-affine reconciliation. At 24h uncertainty retains reserved funds
+   for review; only explicit ADMIN retry after definite FAILED can create a
+   new attempt. Synthetic redemption and production enablement remain blocked.
 
 ## 6. Security and privacy
 

@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-15
 - Decision ID: `MB-SCOPE-V2-001`
-- Provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`), staging-only PayOS test-catalogue collect and dormant MoMo; production/payout remain separately gated.
+- Provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`), staging-only PayOS test-catalogue collect and separately gated bank payout under its accepted 2026-11-04 amendment; dormant MoMo, non-redeemable synthetic earnings and blocked production remain.
 - Amended by: [ADR 0022 — Current product blueprint amendments](0022-current-product-blueprint-amendments.md) (`MB-SCOPE-V2-002`)
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md),
   [ADR 0009](0009-care-screening-safety-and-support-boundaries.md),
@@ -154,8 +154,10 @@ behavior, not alternative purchase operations.
 
 Published v2 plan versions and real payments use VND.
 [ADR 0047](0047-payos-active-gateway-momo-dormant.md) prospectively replaces the
-sole-MoMo rule with PayOS staging-only pay-in and dormant MoMo; production and
-real payout remain separately gated. One evidence-backed `COMPLETED`
+sole-MoMo rule with PayOS staging-only pay-in and, under its 2026-11-04
+amendment, separately ready bank payout after exact manual admin confirmation.
+MoMo remains dormant, production stays blocked and synthetic earnings cannot
+enter real payout. One evidence-backed `COMPLETED`
 appointment consumes exactly one credit.
 
 ADR 0022 changes new target plan-period quantities to `FREE=0`, `PLUS=4`, and

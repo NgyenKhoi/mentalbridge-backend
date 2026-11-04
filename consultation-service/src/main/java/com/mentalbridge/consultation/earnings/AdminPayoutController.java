@@ -23,10 +23,14 @@ public class AdminPayoutController {
 
 	private final JdbcClient jdbc;
 	private final Clock clock;
+	private final PayoutTransactions transactions;
+	private final PayoutProvider provider;
 
-	public AdminPayoutController(JdbcClient jdbc, Clock clock) {
+	public AdminPayoutController(JdbcClient jdbc, Clock clock, PayoutTransactions transactions, PayoutProvider provider) {
 		this.jdbc = jdbc;
 		this.clock = clock;
+		this.transactions = transactions;
+		this.provider = provider;
 	}
 
 	@GetMapping("/api/v1/admin/payouts")
@@ -49,7 +53,8 @@ public class AdminPayoutController {
 				select p.id, p.specialist_account_id, d.display_hint, p.amount_minor, p.currency,
 				 p.payout_provider, p.status, count(i.earning_id)::integer earning_count,
 				 max(a.provider_payout_reference) provider_reference, p.last_failure_code,
-				 p.requested_at, p.completed_at
+				 p.requested_at, p.completed_at, p.closed_at, max(a.reconciliation_status) reconciliation_status,
+				 max(a.next_reconciliation_at) next_reconciliation_at, max(a.review_required_at) review_required_at
 				from specialist_payout p
 				join specialist_payout_destination d on d.id=p.destination_id
 				join specialist_payout_item i on i.payout_id=p.id
@@ -155,7 +160,8 @@ public class AdminPayoutController {
 				row.getString("provider_reference"),
 				row.getString("last_failure_code"),
 				row.getTimestamp("requested_at").toInstant(),
-				instant(row, "completed_at"))).list();
+				instant(row, "completed_at"), row.getString("reconciliation_status"),
+						instant(row, "next_reconciliation_at"), instant(row, "review_required_at"), instant(row, "closed_at"))).list();
 
 		return new AdminPayoutResponse(clock.instant(), items.size(), items);
 	}
@@ -167,7 +173,8 @@ public class AdminPayoutController {
 				select p.id, p.specialist_account_id, d.display_hint, p.amount_minor, p.currency,
 				 p.payout_provider, p.status, count(i.earning_id)::integer earning_count,
 				 max(a.provider_payout_reference) provider_reference, p.last_failure_code,
-				 p.requested_at, p.completed_at
+				 p.requested_at, p.completed_at, p.closed_at, max(a.reconciliation_status) reconciliation_status,
+				 max(a.next_reconciliation_at) next_reconciliation_at, max(a.review_required_at) review_required_at
 				from specialist_payout p
 				join specialist_payout_destination d on d.id=p.destination_id
 				join specialist_payout_item i on i.payout_id=p.id
@@ -188,13 +195,14 @@ public class AdminPayoutController {
 						row.getString("provider_reference"),
 						row.getString("last_failure_code"),
 						row.getTimestamp("requested_at").toInstant(),
-						instant(row, "completed_at")))
+						instant(row, "completed_at"), row.getString("reconciliation_status"),
+						instant(row, "next_reconciliation_at"), instant(row, "review_required_at"), instant(row, "closed_at")))
 				.optional()
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYOUT_NOT_FOUND", "Payout was not found"));
 
 		var attempts = jdbc.sql("""
 				select id, attempt_number, payout_provider, status, provider_payout_reference,
-				 failure_code, requested_at, provider_confirmed_at, failed_at
+				 failure_code, requested_at, provider_confirmed_at, failed_at, reconciliation_status,next_reconciliation_at,review_required_at
 				from specialist_payout_attempt
 				where payout_id = :payoutId
 				order by attempt_number asc
@@ -208,7 +216,8 @@ public class AdminPayoutController {
 						row.getString("failure_code"),
 						row.getTimestamp("requested_at").toInstant(),
 						instant(row, "provider_confirmed_at"),
-						instant(row, "failed_at")))
+						instant(row, "failed_at"), row.getString("reconciliation_status"),
+						instant(row, "next_reconciliation_at"), instant(row, "review_required_at")))
 				.list();
 
 		var earnings = jdbc.sql("""
@@ -246,6 +255,44 @@ public class AdminPayoutController {
 				.list();
 
 		return new AdminPayoutDetailResponse(payout, attempts, earnings, events);
+	}
+
+	@org.springframework.web.bind.annotation.PostMapping("/api/v1/admin/payouts/{payoutId}/retry")
+	public org.springframework.http.ResponseEntity<AdminPayoutDetailResponse> retry(@org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.oauth2.jwt.Jwt jwt,
+			@PathVariable UUID payoutId,
+			@org.springframework.web.bind.annotation.RequestHeader(name="X-Correlation-Id",required=false) UUID correlationId,
+			@org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min=16,max=128) String key,
+			@jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody RetryPayout request) {
+		var prepared=transactions.retry(com.mentalbridge.consultation.shared.RequestIdentity.subject(jwt),payoutId,
+				request.expectedAttemptId(),key,correlationId == null ? UUID.randomUUID() : correlationId);
+		if (prepared.submit()) transactions.reconcile(prepared.payoutId(),prepared.attemptId(),provider.submit(prepared.provider(),prepared.command()));
+		return org.springframework.http.ResponseEntity.ok().header("Cache-Control", "no-store").body(payoutDetail(payoutId));
+	}
+
+	@org.springframework.web.bind.annotation.PostMapping("/api/v1/admin/payouts/{payoutId}/close-failed")
+	public org.springframework.http.ResponseEntity<AdminPayoutDetailResponse> closeFailed(@org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.oauth2.jwt.Jwt jwt,
+			@PathVariable UUID payoutId,
+			@org.springframework.web.bind.annotation.RequestHeader(name="X-Correlation-Id",required=false) UUID correlationId,
+			@org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min=16,max=128) String key,
+			@jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody CloseFailedPayout request) {
+		transactions.closeFailed(com.mentalbridge.consultation.shared.RequestIdentity.subject(jwt),payoutId,
+				request.expectedAttemptId(),key,correlationId == null ? UUID.randomUUID() : correlationId);
+		return org.springframework.http.ResponseEntity.ok().header("Cache-Control", "no-store").body(payoutDetail(payoutId));
+	}
+
+	public record CloseFailedPayout(@jakarta.validation.constraints.NotNull UUID expectedAttemptId,
+			@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Pattern(regexp="DESTINATION_UNUSABLE") String reasonCode) {
+		@com.fasterxml.jackson.annotation.JsonAnySetter
+		public void rejectUnknownProperty(String name, Object value) {
+			throw new IllegalArgumentException("Unsupported payout close field");
+		}
+	}
+
+	public record RetryPayout(@jakarta.validation.constraints.NotNull UUID expectedAttemptId) {
+		@com.fasterxml.jackson.annotation.JsonAnySetter
+		public void rejectUnknownProperty(String name, Object value) {
+			throw new IllegalArgumentException("Unsupported payout retry field");
+		}
 	}
 
 	private Instant instant(ResultSet row, String column) throws SQLException {

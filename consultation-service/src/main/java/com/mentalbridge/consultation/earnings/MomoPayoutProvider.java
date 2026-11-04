@@ -30,7 +30,7 @@ class MomoPayoutProvider {
 	}
 
 	PayoutProvider.Result submit(PayoutProvider.Command command) {
-		if (!properties.momoReady()) return failed("REAL_PAYOUT_DISABLED");
+		if (!properties.submitReady("MOMO")) return failed("REAL_PAYOUT_DISABLED");
 		if (!"VND".equals(command.currency()) || command.amountVnd() <= 0) return failed("PAYOUT_AMOUNT_INVALID");
 		try {
 			var details = json.readValue(cipher.decrypt(command.destinationCiphertext()),

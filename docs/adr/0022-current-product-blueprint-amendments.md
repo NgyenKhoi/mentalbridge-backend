@@ -104,7 +104,7 @@ Increasing monthly credits changes commercial capacity and platform liability, n
 
 Each issued paid credit still snapshots a fixed VND `creditAllocation`. An evidence-backed `COMPLETED` appointment consumes exactly one held credit and creates a specialist earning equal to 70% of that credit's `creditAllocation`, never 70% of package price.
 
-Real payment/payout remains VND, with approved price, `creditAllocation`, credentials, provider contract and reconciliation requirements. [ADR 0047](0047-payos-active-gateway-momo-dormant.md) prospectively replaces the sole-MoMo collect rule: PayOS may charge the unchanged 5,000/10,000 VND test catalogue on staging only, MoMo is dormant, and production/real payout remain blocked pending separate approval. Per-credit earning and synthetic/non-redeemable fixture provenance are unchanged.
+Real payment/payout remains VND, with approved price, `creditAllocation`, credentials, provider contract and reconciliation requirements. [ADR 0047](0047-payos-active-gateway-momo-dormant.md) prospectively replaces the sole-MoMo collect rule: PayOS may charge the unchanged 5,000/10,000 VND test catalogue on staging only, MoMo is dormant, and production remains blocked. Its accepted 2026-11-04 payout amendment separately permits staging-only PAYOS bank payout after exact manual admin confirmation, provider readiness and authenticated matching transaction evidence; fixture earnings remain non-redeemable. Per-credit earning and synthetic/non-redeemable fixture provenance are unchanged.
 
 ## Authority and compatibility
 

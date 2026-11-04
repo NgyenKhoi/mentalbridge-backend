@@ -587,13 +587,17 @@ CREATE TABLE consultation.specialist_payout_destination (
     encryption_key_version varchar(32) NOT NULL,
     destination_fingerprint char(64) NOT NULL,
     display_hint varchar(64) NOT NULL,
-    status varchar(16) NOT NULL,
-    verified_at timestamptz NOT NULL,
+    status varchar(24) NOT NULL,
+    verified_at timestamptz,
+    is_current boolean NOT NULL,
+    confirmed_by uuid, -- external -> identity.account.id
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
-    version bigint NOT NULL,
-    UNIQUE (specialist_account_id, destination_fingerprint)
+    version bigint NOT NULL
 );
+
+CREATE UNIQUE INDEX uq_specialist_payout_destination_current
+    ON consultation.specialist_payout_destination (specialist_account_id) WHERE is_current;
 
 CREATE TABLE consultation.specialist_payout (
     id uuid PRIMARY KEY,
@@ -608,11 +612,14 @@ CREATE TABLE consultation.specialist_payout (
     requested_at timestamptz NOT NULL,
     completed_at timestamptz,
     last_failure_code varchar(64),
+    closed_at timestamptz,
+    closed_by uuid, -- external -> identity.account.id
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     version bigint NOT NULL,
     UNIQUE (specialist_account_id, idempotency_key),
-    UNIQUE (specialist_account_id, requested_on)
+    UNIQUE (specialist_account_id, requested_on),
+    UNIQUE (id, payout_provider)
 );
 
 CREATE TABLE consultation.specialist_payout_attempt (
@@ -622,7 +629,16 @@ CREATE TABLE consultation.specialist_payout_attempt (
     attempt_number integer NOT NULL,
     provider_idempotency_key varchar(128) NOT NULL,
     provider_payout_reference varchar(128),
+    provider_transfer_reference varchar(128),
     status varchar(16) NOT NULL,
+    reconciliation_status varchar(16) NOT NULL,
+    next_reconciliation_at timestamptz,
+    reconciliation_started_at timestamptz,
+    reconciliation_deadline_at timestamptz,
+    reconciliation_lease_until timestamptz,
+    reconciliation_lease_token uuid,
+    review_required_at timestamptz,
+    reconciliation_count integer NOT NULL,
     requested_at timestamptz NOT NULL,
     provider_confirmed_at timestamptz,
     failed_at timestamptz,
@@ -632,15 +648,59 @@ CREATE TABLE consultation.specialist_payout_attempt (
     version bigint NOT NULL,
     UNIQUE (payout_id, attempt_number),
     UNIQUE (payout_provider, provider_idempotency_key),
-    UNIQUE (payout_provider, provider_payout_reference)
+    UNIQUE (payout_provider, provider_payout_reference),
+    UNIQUE (payout_provider, provider_transfer_reference),
+    UNIQUE (payout_id, id),
+    FOREIGN KEY (payout_id, payout_provider) REFERENCES consultation.specialist_payout(id, payout_provider)
+);
+
+CREATE TABLE consultation.payout_destination_confirmation_command (
+    id uuid PRIMARY KEY,
+    actor_account_id uuid NOT NULL, -- external -> identity.account.id
+    idempotency_key varchar(128) NOT NULL,
+    destination_id uuid NOT NULL REFERENCES consultation.specialist_payout_destination(id),
+    expected_version bigint NOT NULL,
+    reason_code varchar(32) NOT NULL,
+    result_version bigint NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (actor_account_id, idempotency_key)
+);
+
+CREATE TABLE consultation.payout_retry_command (
+    id uuid PRIMARY KEY,
+    actor_account_id uuid NOT NULL, -- external -> identity.account.id
+    idempotency_key varchar(128) NOT NULL,
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
+    expected_attempt_id uuid NOT NULL,
+    result_attempt_id uuid NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (actor_account_id, idempotency_key),
+    FOREIGN KEY (payout_id, expected_attempt_id) REFERENCES consultation.specialist_payout_attempt(payout_id, id),
+    FOREIGN KEY (payout_id, result_attempt_id) REFERENCES consultation.specialist_payout_attempt(payout_id, id)
+);
+
+CREATE TABLE consultation.payout_close_command (
+    id uuid PRIMARY KEY,
+    actor_account_id uuid NOT NULL, -- external -> identity.account.id
+    idempotency_key varchar(128) NOT NULL,
+    payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
+    expected_attempt_id uuid NOT NULL,
+    reason_code varchar(32) NOT NULL,
+    created_at timestamptz NOT NULL,
+    UNIQUE (actor_account_id, idempotency_key),
+    FOREIGN KEY (payout_id, expected_attempt_id) REFERENCES consultation.specialist_payout_attempt(payout_id, id)
 );
 
 CREATE TABLE consultation.specialist_payout_item (
     payout_id uuid NOT NULL REFERENCES consultation.specialist_payout(id),
-    earning_id uuid NOT NULL UNIQUE REFERENCES consultation.specialist_earning(id),
+    earning_id uuid NOT NULL REFERENCES consultation.specialist_earning(id),
     amount_minor bigint NOT NULL,
+    released_at timestamptz,
     PRIMARY KEY (payout_id, earning_id)
 );
+
+CREATE UNIQUE INDEX uq_specialist_payout_item_active_earning
+    ON consultation.specialist_payout_item (earning_id) WHERE released_at IS NULL;
 
 CREATE TABLE consultation.specialist_payout_status_history (
     id uuid PRIMARY KEY,
