@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   safety-tests:
@@ -28,3 +30,7 @@ jobs:
         run: node --check scripts/codex-auto-merge.mjs
       - name: Run Codex merge safety regressions
         run: node --test scripts/codex-auto-merge.test.mjs
+      - name: Read-only live GitHub auto-merge dry run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/codex-auto-merge.mjs --dry-run
