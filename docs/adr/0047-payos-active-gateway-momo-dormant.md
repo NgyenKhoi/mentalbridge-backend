@@ -249,3 +249,32 @@ of the owner-directed 2,000 VND fallback before any live transfer. This does
 not authorize deployment, migration execution or provider calls in MB-812.
 MB-787's daily cap, exact destination confirmation, idempotency, provider
 affinity, signed child proof, polling and close/retry rules stay unchanged.
+
+## MB-813 payout rejection runtime clarification (2026-11-05)
+
+The existing definite no-payment rejection rule includes HTTP 401/403 returned
+by the initial payout create call. They become `FAILED` with safe failure code
+`PAYOUT_PROVIDER_ACCESS_DENIED` and reconciliation `COMPLETE`, using the existing
+atomic terminal-failure transition and FAILED-only explicit ADMIN retry. This
+depends on the existing single submission per persisted attempt, disabled SDK
+and HTTP retries/redirects, and replay observing rather than submitting again.
+It does not classify a later query's authentication failure as proof of no payout.
+
+The [PayOS API reference](https://payos.vn/docs/api/) documents create HTTP
+401/403, a separate `x-idempotency-key` and a `referenceId` list filter. It gives
+no bounded list-visibility guarantee that would make an empty result definitive
+after a grace window. The pinned SDK exposes HTTP status and provider code in
+[APIException](https://raw.githubusercontent.com/payOSHQ/payos-lib-java/v2.0.1/src/main/java/vn/payos/exception/APIException.java)
+and honors disabled automatic retries in
+[PayOS.execute](https://raw.githubusercontent.com/payOSHQ/payos-lib-java/v2.0.1/src/main/java/vn/payos/PayOS.java).
+An empty list, query rejection, timeout or ambiguous result therefore retains
+UNKNOWN and reserved funds, including NEEDS_REVIEW at the existing 24-hour
+horizon. This clarification grants no new manual authority to mark uncertainty
+FAILED or release its funds.
+
+Diagnostics retain only operation, payout/attempt UUIDs, HTTP status and a
+bounded sanitized provider code, excluding provider text, payloads, credentials,
+bank details and exception messages. Existing `failureCode` strings accommodate
+the new safe value without a contract or consumer change. There is no migration
+or web slice; only consultation requires rebuilding/restarting. MB-787/MB-812
+gates and immutable financial facts remain intact.

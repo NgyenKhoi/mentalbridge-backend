@@ -489,6 +489,93 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void payosAccessRejectionCompletesFailureAndOnlyExplicitRetryCreatesAnotherAttempt() {
+		var first = payosAttempt();
+		var payout = jdbc.sql("select specialist_account_id,destination_id,idempotency_key from specialist_payout where id=:id")
+				.param("id", first.payoutId()).query().singleRow();
+		var owner = (UUID) payout.get("specialist_account_id");
+		var destinationId = (UUID) payout.get("destination_id");
+		var firstProviderKey = jdbc.sql("select provider_idempotency_key from specialist_payout_attempt where id=:id")
+				.param("id", first.attemptId()).query(String.class).single();
+		transactions.reconcile(first.payoutId(), first.attemptId(),
+				new PayoutProvider.Result("FAILED", null, "PAYOUT_PROVIDER_ACCESS_DENIED"));
+
+		var attempt = jdbc.sql("select status,reconciliation_status,failure_code,failed_at,next_reconciliation_at,review_required_at,reconciliation_lease_until,reconciliation_lease_token from specialist_payout_attempt where id=:id")
+				.param("id", first.attemptId()).query().singleRow();
+		assertThat(attempt).containsEntry("status", "FAILED").containsEntry("reconciliation_status", "COMPLETE")
+				.containsEntry("failure_code", "PAYOUT_PROVIDER_ACCESS_DENIED")
+				.containsEntry("next_reconciliation_at", null).containsEntry("review_required_at", null)
+				.containsEntry("reconciliation_lease_until", null).containsEntry("reconciliation_lease_token", null);
+		assertThat(attempt.get("failed_at")).isNotNull();
+		var failed = payouts.earnings(owner);
+		assertThat(failed.balance().availableVnd()).isZero();
+		assertThat(failed.balance().retryPendingVnd()).isEqualTo(first.amountVnd());
+		assertThat(failed.balance().processingVnd()).isZero();
+		assertThat(failed.balance().paidVnd()).isZero();
+		assertThat(failed.payouts()).singleElement().satisfies(item -> {
+			assertThat(item.status()).isEqualTo("FAILED");
+			assertThat(item.failureCode()).isEqualTo("PAYOUT_PROVIDER_ACCESS_DENIED");
+			assertThat(item.reconciliationStatus()).isEqualTo("COMPLETE");
+			assertThat(item.closedAt()).isNull();
+		});
+		assertThat(jdbc.sql("select e.status from specialist_earning e join specialist_payout_item i on i.earning_id=e.id where i.payout_id=:id and i.released_at is null")
+				.param("id", first.payoutId()).query(String.class).list()).containsExactly("AVAILABLE");
+		assertThat(jdbc.sql("select count(*) from specialist_payout_status_history where payout_id=:id and from_status='PROCESSING' and to_status='FAILED' and reason_code='PAYOUT_PROVIDER_ACCESS_DENIED'")
+				.param("id", first.payoutId()).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("select count(*) from payout_provider_event where payout_attempt_id=:id and payout_provider='PAYOS' and event_type='PAYOUT_OBSERVATION' and failure_code='PAYOUT_PROVIDER_ACCESS_DENIED'")
+				.param("id", first.attemptId()).query(Long.class).single()).isOne();
+
+		var replay = transactions.prepare(owner, destinationId, (String) payout.get("idempotency_key"));
+		assertThat(replay.submit()).isFalse();
+		assertThat(replay.payoutId()).isEqualTo(first.payoutId());
+		assertThat(replay.attemptId()).isEqualTo(first.attemptId());
+		assertThat(jdbc.sql("select count(*) from specialist_payout_attempt where payout_id=:id")
+				.param("id", first.payoutId()).query(Long.class).single()).isOne();
+
+		var retryProperties = new PayoutProperties();
+		retryProperties.setMode("FAKE");
+		retryProperties.setEncryptionKey(properties.getEncryptionKey());
+		retryProperties.setPayosClientId("synthetic-client");
+		retryProperties.setPayosApiKey("synthetic-api");
+		retryProperties.setPayosChecksumKey("synthetic-checksum");
+		var environment = new MockEnvironment();
+		environment.setActiveProfiles("staging");
+		retryProperties.setEnvironment(environment);
+		var proxy = new ProxyFactory(new PayoutTransactions(jdbc, retryProperties, clock, audit));
+		proxy.setProxyTargetClass(true);
+		proxy.addAdvice(new TransactionInterceptor(transactionManager, new AnnotationTransactionAttributeSource()));
+		var payosTransactions = (PayoutTransactions) proxy.getProxy();
+		var actor = UUID.randomUUID();
+		var retry = payosTransactions.retry(actor, first.payoutId(), first.attemptId(),
+				"access-denied-explicit-retry-01", UUID.randomUUID());
+		assertThat(retry.submit()).isTrue();
+		assertThat(retry.provider()).isEqualTo("PAYOS");
+		assertThat(retry.payoutId()).isEqualTo(first.payoutId());
+		assertThat(retry.attemptId()).isNotEqualTo(first.attemptId());
+		assertThat(retry.command().requestId()).isNotEqualTo(firstProviderKey);
+		assertThat(UUID.fromString(retry.command().requestId()).version()).isEqualTo(4);
+		assertThat(retry.amountVnd()).isEqualTo(first.amountVnd());
+		var retryReplay = payosTransactions.retry(actor, first.payoutId(), first.attemptId(),
+				"access-denied-explicit-retry-01", UUID.randomUUID());
+		assertThat(retryReplay.submit()).isFalse();
+		assertThat(retryReplay.attemptId()).isEqualTo(retry.attemptId());
+		transactions.reconcile(first.payoutId(), first.attemptId(),
+				new PayoutProvider.Result("SUCCEEDED", "stale-access-denied-outer", null, "stale-access-denied-child"));
+		assertThat(payouts.earnings(owner).balance().paidVnd()).isZero();
+		assertThat(payouts.earnings(owner).balance().processingVnd()).isEqualTo(first.amountVnd());
+		transactions.reconcile(retry.payoutId(), retry.attemptId(),
+				new PayoutProvider.Result("SUCCEEDED", "access-retry-" + retry.attemptId(), null, "access-child-" + retry.attemptId()));
+		assertThat(payouts.earnings(owner).balance().paidVnd()).isEqualTo(first.amountVnd());
+		assertThat(payouts.earnings(owner).balance().retryPendingVnd()).isZero();
+		assertThat(jdbc.sql("select count(*) from specialist_payout_attempt where payout_id=:id")
+				.param("id", first.payoutId()).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("select count(*) from payout_retry_command where payout_id=:id")
+				.param("id", first.payoutId()).query(Long.class).single()).isOne();
+		assertThat(jdbc.sql("select count(*) from consultation_admin_audit_outbox where target_account_id=:id and event_type='consultation.payout.retried'")
+				.param("id", owner).query(Long.class).single()).isOne();
+	}
+
+	@Test
 	void payosPollLeasesFenceOldWorkersAndHorizonRetainsReservedFundsWithoutResubmit() throws Exception {
 		var prepared=payosAttempt();
 		makeDue(prepared.attemptId());
