@@ -30,3 +30,7 @@ MentalBridge requires one dedicated administrator account for the initial deploy
 - Many-to-many account roles: rejected because no approved actor flow requires concurrent roles.
 - Promoting a user or specialist to administrator: rejected because Admin is a separate, dedicated actor in the current product scope.
 - Seeding administrator plaintext credentials in Liquibase: rejected because migrations and repository history are not secret-delivery mechanisms.
+
+## Amendment 2026-11-04: capstone dev/staging admin seed
+
+The owner accepted a seeded administrator for this capstone project so a reset of the shared dev/staging database restores admin access without a manual bootstrap. Changeset `identity-011-staging-admin-seed` (context `seed`) inserts the sole `ADMIN` account `admin@mentalbridge.online` with a BCrypt cost-12 hash when no `ADMIN` exists. Only the hash is committed; the owner-approved password is weak and known, so this account is acceptable only for the capstone dev/staging database. Any real production deployment must select a context that excludes `seed` and return to an operator bootstrap with externally supplied secrets. Tests run with Liquibase context `test`, so they skip the seed and keep inserting their own `ADMIN` fixtures. The seed has no automatic rollback: an existing administrator is preserved, including when insertion was skipped.

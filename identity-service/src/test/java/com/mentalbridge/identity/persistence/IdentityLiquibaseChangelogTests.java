@@ -17,7 +17,7 @@ class IdentityLiquibaseChangelogTests {
 			var parser = ChangeLogParserFactory.getInstance().getParser(path, resources);
 			var changelog = parser.parse(path, new ChangeLogParameters(), resources);
 
-			assertThat(changelog.getChangeSets()).hasSize(12);
+			assertThat(changelog.getChangeSets()).hasSize(13);
 			assertThat(changelog.getChangeSets()).extracting(changeSet -> changeSet.getId()).containsExactly(
 					"identity-001-extensions",
 					"identity-003-account-and-roles",
@@ -30,7 +30,9 @@ class IdentityLiquibaseChangelogTests {
 					"identity-010-audit-browse-support",
 					"identity-006-retention-and-deletion-governance",
 					"identity-007-retention-execution-stale-status",
-					"identity-008-deletion-request-previous-status");
+					"identity-008-deletion-request-previous-status",
+					"identity-011-staging-admin-seed");
+			assertThat(changelog.getChangeSets().getLast().getContextFilter().toString()).isEqualTo("seed");
 		}
 	}
 
