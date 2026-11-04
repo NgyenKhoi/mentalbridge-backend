@@ -3,6 +3,7 @@ name: Codex auto-merge
 # Merges open PRs into dev whose current head Codex reviewed clean, whose PR-template checklist is fully
 # ticked, and which GitHub reports mergeable (required quality-gate green, up to date with dev, code-owner
 # review where CODEOWNERS applies). Label a PR `no-auto-merge` to keep it for a person.
+# Auto-merge is OFF unless repository variable CODEX_AUTO_MERGE_ENABLED is explicitly true.
 # Only default-branch triggers: a PR-context event would run workflow YAML edited by the PR with a write token.
 # The default branch must be dev, and the file must exist there.
 on:
@@ -44,4 +45,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CODEX_REVIEWER_LOGIN: ${{ vars.CODEX_REVIEWER_LOGIN }}
+          CODEX_AUTO_MERGE_ENABLED: ${{ vars.CODEX_AUTO_MERGE_ENABLED }}
         run: node scripts/codex-auto-merge.mjs
