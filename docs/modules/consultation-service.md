@@ -3,7 +3,7 @@
 ## Business boundary
 
 Consultation owns specialist approval/discovery, `FREE`/`PLUS`/`PREMIUM` plan
-versions, VND/MoMo purchase and upgrade, consultation credits, chat/video
+versions, VND purchase and upgrade (staging PayOS, dormant MoMo), consultation credits, chat/video
 availability, appointments and completion evidence, `SessionSummary`,
 `AgreedNextSteps`, specialist earnings, payout reconciliation, and reviews. It
 does not own identity roles, consent, journals, chat messages, reminder
@@ -22,7 +22,7 @@ delivery, or SupportPlan state.
 | Appointment | Request, accept/reject/expire, cancel/reschedule, end channel, evaluate evidence, complete/no-show/dispute | Booking requires an allowed package, `AVAILABLE` credit, reservation capacity, and selectable slot; reschedule replaces one logical reservation; at 60 minutes record `SESSION_ENDED`, while only accepted server/provider evidence completes and consumes credit |
 | Brief, summary, and next steps | Expose a user-approved pre-session `ConsultationBrief`; create post-session `SessionSummary`/`AgreedNextSteps`; submit resource proposal | No raw journals/answers/full AI history; reuse requires user approval; resource proposal becomes Care-owned `PlanChangeRequest`, not another plan |
 | Specialist client continuity | Return a bounded authority projection of the authenticated approved specialist's confirmed, in-flight, and recent appointment relationships | Maximum 200 rows and 90 recent days; appointment facts only; suspension fails closed; every list attempt is content-free audited; never a general user directory |
-| Payout | Encrypt/verify specialist destinations; submit idempotent MoMo payouts; reconcile result/IPN/status | MoMo is the sole production provider after credentials; `UNKNOWN` queried, not blindly retried; real payout currency must be approved |
+| Payout | Encrypt immutable bank revisions; manually confirm the exact current account as ADMIN; submit specialist-initiated validated one-item PAYOS batches on separately ready staging; retain FAKE and dormant MoMo | [ADR 0047 payout amendment](../adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04): matched authenticated child proof only; 24h UNKNOWN/NEEDS_REVIEW keeps funds reserved; explicit provider-affine FAILED-only admin retry; no synthetic redemption or production enablement |
 | Consented view/dashboard | Show the specialist's current Consultation-owned workload; add separately authorized owner projections only when required | Profile eligibility fails closed; every metric exposes source/freshness; no health-data fabrication, cross-service database query, or remote call inside transaction |
 | Review/moderation | One review after completed appointment; owner applies reviewed action | Participant/completion verified; duplicate rejected; evidence minimized; action/history auditable |
 

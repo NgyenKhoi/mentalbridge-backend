@@ -109,6 +109,8 @@ Records retain the wording and recorded order of the original traceability docum
   stays blocked. Fully matched authenticated reconciliation is accepted
   alongside signed webhooks. Nullable `terminalReason` preserves ledger states.
 
+- 2026-11-04: the accepted [ADR 0047 payout amendment](../adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) supersedes the missing-channel and sole-MoMo payout clauses: independently gated staging PAYOS bank payout, exact current manual ADMIN confirmation, validated one-item batch, immutable provider/destination and matched authenticated child proof. At 24h unresolved funds remain reserved for review; only explicit provider-affine FAILED-only admin retry may create another attempt. Production and synthetic redemption remain blocked; MB-788 owns live evidence.
+
 ## Record 70
 
 - 2026-08-21: consultation messaging is appointment-scoped and writable only

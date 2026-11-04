@@ -136,6 +136,8 @@ class IdentityEventContractTests {
 				.contains("identity.account.disabled", "identity.account.restored",
 						"consultation.specialist.approved", "consultation.specialist.rejected",
 						"consultation.specialist.suspended", "consultation.specialist.restored",
+						"consultation.payout-destination.inspected", "consultation.payout-destination.confirmed",
+                        "consultation.payout.retried", "consultation.payout.closed",
 						"content.resource.archived",
 						"content.safety-directory.reviewed", "content.safety-directory.deactivated",
 						"community.moderation.action-applied", "community.moderation.case-resolved");

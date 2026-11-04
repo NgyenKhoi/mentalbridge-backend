@@ -338,9 +338,35 @@ Real payment and payout use VND and require approved plan prices,
 `creditAllocation`, provider contracts, reconciliation rules and credentials.
 [ADR 0047](../adr/0047-payos-active-gateway-momo-dormant.md) prospectively permits
 PayOS pay-in on staging only using the unchanged 5,000/10,000 VND test catalogue
-and full-price/zero-offset upgrade policy. MoMo remains dormant. Production and
-real payout remain separately blocked; synthetic fixture earnings stay
-non-redeemable. Settlement requires a fully matched verified webhook or
+and full-price/zero-offset upgrade policy. Its accepted 2026-11-04 payout
+amendment separately permits staging PAYOS bank withdrawal to the exact
+current manually admin-confirmed revision. Provider readiness is independent
+of collect and confirmation is not a per-withdrawal approval. Synthetic fixture
+earnings stay non-redeemable; production stays blocked. Settlement requires a fully matched verified webhook or
 authenticated signed-response-verified PayOS reconciliation through the same
 atomic settlement path. Purchase/upgrade, no refunds, immutable history and
-per-credit earning semantics remain unchanged.
+per-credit earning semantics remain unchanged. Bank revisions and payout
+provider/destination/items remain immutable. Only matched authenticated child
+transaction proof pays; outer batch approval or elapsed time never pays. After
+24 hours unresolved funds stay reserved with UNKNOWN/NEEDS_REVIEW. Specialist
+replay only observes; an explicit provider-affine ADMIN retry requires definite
+FAILED and revalidated original eligibility. Linked failed-payout earnings are
+excluded from new withdrawals and shown separately as retryPendingVnd.
+Audited ADMIN exact destination inspection is the only raw account/name
+projection; broad projections remain masked and sensitive data is never logged.
+
+
+MB-787 failed-destination recovery amendment (2026-11-04): an explicit keyed
+ADMIN POST `/api/v1/admin/payouts/{payoutId}/close-failed` checks the latest
+FAILED/COMPLETE attempt and fixed DESTINATION_UNUSABLE reason, records
+`closed_at`/`closed_by`, releases active item ownership and audits
+`consultation.payout.closed` / `PAYOUT_CLOSED` atomically without a provider call.
+The payout remains FAILED and its original destination, provider, amount and
+item history stay immutable. `closedAt` is exposed on specialist/admin payout
+projections and forbids retry. Partial unique active earning ownership preserves
+one live allocation while retaining released historical links. The next
+withdrawal uses the current confirmed destination and all normal eligibility,
+minimum and daily-cap gates; closure never releases UNKNOWN/active/review money.
+Migration `20261104090000-close-failed-payout.sql` must precede new writers, and
+legacy writers must be drained before closure is enabled. Claude must sync the
+contract and add the admin action; MB-788 still owns live interoperability.

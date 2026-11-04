@@ -19,7 +19,10 @@ public record AdminPayoutDetailResponse(
 			String failureCode,
 			Instant requestedAt,
 			Instant confirmedAt,
-			Instant failedAt) {
+			Instant failedAt,
+			String reconciliationStatus,
+			Instant nextReconciliationAt,
+			Instant reviewRequiredAt) {
 	}
 
 	public record EarningItem(

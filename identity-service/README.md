@@ -25,6 +25,16 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 - Administration audit: ADMIN-only browse and CSV export use the same bounded filters over Identity-owned, privacy-minimized audit facts. Queries are limited to a 90-day window inside a 365-day read-retention boundary; export is capped at 5,000 rows and 5 MiB. Cross-service audit events from Consultation, Content, and Community are ingested via versioned Kafka event facts (`mentalbridge.admin.audit-event.v1`) into the minimized projection with deduplication and privacy filtering.
 - Outbound REST: none in the initial architecture, so this service does not include OpenFeign.
 - Async: account lifecycle events use Kafka with a transactional outbox; cross-service administrative audit events consume from `mentalbridge.admin.audit-event.v1` with strict privacy allowlisting and deduplication.
+
+MB-787 extends the existing Consultation/SPECIALIST_REVIEW audit allowlist with
+`consultation.payout-destination.inspected`,
+`consultation.payout-destination.confirmed`, `consultation.payout.retried` and
+`consultation.payout.closed`.
+Their bound actions are `PAYOUT_DESTINATION_INSPECTED`,
+`PAYOUT_DESTINATION_CONFIRMED`, `PAYOUT_RETRIED` and `PAYOUT_CLOSED`; the failed
+payout closure records the safe reason `DESTINATION_UNUSABLE`. Account/tombstone targets
+and the content-free schema are unchanged. Bank/account/holder/provider data
+is never part of the projection.
 - Discovery: registers as `identity-service` in Eureka. Eureka supplies location metadata only.
 
 ## Configuration

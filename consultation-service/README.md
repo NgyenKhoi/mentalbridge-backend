@@ -312,7 +312,11 @@ and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 | `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
 | `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
 | `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
-| `CONSULTATION_PAYOUT_MODE` | No | `FAKE` for deterministic local/CI payout; real MoMo payout is not enabled by this story | `FAKE` |
+| `CONSULTATION_PAYOUT_MODE` | No | `DISABLED`, deterministic `FAKE`, independently gated dormant `MOMO`, or staging-only `PAYOS`; unknown modes fail closed | `DISABLED` |
+| `PAYOS_PAYOUT_CLIENT_ID` | PAYOS payout | Separate payout channel client ID; never borrowed from collect | empty; injected secret |
+| `PAYOS_PAYOUT_API_KEY` | PAYOS payout | Separate payout channel API key | empty; injected secret |
+| `PAYOS_PAYOUT_CHECKSUM_KEY` | PAYOS payout | Separate payout signing and response-verification key | empty; injected secret |
+| `PAYOS_PAYOUT_BASE_URL` | PAYOS payout | Approved HTTPS payout origin; defaults to the official merchant API | `https://api-merchant.payos.vn` |
 | `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Evidence-backed earning settlement/dispute hold | `P7D` |
 | `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Minimum server-authoritative withdrawal | `100000` |
 | `CONSULTATION_PAYOUT_ENCRYPTION_KEY` | Destination setup | Base64-encoded 32-byte AES key protecting payout destination data | local secret |
@@ -504,6 +508,71 @@ minimum is 100,000 VND, and one specialist may request at most one payout per
 day. The MoMo route verifies signed sandbox callbacks only; it does not enable
 real transfer submission.
 
+## MB-787 specialist bank payouts
+
+The accepted [ADR 0047 payout amendment](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04)
+permits independently ready PAYOS payout on the approved staging deployment.
+Complete separate payout credentials, valid existing encryption configuration
+and the official HTTPS provider origin are required. Collect readiness does
+not depend on payout credentials. Existing attempts retain their original
+provider for authenticated queries even if the configured submission mode
+changes. Production remains blocked; synthetic fixture earnings cannot be
+redeemed through either real provider. MB-788 owns funded live interoperability.
+
+The existing specialist destination PUT preserves bankCode/accountReference/
+accountHolderName. PAYOS requires a six-digit listed bank BIN; the account and
+holder stay encrypted. Any material edit, including holder-only edits or
+returning to an older account, creates a new current pending revision. Existing
+verified history cannot bypass confirmation. An exact unchanged save is a
+no-op. Lists, specialist earnings and payout history expose only masked hints.
+
+Additional provider operations are:
+
+- `GET /api/v1/specialist/payout-banks`: SPECIALIST-only backend VietQR proxy,
+  returning BIN/name/shortName with a 24-hour in-process cache; no fresh list
+  on upstream failure returns 503 without hiding saved destinations.
+- `GET /api/v1/admin/payout-destinations`: masked current revision queue,
+  default PENDING_CONFIRMATION, limit 50 and offset 0.
+- `GET /api/v1/admin/payout-destinations/{destinationId}`: audited ADMIN-only
+  exact account/holder inspection for manual checking, returned with no-store.
+- `POST /api/v1/admin/payout-destinations/{destinationId}/confirm`: keyed ADMIN
+  confirmation of expectedVersion with reasonCode ACCOUNT_HOLDER_CHECKED.
+- `POST /api/v1/admin/payouts/{payoutId}/retry`: keyed ADMIN retry naming the
+  latest definitely FAILED expectedAttemptId; retains original provider,
+  unchanged confirmed destination and frozen earning lineage.
+
+Manual confirmation applies to the exact current revision and creates no
+transfer. Subsequent specialist-initiated eligible withdrawals to that account
+dispatch automatically; no per-withdrawal admin approval is added. The server
+derives the full amount from eligible unlinked earnings and retains the
+seven-day hold, 100,000 VND minimum and one logical request per server day.
+Failed-payout earnings remain linked to their original logical payout even
+when AVAILABLE and appear as retryPendingVnd, excluded from new withdrawals.
+
+Persist an immutable provider attempt/key before submitting one validated
+one-item PayOS batch through the pinned SDK, explicitly passing the UUIDv4
+x-idempotency-key. SDK timeout/retry/logging/redirect settings match collect.
+Outer batch ID/reference and child attempt reference are distinct. Only signed
+authenticated matched child SUCCEEDED evidence pays; outer approval and
+balance are not proof. Known definite rejection, transfer-balance insufficiency
+and service-credit insufficiency are safe stored failures for operator action.
+Timeout or possible acceptance preserves uncertainty and reserved funds.
+
+Reconciliation queries the stored provider outside transactions with persisted
+schedule/lease, bounded batches and 5s/15s/30s/60s/2m/5m backoff. At the absolute
+24-hour horizon, stop automatic polling and retain UNKNOWN/NEEDS_REVIEW plus
+reserved funds. No automatic resubmission or payout webhook is introduced.
+Specialist replay observes the original outcome, including FAILED; only
+explicit provider-affine ADMIN retry can create the next attempt after
+revalidating original confirmation, eligibility, hold/dispute and fixture gates.
+The owner funds provider balance/service credits manually.
+
+Deploy the additive owner migration before new writers, synchronize consumers
+from Consultation OpenAPI 1.21.0 and drain legacy writers before PAYOS is
+enabled. Preserve MoMo history/IPNs and old FAKE/MOMO verification semantics.
+Local tests use SDK fixtures and disposable PostgreSQL only; never query real
+provider balance, submit real payouts or migrate shared databases as a gate.
+
 The endpoint returns appointment/user identifiers, status, modality, exact
 schedule, appointment version, projection time/window, and policy version only.
 Suspended, rejected, pending, or missing specialist profiles fail closed and
@@ -586,3 +655,19 @@ Focused owner verification:
 The generated context test uses PostgreSQL and Kafka Testcontainers and disables
 live Eureka registration. The appointment relay remains disabled unless its
 versioned topic has been provisioned.
+
+
+MB-787 failed-destination recovery amendment (2026-11-04): an explicit keyed
+ADMIN POST `/api/v1/admin/payouts/{payoutId}/close-failed` checks the latest
+FAILED/COMPLETE attempt and fixed DESTINATION_UNUSABLE reason, records
+`closed_at`/`closed_by`, releases active item ownership and audits
+`consultation.payout.closed` / `PAYOUT_CLOSED` atomically without a provider call.
+The payout remains FAILED and its original destination, provider, amount and
+item history stay immutable. `closedAt` is exposed on specialist/admin payout
+projections and forbids retry. Partial unique active earning ownership preserves
+one live allocation while retaining released historical links. The next
+withdrawal uses the current confirmed destination and all normal eligibility,
+minimum and daily-cap gates; closure never releases UNKNOWN/active/review money.
+Migration `20261104090000-close-failed-payout.sql` must precede new writers, and
+legacy writers must be drained before closure is enabled. Claude must sync the
+contract and add the admin action; MB-788 still owns live interoperability.

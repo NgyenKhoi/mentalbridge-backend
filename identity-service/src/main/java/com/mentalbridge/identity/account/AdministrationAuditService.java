@@ -115,6 +115,10 @@ public class AdministrationAuditService {
             "PROFILE_CONTENT_NOT_APPROVED",
             "OUTSIDE_SUPPORTED_SCOPE",
             "QUALITY_REVIEW_REQUIRED",
+            "MANUAL_ACCOUNT_HOLDER_CHECK",
+            "ACCOUNT_HOLDER_CHECKED",
+            "DEFINITE_FAILURE",
+            "DESTINATION_UNUSABLE",
             // Community moderation
             "HARASSMENT",
             "PRIVACY_OR_DOXXING",

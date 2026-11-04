@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-21
+- Payout amendment: [ADR 0047, 2026-11-04](0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) supersedes the historical sole-MoMo payout clause with separately gated staging PAYOS bank payout, immutable confirmation and matched transaction proof; production and fixture redemption remain blocked.
 - Provider/proof amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`) prospectively activates PayOS staging pay-in, retains dormant MoMo and admits fully matched authenticated reconciliation.
 - Amended by: [ADR 0014](0014-appointment-specialist-and-consultation-continuity.md), which adds the v1 `IN_PERSON` mode, fixes the 60-minute request/session lifecycle, replaces in-place rescheduling, and requires evidence-based completion; [ADR 0017](0017-product-scope-v2.md), which renames packages to `FREE`/`PLUS`/`PREMIUM`, requires new VND plan versions and MoMo for real money, replaces new in-person appointments with `IN_APP_VIDEO`, and clarifies evidence-backed earnings
 
@@ -111,7 +112,7 @@ Confirmation creates or enables exactly one Realtime conversation for an `IN_APP
 
 Completion snapshots the credit allocation, currency, 70% share basis points, specialist amount, and platform amount. An earning starts `PENDING_SETTLEMENT` and becomes `AVAILABLE` after the configured dispute/settlement delay.
 
-Automatic payout remains in scope through MoMo only. Official MoMo documentation exposes wallet/bank disbursement, balance, status/IPN behavior, a test environment, and Single/Batch Disbursement test collections. MoMo Disbursement is enabled only after the project's M4B account is granted the required product credentials; local/CI uses a MoMo-shaped fake.
+The original sole-MoMo payout decision below is historical and prospectively superseded by the [2026-11-04 ADR 0047 payout amendment](0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04). Automatic payout originally remained in scope through MoMo only. Official MoMo documentation exposes wallet/bank disbursement, balance, status/IPN behavior, a test environment, and Single/Batch Disbursement test collections. MoMo Disbursement is enabled only after the project's M4B account is granted the required product credentials; local/CI uses a MoMo-shaped fake.
 
 A logical payout idempotently fixes its destination, currency, amount, and earning items. Its numbered provider attempts move through `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or `UNKNOWN`; a definite failure may be retried with a new provider idempotency key, while an unknown result must be queried and blocks another transfer attempt. Only a verified provider result/IPN/status query marks the logical payout successful. Destination data is encrypted and never enters events/logs. MoMo payment and domestic payout use VND, while the current product prices are expressed in USD. Real payment and payout must remain disabled until product approval publishes VND plan versions or accepts an explicit versioned FX policy; the system must never convert a charge or earning silently at transaction time.
 
