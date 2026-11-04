@@ -4,6 +4,7 @@
 - Status: Accepted by owner
 - Date: 2026-10-30
 - Delivery: MB-786 pay-in; MB-787 payout remains blocked; MB-788 live staging QA
+- Later amendments: MB-787 below authorizes staging payout; [MB-812](#mb-812-funded-staging-demo-amendment-2026-11-04) adds the prospective funded-demo exception. Earlier baseline clauses remain historical context where amended.
 
 ## Context
 
@@ -120,3 +121,131 @@ mode is enabled and must not require a hosted URL for confirmed QR checkout.
   isolated automated evidence; no staging keys are needed for those gates.
 - Real PayOS staging interoperability and financial execution remain MB-788
   evidence, separate from deterministic local/CI tests.
+
+## MB-787 payout amendment (2026-11-04)
+
+- Decision ID: `MB-PAYOS-PAYOUT-001`
+- Status: Accepted by owner; the channel prerequisite is unblocked and the
+  brief's recommended choices are accepted. MB-788 owns live interoperability.
+
+This prospective amendment supersedes this ADR's earlier "payout remains
+blocked", missing-channel and "does not enable a PayOS payout mode" clauses,
+and ADR 0005's sole-MoMo payout clause. Consultation remains the financial
+owner. PAYOS payout is permitted only on the approved staging deployment and
+has separate credentials/readiness from collect. Complete payout credentials,
+valid destination encryption and the approved official HTTPS provider origin
+are required; production remains blocked. DISABLED, deterministic FAKE and
+dormant independently gated MOMO remain supported; unknown modes fail closed.
+The collect test-pricing exception does not permit redemption of synthetic
+300,000 VND allocations or 210,000 VND earnings. Seven-day hold, 100,000 VND
+minimum, one logical request per server day and 70% allocation are unchanged.
+
+Specialists save encrypted immutable bank revisions using a listed six-digit
+BIN, account and holder name. Every material edit, including a holder-only
+change or return to an old account, requires a new current
+PENDING_CONFIRMATION revision. Only an ADMIN may inspect exact decrypted
+account/name for a manual holder check and confirm its locked version; reads
+and confirmation are audited without bank data and return no-store. Lists,
+specialist responses and payout history remain masked. Confirmation is bound
+to that exact revision, makes no provider call and is separate from provider
+validation. It is not a per-withdrawal approval: subsequent specialist requests
+to an unchanged confirmed account dispatch automatically when eligible.
+
+Use the pinned official `vn.payos:payos-java:2.0.1` payout client with collect's
+bounded timeout, no automatic HTTP retries/redirects or sensitive logging.
+Create a one-item batch with `validateDestination=true`. Persist a UUIDv4
+attempt key before HTTP and pass it explicitly as `x-idempotency-key`; the
+outer batch reference is that key and the child reference is the separate
+attempt UUID. A logical payout fixes its provider, destination revision,
+currency, amount and earning items. Keep the outer payout ID distinct from a
+child transaction ID. No database transaction spans a provider call.
+
+Only authenticated, SDK signature-verified, exactly matched child transaction
+evidence proves payment: expected reference, integer VND amount, bank BIN and
+account must match the encrypted snapshot and child state must be SUCCEEDED.
+Outer approval/COMPLETED/PARTIAL_COMPLETED and balance are not settlement
+proof. A definite matched no-payment rejection may fail; timeout, duplicate
+key, interruption, unknown result or inconsistent evidence preserves UNKNOWN
+and reserved funds. Keep only safe public failure codes, never provider text
+or account payload. Preserve terminal success and reject stale prior-attempt
+evidence under the current-attempt lock.
+
+Recover uncertain creation by authenticated lookup using the stored outer
+reference followed by detail query. Query existing attempts through their
+stored provider and retained credentials independently of the new-submission
+mode. Poll with persisted schedule/lease at 5s, 15s, 30s, 60s, 2m and then at
+most every 5m, in bounded batches. At the absolute 24-hour horizon from first
+submit start, stop automatic polling and retain UNKNOWN/NEEDS_REVIEW plus
+reserved funds. Never automatically create another transfer. No payout
+webhook is introduced; collection callback examples are not payout authority.
+
+Specialist command replay observes the original outcome, including FAILED.
+Only an explicit keyed ADMIN retry may create the next numbered attempt after
+definite FAILED, retaining original provider and frozen items/destination.
+Revalidate current confirmation, readiness, original hold/dispute/fixture
+eligibility and lineage. Unknown/active/review attempts cannot retry. Linked
+AVAILABLE failed-payout items remain owned by their original payout and are
+reported as retryPendingVnd, excluded from new withdrawals and their minimum.
+The owner funds PayOS balance/service credits manually before explicit retry.
+
+Proxy VietQR's public bank list server-side with bounded timeout and a 24-hour
+in-process cache, returning only BIN/name/shortName. No fresh cache on upstream
+failure yields 503 without hiding existing destinations. This list makes no
+PayOS eligibility or automatic account-name verification claim.
+
+Migration is additive: retain encrypted historical destination revisions,
+legacy verification semantics and MoMo keys/IPNs; add PAYOS provider checks,
+pending nullable verification and actor/version, immutable current revisions,
+outer/child references and polling/lease/review fields. Preserve earning/item,
+logical daily-request and provider-key uniqueness. Deploy the owner migration
+before new writers; synchronize frontend consumers and drain old writers
+before enabling PAYOS. Paired owner data models/dictionaries and isolated
+contract, migration, readiness, authorization, idempotency, concurrency,
+uncertainty, retry and signed SDK fixtures are required. No real provider call
+or shared database mutation is implementation evidence; funded live staging
+interoperability and eligible funded earning QA remain MB-788.
+
+
+MB-787 failed-destination recovery amendment (2026-11-04): an explicit keyed
+ADMIN POST `/api/v1/admin/payouts/{payoutId}/close-failed` checks the latest
+FAILED/COMPLETE attempt and fixed DESTINATION_UNUSABLE reason, records
+`closed_at`/`closed_by`, releases active item ownership and audits
+`consultation.payout.closed` / `PAYOUT_CLOSED` atomically without a provider call.
+The payout remains FAILED and its original destination, provider, amount and
+item history stay immutable. `closedAt` is exposed on specialist/admin payout
+projections and forbids retry. Partial unique active earning ownership preserves
+one live allocation while retaining released historical links. The next
+withdrawal uses the current confirmed destination and all normal eligibility,
+minimum and daily-cap gates; closure never releases UNKNOWN/active/review money.
+Migration `20261104090000-close-failed-payout.sql` must precede new writers, and
+legacy writers must be drained before closure is enabled. Claude must sync the
+contract and add the admin action; MB-788 still owns live interoperability.
+
+## MB-812 funded staging demo amendment (2026-11-04)
+
+- Decision ID: `MB-STAGING-DEMO-PAYOUT-001`
+- Status: Accepted by owner; MB-788 owns provider minimum confirmation and live QA.
+
+This prospectively amends D1's synthetic-only earning and unchanged hold/minimum
+clauses, the MB-787 blanket sandbox exclusion, and ADR 0032's fixed allocation
+and baseline hold/minimum only for the explicit staging demo gate. The exact
+rule, rounding and compatibility authority is the
+[ADR 0032 MB-812 amendment](0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04).
+
+The flag defaults false and requires `staging` without `prod`/`production`, even
+for mixed profiles. Newly created `staging-demo-paid-v1` earnings bind an exact
+succeeded real PAYOS payment and matching processed successful verified receipt
+to the paid credit's immutable purchased plan. Allocation rounds collected
+VND per frozen plan credit down, then the 70% specialist share rounds down.
+Legacy, FAKE, fixture and unverified earnings remain non-redeemable. Only
+separately ready PAYOS payout may redeem the funded exception; prepare and
+explicit retry revalidate the gate and lineage. No production rule or older
+earning snapshot changes.
+
+Configured staging minimum `2000` and hold `PT10M` permit three PLUS sessions
+(2,625 VND) or three PREMIUM sessions (2,100 VND) to qualify. SDK 2.0.1 offline
+material does not confirm the provider floor, so MB-788 must verify acceptance
+of the owner-directed 2,000 VND fallback before any live transfer. This does
+not authorize deployment, migration execution or provider calls in MB-812.
+MB-787's daily cap, exact destination confirmation, idempotency, provider
+affinity, signed child proof, polling and close/retry rules stay unchanged.

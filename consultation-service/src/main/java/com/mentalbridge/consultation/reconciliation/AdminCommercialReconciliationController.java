@@ -75,10 +75,11 @@ public class AdminCommercialReconciliationController {
 
 		var payouts = jdbc.sql("""
 				select p.id, p.specialist_account_id, d.display_hint, p.amount_minor, p.currency, p.payout_provider,
-				 p.status, p.last_failure_code, p.requested_at
+				 p.status, p.last_failure_code, p.requested_at, a.reconciliation_status,a.review_required_at
 				from specialist_payout p
 				join specialist_payout_destination d on d.id=p.destination_id
-				where p.status in ('FAILED', 'UNKNOWN') or p.last_failure_code is not null
+				left join specialist_payout_attempt a on a.payout_id=p.id and a.attempt_number=(select max(x.attempt_number) from specialist_payout_attempt x where x.payout_id=p.id)
+				where p.status in ('FAILED', 'UNKNOWN') or p.last_failure_code is not null or a.reconciliation_status='NEEDS_REVIEW'
 				order by p.requested_at desc, p.id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.PayoutDiscrepancy(
 						row.getObject("id", UUID.class),
@@ -89,7 +90,7 @@ public class AdminCommercialReconciliationController {
 						row.getString("payout_provider"),
 						row.getString("status"),
 						row.getString("last_failure_code"),
-						row.getTimestamp("requested_at").toInstant()))
+						row.getTimestamp("requested_at").toInstant(),row.getString("reconciliation_status"),instant(row,"review_required_at")))
 				.list();
 
 		var heldEarnings = jdbc.sql("""
@@ -525,7 +526,8 @@ public class AdminCommercialReconciliationController {
 					select p.id, p.specialist_account_id, d.display_hint, p.amount_minor, p.currency,
 					 p.payout_provider, p.status, count(i.earning_id)::integer earning_count,
 					 max(a.provider_payout_reference) provider_reference, p.last_failure_code,
-					 p.requested_at, p.completed_at
+					 p.requested_at, p.completed_at, p.closed_at, max(a.reconciliation_status) reconciliation_status,
+				 max(a.next_reconciliation_at) next_reconciliation_at, max(a.review_required_at) review_required_at
 					from specialist_payout p
 					join specialist_payout_destination d on d.id=p.destination_id
 					join specialist_payout_item i on i.payout_id=p.id
@@ -548,7 +550,8 @@ public class AdminCommercialReconciliationController {
 							row.getString("provider_reference"),
 							row.getString("last_failure_code"),
 							row.getTimestamp("requested_at").toInstant(),
-							instant(row, "completed_at")))
+							instant(row, "completed_at"), row.getString("reconciliation_status"),
+							instant(row, "next_reconciliation_at"), instant(row, "review_required_at"), instant(row, "closed_at")))
 					.list();
 		}
 

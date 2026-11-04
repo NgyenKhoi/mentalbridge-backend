@@ -89,6 +89,7 @@ mentalbridge:
       retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
     payout:
       mode: ${CONSULTATION_PAYOUT_MODE:FAKE}
+      staging-demo-enabled: ${CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED:false}
       settlement-hold: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:P7D}
       minimum-withdrawal-vnd: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:100000}
       encryption-key: ${CONSULTATION_PAYOUT_ENCRYPTION_KEY:}
@@ -101,6 +102,10 @@ mentalbridge:
       momo-store-id: ${MOMO_PAYOUT_STORE_ID:}
       momo-public-key: ${MOMO_PAYOUT_PUBLIC_KEY:}
       momo-ipn-url: ${MOMO_PAYOUT_IPN_URL:}
+      payos-client-id: ${PAYOS_PAYOUT_CLIENT_ID:}
+      payos-api-key: ${PAYOS_PAYOUT_API_KEY:}
+      payos-checksum-key: ${PAYOS_PAYOUT_CHECKSUM_KEY:}
+      payos-base-url: ${PAYOS_PAYOUT_BASE_URL:https://api-merchant.payos.vn}
     billing:
       mode: ${CONSULTATION_BILLING_MODE:DISABLED}
       production-approved: ${MOMO_PAYMENT_PRODUCTION_APPROVED:false}

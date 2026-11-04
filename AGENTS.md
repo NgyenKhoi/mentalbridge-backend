@@ -44,3 +44,21 @@ request. Pure performance-index tuning, migration metadata, or a constraint
 name-only change does not require a logical-model change.
 
 An accepted ADR may override a repository recommendation, but it must explicitly identify the affected rule and migration/compatibility consequences.
+
+## Code Review Rules
+
+These rules drive the automatic Codex review on GitHub pull requests. Review logic, contracts, security and privacy, concurrency and consistency, persistence, and tests. Do not review UI/UX, visual design, copy tone, formatting, naming, or speculative refactors; CI runs format, lint, type and contract checks.
+
+Every finding names `path:line`, the concrete input or state that fails, and the fix.
+
+- **P0:** a security or privacy hole; data loss or corruption; a broken or incompatible REST, event or WebSocket contract; a broken safety, consent or entitlement rule (including fail-open on dependency uncertainty); a migration that is not append-only or is unsafe for the shared dev/staging databases or for code still running on `dev`; or a change that makes a required gate fail.
+- **P1:** a risky path without a test (authorization, validation, conflict/concurrency, duplicate/retry, timeout or dependency failure); a database transaction held across a remote REST or provider call; a non-idempotent command or consumer; a persisted-shape change without the matching `docs/domain-model/` and `docs/database/` update; or a contract change whose frontend consumer is not named for `npm run contracts:sync`.
+
+### Checks
+
+- Apply the "Non-negotiable decisions" above and the review checklist in `docs/agent-guides/review-and-testing.md`.
+- Ownership: no service reads another service's tables, schema, repository, entity or internal classes. For a user's own resources the account ID comes from the JWT subject, never from the request, and missing and foreign IDs return the same `*_NOT_FOUND`; only explicitly authorized ADMIN or service operations accept a target account ID.
+- Contracts: OpenAPI and JSON Schema change in the same PR as the code, stay backward compatible or are versioned, and every path keeps `x-mentalbridge-status`.
+- Data minimization: logs, events, outbox rows and errors carry no token, password, raw journal or chat text, assessment answers, private object URL, or payment-provider payload.
+- AI never decides: AI output must not compose, select, rerank or mutate assessment, safety, SupportPlan or booking decisions.
+- Service rules: the nearest service `AGENTS.md` governs files beneath it (for example the invariants in `care-service/AGENTS.md`); breaking one of them is P0.

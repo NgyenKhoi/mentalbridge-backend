@@ -134,9 +134,10 @@ See [MB-691 evidence](../story-mb-691-community-notification-evidence.md).
 - The earning and payout tables are active under ADR 0032: a seven-day hold,
   100,000 VND minimum withdrawal, at most one on-demand payout per specialist
   per server day, and a deterministic fake provider for local/CI.
-- MoMo Disbursement is the only planned production payout provider, subject to
-  explicit production approval and M4B credentials. Planned VND economics are
-  documentation/design inputs and do not enable real payment or payout.
+- ADR 0047's MB-787 amendment permits separately configured PAYOS bank payouts
+  on staging after manual confirmation of each destination revision; MoMo
+  Disbursement remains dormant. Production and redemption of synthetic earnings
+  stay blocked; planned VND economics do not enable them.
 - Subscription checkout/payment persistence remains a separate delivery scope.
   Its current integration-test catalogue is `FREE=0`, `PLUS=5,000`, and
   `PREMIUM=10,000` VND; these fixtures must not be interpreted as production

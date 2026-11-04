@@ -4,6 +4,8 @@
 - Status: Accepted
 - Date: 2026-10-06
 - Fixture-provider amendment: [ADR 0047](0047-payos-active-gateway-momo-dormant.md) (`MB-PAYOS-PAYIN-001`) explicitly permits unchanged 5,000/10,000 VND test prices through PayOS on staging only; synthetic earnings remain non-redeemable.
+- Payout amendment: [ADR 0047, 2026-11-04](0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) permits separately ready staging PAYOS bank payout after exact manual admin confirmation; synthetic earnings remain non-redeemable and production stays blocked.
+- Staging demo amendment: [MB-812, 2026-11-04](#mb-812-funded-staging-demo-amendment-2026-11-04) prospectively permits newly funded, verified PayOS demo earnings with staging-only minimum/hold configuration. All historical and production rules below retain their original meaning.
 - Amends: [ADR 0005](0005-consultation-billing-and-credit-settlement.md),
   [ADR 0017](0017-product-scope-v2.md), and
   [ADR 0022](0022-current-product-blueprint-amendments.md)
@@ -37,8 +39,11 @@ earning is never calculated from subscription price.
 
 The settlement/dispute hold is seven days. Minimum withdrawal is 100,000 VND.
 Payout is specialist-initiated and limited to one logical request per specialist
-per server day. Real payout remains disabled until explicit production approval
-and provider credentials exist.
+per server day. Production payout remains disabled until explicit production
+approval and provider credentials exist. The 2026-11-04 ADR 0047 amendment
+separately permits staging-only PAYOS bank payout with its own complete
+readiness, exact current bank confirmation and authenticated matching evidence;
+this does not make test earnings redeemable.
 
 The current runtime integration-test catalogue is exactly:
 
@@ -98,3 +103,48 @@ not understand the zero-offset pricing policy.
   the VND design values are documented.
 - Historical USD examples in ADR 0005 remain historical context and are not
   the current catalogue authority.
+
+### MB-812 funded staging demo amendment (2026-11-04)
+
+The owner accepts decision `MB-STAGING-DEMO-PAYOUT-001` for MB-788 real-money
+QA. This narrowly amends the fixed 300,000 VND earning allocation, seven-day
+hold, 100,000 VND minimum and unconditional sandbox exclusion above only when
+`CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED=true`, profile `staging` is active,
+and neither `prod` nor `production` is active. The flag defaults false. Outside
+that effective gate, the configured minimum cannot be below 100,000 VND and
+the hold cannot be below P7D. Production economics and enablement do not change.
+
+Only a newly completed credit from `sandbox-full-price-v1`, bound to its exact
+PAID period, frozen purchased plan and succeeded PayOS payment with matching
+processed successful verified webhook or reconciliation receipt, may snapshot
+`earning_policy_version=staging-demo-paid-v1` and `funding_payment_id`.
+An upgrade cannot redirect an older held credit to the new plan's payment.
+The earning allocation is `floor(actual collected VND / frozen plan credits)`;
+the specialist receives `floor(allocation * 7000 / 10000)`. Both round down to
+whole VND and leave remainders undistributed. Thus total specialist earnings
+cannot exceed 70% of collected money. Nominal plan/period allocations are
+unchanged. Legacy/default `specialist-earning-v1` rows retain their amounts
+and null funding reference; no historical earning is converted or backfilled.
+
+The funded snapshot is redeemable only through separately ready staging
+PAYOS payout while the gate and exact verified lineage still hold, including
+on explicit retry. Fixture, FAKE, unverified and legacy synthetic earnings
+remain excluded from real payout. All MB-787 destination confirmation,
+daily-cap, idempotency, polling, reservation and close/retry rules remain.
+
+Staging operator values are minimum `2000` VND and hold `PT10M`, configured
+through the existing environment settings rather than code. The pinned offline
+SDK does not establish a payout minimum; 2,000 VND is the owner-directed
+fallback, and MB-788 must confirm provider acceptance before money movement.
+PLUS 5,000 VND / four credits gives 875 VND per session (two: 1,750; three:
+2,625). PREMIUM 10,000 VND / ten gives 700 VND (three: 2,100). Three sessions
+are required at the fallback minimum; prices, credit counts and share do not
+change to force a one/two-session demonstration.
+
+Append-only migration `20261104100000-staging-demo-payout.sql` adds the policy
+and funding provenance, preserves existing rows with baseline defaults, and
+relaxes the database withdrawal floor to positive VND. The service continues
+to enforce its environment-specific minimum. Deploy migration before new
+writers and drain older earning/payout writers before activation. Exact hold
+seconds are additive API data; web validators/display must accept dynamic
+values before screen-based MB-788 QA. No mobile payout surface changes.

@@ -88,7 +88,7 @@ Before declaring completion, inspect the full diff and answer yes to each applic
 - Retry, timeout, circuit breaker, idempotency, and fallback behavior are explicit and tested.
 - Message publishing uses outbox when coupled to state; consumption is idempotent and ack occurs after commit.
 - Database constraints enforce important invariants; every table/field has a useful entry in the Markdown data dictionary, and every material persistence change is reflected in the canonical logical model.
-- Payment IPN tests use complete official MoMo fixtures and cover every required/optional field, missing/extra fields, invalid signatures, partner/order/request/amount mismatch, duplicate delivery, result finality, and the HTTP 204/15-second acknowledgement contract.
+- Payment webhook tests use complete official PayOS fixtures and cover every required/optional field, missing/extra fields, invalid signatures, order/amount mismatch, duplicate delivery, result finality, and the HTTP 204 acknowledgement contract.
 - Authorization is enforced in the data owner and uncertainty fails closed.
 - Logs/events/errors contain no token, password, raw journal/chat text, assessment answers, private object URL, or payment-provider payload.
 - Feature structure remains cohesive; no god service, dumping-ground `shared`, copied cross-service DTO, unused abstraction, or explanatory production-code comment was added.

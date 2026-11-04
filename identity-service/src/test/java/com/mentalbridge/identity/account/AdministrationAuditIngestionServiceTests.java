@@ -13,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -111,6 +113,84 @@ class AdministrationAuditIngestionServiceTests {
                 .isEqualTo(AdministrationAuditIngestionService.sha256Hex(actorId.toString()));
         assertThat(captor.getValue().getSubjectReferenceHash())
                 .isEqualTo(AdministrationAuditIngestionService.sha256Hex(targetId.toString()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "consultation.payout-destination.inspected,PAYOUT_DESTINATION_INSPECTED,MANUAL_ACCOUNT_HOLDER_CHECK",
+            "consultation.payout-destination.confirmed,PAYOUT_DESTINATION_CONFIRMED,ACCOUNT_HOLDER_CHECKED",
+            "consultation.payout.retried,PAYOUT_RETRIED,DEFINITE_FAILURE",
+            "consultation.payout.closed,PAYOUT_CLOSED,DESTINATION_UNUSABLE"
+    })
+    void payoutAdministrationEventsRemainBoundToTheConsultationDescriptor(String eventType, String action, String reason) {
+        UUID actorId = UUID.randomUUID();
+        UUID specialistId = UUID.randomUUID();
+        when(accountRepository.existsByIdAndStatusNot(actorId, AccountStatus.DELETED)).thenReturn(true);
+        when(accountRepository.existsByIdAndStatusNot(specialistId, AccountStatus.DELETED)).thenReturn(true);
+        var command = new AdministrationAuditIngestionService.IngestionCommand(
+                UUID.randomUUID(), eventType, Instant.now(),
+                AdministrationAuditService.AuditSourceService.CONSULTATION,
+                AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                actorId, "ADMIN", action, "SUCCEEDED", reason,
+                UUID.randomUUID(), specialistId, "account:" + specialistId);
+
+        assertThat(ingestionService.ingest(command)).isTrue();
+        ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+        verify(auditRepository).insertIfAbsent(captor.capture());
+        assertThat(captor.getValue().getSourceService()).isEqualTo("CONSULTATION");
+        assertThat(captor.getValue().getDomain()).isEqualTo("SPECIALIST_REVIEW");
+        assertThat(captor.getValue().getAction()).isEqualTo(action);
+        assertThat(captor.getValue().getAccountId()).isEqualTo(specialistId);
+        assertThat(captor.getValue().getReasonCode()).isEqualTo(reason);
+
+        var forged = new AdministrationAuditIngestionService.IngestionCommand(
+                UUID.randomUUID(), eventType, Instant.now(),
+                AdministrationAuditService.AuditSourceService.CONTENT,
+                AdministrationAuditService.AuditDomain.RESOURCE_MANAGEMENT,
+                actorId, "ADMIN", action, "SUCCEEDED", null,
+                UUID.randomUUID(), specialistId, "account:" + specialistId);
+        assertThat(ingestionService.ingest(forged)).isFalse();
+        verify(auditRepository, org.mockito.Mockito.times(1)).insertIfAbsent(any(SecurityAuditEventEntity.class));
+    }
+
+    @Test
+    void closedFailedPayoutEventRetainsSafeReasonAndDeduplicatesDelivery() {
+        UUID eventId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        UUID specialistId = UUID.randomUUID();
+        UUID payoutId = UUID.randomUUID();
+        when(auditRepository.existsById(eventId)).thenReturn(false, true);
+        when(accountRepository.existsByIdAndStatusNot(actorId, AccountStatus.DELETED)).thenReturn(true);
+        when(accountRepository.existsByIdAndStatusNot(specialistId, AccountStatus.DELETED)).thenReturn(true);
+        String payload = """
+                {
+                  "eventId": "%s",
+                  "eventType": "consultation.payout.closed",
+                  "occurredAt": "%s",
+                  "producer": "consultation-service",
+                  "schemaVersion": "1.0",
+                  "sourceService": "CONSULTATION",
+                  "domain": "SPECIALIST_REVIEW",
+                  "actorId": "%s",
+                  "actorType": "ADMIN",
+                  "action": "PAYOUT_CLOSED",
+                  "result": "SUCCEEDED",
+                  "reasonCode": "DESTINATION_UNUSABLE",
+                  "correlationId": "%s",
+                  "targetAccountId": "%s",
+                  "targetIdentifier": "account:%s"
+                }
+                """.formatted(eventId, Instant.now(), actorId, payoutId, specialistId, specialistId);
+
+        consumer.onMessage(payload);
+        consumer.onMessage(payload);
+
+        ArgumentCaptor<SecurityAuditEventEntity> captor = ArgumentCaptor.forClass(SecurityAuditEventEntity.class);
+        verify(auditRepository).insertIfAbsent(captor.capture());
+        assertThat(captor.getValue().getAction()).isEqualTo("PAYOUT_CLOSED");
+        assertThat(captor.getValue().getReasonCode()).isEqualTo("DESTINATION_UNUSABLE");
+        assertThat(captor.getValue().getCorrelationId()).isEqualTo(payoutId);
+        assertThat(captor.getValue().getAccountId()).isEqualTo(specialistId);
     }
 
     @Test

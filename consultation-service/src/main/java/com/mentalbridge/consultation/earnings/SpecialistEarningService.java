@@ -50,29 +50,36 @@ public class SpecialistEarningService {
 				row.getLong("credit_allocation_minor"))).optional();
 		if (source.isEmpty() || !settlementGate.earningEligible(appointmentId)) return;
 		var value = source.orElseThrow();
+		var funding = properties.stagingDemoEnabled()
+				? StagingDemoEarningSource.verifiedFunding(jdbc, value.creditId()) : java.util.Optional.<StagingDemoEarningSource.Funding>empty();
+		var allocation = funding.map(StagingDemoEarningSource.Funding::creditAllocationVnd)
+				.orElse(value.creditAllocationVnd());
 		var availableAt = value.earnedAt().plus(properties.getSettlementHold());
 		var now = clock.instant();
-		var specialistAmount = Math.multiplyExact(value.creditAllocationVnd(), SPECIALIST_SHARE_BPS) / 10_000;
-		var platformAmount = value.creditAllocationVnd() - specialistAmount;
+		var specialistAmount = Math.multiplyExact(allocation, SPECIALIST_SHARE_BPS) / 10_000;
+		var platformAmount = allocation - specialistAmount;
 		jdbc.sql("""
 				insert into specialist_earning (
 				 id, appointment_id, completion_fact_id, consumed_credit_id, specialist_account_id,
 				 plan_version, currency, credit_allocation_minor, specialist_share_bps,
 				 specialist_amount_minor, platform_allocation_minor, idempotency_source,
-				 status, earned_at, settlement_available_at, created_at, updated_at
+				 status, earned_at, settlement_available_at, created_at, updated_at,
+				 earning_policy_version, funding_payment_id
 				) values (
 				 :id, :appointmentId, :completionFactId, :creditId, :specialistId,
 				 :planVersion, :currency, :allocation, :share,
 				 :specialistAmount, :platformAmount, :source,
-				 'PENDING_SETTLEMENT', :earnedAt, :availableAt, :now, :now
+				 'PENDING_SETTLEMENT', :earnedAt, :availableAt, :now, :now, :policy, :fundingPaymentId
 				) on conflict (appointment_id) do nothing
 				""").param("id", UUID.randomUUID()).param("appointmentId", value.appointmentId())
 				.param("completionFactId", value.completionFactId()).param("creditId", value.creditId())
 				.param("specialistId", value.specialistId()).param("planVersion", value.planVersion())
-				.param("currency", CURRENCY).param("allocation", value.creditAllocationVnd())
+				.param("currency", CURRENCY).param("allocation", allocation)
 				.param("share", SPECIALIST_SHARE_BPS).param("specialistAmount", specialistAmount)
 				.param("platformAmount", platformAmount)
 				.param("source", "completion:" + value.completionFactId())
+				.param("policy", funding.isPresent() ? StagingDemoEarningSource.POLICY_VERSION : POLICY_VERSION)
+				.param("fundingPaymentId", funding.map(StagingDemoEarningSource.Funding::paymentId).orElse(null))
 				.param("earnedAt", databaseInstant(value.earnedAt())).param("availableAt", databaseInstant(availableAt))
 				.param("now", databaseInstant(now)).update();
 	}

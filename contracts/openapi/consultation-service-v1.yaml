@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Consultation Service API
-  version: 1.20.0
-  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, fake local payout reconciliation, credit reservation limits, and suspension outcomes.
+  version: 1.22.0
+  description: Consultation-owned specialist profile lifecycle, approved online discovery, service-plan entitlement and credit lookup, online availability, appointment requests, appointment-scoped chat eligibility and minimized completion evidence, auditable owner cancellation/reschedule/session outcomes, immutable user-visible session summaries and agreed next steps, evidence-backed specialist earnings, admin-confirmed bank destinations and provider-affine payout reconciliation, credit reservation limits, and suspension outcomes.
 servers:
   - url: http://localhost:8082
 paths:
@@ -175,7 +175,7 @@ paths:
                 issuer: { type: string, minLength: 1, maxLength: 160 }
                 issueYear: { type: integer, minimum: 1900, maximum: 2100 }
                 credentialType: { type: string, enum: [DEGREE, LICENSE, CERTIFICATE] }
-                file: { type: string, format: binary, description: PDF, JPEG or PNG; at most 10 MiB. }
+                file: { type: string, format: binary, description: "PDF, JPEG or PNG; at most 10 MiB." }
       responses:
         '201':
           description: Pending credential
@@ -1481,7 +1481,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getSpecialistEarnings
-      description: Returns the authenticated approved specialist's evidence-backed earning balances, immutable earning snapshots, masked destination, and payout history. Settlement eligibility is evaluated against server time.
+      description: Returns the authenticated approved specialist's evidence-backed earning balances, immutable earning snapshots, current pending or confirmed masked destination, provider readiness, retry-pending linked earnings, and immutable provider payout history. Settlement eligibility is evaluated against server time.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1489,36 +1489,1504 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SpecialistEarnings' }
+              examples:
+                pendingBank:
+                  summary: "Synthetic MB-787 pendingBank"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 0
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "PENDING_CONFIRMATION"
+                      verifiedAt: null
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 0
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: false
+                    earnings: []
+                    payouts: []
+                confirmedBank:
+                  summary: "Synthetic MB-787 confirmedBank"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 0
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts: []
+                disabledAvailability:
+                  summary: "Synthetic MB-787 disabledAvailability"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutAvailability:
+                      mode: "DISABLED"
+                      ready: false
+                      reasonCode: "REAL_PAYOUT_DISABLED"
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 0
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts: []
+                simulatedFake:
+                  summary: "Synthetic MB-787 simulatedFake"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "FAKE"
+                    payoutAvailability:
+                      mode: "FAKE"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 0
+                      paidVnd: 210000
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "FAKE"
+                        status: "SUCCEEDED"
+                        providerReference: "fake-synthetic-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                overdue:
+                  summary: "Synthetic MB-787 overdue"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 210000
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "UNKNOWN"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: null
+                        reconciliationStatus: "NEEDS_REVIEW"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: "2026-11-05T03:00:00Z"
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/specialist/payout-destination:
     x-mentalbridge-status: implemented
     put:
-      operationId: saveSpecialistPayoutDestination
-      description: Encrypts one specialist-owned payout destination and returns only a masked hint. Local and CI use the deterministic FAKE provider. MoMo disbursement requires explicit production approval and complete credentials.
-      security: [{ bearerAuth: [] }]
+      operationId: "saveSpecialistPayoutDestination"
+      description: "SPECIALIST-only save of the JWT-owned encrypted destination. PAYOS requires BANK_ACCOUNT with a six-digit listed BIN, 6-32 digit accountReference and trimmed 1-100 character holder. Legacy MoMo inputs remain supported in MOMO mode. Material changes including holder-only edits or reverting to an old bank create a new immutable PENDING_CONFIRMATION revision; exact unchanged input is a no-op. Broad projections remain masked; no previous confirmation is inherited."
+      security:
+        -
+          bearerAuth: []
       requestBody:
         required: true
         content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SavePayoutDestination' }
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/SavePayoutDestination"
+            examples:
+              bank:
+                summary: "Synthetic MB-787 bank"
+                value:
+                  destinationType: "BANK_ACCOUNT"
+                  bankCode: "970436"
+                  accountReference: "1234567890"
+                  accountHolderName: "NGUYEN VAN A"
       responses:
-        '200':
-          description: Masked verified destination
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
           content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PayoutDestination' }
-        '400': { $ref: '#/components/responses/ValidationProblem' }
-        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
-        '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '503': { $ref: '#/components/responses/UnavailableProblem' }
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/PayoutDestination"
+              examples:
+                pendingBank:
+                  summary: "Synthetic MB-787 pendingBank"
+                  value:
+                    id: "78700000-0000-4000-8000-000000000001"
+                    provider: "PAYOS"
+                    destinationType: "BANK_ACCOUNT"
+                    displayHint: "970436 ****7890"
+                    status: "PENDING_CONFIRMATION"
+                    verifiedAt: null
+                    bankCode: "970436"
+                    bankName: "Synthetic bank"
+                    version: 0
+                    updatedAt: "2026-11-04T03:00:00Z"
+                    usableForPayout: false
+                confirmedBank:
+                  summary: "Synthetic MB-787 confirmedBank"
+                  value:
+                    id: "78700000-0000-4000-8000-000000000001"
+                    provider: "PAYOS"
+                    destinationType: "BANK_ACCOUNT"
+                    displayHint: "970436 ****7890"
+                    status: "VERIFIED"
+                    verifiedAt: "2026-11-04T03:00:00Z"
+                    bankCode: "970436"
+                    bankName: "Synthetic bank"
+                    version: 1
+                    updatedAt: "2026-11-04T03:00:00Z"
+                    usableForPayout: true
+                disabledMomoHistory:
+                  summary: "Synthetic MB-787 disabledMomoHistory"
+                  value:
+                    id: "78700000-0000-4000-8000-000000000001"
+                    provider: "MOMO"
+                    destinationType: "MOMO_WALLET"
+                    displayHint: "MOMO ****7890"
+                    status: "DISABLED"
+                    verifiedAt: "2026-11-04T03:00:00Z"
+                    bankCode: null
+                    bankName: null
+                    version: 1
+                    updatedAt: "2026-11-04T03:00:00Z"
+                    usableForPayout: false
+                simulatedFake:
+                  summary: "Synthetic MB-787 simulatedFake"
+                  value:
+                    id: "78700000-0000-4000-8000-000000000001"
+                    provider: "FAKE"
+                    destinationType: "BANK_ACCOUNT"
+                    displayHint: "SIMULATED ****7890"
+                    status: "VERIFIED"
+                    verifiedAt: "2026-11-04T03:00:00Z"
+                    bankCode: "970436"
+                    bankName: "Synthetic bank"
+                    version: 1
+                    updatedAt: "2026-11-04T03:00:00Z"
+                    usableForPayout: true
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "503":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                disabled:
+                  summary: "Synthetic MB-787 disabled"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "REAL_PAYOUT_DISABLED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                outage:
+                  summary: "Synthetic MB-787 outage"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_PROVIDER_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                banksUnavailable:
+                  summary: "Synthetic MB-787 banksUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_BANK_LIST_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                configurationUnavailable:
+                  summary: "Synthetic MB-787 configurationUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_CONFIGURATION_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
   /api/v1/specialist/payouts:
     x-mentalbridge-status: implemented
     post:
-      operationId: requestSpecialistPayout
-      description: Idempotently attaches all currently available earnings to at most one payout request per specialist per day. Server-side earnings determine the amount; the client cannot submit an amount.
-      security: [{ bearerAuth: [] }]
+      operationId: "requestSpecialistPayout"
+      description: "SPECIALIST-only idempotent request attaching all eligible unlinked earnings, at most one logical request per server day. Amount is server-derived. Missing/foreign resources are indistinguishable 404. Requires the exact confirmed compatible destination and readiness before dispatch; confirmation/provider/minimum/day/synthetic conflicts return 409. Same key/body replay only observes the prior outcome, including FAILED, without another attempt; changed body conflicts. Known attempt failures are returned in history. Uncertain acceptance remains reserved and polled, never resubmitted."
+      security:
+        -
+          bearerAuth: []
       parameters:
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 16
+            maxLength: 128
+          description: "Same key and body observe the existing outcome without another action; a changed body conflicts."
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/CreateSpecialistPayout"
+            examples:
+              confirmedDestination:
+                summary: "Synthetic MB-787 confirmedDestination"
+                value:
+                  destinationId: "78700000-0000-4000-8000-000000000001"
+      responses:
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/SpecialistEarnings"
+              examples:
+                processing:
+                  summary: "Synthetic MB-787 processing"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 210000
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "PROCESSING"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: null
+                        reconciliationStatus: "POLLING"
+                        nextReconciliationAt: "2026-11-04T03:00:05Z"
+                        reviewRequiredAt: null
+                paid:
+                  summary: "Synthetic MB-787 paid"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 0
+                      paidVnd: 210000
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "SUCCEEDED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                rejected:
+                  summary: "Synthetic MB-787 rejected"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 210000
+                      processingVnd: 0
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_PROVIDER_REJECTED"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                insufficientBalance:
+                  summary: "Synthetic MB-787 insufficientBalance"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 210000
+                      processingVnd: 0
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                insufficientServiceCredits:
+                  summary: "Synthetic MB-787 insufficientServiceCredits"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 210000
+                      processingVnd: 0
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                overdue:
+                  summary: "Synthetic MB-787 overdue"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "PAYOS"
+                    payoutAvailability:
+                      mode: "PAYOS"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 210000
+                      paidVnd: 0
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "UNKNOWN"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: null
+                        reconciliationStatus: "NEEDS_REVIEW"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: "2026-11-05T03:00:00Z"
+                simulatedFake:
+                  summary: "Synthetic MB-787 simulatedFake"
+                  value:
+                    currency: "VND"
+                    earningPolicyVersion: "specialist-earning-v1"
+                    payoutProvider: "FAKE"
+                    payoutAvailability:
+                      mode: "FAKE"
+                      ready: true
+                      reasonCode: null
+                    settlementHoldDays: 7
+                    minimumWithdrawalVnd: 100000
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    balance:
+                      pendingSettlementVnd: 0
+                      availableVnd: 0
+                      retryPendingVnd: 0
+                      processingVnd: 0
+                      paidVnd: 210000
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    earnings: []
+                    payouts:
+                      -
+                        id: "78700000-0000-4000-8000-000000000003"
+                        destinationId: "78700000-0000-4000-8000-000000000001"
+                        amountVnd: 210000
+                        provider: "FAKE"
+                        status: "SUCCEEDED"
+                        providerReference: "fake-synthetic-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "404":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                notFound:
+                  summary: "Synthetic MB-787 notFound"
+                  value:
+                    type: "about:blank"
+                    title: "Payout resource not found"
+                    status: 404
+                    code: "PAYOUT_DESTINATION_NOT_FOUND"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "409":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                confirmationRequired:
+                  summary: "Synthetic MB-787 confirmationRequired"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_CONFIRMATION_REQUIRED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                providerMismatch:
+                  summary: "Synthetic MB-787 providerMismatch"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_PROVIDER_MISMATCH"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                staleConfirmation:
+                  summary: "Synthetic MB-787 staleConfirmation"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_VERSION_CONFLICT"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                retryUnavailable:
+                  summary: "Synthetic MB-787 retryUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_RETRY_NOT_AVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                idempotencyConflict:
+                  summary: "Synthetic MB-787 idempotencyConflict"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "IDEMPOTENCY_KEY_CONFLICT"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "503":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                disabled:
+                  summary: "Synthetic MB-787 disabled"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "REAL_PAYOUT_DISABLED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                outage:
+                  summary: "Synthetic MB-787 outage"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_PROVIDER_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                banksUnavailable:
+                  summary: "Synthetic MB-787 banksUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_BANK_LIST_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                configurationUnavailable:
+                  summary: "Synthetic MB-787 configurationUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_CONFIGURATION_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+  /api/v1/specialist/payout-banks:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: "listSpecialistPayoutBanks"
+      description: "SPECIALIST-only backend proxy of VietQR BIN/name/shortName with a 24-hour in-process cache and bounded upstream timeout. No fresh list returns PAYOUT_BANK_LIST_UNAVAILABLE; existing confirmed destinations remain readable. QR transfer support is not a PayOS eligibility claim."
+      security:
+        -
+          bearerAuth: []
+      responses:
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/PayoutBankList"
+              examples:
+                banks:
+                  summary: "Synthetic MB-787 banks"
+                  value:
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    items:
+                      -
+                        bin: "970436"
+                        name: "Synthetic bank"
+                        shortName: "SYNTHETIC"
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "503":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                disabled:
+                  summary: "Synthetic MB-787 disabled"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "REAL_PAYOUT_DISABLED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                outage:
+                  summary: "Synthetic MB-787 outage"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_PROVIDER_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                banksUnavailable:
+                  summary: "Synthetic MB-787 banksUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_BANK_LIST_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                configurationUnavailable:
+                  summary: "Synthetic MB-787 configurationUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_CONFIGURATION_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+  /api/v1/admin/payout-destinations:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: "listAdminPayoutDestinations"
+      description: "ADMIN-only masked current destination revisions ordered by updatedAt/id. Count is page count. Never returns raw account or holder."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "status"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["ALL", "PENDING_CONFIRMATION", "VERIFIED", "DISABLED"]
+            default: "PENDING_CONFIRMATION"
+        -
+          name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 200
+            default: 50
+        -
+          name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/AdminPayoutDestinationList"
+              examples:
+                pendingBank:
+                  summary: "Synthetic MB-787 pendingBank"
+                  value:
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    count: 1
+                    items:
+                      -
+                        destination:
+                          id: "78700000-0000-4000-8000-000000000001"
+                          provider: "PAYOS"
+                          destinationType: "BANK_ACCOUNT"
+                          displayHint: "970436 ****7890"
+                          status: "PENDING_CONFIRMATION"
+                          verifiedAt: null
+                          bankCode: "970436"
+                          bankName: "Synthetic bank"
+                          version: 0
+                          updatedAt: "2026-11-04T03:00:00Z"
+                          usableForPayout: false
+                        specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                empty:
+                  summary: "Synthetic MB-787 empty"
+                  value:
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    count: 0
+                    items: []
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+  /api/v1/admin/payout-destinations/{destinationId}:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: "getAdminPayoutDestinationDetail"
+      description: "ADMIN-only exact bank revision inspection for manual account-holder verification. Authorized decryption is audited without bank data and no-store. This is the only projection exposing full account/name. No automated name inquiry or matching is claimed."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "destinationId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/AdminPayoutDestinationDetail"
+              examples:
+                pendingBank:
+                  summary: "Synthetic MB-787 pendingBank"
+                  value:
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "PENDING_CONFIRMATION"
+                      verifiedAt: null
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 0
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: false
+                    specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                    accountReference: "1234567890"
+                    accountHolderName: "NGUYEN VAN A"
+                    confirmedBy: null
+                confirmedBank:
+                  summary: "Synthetic MB-787 confirmedBank"
+                  value:
+                    destination:
+                      id: "78700000-0000-4000-8000-000000000001"
+                      provider: "PAYOS"
+                      destinationType: "BANK_ACCOUNT"
+                      displayHint: "970436 ****7890"
+                      status: "VERIFIED"
+                      verifiedAt: "2026-11-04T03:00:00Z"
+                      bankCode: "970436"
+                      bankName: "Synthetic bank"
+                      version: 1
+                      updatedAt: "2026-11-04T03:00:00Z"
+                      usableForPayout: true
+                    specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                    accountReference: "1234567890"
+                    accountHolderName: "NGUYEN VAN A"
+                    confirmedBy: "78700000-0000-4000-8000-000000000005"
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "404":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                notFound:
+                  summary: "Synthetic MB-787 notFound"
+                  value:
+                    type: "about:blank"
+                    title: "Payout resource not found"
+                    status: 404
+                    code: "PAYOUT_DESTINATION_NOT_FOUND"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "503":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                disabled:
+                  summary: "Synthetic MB-787 disabled"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "REAL_PAYOUT_DISABLED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                outage:
+                  summary: "Synthetic MB-787 outage"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_PROVIDER_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                banksUnavailable:
+                  summary: "Synthetic MB-787 banksUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_BANK_LIST_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                configurationUnavailable:
+                  summary: "Synthetic MB-787 configurationUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_CONFIGURATION_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+  /api/v1/admin/payout-destinations/{destinationId}/confirm:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: "confirmAdminPayoutDestination"
+      description: "ADMIN-only manual holder-check confirmation of the exact locked current revision/version, recorded with actor/time and deduplicated content-free audit. Same key/body replay is a no-op; changed body conflicts. Stale, noncurrent or disabled revisions return PAYOUT_DESTINATION_VERSION_CONFLICT. A later edit requires new confirmation. Creates no payout and makes no PayOS call; actual submission uses validateDestination=true."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "destinationId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 16
+            maxLength: 128
+          description: "Same key and body observe the existing outcome without another action; a changed body conflicts."
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/ConfirmPayoutDestination"
+            examples:
+              holderChecked:
+                summary: "Synthetic MB-787 holderChecked"
+                value:
+                  expectedVersion: 0
+                  reasonCode: "ACCOUNT_HOLDER_CHECKED"
+      responses:
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/PayoutDestination"
+              examples:
+                confirmedBank:
+                  summary: "Synthetic MB-787 confirmedBank"
+                  value:
+                    id: "78700000-0000-4000-8000-000000000001"
+                    provider: "PAYOS"
+                    destinationType: "BANK_ACCOUNT"
+                    displayHint: "970436 ****7890"
+                    status: "VERIFIED"
+                    verifiedAt: "2026-11-04T03:00:00Z"
+                    bankCode: "970436"
+                    bankName: "Synthetic bank"
+                    version: 1
+                    updatedAt: "2026-11-04T03:00:00Z"
+                    usableForPayout: true
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "404":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                notFound:
+                  summary: "Synthetic MB-787 notFound"
+                  value:
+                    type: "about:blank"
+                    title: "Payout resource not found"
+                    status: 404
+                    code: "PAYOUT_DESTINATION_NOT_FOUND"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "409":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                confirmationRequired:
+                  summary: "Synthetic MB-787 confirmationRequired"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_CONFIRMATION_REQUIRED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                providerMismatch:
+                  summary: "Synthetic MB-787 providerMismatch"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_PROVIDER_MISMATCH"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                staleConfirmation:
+                  summary: "Synthetic MB-787 staleConfirmation"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_VERSION_CONFLICT"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                retryUnavailable:
+                  summary: "Synthetic MB-787 retryUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_RETRY_NOT_AVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                idempotencyConflict:
+                  summary: "Synthetic MB-787 idempotencyConflict"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "IDEMPOTENCY_KEY_CONFLICT"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "503":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                disabled:
+                  summary: "Synthetic MB-787 disabled"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "REAL_PAYOUT_DISABLED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                outage:
+                  summary: "Synthetic MB-787 outage"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_PROVIDER_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                banksUnavailable:
+                  summary: "Synthetic MB-787 banksUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_BANK_LIST_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                configurationUnavailable:
+                  summary: "Synthetic MB-787 configurationUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_CONFIGURATION_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+  /api/v1/admin/payouts/{payoutId}/close-failed:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: closeFailedAdminPayout
+      description: "ADMIN-only closure of the latest definitely FAILED/COMPLETE payout with an unusable destination. Makes no provider call. Retains immutable destination, amount and allocation history, releases active earning ownership for a later normally eligible withdrawal, and forbids retry. Daily cap, minimum, hold, dispute, synthetic and confirmation gates still apply. Same key/body observes the closed payout; conflicting reuse returns 409."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
         - name: Idempotency-Key
           in: header
           required: true
@@ -1527,18 +2995,507 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/CreateSpecialistPayout' }
+            schema: { $ref: '#/components/schemas/CloseFailedPayout' }
+            examples:
+              destinationUnusable:
+                value: { expectedAttemptId: '78700000-0000-4000-8000-000000000004', reasonCode: DESTINATION_UNUSABLE }
       responses:
         '200':
-          description: Updated earning and payout projection
+          description: Failed payout closed and earning ownership released
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SpecialistEarnings' }
-        '400': { $ref: '#/components/responses/ValidationProblem' }
-        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
-        '403': { $ref: '#/components/responses/ForbiddenProblem' }
-        '404': { $ref: '#/components/responses/NotFoundProblem' }
-        '409': { $ref: '#/components/responses/ConflictProblem' }
+              schema: { $ref: '#/components/schemas/AdminPayoutDetail' }
+              examples:
+                closedFailed:
+                  value:
+                    payout:
+                      payoutId: '78700000-0000-4000-8000-000000000003'
+                      specialistAccountId: '78700000-0000-4000-8000-000000000002'
+                      destinationHint: '970436 ****7890'
+                      currency: VND
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: PAYOS
+                      status: FAILED
+                      providerReference: null
+                      failureCode: PAYOUT_PROVIDER_REJECTED
+                      requestedAt: '2026-11-04T03:00:00Z'
+                      completedAt: null
+                      reconciliationStatus: COMPLETE
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                      closedAt: '2026-11-04T04:00:00Z'
+                    attempts: []
+                    earnings: []
+                    events: []
+        '400':
+          description: Invalid close request
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403':
+          description: ADMIN role required
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: PAYOUT_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: PAYOUT_CLOSE_NOT_AVAILABLE or IDEMPOTENCY_KEY_CONFLICT
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /api/v1/admin/payouts/{payoutId}/retry:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: "retryAdminPayout"
+      description: "ADMIN-only explicit provider-affine retry of the latest definitely FAILED attempt. Revalidates the unchanged confirmed original destination and original earning lineage, hold/dispute/synthetic eligibility. Active, UNKNOWN, review, stale attempt, changed bank or ineligible items return PAYOUT_RETRY_NOT_AVAILABLE; unavailable original provider returns 503 before dispatch. Same key/body replay observes the same attempt. A later deliberate retry needs the latest failed attempt ID and a new command key. No per-withdrawal approval."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "payoutId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 16
+            maxLength: 128
+          description: "Same key and body observe the existing outcome without another action; a changed body conflicts."
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/RetryPayout"
+            examples:
+              retryFailed:
+                summary: "Synthetic MB-787 retryFailed"
+                value:
+                  expectedAttemptId: "78700000-0000-4000-8000-000000000004"
+      responses:
+        "200":
+          description: "Current canonical payout projection"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+                const: "no-store"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/AdminPayoutDetail"
+              examples:
+                processing:
+                  summary: "Synthetic MB-787 processing"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "PROCESSING"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: null
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: null
+                      reconciliationStatus: "POLLING"
+                      nextReconciliationAt: "2026-11-04T03:00:05Z"
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "PROCESSING"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: null
+                        reconciliationStatus: "POLLING"
+                        nextReconciliationAt: "2026-11-04T03:00:05Z"
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                paid:
+                  summary: "Synthetic MB-787 paid"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "SUCCEEDED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: null
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "SUCCEEDED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: "2026-11-04T03:00:00Z"
+                        failedAt: null
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                rejected:
+                  summary: "Synthetic MB-787 rejected"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "FAILED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_PROVIDER_REJECTED"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_PROVIDER_REJECTED"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                insufficientBalance:
+                  summary: "Synthetic MB-787 insufficientBalance"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "FAILED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                insufficientServiceCredits:
+                  summary: "Synthetic MB-787 insufficientServiceCredits"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "FAILED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                overdue:
+                  summary: "Synthetic MB-787 overdue"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "UNKNOWN"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: null
+                      reconciliationStatus: "NEEDS_REVIEW"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: "2026-11-05T03:00:00Z"
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "UNKNOWN"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: null
+                        reconciliationStatus: "NEEDS_REVIEW"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: "2026-11-05T03:00:00Z"
+                    earnings: []
+                    events: []
+                simulatedFake:
+                  summary: "Synthetic MB-787 simulatedFake"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "FAKE"
+                      status: "SUCCEEDED"
+                      providerReference: "fake-synthetic-787"
+                      failureCode: null
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "FAKE"
+                        status: "SUCCEEDED"
+                        providerReference: "fake-synthetic-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: "2026-11-04T03:00:00Z"
+                        failedAt: null
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+        "400":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                validation:
+                  summary: "Synthetic MB-787 validation"
+                  value:
+                    type: "about:blank"
+                    title: "Invalid payout request"
+                    status: 400
+                    code: "PAYOUT_DESTINATION_INVALID"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "401":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unauthorized:
+                  summary: "Synthetic MB-787 unauthorized"
+                  value:
+                    type: "about:blank"
+                    title: "Unauthorized"
+                    status: 401
+                    code: "UNAUTHORIZED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "403":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                forbidden:
+                  summary: "Synthetic MB-787 forbidden"
+                  value:
+                    type: "about:blank"
+                    title: "Forbidden"
+                    status: 403
+                    code: "FORBIDDEN"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "404":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                notFound:
+                  summary: "Synthetic MB-787 notFound"
+                  value:
+                    type: "about:blank"
+                    title: "Payout resource not found"
+                    status: 404
+                    code: "PAYOUT_DESTINATION_NOT_FOUND"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "409":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                confirmationRequired:
+                  summary: "Synthetic MB-787 confirmationRequired"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_CONFIRMATION_REQUIRED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                providerMismatch:
+                  summary: "Synthetic MB-787 providerMismatch"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_PROVIDER_MISMATCH"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                staleConfirmation:
+                  summary: "Synthetic MB-787 staleConfirmation"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_DESTINATION_VERSION_CONFLICT"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                retryUnavailable:
+                  summary: "Synthetic MB-787 retryUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "PAYOUT_RETRY_NOT_AVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                idempotencyConflict:
+                  summary: "Synthetic MB-787 idempotencyConflict"
+                  value:
+                    type: "about:blank"
+                    title: "Payout conflict"
+                    status: 409
+                    code: "IDEMPOTENCY_KEY_CONFLICT"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+        "503":
+          description: "Safe Problem Details; no raw provider or bank data."
+          content:
+            "application/problem+json":
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                disabled:
+                  summary: "Synthetic MB-787 disabled"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "REAL_PAYOUT_DISABLED"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                outage:
+                  summary: "Synthetic MB-787 outage"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_PROVIDER_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                banksUnavailable:
+                  summary: "Synthetic MB-787 banksUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_BANK_LIST_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
+                configurationUnavailable:
+                  summary: "Synthetic MB-787 configurationUnavailable"
+                  value:
+                    type: "about:blank"
+                    title: "Payout unavailable"
+                    status: 503
+                    code: "PAYOUT_CONFIGURATION_UNAVAILABLE"
+                    correlationId: "78700000-0000-4000-8000-000000000006"
   /api/v1/admin/payments:
     x-mentalbridge-status: implemented
     get:
@@ -1605,7 +3562,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: listAdminPayouts
-      description: Returns a bounded reconciliation view with masked destinations and no raw provider payload or destination data.
+      description: ADMIN-only bounded provider-affine reconciliation view with masked destinations, actual historical provider and reconciliation scheduling/review evidence, including overdue attempts. No raw provider payload or destination data.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: status
@@ -1657,13 +3614,58 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminPayoutList' }
+              examples:
+                processing:
+                  summary: "Synthetic MB-787 processing"
+                  value:
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    count: 1
+                    items:
+                      -
+                        payoutId: "78700000-0000-4000-8000-000000000003"
+                        specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                        destinationHint: "970436 ****7890"
+                        currency: "VND"
+                        earningCount: 1
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "PROCESSING"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: null
+                        reconciliationStatus: "POLLING"
+                        nextReconciliationAt: "2026-11-04T03:00:05Z"
+                        reviewRequiredAt: null
+                overdue:
+                  summary: "Synthetic MB-787 overdue"
+                  value:
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    count: 1
+                    items:
+                      -
+                        payoutId: "78700000-0000-4000-8000-000000000003"
+                        specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                        destinationHint: "970436 ****7890"
+                        currency: "VND"
+                        earningCount: 1
+                        amountVnd: 210000
+                        provider: "PAYOS"
+                        status: "UNKNOWN"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        completedAt: null
+                        reconciliationStatus: "NEEDS_REVIEW"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: "2026-11-05T03:00:00Z"
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/admin/payouts/{payoutId}:
     x-mentalbridge-status: implemented
     get:
       operationId: getAdminPayoutDetail
-      description: Returns payout details including masked destination, attempts, earnings, and provider events.
+      description: ADMIN-only payout details including masked destination, provider-affine numbered attempts, polling/review state, frozen earnings, and minimized provider events. Exact replay observes prior attempts.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: payoutId
@@ -1676,6 +3678,252 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminPayoutDetail' }
+              examples:
+                processing:
+                  summary: "Synthetic MB-787 processing"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "PROCESSING"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: null
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: null
+                      reconciliationStatus: "POLLING"
+                      nextReconciliationAt: "2026-11-04T03:00:05Z"
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "PROCESSING"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: null
+                        reconciliationStatus: "POLLING"
+                        nextReconciliationAt: "2026-11-04T03:00:05Z"
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                paid:
+                  summary: "Synthetic MB-787 paid"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "SUCCEEDED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: null
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "SUCCEEDED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: "2026-11-04T03:00:00Z"
+                        failedAt: null
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                rejected:
+                  summary: "Synthetic MB-787 rejected"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "FAILED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_PROVIDER_REJECTED"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_PROVIDER_REJECTED"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                insufficientBalance:
+                  summary: "Synthetic MB-787 insufficientBalance"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "FAILED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                insufficientServiceCredits:
+                  summary: "Synthetic MB-787 insufficientServiceCredits"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "FAILED"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "FAILED"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
+                overdue:
+                  summary: "Synthetic MB-787 overdue"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "PAYOS"
+                      status: "UNKNOWN"
+                      providerReference: "synthetic-payos-outer-787"
+                      failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: null
+                      reconciliationStatus: "NEEDS_REVIEW"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: "2026-11-05T03:00:00Z"
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "PAYOS"
+                        status: "UNKNOWN"
+                        providerReference: "synthetic-payos-outer-787"
+                        failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: null
+                        failedAt: null
+                        reconciliationStatus: "NEEDS_REVIEW"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: "2026-11-05T03:00:00Z"
+                    earnings: []
+                    events: []
+                simulatedFake:
+                  summary: "Synthetic MB-787 simulatedFake"
+                  value:
+                    payout:
+                      payoutId: "78700000-0000-4000-8000-000000000003"
+                      specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                      destinationHint: "970436 ****7890"
+                      currency: "VND"
+                      earningCount: 1
+                      amountVnd: 210000
+                      provider: "FAKE"
+                      status: "SUCCEEDED"
+                      providerReference: "fake-synthetic-787"
+                      failureCode: null
+                      requestedAt: "2026-11-04T03:00:00Z"
+                      completedAt: "2026-11-04T03:00:00Z"
+                      reconciliationStatus: "COMPLETE"
+                      nextReconciliationAt: null
+                      reviewRequiredAt: null
+                    attempts:
+                      -
+                        attemptId: "78700000-0000-4000-8000-000000000004"
+                        attemptNumber: 1
+                        provider: "FAKE"
+                        status: "SUCCEEDED"
+                        providerReference: "fake-synthetic-787"
+                        failureCode: null
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        confirmedAt: "2026-11-04T03:00:00Z"
+                        failedAt: null
+                        reconciliationStatus: "COMPLETE"
+                        nextReconciliationAt: null
+                        reviewRequiredAt: null
+                    earnings: []
+                    events: []
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
         '404': { $ref: '#/components/responses/NotFoundProblem' }
@@ -1703,7 +3951,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getAdminCommercialDiscrepancies
-      description: Returns authoritative commercial discrepancies including pending/failed/duplicate webhooks, failed payouts, held earnings, and disputed settlements.
+      description: Returns authoritative commercial discrepancies including pending/failed/duplicate webhooks, failed or overdue provider-affine payouts with reconciliation/review evidence, held earnings, and disputed settlements.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1711,6 +3959,28 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminCommercialDiscrepancyReport' }
+              examples:
+                overdue:
+                  summary: "Synthetic MB-787 overdue"
+                  value:
+                    generatedAt: "2026-11-04T03:00:00Z"
+                    totalDiscrepancies: 1
+                    webhooks: []
+                    payouts:
+                      -
+                        payoutId: "78700000-0000-4000-8000-000000000003"
+                        specialistAccountId: "78700000-0000-4000-8000-000000000002"
+                        destinationHint: "970436 ****7890"
+                        amountVnd: 210000
+                        currency: "VND"
+                        provider: "PAYOS"
+                        status: "UNKNOWN"
+                        failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+                        requestedAt: "2026-11-04T03:00:00Z"
+                        reconciliationStatus: "NEEDS_REVIEW"
+                        reviewRequiredAt: "2026-11-05T03:00:00Z"
+                    heldEarnings: []
+                    disputes: []
         '401': { $ref: '#/components/responses/UnauthorizedProblem' }
         '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/admin/commercial/provenance:
@@ -2456,7 +4726,7 @@ components:
           pattern: '^https://'
           description: Optional provider-controlled HTTPS fallback. PAYOS URLs must use the approved PayOS checkout host and MoMo URLs the configured MoMo host. Null or absent when no hosted URL exists or provider creation is unconfirmed; never automatically resend a charge. Verified webhook or fully matched authenticated reconciliation remains authoritative when creation times out.
         qrCodeUrl: { type: [string, 'null'], format: uri, pattern: '^https://' }
-        qrCode: { type: [string, 'null'], minLength: 1, description: VietQR payload for in-app rendering, not a URL. FAKE uses a deterministic simulated payload. }
+        qrCode: { type: [string, 'null'], minLength: 1, description: "VietQR payload for in-app rendering, not a URL. FAKE uses a deterministic simulated payload." }
         bin: { type: [string, 'null'], minLength: 1, description: Transfer bank BIN returned by the collect adapter. }
         accountNumber: { type: [string, 'null'], minLength: 1 }
         accountName: { type: [string, 'null'], minLength: 1 }
@@ -3168,26 +5438,279 @@ components:
         appointments: { $ref: '#/components/schemas/SpecialistAppointmentMetrics' }
         rating: { $ref: '#/components/schemas/SpecialistRatingMetrics' }
         financials: { $ref: '#/components/schemas/SpecialistFinancialMetrics' }
+    PayoutAvailability:
+      type: "object"
+      additionalProperties: false
+      required: ["mode", "ready", "reasonCode"]
+      examples:
+        -
+          mode: "DISABLED"
+          ready: false
+          reasonCode: "REAL_PAYOUT_DISABLED"
+        -
+          mode: "PAYOS"
+          ready: true
+          reasonCode: null
+      properties:
+        mode:
+          type: "string"
+          enum: ["DISABLED", "FAKE", "MOMO", "PAYOS"]
+        ready:
+          type: "boolean"
+          description: "Provider readiness only, not financial eligibility."
+        reasonCode:
+          type: ["string", "null"]
+    PayoutBank:
+      type: "object"
+      additionalProperties: false
+      required: ["bin", "name", "shortName"]
+      examples:
+        -
+          bin: "970436"
+          name: "Synthetic bank"
+          shortName: "SYNTHETIC"
+      properties:
+        bin:
+          type: "string"
+          pattern: "^[0-9]{6}$"
+        name:
+          type: "string"
+        shortName:
+          type: "string"
+    PayoutBankList:
+      type: "object"
+      additionalProperties: false
+      required: ["generatedAt", "items"]
+      examples:
+        -
+          generatedAt: "2026-11-04T03:00:00Z"
+          items:
+            -
+              bin: "970436"
+              name: "Synthetic bank"
+              shortName: "SYNTHETIC"
+      properties:
+        generatedAt:
+          type: "string"
+          format: "date-time"
+        items:
+          type: "array"
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/PayoutBank"
+    AdminPayoutDestination:
+      type: "object"
+      additionalProperties: false
+      required: ["destination", "specialistAccountId"]
+      examples:
+        -
+          destination:
+            id: "78700000-0000-4000-8000-000000000001"
+            provider: "PAYOS"
+            destinationType: "BANK_ACCOUNT"
+            displayHint: "970436 ****7890"
+            status: "PENDING_CONFIRMATION"
+            verifiedAt: null
+            bankCode: "970436"
+            bankName: "Synthetic bank"
+            version: 0
+            updatedAt: "2026-11-04T03:00:00Z"
+            usableForPayout: false
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+      properties:
+        destination:
+          $ref: "#/components/schemas/PayoutDestination"
+        specialistAccountId:
+          type: "string"
+          format: "uuid"
+    AdminPayoutDestinationList:
+      type: "object"
+      additionalProperties: false
+      required: ["generatedAt", "count", "items"]
+      examples:
+        -
+          generatedAt: "2026-11-04T03:00:00Z"
+          count: 1
+          items:
+            -
+              destination:
+                id: "78700000-0000-4000-8000-000000000001"
+                provider: "PAYOS"
+                destinationType: "BANK_ACCOUNT"
+                displayHint: "970436 ****7890"
+                status: "PENDING_CONFIRMATION"
+                verifiedAt: null
+                bankCode: "970436"
+                bankName: "Synthetic bank"
+                version: 0
+                updatedAt: "2026-11-04T03:00:00Z"
+                usableForPayout: false
+              specialistAccountId: "78700000-0000-4000-8000-000000000002"
+      properties:
+        generatedAt:
+          type: "string"
+          format: "date-time"
+        count:
+          type: "integer"
+          minimum: 0
+          maximum: 200
+          description: "Page count, not the total matching revisions."
+        items:
+          type: "array"
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/AdminPayoutDestination"
+    AdminPayoutDestinationDetail:
+      type: "object"
+      additionalProperties: false
+      required: ["destination", "specialistAccountId", "accountReference", "accountHolderName", "confirmedBy"]
+      examples:
+        -
+          destination:
+            id: "78700000-0000-4000-8000-000000000001"
+            provider: "PAYOS"
+            destinationType: "BANK_ACCOUNT"
+            displayHint: "970436 ****7890"
+            status: "PENDING_CONFIRMATION"
+            verifiedAt: null
+            bankCode: "970436"
+            bankName: "Synthetic bank"
+            version: 0
+            updatedAt: "2026-11-04T03:00:00Z"
+            usableForPayout: false
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          accountReference: "1234567890"
+          accountHolderName: "NGUYEN VAN A"
+          confirmedBy: null
+      properties:
+        destination:
+          $ref: "#/components/schemas/PayoutDestination"
+        specialistAccountId:
+          type: "string"
+          format: "uuid"
+        accountReference:
+          type: "string"
+        accountHolderName:
+          type: "string"
+        confirmedBy:
+          type: ["string", "null"]
+          format: "uuid"
+    ConfirmPayoutDestination:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion", "reasonCode"]
+      examples:
+        -
+          expectedVersion: 0
+          reasonCode: "ACCOUNT_HOLDER_CHECKED"
+      properties:
+        expectedVersion:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        reasonCode:
+          type: "string"
+          const: "ACCOUNT_HOLDER_CHECKED"
+    CloseFailedPayout:
+      type: object
+      additionalProperties: false
+      required: [expectedAttemptId, reasonCode]
+      examples:
+        - { expectedAttemptId: '78700000-0000-4000-8000-000000000004', reasonCode: DESTINATION_UNUSABLE }
+      properties:
+        expectedAttemptId: { type: string, format: uuid }
+        reasonCode: { type: string, const: DESTINATION_UNUSABLE }
+    RetryPayout:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedAttemptId"]
+      examples:
+        -
+          expectedAttemptId: "78700000-0000-4000-8000-000000000004"
+      properties:
+        expectedAttemptId:
+          type: "string"
+          format: "uuid"
     PayoutDestination:
       type: object
       additionalProperties: false
       required: [id, provider, destinationType, displayHint, status, verifiedAt]
+      examples:
+        -
+          id: "78700000-0000-4000-8000-000000000001"
+          provider: "PAYOS"
+          destinationType: "BANK_ACCOUNT"
+          displayHint: "970436 ****7890"
+          status: "PENDING_CONFIRMATION"
+          verifiedAt: null
+          bankCode: "970436"
+          bankName: "Synthetic bank"
+          version: 0
+          updatedAt: "2026-11-04T03:00:00Z"
+          usableForPayout: false
+        -
+          id: "78700000-0000-4000-8000-000000000001"
+          provider: "PAYOS"
+          destinationType: "BANK_ACCOUNT"
+          displayHint: "970436 ****7890"
+          status: "VERIFIED"
+          verifiedAt: "2026-11-04T03:00:00Z"
+          bankCode: "970436"
+          bankName: "Synthetic bank"
+          version: 1
+          updatedAt: "2026-11-04T03:00:00Z"
+          usableForPayout: true
+        -
+          id: "78700000-0000-4000-8000-000000000001"
+          provider: "MOMO"
+          destinationType: "MOMO_WALLET"
+          displayHint: "MOMO ****7890"
+          status: "DISABLED"
+          verifiedAt: "2026-11-04T03:00:00Z"
+          bankCode: null
+          bankName: null
+          version: 1
+          updatedAt: "2026-11-04T03:00:00Z"
+          usableForPayout: false
+        -
+          id: "78700000-0000-4000-8000-000000000001"
+          provider: "FAKE"
+          destinationType: "BANK_ACCOUNT"
+          displayHint: "SIMULATED ****7890"
+          status: "VERIFIED"
+          verifiedAt: "2026-11-04T03:00:00Z"
+          bankCode: "970436"
+          bankName: "Synthetic bank"
+          version: 1
+          updatedAt: "2026-11-04T03:00:00Z"
+          usableForPayout: true
       properties:
         id: { type: string, format: uuid }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         destinationType: { type: string, enum: [MOMO_WALLET, BANK_ACCOUNT] }
         displayHint: { type: string, minLength: 1, maxLength: 64 }
-        status: { type: string, enum: [VERIFIED, DISABLED] }
-        verifiedAt: { type: string, format: date-time }
+        status: { type: string, enum: [PENDING_CONFIRMATION, VERIFIED, DISABLED] }
+        verifiedAt: { type: [string, 'null'], format: date-time }
+        bankCode: { type: [string, 'null'], maxLength: 32, description: Six-digit bank BIN for PAYOS; legacy MoMo codes remain historical. }
+        bankName: { type: [string, 'null'], maxLength: 255 }
+        version: { type: integer, format: int64, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+        usableForPayout: { type: boolean, description: True only for the exact current confirmed revision compatible with the configured provider. }
     SavePayoutDestination:
       type: object
       additionalProperties: false
       required: [destinationType, accountReference, accountHolderName]
+      examples:
+        -
+          destinationType: "BANK_ACCOUNT"
+          bankCode: "970436"
+          accountReference: "1234567890"
+          accountHolderName: "NGUYEN VAN A"
       properties:
         destinationType: { type: string, enum: [MOMO_WALLET, BANK_ACCOUNT] }
         accountReference: { type: string, pattern: '^[0-9]{6,32}$' }
-        accountHolderName: { type: string, minLength: 1, maxLength: 100 }
-        bankCode: { type: string, maxLength: 32, description: Required when destinationType is BANK_ACCOUNT. }
+        accountHolderName: { type: string, minLength: 1, maxLength: 100, description: Trimmed holder name. Any material change including holder-only edits creates a pending PAYOS revision. }
+        bankCode: { type: string, maxLength: 32, description: Required when destinationType is BANK_ACCOUNT. PAYOS requires a six-digit BIN from the current bank list; legacy MoMo inputs remain supported in MOMO mode. }
     CreateSpecialistPayout:
       type: object
       additionalProperties: false
@@ -3198,9 +5721,17 @@ components:
       type: object
       additionalProperties: false
       required: [pendingSettlementVnd, availableVnd, processingVnd, paidVnd]
+      examples:
+        -
+          pendingSettlementVnd: 0
+          availableVnd: 0
+          retryPendingVnd: 210000
+          processingVnd: 0
+          paidVnd: 0
       properties:
         pendingSettlementVnd: { type: integer, format: int64, minimum: 0 }
-        availableVnd: { type: integer, format: int64, minimum: 0 }
+        availableVnd: { type: integer, format: int64, minimum: 0, description: Only eligible AVAILABLE earnings not linked to any prior logical payout. }
+        retryPendingVnd: { type: integer, format: int64, minimum: 0, description: Linked AVAILABLE earnings awaiting explicit retry of their original failed payout. }
         processingVnd: { type: integer, format: int64, minimum: 0 }
         paidVnd: { type: integer, format: int64, minimum: 0 }
     SpecialistEarning:
@@ -3212,9 +5743,9 @@ components:
         appointmentId: { type: string, format: uuid }
         consumedCreditId: { type: string, format: uuid }
         planVersion: { type: string, minLength: 1, maxLength: 64 }
-        creditAllocationVnd: { type: integer, format: int64, minimum: 1, maximum: 1000000000, description: Allocation snapshot from the consumed credit period. }
+        creditAllocationVnd: { type: integer, format: int64, minimum: 1, maximum: 1000000000, description: 'Default allocation snapshot from the consumed credit period. Under staging-demo-paid-v1 this earning-only snapshot is floor of verified collected VND divided by frozen plan credits; the nominal period allocation stays unchanged.' }
         sharePercent: { type: integer, const: 70 }
-        earningAmountVnd: { type: integer, format: int64, minimum: 1, description: Exactly 70 percent of creditAllocationVnd under specialist-earning-v1. }
+        earningAmountVnd: { type: integer, format: int64, minimum: 1, description: 'Floor of 70 percent of creditAllocationVnd. The default policy uses the credit allocation; staging-demo-paid-v1 uses floor of verified collected VND divided by frozen plan credits, under the explicit staging-only gate.' }
         status: { type: string, enum: [PENDING_SETTLEMENT, AVAILABLE, PROCESSING, PAID, REVERSED] }
         earnedAt: { type: string, format: date-time }
         settlementAvailableAt: { type: string, format: date-time }
@@ -3222,29 +5753,183 @@ components:
       type: object
       additionalProperties: false
       required: [id, destinationId, amountVnd, provider, status, requestedAt]
+      examples:
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "PROCESSING"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: null
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: null
+          reconciliationStatus: "POLLING"
+          nextReconciliationAt: "2026-11-04T03:00:05Z"
+          reviewRequiredAt: null
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "SUCCEEDED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: null
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "FAILED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_PROVIDER_REJECTED"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "FAILED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "FAILED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "UNKNOWN"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: null
+          reconciliationStatus: "NEEDS_REVIEW"
+          nextReconciliationAt: null
+          reviewRequiredAt: "2026-11-05T03:00:00Z"
+        -
+          id: "78700000-0000-4000-8000-000000000003"
+          destinationId: "78700000-0000-4000-8000-000000000001"
+          amountVnd: 210000
+          provider: "FAKE"
+          status: "SUCCEEDED"
+          providerReference: "fake-synthetic-787"
+          failureCode: null
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
       properties:
         id: { type: string, format: uuid }
         destinationId: { type: string, format: uuid }
-        amountVnd: { type: integer, format: int64, minimum: 100000 }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        amountVnd: { type: integer, format: int64, minimum: 1, description: 'Must meet the server-configured minimum; production remains at least 100000 VND. Smaller payouts require the explicit staging demo gate.' }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
         providerReference: { type: [string, 'null'], maxLength: 128 }
-        failureCode: { type: [string, 'null'], maxLength: 64 }
+        failureCode: { type: [string, 'null'], maxLength: 64, description: Safe codes include PAYOUT_PROVIDER_REJECTED/PAYOUT_INSUFFICIENT_BALANCE/PAYOUT_SERVICE_CREDITS_INSUFFICIENT/PAYOUT_SUBMISSION_UNKNOWN/PAYOUT_RECONCILIATION_OVERDUE; never raw provider text. }
+        reconciliationStatus: { type: string, enum: [PENDING, POLLING, NEEDS_REVIEW, COMPLETE], description: COMPLETE means locally terminal including definite failure. }
+        nextReconciliationAt: { type: [string, 'null'], format: date-time }
+        reviewRequiredAt: { type: [string, 'null'], format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time, description: 'ADMIN closed definite failure; earning ownership released and retry forbidden; historical destination and items retained.' }
         requestedAt: { type: string, format: date-time }
         completedAt: { type: [string, 'null'], format: date-time }
     SpecialistEarnings:
       type: object
       additionalProperties: false
       required: [currency, earningPolicyVersion, settlementHoldDays, minimumWithdrawalVnd, generatedAt, balance, earnings, payouts]
+      examples:
+        -
+          currency: VND
+          earningPolicyVersion: staging-demo-paid-v1
+          settlementHoldDays: 0
+          settlementHoldSeconds: 600
+          minimumWithdrawalVnd: 2000
+          generatedAt: '2026-11-04T03:00:00Z'
+          balance: { pendingSettlementVnd: 0, availableVnd: 2625, retryPendingVnd: 0, processingVnd: 0, paidVnd: 0 }
+          earnings: []
+          payouts: []
+        -
+          currency: "VND"
+          earningPolicyVersion: "specialist-earning-v1"
+          payoutProvider: "PAYOS"
+          payoutAvailability:
+            mode: "PAYOS"
+            ready: true
+            reasonCode: null
+          settlementHoldDays: 7
+          minimumWithdrawalVnd: 100000
+          generatedAt: "2026-11-04T03:00:00Z"
+          balance:
+            pendingSettlementVnd: 0
+            availableVnd: 0
+            retryPendingVnd: 0
+            processingVnd: 210000
+            paidVnd: 0
+          destination:
+            id: "78700000-0000-4000-8000-000000000001"
+            provider: "PAYOS"
+            destinationType: "BANK_ACCOUNT"
+            displayHint: "970436 ****7890"
+            status: "VERIFIED"
+            verifiedAt: "2026-11-04T03:00:00Z"
+            bankCode: "970436"
+            bankName: "Synthetic bank"
+            version: 1
+            updatedAt: "2026-11-04T03:00:00Z"
+            usableForPayout: true
+          earnings: []
+          payouts:
+            -
+              id: "78700000-0000-4000-8000-000000000003"
+              destinationId: "78700000-0000-4000-8000-000000000001"
+              amountVnd: 210000
+              provider: "PAYOS"
+              status: "PROCESSING"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: null
+              requestedAt: "2026-11-04T03:00:00Z"
+              completedAt: null
+              reconciliationStatus: "POLLING"
+              nextReconciliationAt: "2026-11-04T03:00:05Z"
+              reviewRequiredAt: null
       properties:
         currency: { type: string, const: VND }
-        earningPolicyVersion: { type: string, const: specialist-earning-v1 }
-        payoutProvider: { type: string, enum: [FAKE, MOMO], description: Optional additive field identifying the configured withdrawal adapter even before a destination exists. FAKE is synthetic and does not move money. }
-        settlementHoldDays: { type: integer, const: 7 }
-        minimumWithdrawalVnd: { type: integer, format: int64, const: 100000 }
+        earningPolicyVersion: { type: string, enum: [specialist-earning-v1, staging-demo-paid-v1] }
+        payoutProvider: { type: string, enum: [FAKE, MOMO, PAYOS], description: Optional additive field identifying the configured withdrawal adapter; omitted in DISABLED mode. Identifies the provider even before a destination exists. FAKE is synthetic and does not move money. }
+        payoutAvailability: { $ref: '#/components/schemas/PayoutAvailability' }
+        settlementHoldDays: { type: integer, minimum: 0, description: 'Whole days in the configured hold, rounded down for compatibility. Use settlementHoldSeconds for exact sub-day duration; each earning has an exact settlementAvailableAt. Production remains at least seven days.' }
+        settlementHoldSeconds: { type: integer, format: int64, minimum: 1, description: 'Optional exact configured hold in seconds, emitted only in effective staging demo mode. PT10M is 600. Default and production payloads omit this field and retain settlementHoldDays.' }
+        minimumWithdrawalVnd: { type: integer, format: int64, minimum: 1, description: 'Server-configured minimum. Production remains at least 100000; staging demo uses 2000 pending live-provider confirmation.' }
         generatedAt: { type: string, format: date-time }
         balance: { $ref: '#/components/schemas/SpecialistEarningBalance' }
         destination:
+          description: Current pending or confirmed immutable revision; never falls back to an older verified revision. Legacy MoMo may be shown as unusable in PAYOS mode.
           anyOf:
             - { $ref: '#/components/schemas/PayoutDestination' }
             - { type: 'null' }
@@ -3289,23 +5974,372 @@ components:
       type: object
       additionalProperties: false
       required: [payoutId, specialistAccountId, destinationHint, amountVnd, currency, provider, status, earningCount, requestedAt]
+      examples:
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "PROCESSING"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: null
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: null
+          reconciliationStatus: "POLLING"
+          nextReconciliationAt: "2026-11-04T03:00:05Z"
+          reviewRequiredAt: null
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "SUCCEEDED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: null
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "FAILED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_PROVIDER_REJECTED"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "FAILED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "FAILED"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "PAYOS"
+          status: "UNKNOWN"
+          providerReference: "synthetic-payos-outer-787"
+          failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: null
+          reconciliationStatus: "NEEDS_REVIEW"
+          nextReconciliationAt: null
+          reviewRequiredAt: "2026-11-05T03:00:00Z"
+        -
+          payoutId: "78700000-0000-4000-8000-000000000003"
+          specialistAccountId: "78700000-0000-4000-8000-000000000002"
+          destinationHint: "970436 ****7890"
+          currency: "VND"
+          earningCount: 1
+          amountVnd: 210000
+          provider: "FAKE"
+          status: "SUCCEEDED"
+          providerReference: "fake-synthetic-787"
+          failureCode: null
+          requestedAt: "2026-11-04T03:00:00Z"
+          completedAt: "2026-11-04T03:00:00Z"
+          reconciliationStatus: "COMPLETE"
+          nextReconciliationAt: null
+          reviewRequiredAt: null
       properties:
         payoutId: { type: string, format: uuid }
         specialistAccountId: { type: string, format: uuid }
         destinationHint: { type: string, maxLength: 64 }
-        amountVnd: { type: integer, format: int64, minimum: 100000 }
+        amountVnd: { type: integer, format: int64, minimum: 1, description: 'Frozen payout total meeting the server-configured minimum. Production remains at least 100000 VND.' }
         currency: { type: string, const: VND }
-        provider: { type: string, enum: [FAKE, MOMO] }
+        provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
         status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
         earningCount: { type: integer, minimum: 1 }
         providerReference: { type: [string, 'null'], maxLength: 128 }
-        failureCode: { type: [string, 'null'], maxLength: 64 }
+        failureCode: { type: [string, 'null'], maxLength: 64, description: Safe codes include PAYOUT_PROVIDER_REJECTED/PAYOUT_INSUFFICIENT_BALANCE/PAYOUT_SERVICE_CREDITS_INSUFFICIENT/PAYOUT_SUBMISSION_UNKNOWN/PAYOUT_RECONCILIATION_OVERDUE; never raw provider text. }
+        reconciliationStatus: { type: string, enum: [PENDING, POLLING, NEEDS_REVIEW, COMPLETE], description: COMPLETE means locally terminal including definite failure. }
+        nextReconciliationAt: { type: [string, 'null'], format: date-time }
+        reviewRequiredAt: { type: [string, 'null'], format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time, description: 'ADMIN closed definite failure; earning ownership released and retry forbidden; historical destination and items retained.' }
         requestedAt: { type: string, format: date-time }
         completedAt: { type: [string, 'null'], format: date-time }
     AdminPayoutDetail:
       type: object
       additionalProperties: false
       required: [payout, attempts, earnings, events]
+      examples:
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "PAYOS"
+            status: "PROCESSING"
+            providerReference: "synthetic-payos-outer-787"
+            failureCode: null
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: null
+            reconciliationStatus: "POLLING"
+            nextReconciliationAt: "2026-11-04T03:00:05Z"
+            reviewRequiredAt: null
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "PAYOS"
+              status: "PROCESSING"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: null
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: null
+              failedAt: null
+              reconciliationStatus: "POLLING"
+              nextReconciliationAt: "2026-11-04T03:00:05Z"
+              reviewRequiredAt: null
+          earnings: []
+          events: []
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "PAYOS"
+            status: "SUCCEEDED"
+            providerReference: "synthetic-payos-outer-787"
+            failureCode: null
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: "2026-11-04T03:00:00Z"
+            reconciliationStatus: "COMPLETE"
+            nextReconciliationAt: null
+            reviewRequiredAt: null
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "PAYOS"
+              status: "SUCCEEDED"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: null
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: "2026-11-04T03:00:00Z"
+              failedAt: null
+              reconciliationStatus: "COMPLETE"
+              nextReconciliationAt: null
+              reviewRequiredAt: null
+          earnings: []
+          events: []
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "PAYOS"
+            status: "FAILED"
+            providerReference: "synthetic-payos-outer-787"
+            failureCode: "PAYOUT_PROVIDER_REJECTED"
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: "2026-11-04T03:00:00Z"
+            reconciliationStatus: "COMPLETE"
+            nextReconciliationAt: null
+            reviewRequiredAt: null
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "PAYOS"
+              status: "FAILED"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: "PAYOUT_PROVIDER_REJECTED"
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: null
+              failedAt: "2026-11-04T03:00:00Z"
+              reconciliationStatus: "COMPLETE"
+              nextReconciliationAt: null
+              reviewRequiredAt: null
+          earnings: []
+          events: []
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "PAYOS"
+            status: "FAILED"
+            providerReference: "synthetic-payos-outer-787"
+            failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: "2026-11-04T03:00:00Z"
+            reconciliationStatus: "COMPLETE"
+            nextReconciliationAt: null
+            reviewRequiredAt: null
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "PAYOS"
+              status: "FAILED"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: "PAYOUT_INSUFFICIENT_BALANCE"
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: null
+              failedAt: "2026-11-04T03:00:00Z"
+              reconciliationStatus: "COMPLETE"
+              nextReconciliationAt: null
+              reviewRequiredAt: null
+          earnings: []
+          events: []
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "PAYOS"
+            status: "FAILED"
+            providerReference: "synthetic-payos-outer-787"
+            failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: "2026-11-04T03:00:00Z"
+            reconciliationStatus: "COMPLETE"
+            nextReconciliationAt: null
+            reviewRequiredAt: null
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "PAYOS"
+              status: "FAILED"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: "PAYOUT_SERVICE_CREDITS_INSUFFICIENT"
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: null
+              failedAt: "2026-11-04T03:00:00Z"
+              reconciliationStatus: "COMPLETE"
+              nextReconciliationAt: null
+              reviewRequiredAt: null
+          earnings: []
+          events: []
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "PAYOS"
+            status: "UNKNOWN"
+            providerReference: "synthetic-payos-outer-787"
+            failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: null
+            reconciliationStatus: "NEEDS_REVIEW"
+            nextReconciliationAt: null
+            reviewRequiredAt: "2026-11-05T03:00:00Z"
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "PAYOS"
+              status: "UNKNOWN"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: null
+              failedAt: null
+              reconciliationStatus: "NEEDS_REVIEW"
+              nextReconciliationAt: null
+              reviewRequiredAt: "2026-11-05T03:00:00Z"
+          earnings: []
+          events: []
+        -
+          payout:
+            payoutId: "78700000-0000-4000-8000-000000000003"
+            specialistAccountId: "78700000-0000-4000-8000-000000000002"
+            destinationHint: "970436 ****7890"
+            currency: "VND"
+            earningCount: 1
+            amountVnd: 210000
+            provider: "FAKE"
+            status: "SUCCEEDED"
+            providerReference: "fake-synthetic-787"
+            failureCode: null
+            requestedAt: "2026-11-04T03:00:00Z"
+            completedAt: "2026-11-04T03:00:00Z"
+            reconciliationStatus: "COMPLETE"
+            nextReconciliationAt: null
+            reviewRequiredAt: null
+          attempts:
+            -
+              attemptId: "78700000-0000-4000-8000-000000000004"
+              attemptNumber: 1
+              provider: "FAKE"
+              status: "SUCCEEDED"
+              providerReference: "fake-synthetic-787"
+              failureCode: null
+              requestedAt: "2026-11-04T03:00:00Z"
+              confirmedAt: "2026-11-04T03:00:00Z"
+              failedAt: null
+              reconciliationStatus: "COMPLETE"
+              nextReconciliationAt: null
+              reviewRequiredAt: null
+          earnings: []
+          events: []
       properties:
         payout: { $ref: '#/components/schemas/AdminPayout' }
         attempts:
@@ -3317,10 +6351,13 @@ components:
             properties:
               attemptId: { type: string, format: uuid }
               attemptNumber: { type: integer, minimum: 1 }
-              provider: { type: string, enum: [FAKE, MOMO] }
+              provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
               status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED, UNKNOWN] }
               providerReference: { type: [string, 'null'] }
               failureCode: { type: [string, 'null'] }
+              reconciliationStatus: { type: string, enum: [PENDING, POLLING, NEEDS_REVIEW, COMPLETE], description: COMPLETE means locally terminal including definite failure. }
+              nextReconciliationAt: { type: [string, 'null'], format: date-time }
+              reviewRequiredAt: { type: [string, 'null'], format: date-time }
               requestedAt: { type: string, format: date-time }
               confirmedAt: { type: [string, 'null'], format: date-time }
               failedAt: { type: [string, 'null'], format: date-time }
@@ -3431,9 +6468,11 @@ components:
               destinationHint: { type: string }
               amountVnd: { type: integer, format: int64 }
               currency: { type: string, const: VND }
-              provider: { type: string }
+              provider: { type: string, enum: [FAKE, MOMO, PAYOS] }
               status: { type: string }
               failureCode: { type: [string, 'null'] }
+              reconciliationStatus: { type: string, enum: [PENDING, POLLING, NEEDS_REVIEW, COMPLETE] }
+              reviewRequiredAt: { type: [string, 'null'], format: date-time }
               requestedAt: { type: string, format: date-time }
         heldEarnings:
           type: array
@@ -3582,6 +6621,27 @@ components:
       type: object
       additionalProperties: false
       required: [generatedAt, count, items]
+      examples:
+        -
+          generatedAt: "2026-11-04T03:00:00Z"
+          count: 1
+          items:
+            -
+              payoutId: "78700000-0000-4000-8000-000000000003"
+              specialistAccountId: "78700000-0000-4000-8000-000000000002"
+              destinationHint: "970436 ****7890"
+              currency: "VND"
+              earningCount: 1
+              amountVnd: 210000
+              provider: "PAYOS"
+              status: "UNKNOWN"
+              providerReference: "synthetic-payos-outer-787"
+              failureCode: "PAYOUT_RECONCILIATION_OVERDUE"
+              requestedAt: "2026-11-04T03:00:00Z"
+              completedAt: null
+              reconciliationStatus: "NEEDS_REVIEW"
+              nextReconciliationAt: null
+              reviewRequiredAt: "2026-11-05T03:00:00Z"
       properties:
         generatedAt: { type: string, format: date-time }
         count: { type: integer, minimum: 0, maximum: 200, description: Number of items in this response page; not a total across matching payouts. }
@@ -4207,7 +7267,7 @@ components:
         title: { type: string }
         status: { type: integer, minimum: 400, maximum: 599 }
         detail: { type: string }
-        code: { type: string, pattern: '^[A-Z0-9_]+$' }
+        code: { type: string, pattern: '^[A-Z0-9_]+$', description: "Stable payout codes: 400 PAYOUT_DESTINATION_INVALID; 409 PAYOUT_DESTINATION_CONFIRMATION_REQUIRED, PAYOUT_DESTINATION_PROVIDER_MISMATCH, PAYOUT_DESTINATION_VERSION_CONFLICT, PAYOUT_RETRY_NOT_AVAILABLE, PAYOUT_CLOSE_NOT_AVAILABLE, IDEMPOTENCY_KEY_CONFLICT, PAYOUT_MINIMUM_NOT_REACHED, PAYOUT_DAILY_LIMIT_REACHED, SANDBOX_EARNINGS_REAL_PAYOUT_DISABLED; 503 REAL_PAYOUT_DISABLED, PAYOUT_PROVIDER_UNAVAILABLE, PAYOUT_BANK_LIST_UNAVAILABLE, PAYOUT_CONFIGURATION_UNAVAILABLE. Outage before possible acceptance is unavailable; after possible acceptance it remains UNKNOWN/POLLING in payout history." }
         correlationId: { type: string, format: uuid }
         violations:
           type: array

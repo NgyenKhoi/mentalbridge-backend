@@ -484,7 +484,7 @@ Immutable price, allocation, credit, revenue-share, and cancellation policy purc
 | `version` | Immutable version within the plan; published versions are never rewritten. |
 | `currency` | Contract-fixed `VND` currency for every amount. |
 | `price_minor` | Immutable monthly VND price. New MB-622 sandbox versions use PLUS 5,000/PREMIUM 10,000; retired v2 versions retain 1,390,000/3,490,000 without historical rewriting. |
-| `pricing_policy_version` | Immutable rule: ordinary/historical `upgrade-offset-v1` or synthetic `sandbox-full-price-v1`; sandbox upgrade applies zero offset and cannot enable real payout. |
+| `pricing_policy_version` | Immutable rule: ordinary/historical `upgrade-offset-v1` or `sandbox-full-price-v1`; sandbox upgrade applies zero offset. Pricing alone never proves payout funding; only the separate MB-812 verified-funded earning snapshot permits staging PAYOS redemption. |
 | `billing_period_months` | Calendar-month period count; MB-515 supports exactly one month. |
 | `consultation_credits_per_period` | Credits granted for the active period: FREE 0, PLUS 4, or PREMIUM 10; unused credits never roll over. |
 | `max_active_reservations` | Frozen active appointment cap: FREE 0, PLUS 2, or PREMIUM 4. |
@@ -738,6 +738,14 @@ transaction as an evidence-backed `COMPLETED` appointment and exact credit
 consumption. Elapsed time, `SESSION_ENDED`, no-show, cancellation, and released
 or forfeited credits do not create an earning.
 
+MB-812 adds prospective funded staging provenance through migration
+`20261104100000-staging-demo-payout.sql`. Existing rows keep baseline policy,
+null funding payment and unchanged amounts. The paired check allows only
+baseline/null or staging-demo/non-null. The payment FK proves local identity;
+the service additionally verifies exact processed successful PayOS receipt and
+immutable paid-credit lineage at earning creation and payout preparation/retry.
+No raw receipt or bank information is copied into earnings.
+
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable earning UUID shown in specialist/admin history. |
@@ -746,15 +754,17 @@ or forfeited credits do not create an earning.
 | `consumed_credit_id` | Unique consumed credit whose allocation funds the earning. |
 | `specialist_account_id` | Specialist who completed the appointment and owns the payable amount. |
 | `plan_version` | Entitlement/plan version snapshotted from the consumed credit period. |
+| `earning_policy_version` | Required immutable calculation/provenance policy: default `specialist-earning-v1` preserves historical semantics; `staging-demo-paid-v1` records the explicitly gated real-funded demo calculation. Paired with funding_payment_id by CHECK. |
+| `funding_payment_id` | Nullable same-owner FK to payment_transaction, required only for staging-demo-paid-v1. Binds the exact succeeded real PAYOS funding payment for reproducible amount and receipt eligibility; null for baseline/legacy rows. Never populated by backfill. |
 | `currency` | ISO 4217 currency of all amounts in the earning. |
-| `credit_allocation_minor` | Exact fixed allocation snapshot, currently 300,000 VND per consumed credit. |
+| `credit_allocation_minor` | Immutable whole-VND earning allocation: baseline 300,000; funded staging demo floor(actual collected amount / frozen purchased-plan credit count). Nominal period allocation is not rewritten. |
 | `specialist_share_bps` | Revenue-share snapshot, currently 7000 (70%). |
-| `specialist_amount_minor` | Exact specialist amount, currently 210,000 VND. It is never derived from subscription price. |
-| `platform_allocation_minor` | Remaining 90,000 VND allocation. This is not represented or described as platform profit. |
+| `specialist_amount_minor` | Whole-VND floor(credit_allocation_minor * specialist_share_bps / 10000), baseline 210,000; funded demo PLUS 875 or PREMIUM 700. Both demo division stages round down; total specialist earnings cannot exceed 70% of real collected money. |
+| `platform_allocation_minor` | Earning allocation less the rounded specialist share; baseline 90,000 VND. This is not represented or described as platform profit. |
 | `idempotency_source` | Stable completion-fact source preventing duplicate creation on settlement replay. |
 | `status` | Settlement/payout state. `PAID` requires a linked payout with verified `SUCCEEDED` provider outcome. |
 | `earned_at` | UTC appointment-completion instant. |
-| `settlement_available_at` | UTC instant seven days after earning at which it becomes payout eligible. |
+| `settlement_available_at` | Immutable UTC earned_at plus configured hold. Baseline minimum P7D; effective staging demo may use PT10M. Elapsed hold alone does not bypass dispute, provenance or destination eligibility. |
 | `paid_at` | UTC verified payout-success instant; null until `PAID`. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest settlement/payout/reversal state change. |
@@ -762,20 +772,27 @@ or forfeited credits do not create an earning.
 
 ### `consultation.specialist_payout_destination`
 
-Encrypted specialist-owned destination used by a provider payout adapter. Raw wallet/account data never enters logs, events, or broad read models.
+Immutable encrypted specialist-owned destination revision. Saving changed
+provider, bank BIN, account or holder data creates a new UUID and disables the
+previous current revision; reverting to older details also requires a new
+confirmation. Identical saves of the current revision are no-ops. Raw account
+and holder data appear only in the audited ADMIN detail response with no-store,
+never in events, logs, list responses or the specialist read model.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable destination UUID referenced by payout requests. |
 | `specialist_account_id` | Specialist who owns and may manage this destination. |
-| `payout_provider` | `MOMO` in real environments or MoMo-shaped `FAKE` locally; only MoMo may be used in production after credential approval. |
+| `payout_provider` | Immutable `FAKE`, `MOMO` or `PAYOS` namespace. PAYOS requires a confirmed bank and separate staging readiness; historical MoMo destinations remain provider-affine. |
 | `destination_type` | Allow-listed provider route: MoMo wallet or domestic bank account. |
-| `destination_ciphertext` | Encrypted provider-required wallet/account details; never returned as stored ciphertext to clients. |
+| `destination_ciphertext` | AES-GCM encrypted JSON containing accountReference, accountHolderName, bankCode (six-digit BIN for PAYOS), and nullable bankName snapshot from the proxied bank list; none are plaintext columns. |
 | `encryption_key_version` | Key identifier needed for controlled rotation and decryption. |
-| `destination_fingerprint` | One-way normalized fingerprint used for duplicate detection without revealing destination data. |
+| `destination_fingerprint` | One-way fingerprint over provider/type/normalized BIN/account/holder for current-revision no-op detection. It is intentionally not owner-unique across history because reverting an account must create a pending revision. |
 | `display_hint` | Safe masked label, such as a last-four hint, for specialist confirmation. |
-| `status` | Verification/availability state; only `VERIFIED` destinations accept new payouts. |
-| `verified_at` | UTC provider/application verification instant; required for `VERIFIED`. |
+| `status` | `PENDING_CONFIRMATION`, `VERIFIED` or `DISABLED`. PAYOS saves start pending; ADMIN confirms only the expected current pending revision. |
+| `verified_at` | UTC manual confirmation instant for PAYOS, or retained legacy verification instant; null for pending revisions and required for VERIFIED. |
+| `is_current` | Authoritative current revision flag; partial uniqueness permits one current row per specialist. Historical revisions remain immutable payout snapshots. |
+| `confirmed_by` | External Identity ADMIN account UUID who manually checked the holder; nullable for pending and legacy FAKE/MOMO rows, required for VERIFIED PAYOS rows. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest verification or disablement change. |
 | `version` | Optimistic-lock counter protecting concurrent destination changes. |
@@ -783,41 +800,65 @@ Encrypted specialist-owned destination used by a provider payout adapter. Raw wa
 ### `consultation.specialist_payout`
 
 Idempotent provider payout request and its reconciled current outcome. Local/CI
-uses a fake adapter; real domestic payout stays disabled until exact VND plan
-prices, fixed `creditAllocation`, and MoMo credentials exist. Runtime FX is not
-allowed.
+uses FAKE. PAYOS is staging-only under ADR 0047's payout amendment with separate
+credentials/readiness. Production and legacy/FAKE synthetic redemption remain
+blocked; MB-812 permits only exact verified-funded staging demo snapshots.
+Runtime FX is not allowed. Exact specialist command replay observes
+the existing logical payout, including FAILED, without creating an attempt.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable payout request UUID. |
 | `specialist_account_id` | Specialist receiving the attached available earnings. |
-| `destination_id` | Verified encrypted payout destination selected for this request. |
+| `destination_id` | Immutable confirmed encrypted destination revision fixed for every attempt; an edit cannot retarget an existing payout. |
 | `currency` | ISO 4217 currency shared by every attached earning. |
-| `amount_minor` | Exact positive requested amount in minor units, equal to attached payout items. |
-| `payout_provider` | `MOMO`/`FAKE` namespace used for request, status, and IPN reconciliation. |
+| `amount_minor` | Exact positive whole-VND requested amount, equal to attached payout items. MB-812 relaxes the DB floor additively from 100,000 to >0; service enforces configured minimum, at least 100,000 outside the effective staging demo gate (demo fallback 2,000). |
+| `payout_provider` | Immutable `FAKE`/`MOMO`/`PAYOS` namespace used for every attempt and reconciliation, independent of the mode selected for new payouts. |
 | `status` | `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or uncertainty-preserving `UNKNOWN`. |
 | `idempotency_key` | Specialist-scoped command key preventing duplicate logical payout creation. Provider attempts derive separate keys. |
 | `requested_on` | Server-local request date enforcing the planned maximum of one payout request per specialist per day. |
 | `requested_at` | UTC instant MentalBridge created the payout request. |
 | `completed_at` | UTC instant a verified provider attempt proved the logical payout succeeded; required for `SUCCEEDED`. |
 | `last_failure_code` | Safe diagnostic from the latest definite failure; never contains destination/raw payload data. |
+| `closed_at` | Nullable UTC ADMIN closure instant, allowed only for definitely FAILED payouts. Non-null forbids another attempt and releases active item ownership without changing original destination/amount/history. |
+| `closed_by` | Nullable external Identity ADMIN UUID from the closing JWT; paired with closed_at for attribution, never a cross-service foreign key. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest verified reconciliation change. |
 | `version` | Optimistic-lock counter protecting duplicate callbacks/status updates. |
 
 ### `consultation.specialist_payout_attempt`
 
-Immutable provider-call lineage for one logical payout. A definite failed attempt may be followed by a new numbered attempt; an `UNKNOWN` attempt must be queried/reconciled and blocks a new transfer attempt.
+Immutable provider-call lineage for one logical payout. Only an explicit
+idempotent ADMIN command against the latest definitely FAILED attempt can create
+a new numbered attempt. UNKNOWN/review attempts retain reservations and block
+another transfer; mode changes cannot switch the stored provider. PAYOS uses a
+one-item validated batch; the attempt UUID is the immutable child referenceId.
+Only authenticated matching child success settles funds; outer approval alone
+does not.
+
+The provider-affinity foreign key is installed NOT VALID for existing rows
+because older retry code could select a changed mode. Historical mixed-provider
+lineage is retained verbatim; new attempts must match the parent's provider.
+No migration reassigns historical money or provider references.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable provider-attempt UUID. |
 | `payout_id` | Logical payout whose fixed earnings/destination/amount are being sent. |
-| `payout_provider` | `MOMO`/`FAKE` namespace, constrained to match the parent payout. |
+| `payout_provider` | `MOMO`/`FAKE`/`PAYOS` namespace constrained by a composite foreign key to match the parent payout. |
 | `attempt_number` | Monotonic sequence within the logical payout. |
-| `provider_idempotency_key` | Unique provider-scoped transfer key; retries of the same network call reuse it. |
-| `provider_payout_reference` | Provider transfer identity when known, unique within provider. |
+| `provider_idempotency_key` | Immutable unique provider-scoped transfer key; PAYOS requires UUIDv4 and uses it as explicit x-idempotency-key plus outer batch referenceId. Uncertain delivery is queried, never resubmitted. Legacy MoMo colon keys remain valid. |
+| `provider_payout_reference` | Unique provider outer payout identity when known. PAYOS list recovery resolves this separately from a child transaction ID. |
+| `provider_transfer_reference` | Nullable unique provider child transaction identity established by matched authenticated evidence; distinct from the local attempt UUID used as child referenceId. |
 | `status` | Provider-call outcome including `UNKNOWN` for timeout/ambiguous delivery. |
+| `reconciliation_status` | `PENDING`, `POLLING`, `NEEDS_REVIEW`, or locally terminal `COMPLETE` including definite failure. |
+| `next_reconciliation_at` | Nullable persisted UTC next polling instant; cleared for terminal/review attempts. |
+| `reconciliation_started_at` | Nullable immutable UTC first submit-start instant; independent of subsequent polls or provider outages. |
+| `reconciliation_deadline_at` | Nullable absolute UTC horizon constrained to exactly 24 hours after first start; reaching it preserves UNKNOWN funds and stops automatic polling. |
+| `reconciliation_lease_until` | Nullable UTC worker-claim expiry preventing concurrent automatic polls while allowing crash recovery. |
+| `reconciliation_lease_token` | Nullable opaque UUID fencing a stale worker from applying a result after its claim was superseded. |
+| `review_required_at` | Nullable UTC first operator-review instant; overdue outcomes remain reserved and do not imply failure. |
+| `reconciliation_count` | Nonnegative persisted poll count selecting bounded 5s/15s/30s/60s/2m/5m backoff. |
 | `requested_at` | UTC instant the attempt was sent or queued for sending. |
 | `provider_confirmed_at` | UTC instant verified provider evidence proved success. |
 | `failed_at` | UTC instant a definite terminal failure was verified. |
@@ -826,15 +867,70 @@ Immutable provider-call lineage for one logical payout. A definite failed attemp
 | `updated_at` | UTC instant of the latest provider reconciliation update. |
 | `version` | Optimistic-lock counter protecting callback/status-query races. |
 
+### `consultation.payout_destination_confirmation_command`
+
+Durable ADMIN-scoped idempotency evidence for a successful manual holder check.
+The command and audit outbox record commit with confirmation. Replaying after a
+later edit observes the original revision without confirming the replacement.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal confirmation-command UUID. |
+| `actor_account_id` | External Identity ADMIN UUID from JWT subject, scopes the key and audit attribution. |
+| `idempotency_key` | ADMIN-scoped 16–128-character key; identical destination/version/reason is a no-op, conflicting reuse returns 409. |
+| `destination_id` | Local foreign key to the exact immutable checked bank revision. |
+| `expected_version` | Nonnegative caller-observed revision version required under lock before confirmation. |
+| `reason_code` | Fixed ACCOUNT_HOLDER_CHECKED attestation without raw account/name or unrestricted notes. |
+| `result_version` | Persisted confirmation version constrained to expected_version plus one. |
+| `created_at` | Immutable UTC committed confirmation instant. |
+
+### `consultation.payout_retry_command`
+
+Durable ADMIN-scoped command deduplication for explicit FAILED-only retry.
+Earning items, amount, currency, destination and provider remain fixed; both
+attempt foreign keys must belong to the same logical payout.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal retry-command UUID. |
+| `actor_account_id` | External Identity ADMIN UUID from JWT subject, scopes the key and audit attribution. |
+| `idempotency_key` | ADMIN-scoped 16–128-character key; transport replay observes result_attempt_id, while conflicting body reuse returns 409. |
+| `payout_id` | Immutable logical payout retaining its original earning allocations. |
+| `expected_attempt_id` | Latest definitely FAILED attempt checked under locks; cannot equal the result attempt. |
+| `result_attempt_id` | Newly persisted numbered attempt whose dispatch may occur only after command commit. |
+| `created_at` | Immutable UTC command insertion instant. |
+
+### `consultation.payout_close_command`
+
+Durable ADMIN-scoped idempotency evidence for closing a definitely FAILED
+payout without calling its provider. Closing and item release commit with the
+audit outbox record. Same key/body is a no-op; conflicting reuse is rejected.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable internal close-command UUID. |
+| `actor_account_id` | External Identity ADMIN UUID from JWT, scopes the key and audit attribution. |
+| `idempotency_key` | ADMIN-scoped 16–128-character key retained for replay deduplication. |
+| `payout_id` | Failed logical payout whose immutable history is retained. |
+| `expected_attempt_id` | Latest FAILED/COMPLETE attempt required under lock; composite foreign key requires the same payout. |
+| `reason_code` | Fixed DESTINATION_UNUSABLE explanation, without bank data or free text. |
+| `created_at` | Immutable UTC command and closure instant. |
+
 ### `consultation.specialist_payout_item`
 
-Immutable allocation of available earnings to one payout request.
+Immutable allocation history of earnings to payout requests. A partial unique
+index on earning_id where released_at is null permits at most one active payout
+owner. An ADMIN can close only a latest definitely FAILED/COMPLETE payout,
+atomically release its items and retain all historical amounts and links.
+New withdrawal eligibility still applies; closure does not bypass disputes,
+hold, fixture provenance, minimum, confirmation or the daily logical cap.
 
 | Field | Purpose |
 | --- | --- |
 | `payout_id` | Provider payout request containing the earning. |
-| `earning_id` | Unique earning attached to at most one payout. |
+| `earning_id` | Earning attached to at most one active payout; closed failure links remain historical. |
 | `amount_minor` | Exact portion requested from this earning; it becomes paid only when the parent payout succeeds. Current flow uses the full available specialist amount. |
+| `released_at` | Nullable UTC ADMIN closure instant releasing active ownership, never deleting or changing the historical allocation. Only definite failure closure writes it. |
 
 ### `consultation.specialist_payout_status_history`
 
@@ -857,7 +953,7 @@ Deduplicated receipt of payout IPN/callback events. Only the integrity hash and 
 | --- | --- |
 | `id` | Internal immutable event-receipt UUID. |
 | `payout_attempt_id` | Optional resolved local attempt; null until the provider identity can be correlated safely. |
-| `payout_provider` | `MOMO`/`FAKE` namespace for event identity and verification policy. |
+| `payout_provider` | `MOMO`/`FAKE`/`PAYOS` namespace for evidence identity and verification policy. PAYOS introduces no payout webhook. |
 | `provider_event_id` | Provider event identity, unique within the provider for replay protection. |
 | `event_type` | Allow-listed event category used for reconciliation routing. |
 | `payload_sha256` | Integrity hash; raw callback payload and destination data are not stored here. |

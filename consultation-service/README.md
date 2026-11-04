@@ -312,9 +312,14 @@ and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 | `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
 | `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
 | `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
-| `CONSULTATION_PAYOUT_MODE` | No | `FAKE` for deterministic local/CI payout; real MoMo payout is not enabled by this story | `FAKE` |
-| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Evidence-backed earning settlement/dispute hold | `P7D` |
-| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Minimum server-authoritative withdrawal | `100000` |
+| `CONSULTATION_PAYOUT_MODE` | No | `DISABLED`, deterministic `FAKE`, independently gated dormant `MOMO`, or staging-only `PAYOS`; unknown modes fail closed | `DISABLED` |
+| `PAYOS_PAYOUT_CLIENT_ID` | PAYOS payout | Separate payout channel client ID; never borrowed from collect | empty; injected secret |
+| `PAYOS_PAYOUT_API_KEY` | PAYOS payout | Separate payout channel API key | empty; injected secret |
+| `PAYOS_PAYOUT_CHECKSUM_KEY` | PAYOS payout | Separate payout signing and response-verification key | empty; injected secret |
+| `PAYOS_PAYOUT_BASE_URL` | PAYOS payout | Approved HTTPS payout origin; defaults to the official merchant API | `https://api-merchant.payos.vn` |
+| `CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED` | No | Default-off MB-812 funded-demo exception, effective only with staging and neither prod nor production | `false` |
+| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | No | Positive evidence-backed settlement/dispute hold; cannot be below P7D outside the effective staging demo gate | `P7D` (demo `PT10M`) |
+| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | No | Positive server-authoritative VND minimum; cannot be below 100000 outside the effective staging demo gate | `100000` (demo fallback `2000`) |
 | `CONSULTATION_PAYOUT_ENCRYPTION_KEY` | Destination setup | Base64-encoded 32-byte AES key protecting payout destination data | local secret |
 | `CONSULTATION_PAYOUT_ENCRYPTION_KEY_VERSION` | No | Key identifier retained with ciphertext for controlled rotation | `v1` |
 | `MOMO_PAYOUT_PARTNER_CODE` / `MOMO_PAYOUT_ACCESS_KEY` / `MOMO_PAYOUT_SECRET_KEY` | Signed sandbox callback only | MoMo sandbox callback verification credentials; do not enable real payout | injected sandbox secrets |
@@ -378,8 +383,9 @@ VND sandbox versions. The owner-approved sandbox upgrade charges 10,000 VND
 with zero offset and records `sandbox-full-price-v1` plus the nominal held-credit
 value. Existing held appointment credits and ordinary/historical prices/offsets
 are preserved. Mixed pricing policies fail closed. New paid credit periods
-snapshot the exact purchased plan-version UUID and allocation. Sandbox earning
-amounts are demonstration facts and may use FAKE payout only, never real money.
+snapshot the exact purchased plan-version UUID and allocation. Legacy synthetic
+sandbox earnings may use FAKE payout only; the prospective MB-812 verified-funded
+exception below requires a new earning policy snapshot and exact PayOS evidence.
 Apply migration 021 and drain old billing writers before enabling new offers.
 
 Migration 022 permits a null checkout URL. Roll out the nullable-URL consumer
@@ -504,6 +510,73 @@ minimum is 100,000 VND, and one specialist may request at most one payout per
 day. The MoMo route verifies signed sandbox callbacks only; it does not enable
 real transfer submission.
 
+## MB-787 specialist bank payouts
+
+The accepted [ADR 0047 payout amendment](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04)
+permits independently ready PAYOS payout on the approved staging deployment.
+Complete separate payout credentials, valid existing encryption configuration
+and the official HTTPS provider origin are required. Collect readiness does
+not depend on payout credentials. Existing attempts retain their original
+provider for authenticated queries even if the configured submission mode
+changes. Production remains blocked; synthetic fixture earnings cannot be
+redeemed through either real provider. MB-788 owns funded live interoperability.
+
+The existing specialist destination PUT preserves bankCode/accountReference/
+accountHolderName. PAYOS requires a six-digit listed bank BIN; the account and
+holder stay encrypted. Any material edit, including holder-only edits or
+returning to an older account, creates a new current pending revision. Existing
+verified history cannot bypass confirmation. An exact unchanged save is a
+no-op. Lists, specialist earnings and payout history expose only masked hints.
+
+Additional provider operations are:
+
+- `GET /api/v1/specialist/payout-banks`: SPECIALIST-only backend VietQR proxy,
+  returning BIN/name/shortName with a 24-hour in-process cache; no fresh list
+  on upstream failure returns 503 without hiding saved destinations.
+- `GET /api/v1/admin/payout-destinations`: masked current revision queue,
+  default PENDING_CONFIRMATION, limit 50 and offset 0.
+- `GET /api/v1/admin/payout-destinations/{destinationId}`: audited ADMIN-only
+  exact account/holder inspection for manual checking, returned with no-store.
+- `POST /api/v1/admin/payout-destinations/{destinationId}/confirm`: keyed ADMIN
+  confirmation of expectedVersion with reasonCode ACCOUNT_HOLDER_CHECKED.
+- `POST /api/v1/admin/payouts/{payoutId}/retry`: keyed ADMIN retry naming the
+  latest definitely FAILED expectedAttemptId; retains original provider,
+  unchanged confirmed destination and frozen earning lineage.
+
+Manual confirmation applies to the exact current revision and creates no
+transfer. Subsequent specialist-initiated eligible withdrawals to that account
+dispatch automatically; no per-withdrawal admin approval is added. The server
+derives the full amount from eligible unlinked earnings and retains the
+baseline seven-day hold, 100,000 VND minimum and one logical request per server
+day. MB-812 below permits only the explicit funded staging exception to the
+minimum/hold and synthetic exclusion.
+Failed-payout earnings remain linked to their original logical payout even
+when AVAILABLE and appear as retryPendingVnd, excluded from new withdrawals.
+
+Persist an immutable provider attempt/key before submitting one validated
+one-item PayOS batch through the pinned SDK, explicitly passing the UUIDv4
+x-idempotency-key. SDK timeout/retry/logging/redirect settings match collect.
+Outer batch ID/reference and child attempt reference are distinct. Only signed
+authenticated matched child SUCCEEDED evidence pays; outer approval and
+balance are not proof. Known definite rejection, transfer-balance insufficiency
+and service-credit insufficiency are safe stored failures for operator action.
+Timeout or possible acceptance preserves uncertainty and reserved funds.
+
+Reconciliation queries the stored provider outside transactions with persisted
+schedule/lease, bounded batches and 5s/15s/30s/60s/2m/5m backoff. At the absolute
+24-hour horizon, stop automatic polling and retain UNKNOWN/NEEDS_REVIEW plus
+reserved funds. No automatic resubmission or payout webhook is introduced.
+Specialist replay observes the original outcome, including FAILED; only
+explicit provider-affine ADMIN retry can create the next attempt after
+revalidating original confirmation, eligibility, hold/dispute and fixture gates.
+The owner funds provider balance/service credits manually.
+
+Deploy the additive owner migration before new writers, synchronize consumers
+from Consultation OpenAPI 1.21.0 and drain legacy writers before PAYOS is
+enabled. Preserve MoMo history/IPNs and old FAKE/MOMO verification semantics.
+Local tests use SDK fixtures and disposable PostgreSQL only; never query real
+provider balance, submit real payouts or migrate shared databases as a gate.
+
 The endpoint returns appointment/user identifiers, status, modality, exact
 schedule, appointment version, projection time/window, and policy version only.
 Suspended, rejected, pending, or missing specialist profiles fail closed and
@@ -586,3 +659,79 @@ Focused owner verification:
 The generated context test uses PostgreSQL and Kafka Testcontainers and disables
 live Eureka registration. The appointment relay remains disabled unless its
 versioned topic has been provisioned.
+
+
+MB-787 failed-destination recovery amendment (2026-11-04): an explicit keyed
+ADMIN POST `/api/v1/admin/payouts/{payoutId}/close-failed` checks the latest
+FAILED/COMPLETE attempt and fixed DESTINATION_UNUSABLE reason, records
+`closed_at`/`closed_by`, releases active item ownership and audits
+`consultation.payout.closed` / `PAYOUT_CLOSED` atomically without a provider call.
+The payout remains FAILED and its original destination, provider, amount and
+item history stay immutable. `closedAt` is exposed on specialist/admin payout
+projections and forbids retry. Partial unique active earning ownership preserves
+one live allocation while retaining released historical links. The next
+withdrawal uses the current confirmed destination and all normal eligibility,
+minimum and daily-cap gates; closure never releases UNKNOWN/active/review money.
+Migration `20261104090000-close-failed-payout.sql` must precede new writers, and
+legacy writers must be drained before closure is enabled. Claude must sync the
+contract and add the admin action; MB-788 still owns live interoperability.
+
+## MB-812 funded staging demo payout
+
+Approved authority is [ADR 0032](../docs/adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+and [ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-812-funded-staging-demo-amendment-2026-11-04).
+Production/default rules retain 300,000 VND nominal allocation, 210,000 VND
+earning, at least 100,000 VND withdrawal and P7D hold. The flag defaults false
+and is effective only with `staging` and neither `prod` nor `production` active.
+All synthetic baseline/FAKE/legacy earnings remain excluded from real payout.
+
+New completed `sandbox-full-price-v1` credits can instead create
+`staging-demo-paid-v1` earnings with a `funding_payment_id` only when their
+exact original PAID period, frozen purchased plan and succeeded PAYOS payment
+match a processed successful verified receipt. A later upgrade does not change
+an older held credit's plan or funding. Allocation is
+`floor(actual collected VND / frozen plan credits)`, then specialist amount is
+`floor(allocation * 7000 / 10000)`. Both round down to whole VND; remainders
+are not distributed and nominal period allocation is unchanged. No existing
+earning is revalued or made redeemable retrospectively. Prepare and explicit
+retry recheck the effective staging gate, PAYOS payout and exact funded lineage.
+
+For later authorized staging activation, set these non-secret values:
+
+| Environment name | Value |
+| --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `staging` (no `prod`/`production`) |
+| `CONSULTATION_SPRING_PROFILES_ACTIVE` | `staging` (when using the existing Compose mapping) |
+| `SPRINGDOTENV_ENABLED` | `false` |
+| `CONSULTATION_BILLING_MODE` | `PAYOS` |
+| `CONSULTATION_PAYOUT_MODE` | `PAYOS` |
+| `CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED` | `true` |
+| `CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND` | `2000` |
+| `CONSULTATION_PAYOUT_SETTLEMENT_HOLD` | `PT10M` |
+
+Existing independent collect/payout credentials, approved HTTPS URLs, encryption
+and exact current ADMIN-confirmed bank revision remain required. Apply additive
+`20261104100000-staging-demo-payout.sql` before new writers and drain older
+earning/payout writers before enabling the exception. Its positive database
+floor permits small staging amounts; service validation preserves the configured
+minimum in every environment. No shared database or provider action is part of
+this implementation job.
+
+| Purchase | Per completed session | Two sessions | First qualifying balance at 2,000 minimum | All credits |
+| --- | ---: | ---: | ---: | ---: |
+| PLUS 5,000 VND / four credits | 875 | 1,750 | Three: 2,625 | 3,500 |
+| PREMIUM 10,000 VND / ten credits | 700 | 1,400 | Three: 2,100 | 7,000 |
+
+The pinned offline SDK does not establish the PayOS payout minimum. 2,000 VND
+is the owner-directed fallback; MB-788 must confirm provider acceptance before
+live money movement. Neither one nor two approved demo sessions reaches that
+fallback, so QA requires three. PT10M only shortens the hold; dispute, daily
+cap, destination confirmation, idempotency, polling and close/retry stay intact.
+
+The API returns dynamic minimum/hold and optional exact `settlementHoldSeconds`;
+`settlementHoldDays` remains integer whole days (PT10M reports zero). Configured
+holds must be positive whole seconds. Web
+follow-up is required before screen-based QA: synchronize the owner contract,
+remove fixed 100000/7 validator constants and display sub-day hold accurately.
+No mobile earnings/payout surface is affected. Automated evidence uses only
+Testcontainers and synthetic provider transport; MB-788 owns live evidence.

@@ -166,8 +166,8 @@ retain their exact prior provenance, without reprovisioning.
 - Earnings move from `PENDING_SETTLEMENT` to `AVAILABLE`, then attach to at most one idempotent provider payout.
 - The settlement/dispute hold is seven days. Minimum withdrawal is VND 100,000,
   requested on demand, with at most one logical payout per specialist per day.
-- MoMo Disbursement is the only planned production payout adapter. Local/CI uses the deterministic fake implementing the same state contract.
-- A logical payout fixes its destination, currency, amount, and earning items. Each provider call is a numbered attempt: a definite `FAILED` attempt may be retried with a new provider idempotency key, while `UNKNOWN` is queried and blocks another transfer attempt. The payout becomes `SUCCEEDED` only after verified provider confirmation/status reconciliation.
+- [ADR 0047 payout amendment, 2026-11-04](../adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04) permits separately ready staging PAYOS bank payout after exact current manual admin confirmation; production stays blocked. Local/CI uses deterministic FAKE and MoMo remains dormant.
+- A logical payout fixes its provider, destination revision, currency, amount, and earning items. Specialist replay observes only. An explicit keyed ADMIN retry after definite `FAILED` creates the next provider-affine attempt with revalidated original eligibility. `UNKNOWN` is queried and blocks another transfer; at 24h it becomes NEEDS_REVIEW with funds reserved. Only authenticated, signed and exactly matched child transaction SUCCEEDED proves payment; outer batch approval does not. Linked AVAILABLE failed-payout earnings stay with the original payout and appear as retryPendingVnd rather than new withdrawable balance.
 - Real MoMo payment and payout remain disabled until separate production
   approval and credentials are configured. Runtime FX conversion is prohibited.
 - Dormant MoMo checkout uses One-Time E-Wallet `requestType=captureWallet`.

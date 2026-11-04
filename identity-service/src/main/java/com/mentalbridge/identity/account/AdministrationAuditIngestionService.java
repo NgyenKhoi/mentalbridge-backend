@@ -59,6 +59,26 @@ public class AdministrationAuditIngestionService {
                             AdministrationAuditService.AuditSourceService.CONSULTATION,
                             AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
                             "SPECIALIST_RESTORED")),
+            Map.entry("consultation.payout-destination.inspected",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "PAYOUT_DESTINATION_INSPECTED")),
+            Map.entry("consultation.payout-destination.confirmed",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "PAYOUT_DESTINATION_CONFIRMED")),
+            Map.entry("consultation.payout.retried",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "PAYOUT_RETRIED")),
+            Map.entry("consultation.payout.closed",
+                    new EventTypeDescriptor(
+                            AdministrationAuditService.AuditSourceService.CONSULTATION,
+                            AdministrationAuditService.AuditDomain.SPECIALIST_REVIEW,
+                            "PAYOUT_CLOSED")),
 
             // CONTENT / RESOURCE_MANAGEMENT
             Map.entry("content.resource.archived",

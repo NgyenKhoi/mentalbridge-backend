@@ -306,7 +306,7 @@ Commercial direction remains:
 - `PLUS -> PREMIUM` upgrade;
 - no user downgrade API in V1;
 - no user refund API in V1;
-- VND + PayOS for staging pay-in under [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md); MoMo remains dormant and payout/production enablement remain separately gated;
+- VND + PayOS for staging pay-in and separately gated specialist bank payout under [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04); exact manual admin account confirmation precedes specialist-initiated withdrawal; MoMo remains dormant and production stays blocked;
 - specialist earning = 70% of the consumed credit's snapshotted `creditAllocation`, not 70% of package price.
 
 ADR 0032 fixes planned production design values at 1,390,000 VND for `PLUS`
@@ -314,14 +314,25 @@ and 3,490,000 VND for `PREMIUM`, with 300,000 VND allocated per consumed credit
 and a 210,000 VND specialist earning. These are not runtime prices. The current
 integration-test catalogue is only 0/5,000/10,000 VND. ADR 0047 expressly permits
 this unchanged test catalogue through real PayOS collect on staging only
-(`https://staging.mentalbridge.online`); production payment and real payout
-remain disabled pending their separate approval and credentials.
+(`https://staging.mentalbridge.online`); production payment/payout remain blocked. The 2026-11-04 payout amendment
+permits separately ready staging PAYOS bank payout only for eligible funded
+earnings; synthetic test earnings remain non-redeemable. Live interoperability
+and funded earning QA belong to MB-788.
+
+The subsequent owner-approved [MB-812 amendment to ADR 0032](adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+and [ADR 0047](adr/0047-payos-active-gateway-momo-dormant.md#mb-812-funded-staging-demo-amendment-2026-11-04)
+permits only new, positively verified real-PayOS-funded demo earnings behind
+an explicit default-off staging gate. That policy derives the earning from
+collected VND per frozen plan credit, with downward rounding, and allows
+configured demo minimum/hold. Production/default economics and legacy/FAKE
+synthetic exclusion stay unchanged. Detailed rules remain in the ADR/policy.
 
 The owner-approved MB-622 sandbox amendment to ADR 0032 makes new test upgrades
 charge the full 10,000 VND PREMIUM price with zero offset under the explicit
 `sandbox-full-price-v1` policy. Existing ordinary offsets and historical facts
-are preserved. Sandbox allocations/earnings are synthetic and cannot be paid
-through a real provider.
+are preserved. Nominal sandbox allocations and legacy earnings are synthetic;
+only the prospective MB-812 funded earning exception can enter staging PAYOS
+payout.
 
 Detailed amendment: [ADR 0022](adr/0022-current-product-blueprint-amendments.md).
 

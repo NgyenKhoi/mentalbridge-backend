@@ -61,3 +61,9 @@ databaseChangeLog:
       file: db/changelog/changes/20261030102032-payos-payin.sql
   - include:
       file: db/changelog/changes/20261030110000-subscription-upgrade-credit-retry.sql
+  - include:
+      file: db/changelog/changes/20261104080000-payos-specialist-payout.sql
+  - include:
+      file: db/changelog/changes/20261104090000-close-failed-payout.sql
+  - include:
+      file: db/changelog/changes/20261104100000-staging-demo-payout.sql

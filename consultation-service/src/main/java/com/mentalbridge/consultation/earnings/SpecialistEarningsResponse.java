@@ -4,15 +4,22 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-public record SpecialistEarningsResponse(String currency, String earningPolicyVersion, String payoutProvider,
+public record SpecialistEarningsResponse(String currency, String earningPolicyVersion,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String payoutProvider,
 		int settlementHoldDays, long minimumWithdrawalVnd, Instant generatedAt, Balance balance,
-		Destination destination, List<Earning> earnings, List<Payout> payouts) {
+		Destination destination, List<Earning> earnings, List<Payout> payouts, Availability payoutAvailability,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Long settlementHoldSeconds) {
 
-	public record Balance(long pendingSettlementVnd, long availableVnd, long processingVnd, long paidVnd) {
+	public record Availability(String mode, boolean ready, String reasonCode) {
+	}
+
+	public record Balance(long pendingSettlementVnd, long availableVnd, long processingVnd, long paidVnd,
+			long retryPendingVnd) {
 	}
 
 	public record Destination(UUID id, String provider, String destinationType, String displayHint,
-			String status, Instant verifiedAt) {
+			String status, Instant verifiedAt, String bankCode, String bankName, long version, Instant updatedAt,
+			boolean usableForPayout) {
 	}
 
 	public record Earning(UUID id, UUID appointmentId, UUID consumedCreditId, String planVersion,
@@ -21,6 +28,7 @@ public record SpecialistEarningsResponse(String currency, String earningPolicyVe
 	}
 
 	public record Payout(UUID id, UUID destinationId, long amountVnd, String provider, String status,
-			String providerReference, String failureCode, Instant requestedAt, Instant completedAt) {
+			String providerReference, String failureCode, Instant requestedAt, Instant completedAt,
+			String reconciliationStatus, Instant nextReconciliationAt, Instant reviewRequiredAt, Instant closedAt) {
 	}
 }

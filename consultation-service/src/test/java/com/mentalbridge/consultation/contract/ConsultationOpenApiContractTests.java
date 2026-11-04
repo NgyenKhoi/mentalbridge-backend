@@ -80,6 +80,12 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/specialist/earnings",
 			"PUT /api/v1/specialist/payout-destination",
 			"POST /api/v1/specialist/payouts",
+			"GET /api/v1/specialist/payout-banks",
+			"GET /api/v1/admin/payout-destinations",
+			"GET /api/v1/admin/payout-destinations/{destinationId}",
+			"POST /api/v1/admin/payout-destinations/{destinationId}/confirm",
+			"POST /api/v1/admin/payouts/{payoutId}/retry",
+			"POST /api/v1/admin/payouts/{payoutId}/close-failed",
 			"GET /api/v1/specialist/appointments",
 			"GET /api/v1/specialist/appointments/{appointmentId}/dispute",
 			"POST /api/v1/specialist/appointments/{appointmentId}/dispute",
@@ -126,6 +132,30 @@ class ConsultationOpenApiContractTests {
 				.path("schema").path("const").asText()).isEqualTo("no-store");
 		assertThat(active.path("components").path("securitySchemes").path("journalVoiceEntitlementToken")
 				.path("name").asText()).isEqualTo("X-MentalBridge-Voice-Entitlement-Token");
+	}
+
+	@Test
+	void earningsContractCarriesConfiguredDemoValuesAndAnExactOptionalShortHold() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var earnings = schemas.path("SpecialistEarnings");
+		var properties = earnings.path("properties");
+		assertThat(properties.path("settlementHoldDays").has("const")).isFalse();
+		assertThat(properties.path("settlementHoldDays").path("minimum").asInt()).isZero();
+		assertThat(properties.path("minimumWithdrawalVnd").has("const")).isFalse();
+		assertThat(properties.path("minimumWithdrawalVnd").path("minimum").asInt()).isOne();
+		assertThat(properties.path("settlementHoldSeconds").path("type").asText()).isEqualTo("integer");
+		assertThat(earnings.path("required").toString()).doesNotContain("settlementHoldSeconds");
+		assertThat(properties.path("earningPolicyVersion").path("enum").toString())
+				.contains("specialist-earning-v1", "staging-demo-paid-v1");
+		var demo = earnings.path("examples").get(0);
+		assertThat(demo.path("minimumWithdrawalVnd").asInt()).isEqualTo(2_000);
+		assertThat(demo.path("settlementHoldSeconds").asInt()).isEqualTo(600);
+		for (var schema : Set.of("SpecialistPayout", "AdminPayout")) {
+			assertThat(schemas.path(schema).path("properties").path("amountVnd").path("minimum").asInt())
+					.as(schema).isOne();
+		}
 	}
 
 	@Test
@@ -194,7 +224,87 @@ class ConsultationOpenApiContractTests {
 		assertThat(confirmed.path("expiredAt")).isEqualTo(confirmed.path("expiresAt"));
 		assertThat(confirmed.path("qrCode").asText()).isNotBlank().doesNotStartWith("http");
 		assertThat(schemas.path("SpecialistPayout").path("properties").path("provider").path("enum").toString())
-				.doesNotContain("PAYOS");
+				.isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+	}
+
+	@Test
+	void payosPayoutContractSeparatesMaskedHistoryFromExactAdminInspection() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var destination = schemas.path("PayoutDestination");
+		assertThat(destination.path("additionalProperties").asBoolean()).isFalse();
+		var properties = destination.path("properties");
+		assertThat(properties.path("provider").path("enum").toString()).isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+		assertThat(properties.path("status").path("enum").toString())
+				.isEqualTo("[\"PENDING_CONFIRMATION\",\"VERIFIED\",\"DISABLED\"]");
+		assertThat(properties.path("verifiedAt").path("type").toString()).contains("\"null\"");
+		for (String field : Set.of("bankCode", "bankName", "version", "updatedAt", "usableForPayout")) {
+			assertThat(properties.has(field)).as(field).isTrue();
+			assertThat(destination.path("required").toString()).doesNotContain("\"" + field + "\"");
+		}
+		assertThat(properties.has("accountReference")).isFalse();
+		assertThat(properties.has("accountHolderName")).isFalse();
+		var inspection = schemas.path("AdminPayoutDestinationDetail").path("properties");
+		assertThat(inspection.has("accountReference")).isTrue();
+		assertThat(inspection.has("accountHolderName")).isTrue();
+		assertThat(inspection.path("confirmedBy").path("type").toString()).contains("\"null\"");
+		var detail = api.path("paths").path("/api/v1/admin/payout-destinations/{destinationId}").path("get");
+		assertThat(detail.path("responses").path("200").path("headers").path("Cache-Control")
+				.path("schema").path("const").asText()).isEqualTo("no-store");
+		assertThat(schemas.path("PayoutBank").path("properties").path("bin").path("pattern").asText())
+				.isEqualTo("^[0-9]{6}$");
+		assertThat(schemas.path("PayoutBankList").path("properties").path("items").path("maxItems").asInt())
+				.isEqualTo(1000);
+		assertThat(schemas.path("AdminPayoutDestinationList").path("properties").path("items").path("maxItems").asInt())
+				.isEqualTo(200);
+	}
+
+	@Test
+	void payosPayoutCommandsRequireExplicitKeysAndExposeUncertaintyWithoutAnotherTransfer() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		assertThat(schemas.path("ConfirmPayoutDestination").path("required").toString())
+				.isEqualTo("[\"expectedVersion\",\"reasonCode\"]");
+		assertThat(schemas.path("RetryPayout").path("required").toString()).isEqualTo("[\"expectedAttemptId\"]");
+		assertThat(schemas.path("CloseFailedPayout").path("required").toString()).isEqualTo("[\"expectedAttemptId\",\"reasonCode\"]");
+		assertThat(schemas.path("CloseFailedPayout").path("properties").path("reasonCode").path("const").asText()).isEqualTo("DESTINATION_UNUSABLE");
+		for (String path : Set.of("/api/v1/specialist/payouts",
+				"/api/v1/admin/payout-destinations/{destinationId}/confirm", "/api/v1/admin/payouts/{payoutId}/retry")) {
+			var operation = api.path("paths").path(path).path("post");
+			var keys = new java.util.ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+			operation.path("parameters").forEach(parameter -> {
+				if (parameter.path("name").asText().equals("Idempotency-Key")) keys.add(parameter);
+			});
+			assertThat(keys).singleElement().satisfies(key -> {
+				assertThat(key.path("required").asBoolean()).isTrue();
+				assertThat(key.path("schema").path("minLength").asInt()).isEqualTo(16);
+				assertThat(key.path("schema").path("maxLength").asInt()).isEqualTo(128);
+			});
+			assertThat(operation.path("responses").has("409")).isTrue();
+			assertThat(operation.path("responses").has("503")).isTrue();
+		}
+		var payout = schemas.path("SpecialistPayout").path("properties");
+		assertThat(payout.path("reconciliationStatus").path("enum").toString())
+				.isEqualTo("[\"PENDING\",\"POLLING\",\"NEEDS_REVIEW\",\"COMPLETE\"]");
+		assertThat(payout.path("nextReconciliationAt").path("type").toString()).contains("\"null\"");
+		assertThat(payout.path("reviewRequiredAt").path("type").toString()).contains("\"null\"");
+		assertThat(payout.path("closedAt").path("type").toString()).contains("\"null\"");
+		var close = api.path("paths").path("/api/v1/admin/payouts/{payoutId}/close-failed").path("post");
+		assertThat(close.path("parameters").get(1).path("required").asBoolean()).isTrue();
+		assertThat(close.path("parameters").get(1).path("schema").path("minLength").asInt()).isEqualTo(16);
+		assertThat(close.path("parameters").get(1).path("schema").path("maxLength").asInt()).isEqualTo(128);
+		assertThat(close.path("responses").has("409")).isTrue();
+		assertThat(schemas.path("SpecialistEarningBalance").path("properties").has("retryPendingVnd")).isTrue();
+		var overdue = api.path("paths").path("/api/v1/specialist/payouts").path("post").path("responses")
+				.path("200").path("content").path("application/json").path("examples").path("overdue")
+				.path("value").path("payouts").get(0);
+		assertThat(overdue.path("status").asText()).isEqualTo("UNKNOWN");
+		assertThat(overdue.path("reconciliationStatus").asText()).isEqualTo("NEEDS_REVIEW");
+		assertThat(overdue.path("failureCode").asText()).isEqualTo("PAYOUT_RECONCILIATION_OVERDUE");
+		assertThat(overdue.path("nextReconciliationAt").isNull()).isTrue();
+		assertThat(api.path("paths").has("/internal/v1/payouts/payos/webhook")).isFalse();
 	}
 
 	@Test

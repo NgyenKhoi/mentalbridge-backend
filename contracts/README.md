@@ -11,6 +11,25 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-812 extends Consultation OpenAPI to `1.22.0`: earnings settings carry the
+configured minimum and whole-day hold plus optional exact `settlementHoldSeconds`.
+Only the explicit staging demo gate permits smaller funded PayOS earnings and
+payouts. Production remains at least 100,000 VND / P7D. Before MB-788 screen QA,
+the web consumer must run `npm run contracts:sync`, remove its 7/100000 validator
+constants, accept `staging-demo-paid-v1`, and display the exact short hold.
+No mobile earnings consumer is currently implemented. See the MB-812 amendment
+in [ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md).
+
+MB-787 extends Consultation OpenAPI to `1.21.0` under the accepted
+[ADR 0047 payout amendment](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04):
+current pending bank revisions, manual exact ADMIN account confirmation,
+independent PAYOS readiness, bank-list proxy, provider-affine reconciliation
+and explicit FAILED-only ADMIN retry. Existing response additions are optional
+for compatibility; synchronized web consumers must accept PAYOS and pending
+verification before the mode is enabled. No payout callback is added. The
+existing administration-audit fact adds four content-free payout inspection,
+confirmation, retry and definite-failure closure event types in the existing SPECIALIST_REVIEW domain.
+
 MB-782 amends the accepted Voice target to `1.1.0` and active Journal OpenAPI
 to `1.16.0`: display-only quota-aware duration previews and exact admitted
 room/Agent connection bindings. The [Web handoff](../docs/story-mb-782-voice-web-prerequisite.md)
