@@ -9,7 +9,7 @@ const CLEAN = "Codex Review: Didn't find any major issues.";
 const COMPLETED_TEMPLATE = readFileSync(new URL('../.github/pull_request_template.md', import.meta.url), 'utf8').replace(/- \[ \]/g, '- [x]');
 const cleanReview = { user: { login: BOT }, commit_id: HEAD, state: 'COMMENTED', body: CLEAN };
 const ready = (overrides = {}) => ({
-  pr: { base: { ref: 'dev' }, draft: false, labels: [], body: COMPLETED_TEMPLATE, head: { sha: HEAD }, mergeable_state: 'clean' },
+  pr: { base: { ref: 'dev' }, draft: false, labels: [], body: COMPLETED_TEMPLATE, head: { sha: HEAD }, changed_files: 1, mergeable_state: 'clean' },
   bot: BOT,
   reviews: [cleanReview],
   comments: [],
@@ -107,6 +107,7 @@ const fakeGh = (pr, threadPages) => {
     if (args[1] === 'graphql') return JSON.stringify(threadPages);
     if (path.includes('/pulls?state=open&base=dev')) return JSON.stringify([[{ number: 9, base: { ref: 'dev' } }]]);
     if (path.includes('/pulls/9/files')) return JSON.stringify([[{ filename: 'src/index.ts' }]]);
+    if (path.endsWith('/pulls/10')) return JSON.stringify({ changed_files: 1 });
     if (path.endsWith('/pulls/9')) return JSON.stringify(pr);
     if (path.includes('/reviews')) return JSON.stringify([[cleanReview]]);
     return JSON.stringify([[]]);
@@ -165,6 +166,7 @@ test('live overlap checks actual open PR files even if comments are stale or mis
     if (path.includes('/pulls?state=open')) return JSON.stringify([[{ number: 9, base: { ref: 'dev' } }, { number: 10, base: { ref: 'dev' } }]]);
     if (path.includes('/pulls/9/files')) return JSON.stringify([[{ filename: 'src/a.ts' }]]);
     if (path.includes('/pulls/10/files')) return JSON.stringify([[{ filename: 'src/a.ts' }]]);
+    if (path.endsWith('/pulls/9') || path.endsWith('/pulls/10')) return JSON.stringify({ changed_files: 1 });
     throw new Error('Unexpected API path: ' + path);
   };
   assert.deepEqual(currentFileOverlap(9, command), { checked: true, conflictingPulls: [10] });
@@ -178,4 +180,33 @@ test('an incomplete overlap lookup fails instead of treating unknown as clear', 
     throw new Error('unexpected');
   };
   assert.throws(() => currentFileOverlap(9, command), /candidate missing/);
+});
+
+test('the newest exact-head Codex receipt wins over a historical clean receipt', () => {
+  const receipt = (findings) => ({ user: { login: BOT }, body: '<!-- codex-review-state:v1 ' +
+    JSON.stringify({ code_review: { commit_sha: HEAD, status: 'completed', has_any_findings: findings, has_unresolved_findings: findings } }) + ' -->' });
+  assert.match(decide(ready({ comments: [receipt(false), receipt(true)] })).reason, /reports findings/);
+  assert.equal(decide(ready({ reviews: [], comments: [receipt(true), receipt(false)] })).merge, true);
+});
+
+test('a later exact-head Codex approval supersedes an earlier change request, but COMMENTED cannot', () => {
+  const request = { user: { login: BOT }, commit_id: HEAD, state: 'CHANGES_REQUESTED', body: 'issue' };
+  const approval = { user: { login: BOT }, commit_id: HEAD, state: 'APPROVED', body: CLEAN };
+  assert.equal(decide(ready({ reviews: [request, approval] })).merge, true);
+  assert.equal(decide(ready({ reviews: [approval, request] })).merge, false);
+  assert.equal(decide(ready({ reviews: [request, { ...cleanReview, state: 'COMMENTED' }] })).merge, false);
+});
+
+test('file inventory must match GitHub changed_files count and stay below its 3000-file limit', () => {
+  const command = (count) => (_cmd, args) => {
+    const path = args.find((a) => a.startsWith('repos/')) ?? '';
+    if (path.includes('/pulls?state=open')) return JSON.stringify([[{ number: 9, base: { ref: 'dev' } }]]);
+    if (path.endsWith('/pulls/9')) return JSON.stringify({ changed_files: count });
+    if (path.includes('/pulls/9/files')) return JSON.stringify([[{ filename: 'src/one.ts' }]]);
+    throw new Error('unexpected endpoint ' + path);
+  };
+  assert.deepEqual(currentFileOverlap(9, command(1)), { checked: true, conflictingPulls: [] });
+  assert.throws(() => currentFileOverlap(9, command(2)), /incomplete PR file inventory/);
+  assert.throws(() => currentFileOverlap(9, command(3001)), /API limit/);
+  assert.throws(() => currentFileOverlap(9, command(undefined)), /unavailable/);
 });
