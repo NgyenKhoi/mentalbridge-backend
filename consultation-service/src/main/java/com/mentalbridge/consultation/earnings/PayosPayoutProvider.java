@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +29,7 @@ import vn.payos.model.v1.payouts.batch.PayoutBatchRequest;
 @Component
 class PayosPayoutProvider {
 
+	private static final Logger log = LoggerFactory.getLogger(PayosPayoutProvider.class);
 	private static final Set<String> DEFINITE_REJECTION_CODES = Set.of("607", "623", "636", "624", "217");
 	private static final Set<String> REJECTED_APPROVALS = Set.of("REJECTED", "CANCELLED", "FAILED");
 	private final PayoutProperties properties;
@@ -74,6 +77,7 @@ class PayosPayoutProvider {
 		catch (APIException exception) {
 			var status = exception.getStatusCode().orElse(0);
 			var code = exception.getErrorCode().orElse("");
+			logFailure("submit", command, status, code);
 			if (status == 401 || status == 403) {
 				return result("FAILED", null, "PAYOUT_PROVIDER_ACCESS_DENIED", null);
 			}
@@ -82,7 +86,10 @@ class PayosPayoutProvider {
 			}
 			return unknown(null);
 		}
-		catch (Exception exception) { return unknown(null); }
+		catch (Exception exception) {
+			logFailure("submit", command, 0, "");
+			return unknown(null);
+		}
 	}
 
 	PayoutProvider.Result query(PayoutProvider.Query query) {
@@ -98,6 +105,7 @@ class PayosPayoutProvider {
 				var page = client.payouts().list(GetPayoutListParams.builder().referenceId(query.requestId())
 						.limit(2).offset(0).build());
 				if (page == null || page.getItems() == null || page.getItems().size() != 1 || page.hasNextPage()) {
+					logFailure("lookup", command, 200, "00");
 					return unknown(null);
 				}
 				var discovered = page.getItems().getFirst();
@@ -108,7 +116,20 @@ class PayosPayoutProvider {
 			if (!present(outerId, 128)) return unknown(query.providerReference());
 			return matched(command, destination, client.payouts().get(outerId), outerId);
 		}
-		catch (Exception exception) { return unknown(outerId); }
+		catch (APIException exception) {
+			logFailure("query", command, exception.getStatusCode().orElse(0), exception.getErrorCode().orElse(""));
+			return unknown(outerId);
+		}
+		catch (Exception exception) {
+			logFailure("query", command, 0, "");
+			return unknown(outerId);
+		}
+	}
+
+	private void logFailure(String operation, PayoutProvider.Command command, int status, String code) {
+		var safeCode = code.isEmpty() ? "UNAVAILABLE" : code.matches("[0-9]{2,3}") ? code : "UNRECOGNIZED";
+		log.warn("PayOS payout unresolved or rejected operation={} payoutId={} attemptId={} httpStatus={} payosCode={}",
+				operation, command.payoutId(), command.attemptId(), status, safeCode);
 	}
 
 	private Destination destination(PayoutProvider.Command command) throws Exception {
