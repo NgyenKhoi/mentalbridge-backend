@@ -66,6 +66,8 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 	@Autowired com.mentalbridge.consultation.appointment.ChatSessionSettlementService chatSettlement;
 	@Autowired VideoCompletionService completionService;
 	@MockitoBean VideoProvider provider;
+	// No background @Scheduled ticks in this context: tests drive schedulers explicitly so races are deterministic.
+	@MockitoBean org.springframework.scheduling.TaskScheduler taskScheduler;
 
 	@AfterEach
 	void resetDemoOptIn() { properties.setDemoImmediateAccessEnabled(false); }
@@ -245,6 +247,134 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 			assertThat(jdbc.sql("select count(*) from appointment_status_history where appointment_id=:id and idempotency_key=:key")
 					.param("id", id).param("key", "video-ended:" + id).query(Long.class).single()).isOne();
 		}
+	}
+
+	@Test
+	void compatibleReplayKeepsOriginalEvidenceAndHeldCreditAndRepeatIsANoOp() throws Exception {
+		var fixture = fixture();
+		setSchedule(fixture.id, Instant.now().minusSeconds(3601));
+		transactions.end(fixture.id);
+		var original = endHistory(fixture.id);
+		var outboxBefore = outboxCount(fixture.id);
+		var ledgerBefore = ledger(fixture);
+		assertThat(original).hasSize(1);
+		jdbc.sql("update appointment set status='CONFIRMED', session_ended_at=null, session_policy_version=null where id=:id").param("id", fixture.id).update();
+
+		transactions.end(fixture.id);
+		var restoredVersion = version(fixture.id);
+		transactions.end(fixture.id);
+
+		assertThat(appointmentStatus(fixture.id)).isEqualTo("SESSION_ENDED");
+		assertThat(jdbc.sql("select session_ended_at = scheduled_end_at and session_policy_version=:policy from appointment where id=:id")
+				.param("id", fixture.id).param("policy", VideoSessionTransactions.POLICY).query(Boolean.class).single()).isTrue();
+		assertThat(endHistory(fixture.id)).isEqualTo(original);
+		assertThat(outboxCount(fixture.id)).isEqualTo(outboxBefore);
+		assertThat(version(fixture.id)).isEqualTo(restoredVersion);
+		assertThat(ledger(fixture)).isEqualTo(ledgerBefore).doesNotContain("CONSUMED", "RELEASED", "FORFEITED");
+		assertThat(credit(fixture)).isEqualTo("HELD");
+		assertThat(jdbc.sql("select completion_fact_id from appointment where id=:id").param("id", fixture.id)
+				.query(UUID.class).optional()).isEmpty();
+		assertThat(jdbc.sql("select count(*) from specialist_earning where appointment_id=:id").param("id", fixture.id)
+				.query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void incompatibleEndHistoryFailsInIsolationWithoutRestoringOrRewritingEvidence() throws Exception {
+		// from_status, to_status, reason: each row differs from compatible evidence in exactly one field.
+		var cases = new String[][] {
+				{ "REQUESTED", "SESSION_ENDED", "SCHEDULED_WINDOW_ENDED" },
+				{ null, "SESSION_ENDED", "SCHEDULED_WINDOW_ENDED" },
+				{ "CONFIRMED", "COMPLETED", "SCHEDULED_WINDOW_ENDED" },
+				{ "CONFIRMED", "SESSION_ENDED", "MANUAL_STATUS_RESET" },
+				{ "CONFIRMED", "SESSION_ENDED", null } };
+		var poisoned = new java.util.ArrayList<Fixture>();
+		for (var row : cases) {
+			var fixture = fixture();
+			insertEndHistory(fixture.id, row[0], row[1], row[2]);
+			poisoned.add(fixture);
+		}
+		var later = fixture();
+		var before = poisoned.stream().map(fixture -> List.of(endHistory(fixture.id), outboxCount(fixture.id), version(fixture.id))).toList();
+		for (var fixture : poisoned) setSchedule(fixture.id, Instant.now().minusSeconds(3601));
+		setSchedule(later.id, Instant.now().minusSeconds(3601));
+
+		for (var fixture : poisoned) {
+			org.assertj.core.api.Assertions.assertThatThrownBy(() -> transactions.end(fixture.id))
+					.isInstanceOf(IllegalStateException.class).hasMessage("Incompatible video end history for appointmentId=" + fixture.id);
+		}
+		sessions.closeDueSessions();
+
+		assertThat(poisoned.stream().map(fixture -> List.of(endHistory(fixture.id), outboxCount(fixture.id), version(fixture.id))).toList())
+				.isEqualTo(before);
+		assertThat(poisoned).allSatisfy(fixture -> {
+			assertThat(appointmentStatus(fixture.id)).isEqualTo("CONFIRMED");
+			assertThat(credit(fixture)).isEqualTo("HELD");
+		});
+		assertThat(appointmentStatus(later.id)).isEqualTo("SESSION_ENDED");
+	}
+
+	@Test
+	void compatibleSpecialistEndHistoryIsAcceptedForReplay() throws Exception {
+		var fixture = fixture();
+		insertEndHistory(fixture.id, "IN_PROGRESS", "SESSION_ENDED", "SPECIALIST_VIDEO_END_CONFIRMED");
+		var original = endHistory(fixture.id);
+		var outboxBefore = outboxCount(fixture.id);
+		setSchedule(fixture.id, Instant.now().minusSeconds(3601));
+		transactions.end(fixture.id);
+		assertThat(appointmentStatus(fixture.id)).isEqualTo("SESSION_ENDED");
+		assertThat(endHistory(fixture.id)).isEqualTo(original);
+		assertThat(outboxCount(fixture.id)).isEqualTo(outboxBefore);
+		assertThat(credit(fixture)).isEqualTo("HELD");
+	}
+
+	@Test
+	void concurrentEndCallersCommitOneTransitionForFreshAndReopenedSessions() throws Exception {
+		var fresh = fixture();
+		var reopened = fixture();
+		setSchedule(reopened.id, Instant.now().minusSeconds(3601));
+		transactions.end(reopened.id);
+		var reopenedOutbox = outboxCount(reopened.id);
+		var reopenedVersion = version(reopened.id);
+		var freshVersion = version(fresh.id);
+		var freshOutbox = outboxCount(fresh.id);
+		jdbc.sql("update appointment set status='CONFIRMED', session_ended_at=null, session_policy_version=null where id=:id").param("id", reopened.id).update();
+		setSchedule(fresh.id, Instant.now().minusSeconds(3601));
+		var start = new java.util.concurrent.CountDownLatch(1);
+		try (var executor = java.util.concurrent.Executors.newFixedThreadPool(4)) {
+			var calls = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+			for (var id : List.of(fresh.id, fresh.id, reopened.id, reopened.id)) {
+				calls.add(executor.submit(() -> { start.await(); transactions.end(id); return null; }));
+			}
+			start.countDown();
+			for (var call : calls) call.get(15, java.util.concurrent.TimeUnit.SECONDS);
+		}
+		for (var fixture : List.of(fresh, reopened)) {
+			assertThat(appointmentStatus(fixture.id)).isEqualTo("SESSION_ENDED");
+			assertThat(endHistory(fixture.id)).hasSize(1);
+			assertThat(credit(fixture)).isEqualTo("HELD");
+			assertThat(ledger(fixture)).containsExactlyInAnyOrder("PROVISIONED", "HELD");
+		}
+		assertThat(version(fresh.id)).isEqualTo(freshVersion + 1);
+		assertThat(outboxCount(fresh.id)).isEqualTo(freshOutbox + 1);
+		assertThat(version(reopened.id)).isEqualTo(reopenedVersion + 1);
+		assertThat(outboxCount(reopened.id)).isEqualTo(reopenedOutbox);
+	}
+
+	@Test
+	void notDueAndUnconfirmedVideoAppointmentsAreNotEndedByTheTimer() throws Exception {
+		var notDue = fixture();
+		var requested = fixture(Instant.now().plusSeconds(86400), false, false);
+		var requestedVersion = version(requested.id);
+		var notDueVersion = version(notDue.id);
+		transactions.end(notDue.id);
+		setSchedule(requested.id, Instant.now().minusSeconds(3601));
+		transactions.end(requested.id);
+		assertThat(appointmentStatus(notDue.id)).isEqualTo("CONFIRMED");
+		assertThat(version(notDue.id)).isEqualTo(notDueVersion);
+		assertThat(endHistory(notDue.id)).isEmpty();
+		assertThat(appointmentStatus(requested.id)).isEqualTo("REQUESTED");
+		assertThat(version(requested.id)).isEqualTo(requestedVersion);
+		assertThat(endHistory(requested.id)).isEmpty();
 	}
 
 	@Test
@@ -640,6 +770,38 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 
 	String credit(Fixture fixture) {
 		return jdbc.sql("select state from service_credit where id=:id").param("id", fixture.credit).query(String.class).single();
+	}
+
+	String appointmentStatus(UUID id) {
+		return jdbc.sql("select status from appointment where id=:id").param("id", id).query(String.class).single();
+	}
+
+	long version(UUID id) {
+		return jdbc.sql("select version from appointment where id=:id").param("id", id).query(Long.class).single();
+	}
+
+	long outboxCount(UUID id) {
+		return jdbc.sql("select count(*) from appointment_outbox_event where appointment_id=:id").param("id", id).query(Long.class).single();
+	}
+
+	List<java.util.Map<String, Object>> endHistory(UUID id) {
+		return jdbc.sql("""
+				select id, from_status, to_status, changed_by, reason, changed_at from appointment_status_history
+				where appointment_id=:id and idempotency_key=:key
+				""").param("id", id).param("key", "video-ended:" + id).query().listOfRows();
+	}
+
+	void insertEndHistory(UUID id, String from, String to, String reason) {
+		jdbc.sql("""
+				insert into appointment_status_history(id,appointment_id,from_status,to_status,changed_by,reason,idempotency_key,changed_at)
+				values(:id,:appointment,:from,:to,null,:reason,:key,now())
+				""").param("id", UUID.randomUUID()).param("appointment", id).param("from", from).param("to", to)
+				.param("reason", reason).param("key", "video-ended:" + id).update();
+	}
+
+	List<String> ledger(Fixture fixture) {
+		return jdbc.sql("select event_type from service_credit_ledger where credit_id=:id order by occurred_at, event_type")
+				.param("id", fixture.credit).query(String.class).list();
 	}
 
 	long rooms(UUID id) {
