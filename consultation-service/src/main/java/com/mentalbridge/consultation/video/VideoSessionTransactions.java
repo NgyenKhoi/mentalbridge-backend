@@ -3,6 +3,7 @@ package com.mentalbridge.consultation.video;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import jakarta.persistence.EntityManager;
@@ -17,6 +18,8 @@ import com.mentalbridge.consultation.shared.ApiException;
 class VideoSessionTransactions {
 
 	static final String POLICY = "livekit-video-completion-v1";
+	private static final List<String> ACTIVE = List.of("CONFIRMED", "IN_PROGRESS");
+	private static final List<String> END_REASONS = List.of("SCHEDULED_WINDOW_ENDED", "SPECIALIST_VIDEO_END_CONFIRMED");
 	final VideoAppointmentRepository appointments;
 	final VideoRoomRepository rooms;
 	final EntityManager entities;
@@ -103,16 +106,21 @@ class VideoSessionTransactions {
 
 	void end(VideoAppointment appointment, UUID actor, String reason, Instant actualEnd) {
 		if ("SESSION_ENDED".equals(appointment.status)) return;
+		var key = "video-ended:" + appointment.id;
+		var prior = entities.createQuery("""
+				select h from VideoStatusHistory h where h.appointmentId = :id and h.key = :key
+				""", VideoStatusHistory.class).setParameter("id", appointment.id).setParameter("key", key)
+				.getResultStream().findFirst().orElse(null);
+		if (prior != null && !(ACTIVE.contains(Objects.toString(prior.fromStatus, ""))
+				&& "SESSION_ENDED".equals(prior.toStatus) && END_REASONS.contains(Objects.toString(prior.reason, "")))) {
+			throw new IllegalStateException("Incompatible video end history for appointmentId=" + appointment.id);
+		}
 		var from = appointment.status;
 		appointment.status = "SESSION_ENDED";
 		appointment.policy = POLICY;
 		appointment.endedAt = actualEnd;
 		appointment.updatedAt = clock.instant();
-		var key = "video-ended:" + appointment.id;
-		if (entities.createQuery("""
-				select count(h) from VideoStatusHistory h
-				where h.appointmentId = :id and h.key = :key and h.toStatus = 'SESSION_ENDED'
-				""", Long.class).setParameter("id", appointment.id).setParameter("key", key).getSingleResult() > 0) {
+		if (prior != null) {
 			entities.flush();
 			return;
 		}

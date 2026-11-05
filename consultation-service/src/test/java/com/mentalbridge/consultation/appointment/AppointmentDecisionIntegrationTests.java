@@ -43,6 +43,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	@Autowired ObjectMapper json;
 	@Autowired AppointmentDecisionService decisions;
 	@Autowired ChatSessionSettlementService settlements;
+	@Autowired AppointmentExpiryScheduler expiryScheduler;
 	@Autowired DataSource dataSource;
 
 	@Test
@@ -632,6 +633,47 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("EXPIRED");
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 		assertThat(decisionHistoryCount(fixture.appointmentId())).isOne();
+	}
+
+	@Test
+	void inconsistentCreditExpiryRollsBackEveryArtifactWhileLaterValidRequestsExpire() throws Exception {
+		var ownerMismatch = requestedAppointment();
+		var notHeld = requestedAppointment();
+		var wrongHold = requestedAppointment();
+		var valid = requestedAppointment();
+		jdbc.sql("update service_credit_period set account_id=:other where id=(select period_id from service_credit where id=:credit)")
+				.param("other", UUID.randomUUID()).param("credit", ownerMismatch.creditId()).update();
+		jdbc.sql("update service_credit set state='CONSUMED' where id=:credit").param("credit", notHeld.creditId()).update();
+		jdbc.sql("update service_credit set appointment_id=:other where id=:credit")
+				.param("other", UUID.randomUUID()).param("credit", wrongHold.creditId()).update();
+		var anomalies = List.of(ownerMismatch, notHeld, wrongHold);
+		var before = anomalies.stream().map(this::expiryArtifacts).toList();
+		anomalies.forEach(fixture -> makeDue(fixture.appointmentId()));
+		makeDue(valid.appointmentId());
+		try {
+			expiryScheduler.expireDueRequests();
+
+			assertThat(anomalies.stream().map(this::expiryArtifacts).toList()).isEqualTo(before);
+			assertThat(anomalies).allSatisfy(fixture -> assertThat(appointmentStatus(fixture.appointmentId())).isEqualTo("REQUESTED"));
+			assertThat(appointmentStatus(valid.appointmentId())).isEqualTo("EXPIRED");
+			assertThat(creditState(valid.creditId())).isEqualTo("AVAILABLE");
+			assertThat(releaseCount(valid.appointmentId())).isOne();
+		}
+		finally {
+			// Keep the deliberately inconsistent fixtures out of later expiry ticks in this shared context.
+			anomalies.forEach(fixture -> jdbc.sql("update appointment set decision_deadline_at=now()+interval '1 day' where id=:id")
+					.param("id", fixture.appointmentId()).update());
+		}
+	}
+
+	private String expiryArtifacts(Fixture fixture) {
+		return jdbc.sql("""
+				select concat_ws('|', a.status, a.version, c.state, c.appointment_id,
+				 (select count(*) from appointment_status_history h where h.appointment_id=a.id),
+				 (select count(*) from service_credit_ledger l where l.credit_id=c.id),
+				 (select count(*) from appointment_outbox_event o where o.appointment_id=a.id))
+				from appointment a join service_credit c on c.id=a.service_credit_id where a.id=:id
+				""").param("id", fixture.appointmentId()).query(String.class).single();
 	}
 
 	private List<AppointmentResponse> concurrentDecisions(Fixture fixture, boolean accept, String idempotencyKey)
