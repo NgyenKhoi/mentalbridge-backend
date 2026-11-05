@@ -11,7 +11,9 @@ to restore its ended status, policy and end timestamp without another history ro
 or outbox event (2026-11-03 demo ruling). Any other prior row fails that item in
 isolation and leaves it unchanged. History remains immutable and timer end never
 completes the appointment, consumes/releases its HELD credit or creates an
-earning. Invalid-credit REQUESTED expiry remains fail-closed. The read-only
+earning. Invalid-credit REQUESTED expiry remains fail-closed; each expiry tick
+pages through all due requests by id in 100-row batches, so failing rows cannot
+starve valid ones. The read-only
 operator audit queries and the separately authorized repair rule are in
 [MB-795 traceability](../docs/requirements-traceability/stories/mb-795.md).
 No migration is required.

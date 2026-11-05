@@ -1,5 +1,7 @@
 package com.mentalbridge.consultation.appointment;
 
+import java.util.UUID;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,13 +20,17 @@ public class AppointmentExpiryScheduler {
 
 	@Scheduled(fixedDelayString = "${mentalbridge.consultation.appointments.expiry-interval:PT1M}")
 	public void expireDueRequests() {
-		for (var appointmentId : decisions.dueRequestIds()) {
-			try {
-				decisions.expire(appointmentId);
+		var after = new UUID(0, 0);
+		for (var page = decisions.dueRequestIds(after); !page.isEmpty(); page = decisions.dueRequestIds(after)) {
+			for (var appointmentId : page) {
+				try {
+					decisions.expire(appointmentId);
+				}
+				catch (RuntimeException exception) {
+					LOGGER.error("Appointment request expiry failed for appointmentId={}", appointmentId, exception);
+				}
 			}
-			catch (RuntimeException exception) {
-				LOGGER.error("Appointment request expiry failed for appointmentId={}", appointmentId, exception);
-			}
+			after = page.getLast();
 		}
 	}
 }

@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.consultation.ConsultationTestProperties;
+import com.mentalbridge.consultation.OperatorAuditQueries;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
 
 @Import(TestcontainersConfiguration.class)
@@ -246,7 +247,8 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		var fixture = requestedAppointment();
 		makeDue(fixture.appointmentId());
 
-		assertThat(decisions.dueRequestIds()).contains(fixture.appointmentId());
+		assertThat(decisions.dueRequestIds(new UUID(0, 0))).contains(fixture.appointmentId());
+		assertThat(decisions.dueRequestIds(fixture.appointmentId())).doesNotContain(fixture.appointmentId());
 		assertThat(decisions.expire(fixture.appointmentId())).isTrue();
 		assertThat(decisions.expire(fixture.appointmentId())).isFalse();
 		mvc.perform(get("/api/v1/appointments").with(user(fixture.userId())))
@@ -658,6 +660,12 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 			assertThat(appointmentStatus(valid.appointmentId())).isEqualTo("EXPIRED");
 			assertThat(creditState(valid.creditId())).isEqualTo("AVAILABLE");
 			assertThat(releaseCount(valid.appointmentId())).isOne();
+			assertThat(jdbc.sql(OperatorAuditQueries.mb795().get(0))
+					.query((rs, row) -> rs.getObject("id", UUID.class) + ":" + rs.getString("anomaly")).list())
+					.contains(ownerMismatch.appointmentId() + ":PERIOD_ACCOUNT_MISMATCH",
+							notHeld.appointmentId() + ":CREDIT_NOT_HELD",
+							wrongHold.appointmentId() + ":CREDIT_HELD_FOR_OTHER_APPOINTMENT")
+					.noneMatch(row -> row.startsWith(valid.appointmentId().toString()));
 		}
 		finally {
 			// Keep the deliberately inconsistent fixtures out of later expiry ticks in this shared context.
