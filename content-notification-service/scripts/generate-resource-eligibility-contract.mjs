@@ -120,6 +120,19 @@ export interface ResourceEligibilityBatchResponse {
   readonly resolvedAt: string;
   readonly results: readonly ResourceEligibilityResult[];
 }
+
+export interface ResourceCurrentVersionBatchRequest {
+  readonly resourceIds: readonly string[];
+}
+
+export interface ResourceCurrentVersion {
+  readonly resourceId: string;
+  readonly contentVersion: string | null;
+}
+
+export interface ResourceCurrentVersionBatchResponse {
+  readonly results: readonly ResourceCurrentVersion[];
+}
 `,
   { parser: 'typescript', singleQuote: true, trailingComma: 'all', printWidth: 100, semi: true },
 );
@@ -129,6 +142,7 @@ const java = `package com.mentalbridge.care.resourceeligibility.generated;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public final class ResourceEligibilityContract {
 
@@ -182,6 +196,20 @@ public final class ResourceEligibilityContract {
 \t\t\tString policyVersion,
 \t\t\tString resolvedAt,
 \t\t\tList<ResourceEligibilityResult> results) {
+\t}
+
+\t@JsonIgnoreProperties(ignoreUnknown = true)
+\tpublic record ResourceCurrentVersionBatchRequest(List<String> resourceIds) {
+\t}
+
+\t@JsonIgnoreProperties(ignoreUnknown = true)
+\tpublic record ResourceCurrentVersion(
+\t\t\t@JsonProperty(required = true) String resourceId,
+\t\t\t@JsonProperty(required = true) Object contentVersion) {
+\t}
+
+\t@JsonIgnoreProperties(ignoreUnknown = true)
+\tpublic record ResourceCurrentVersionBatchResponse(List<ResourceCurrentVersion> results) {
 \t}
 }
 `;

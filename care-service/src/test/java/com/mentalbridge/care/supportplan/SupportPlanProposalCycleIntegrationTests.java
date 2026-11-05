@@ -93,6 +93,9 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 					ResourceCategory.ARTICLE, "Reviewed resource", "Reviewed resource summary", null)).toList();
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", now.toString(), values);
 		}).when(eligibility).resolve(any(), anyString(), any());
+		org.mockito.Mockito.doAnswer(call -> { return call.<java.util.List<String>>getArgument(0).stream()
+				.collect(java.util.stream.Collectors.toMap(id -> id, id -> id.endsWith("0201") ? "0" : "0")); })
+				.when(eligibility).currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any());
 	}
 
 	@Test

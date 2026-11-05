@@ -96,7 +96,10 @@ class SupportPlanSystemCopyTests {
 		when(personalizations.currentSnapshot(userId)).thenReturn(Optional.empty());
 		when(entitlements.current(userId, "bearer", correlationId)).thenReturn(entitlement);
 		when(evaluations.getCurrentCompatible(userId, evaluationId)).thenReturn(evaluation);
-		when(policy.request(evaluation, null)).thenReturn(request);
+		var template = new SupportPlanPolicy.Template(List.of(), List.of());
+		when(policy.template(evaluation, null)).thenReturn(template);
+		when(eligibility.currentVersions(List.of(), "bearer", correlationId)).thenReturn(java.util.Map.of());
+		when(policy.request(template, java.util.Map.of())).thenReturn(request);
 		when(eligibility.resolve(batch, "bearer", correlationId)).thenReturn(resolved);
 		when(policy.compose(request, resolved, null)).thenReturn(proposal);
 		when(writer.persist(eq(userId), eq("copy-request"), anyString(), eq(evaluation), eq(entitlement),

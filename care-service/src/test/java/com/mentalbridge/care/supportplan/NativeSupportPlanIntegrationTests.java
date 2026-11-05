@@ -786,6 +786,9 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 					outcome == ResourceEligibilityOutcome.ELIGIBLE ? "Reviewed resource summary" : null, null)).toList();
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", Instant.now().toString(), results);
 		}).when(eligibility).resolve(any(), anyString(), any());
+		org.mockito.Mockito.doAnswer(call -> { assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse(); return call.<java.util.List<String>>getArgument(0).stream()
+				.collect(java.util.stream.Collectors.toMap(id -> id, id -> id.endsWith("0201") ? "1" : "0")); })
+				.when(eligibility).currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any());
 	}
 	private UUID evaluation(UUID user, boolean professional) throws Exception {
 		UUID phq = assessment(user, "10000000-0000-0000-0000-000000000004", false, professional);

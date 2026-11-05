@@ -6,26 +6,35 @@ import java.net.SocketTimeoutException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import com.mentalbridge.care.configuration.ResourceEligibilityClientProperties;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.EligibilityRole;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.RequiredEligibilityRole;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCurrentVersion;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCurrentVersionBatchRequest;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCurrentVersionBatchResponse;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchResponse;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityOutcome;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityQuery;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityReasonCode;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityResult;
+import com.mentalbridge.care.shared.ApiException;
 
 import feign.FeignException;
 import feign.RetryableException;
@@ -40,6 +49,7 @@ public class ResourceEligibilityClient {
 
 	private static final String POLICY_VERSION = "content-eligibility-v1";
 	private static final Logger LOGGER = LoggerFactory.getLogger(ResourceEligibilityClient.class);
+	private static final Pattern CONTENT_VERSION = Pattern.compile("0|[1-9][0-9]{0,18}");
 
 	private final ContentResourceEligibilityHttpClient httpClient;
 	private final Clock clock;
@@ -69,8 +79,33 @@ public class ResourceEligibilityClient {
 				.build());
 	}
 
+	public Map<String, String> currentVersions(List<String> resourceIds, String bearerToken, UUID correlationId) {
+		if (resourceIds == null || resourceIds.isEmpty() || resourceIds.size() > 50
+				|| new HashSet<>(resourceIds).size() != resourceIds.size() || bearerToken == null
+				|| bearerToken.isBlank() || correlationId == null) {
+			throw new IllegalArgumentException("A bounded unique resource batch and request context are required");
+		}
+		var request = new ResourceCurrentVersionBatchRequest(List.copyOf(resourceIds));
+		Supplier<Map<String, String>> remote = CircuitBreaker.decorateSupplier(circuitBreaker,
+				() -> validateVersions(request.resourceIds(),
+						httpClient.currentVersions("Bearer " + bearerToken, correlationId.toString(), request)));
+		try {
+			return Retry.decorateSupplier(retry, remote).get();
+		}
+		catch (RuntimeException exception) {
+			LOGGER.warn("content_resource_current_versions_failed correlationId={} category={} httpStatus={}",
+					correlationId, failureCategory(exception), httpStatus(exception));
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "RESOURCE_ELIGIBILITY_UNAVAILABLE",
+					"Current resource versions could not be verified");
+		}
+	}
+
 	public ResourceEligibilityBatchResponse resolve(ResourceEligibilityBatchRequest request, String bearerToken,
 			UUID correlationId) {
+		if (request != null && request.requests() != null && request.requests().isEmpty()) {
+			return new ResourceEligibilityBatchResponse(POLICY_VERSION,
+					OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).toString(), List.of());
+		}
 		validateRequest(request, bearerToken, correlationId);
 		Supplier<ResourceEligibilityBatchResponse> remote = CircuitBreaker.decorateSupplier(circuitBreaker,
 				() -> validateResponse(request,
@@ -119,6 +154,35 @@ public class ResourceEligibilityClient {
 			validateDecision(expected, actual);
 		}
 		return response;
+	}
+
+	private Map<String, String> validateVersions(List<String> resourceIds,
+			ResourceCurrentVersionBatchResponse response) {
+		if (response == null || response.results() == null || response.results().size() != resourceIds.size()) {
+			throw new MalformedEligibilityResponseException();
+		}
+		Map<String, String> versions = new LinkedHashMap<>();
+		for (int index = 0; index < resourceIds.size(); index++) {
+			ResourceCurrentVersion actual = response.results().get(index);
+			Object version = actual == null ? null : actual.contentVersion();
+			if (actual == null || !resourceIds.get(index).equals(actual.resourceId())
+					|| (version != null && !(version instanceof String text && validVersion(text)))) {
+				throw new MalformedEligibilityResponseException();
+			}
+			versions.put(actual.resourceId(), (String) version);
+		}
+		return Collections.unmodifiableMap(versions);
+	}
+
+	private static boolean validVersion(String value) {
+		if (!CONTENT_VERSION.matcher(value).matches()) return false;
+		try {
+			Long.parseLong(value);
+			return true;
+		}
+		catch (NumberFormatException exception) {
+			return false;
+		}
 	}
 
 	private void validateDecision(ResourceEligibilityQuery expected, ResourceEligibilityResult result) {

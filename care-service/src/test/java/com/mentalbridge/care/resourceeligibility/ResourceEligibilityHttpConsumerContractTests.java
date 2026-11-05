@@ -1,6 +1,7 @@
 package com.mentalbridge.care.resourceeligibility;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -35,6 +36,7 @@ import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityCo
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningInstrument;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningLevel;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.SupportTier;
+import com.mentalbridge.care.shared.ApiException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -74,6 +76,7 @@ class ResourceEligibilityHttpConsumerContractTests {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		stub = new ContractStub();
 		server.createContext("/internal/v1/resource-eligibility:resolve", stub::handle);
+		server.createContext("/internal/v1/resources/current-versions:resolve", stub::handle);
 		server.start();
 	}
 
@@ -182,6 +185,58 @@ class ResourceEligibilityHttpConsumerContractTests {
 			assertThat(response.results().getFirst().outcome()).isEqualTo(ResourceEligibilityOutcome.UNAVAILABLE);
 		}
 		assertThat(stub.attempts()).isEqualTo(6);
+	}
+
+	@Test
+	void sendsCurrentVersionDiscoveryThroughFeignAndDecodesTheProviderContract() throws Exception {
+		assertThat(providerContract.getPaths().get("/internal/v1/resources/current-versions:resolve").getPost()
+				.getResponses()).containsKeys("200", "400", "401", "403", "422", "503");
+		stub.enqueueRaw(200, """
+				{"providerExtension":true,"results":[
+				  {"resourceId":"20000000-0000-4000-8000-000000000001","contentVersion":"1","futureField":1},
+				  {"resourceId":"20000000-0000-4000-8000-000000000002","contentVersion":null}]}
+				""", Duration.ZERO);
+		var client = client(baseUrl(), properties(1, Duration.ofMillis(50), Duration.ofSeconds(1)));
+
+		var versions = client.currentVersions(List.of("20000000-0000-4000-8000-000000000001",
+				"20000000-0000-4000-8000-000000000002"), "user-jwt", CORRELATION_ID);
+
+		assertThat(versions).containsEntry("20000000-0000-4000-8000-000000000001", "1")
+				.containsEntry("20000000-0000-4000-8000-000000000002", null).hasSize(2);
+		assertThat(stub.authorization()).isEqualTo("Bearer user-jwt");
+		assertThat(stub.correlationId()).isEqualTo(CORRELATION_ID.toString());
+		JsonNode requestBody = MAPPER.readTree(stub.requestBody());
+		assertRequired(requestBody, "ResourceCurrentVersionBatchRequest");
+		assertThat(requestBody.size()).isEqualTo(1);
+		assertThat(providerContract.getComponents().getSchemas().get("ResourceCurrentVersion").getRequired())
+				.containsExactlyInAnyOrder("resourceId", "contentVersion");
+	}
+
+	@Test
+	void retriesCurrentVersionOutageButFailsClosedOnRejectionOrMalformedPayload() {
+		stub.enqueueRaw(503, problem(503), Duration.ZERO);
+		stub.enqueueRaw(200, "{\"results\":[{\"resourceId\":\"20000000-0000-4000-8000-000000000001\",\"contentVersion\":\"0\"}]}",
+				Duration.ZERO);
+		var retrying = client(baseUrl(), properties(2, Duration.ofMillis(10), Duration.ofSeconds(1)));
+		assertThat(retrying.currentVersions(List.of("20000000-0000-4000-8000-000000000001"), "user-jwt",
+				CORRELATION_ID)).containsEntry("20000000-0000-4000-8000-000000000001", "0");
+		assertThat(stub.attempts()).isEqualTo(2);
+
+		for (var response : List.of(new StubResponse(401, problem(401), Duration.ZERO),
+				new StubResponse(200, "not-json", Duration.ZERO),
+				new StubResponse(200, "{\"results\":[{\"resourceId\":\"20000000-0000-4000-8000-000000000001\"}]}",
+						Duration.ZERO),
+				new StubResponse(200,
+						"{\"results\":[{\"resourceId\":\"20000000-0000-4000-8000-000000000001\",\"contentVersion\":1}]}",
+						Duration.ZERO),
+				new StubResponse(200, "{\"results\":[]}", Duration.ZERO))) {
+			stub.enqueueRaw(response.status(), response.body(), response.delay());
+			var client = client(baseUrl(), properties(2, Duration.ofMillis(10), Duration.ofSeconds(1)));
+			assertThatThrownBy(() -> client.currentVersions(List.of("20000000-0000-4000-8000-000000000001"),
+					"user-jwt", CORRELATION_ID)).isInstanceOfSatisfying(ApiException.class,
+							exception -> assertThat(exception.code()).isEqualTo("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+		}
+		assertThat(stub.attempts()).isEqualTo(7);
 	}
 
 	private ResourceEligibilityClient client(String baseUrl, ResourceEligibilityClientProperties properties) {

@@ -23,6 +23,8 @@ import { Roles } from '../auth/roles.decorator.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import type {
   PublishResourceEligibilityRequest,
+  ResourceCurrentVersionBatchRequest,
+  ResourceCurrentVersionBatchResponse,
   ResourceEligibilityBatchRequest,
   ResourceEligibilityBatchResponse,
   ResourceEligibilityPublication,
@@ -30,6 +32,7 @@ import type {
 } from '../generated/resource-eligibility.contract.js';
 import {
   PublishResourceEligibilitySchema,
+  ResourceCurrentVersionBatchSchema,
   ResourceEligibilityBatchSchema,
   WithdrawResourceEligibilitySchema,
 } from './resource-eligibility.dto.js';
@@ -104,6 +107,18 @@ export class ResourceEligibilityController {
       body,
     );
     return this.service.resolve(request);
+  }
+
+  @Post('internal/v1/resources/current-versions:resolve')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('USER')
+  @HttpCode(HttpStatus.OK)
+  async currentVersions(@Body() body: unknown): Promise<ResourceCurrentVersionBatchResponse> {
+    const request = parseBody<ResourceCurrentVersionBatchRequest>(
+      ResourceCurrentVersionBatchSchema,
+      body,
+    );
+    return this.service.currentVersions(request);
   }
 }
 

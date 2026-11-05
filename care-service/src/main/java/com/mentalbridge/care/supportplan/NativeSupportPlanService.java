@@ -78,8 +78,11 @@ public class NativeSupportPlanService {
 		var evaluation = evaluations.getCurrentCompatible(userId, evaluationId);
 		episodes.requiredEvaluationContext(userId, evaluationId);
 		requireSafeProposal(evaluation);
-		var request = policy.request(evaluation, personalization);
-		var proposal = policy.compose(request, eligibility.resolve(request.batch(), bearer, correlationId), personalization);
+		var template = policy.template(evaluation, personalization);
+		var request = policy.request(template,
+				eligibility.currentVersions(template.resourceIds(), bearer, correlationId));
+		var proposal = policy.composeNative(request, eligibility.resolve(request.batch(), bearer, correlationId),
+				personalization);
 		UUID id = writer.propose(userId, key, hash, evaluation, entitlement, proposal, personalization,
 				"STANDARD_SAFETY_REMINDER",
 				"Nếu bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực bạn đã chọn.",
@@ -112,7 +115,7 @@ public class NativeSupportPlanService {
 		var request = policy.revalidationRequest(evaluation, selections);
 		if (!proposal.families().stream().map(family -> family.family() + ":" + family.targetDomain()).sorted().toList()
 				.equals(request.families().stream().map(family -> family.family() + ":" + family.targetDomain()).sorted().toList())
-				|| proposal.slots().isEmpty() || proposal.slots().size() > 5
+				|| proposal.slots().size() > 5
 				|| selections.stream().map(SelectedResource::slotId).distinct().count() != selections.size()
 				|| selections.stream().map(selection -> selection.resourceId() + ":" + selection.contentVersion()).distinct().count() != selections.size()
 				|| request.slots().stream().filter(slot -> "CORE".equals(slot.kind())).anyMatch(slot ->

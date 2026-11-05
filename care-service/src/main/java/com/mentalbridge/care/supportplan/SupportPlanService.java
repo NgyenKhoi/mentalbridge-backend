@@ -86,7 +86,9 @@ public class SupportPlanService {
 		CurrentEntitlementResponse entitlement = paidEntitlement(userId, bearerToken, correlationId);
 		var evaluation = evaluations.getCurrentCompatible(userId, command.sourceSupportEvaluationId());
 		screeningEpisodes.requiredEvaluationContext(userId, command.sourceSupportEvaluationId());
-		var proposalRequest = policy.request(evaluation, personalization);
+		var template = policy.template(evaluation, personalization);
+		var proposalRequest = policy.request(template,
+				eligibility.currentVersions(template.resourceIds(), bearerToken, correlationId));
 		var resolved = eligibility.resolve(proposalRequest.batch(), bearerToken, correlationId);
 		var proposal = policy.compose(proposalRequest, resolved, personalization);
 		boolean safetyPositive = evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
@@ -208,7 +210,7 @@ public class SupportPlanService {
 		}
 		var entitlement = paidEntitlement(userId, bearerToken, correlationId);
 		var evaluation = evaluations.getCurrentCompatible(userId, current.plan().supportEvaluationId());
-		var template = policy.request(evaluation);
+		var template = policy.template(evaluation);
 		assertTemplateCompatibility(current, template.families(), template.slots());
 		var proposedKey = resourceId + ":" + resourceVersion;
 		if (current.slots().stream().map(value -> value.slot().selectedResource())

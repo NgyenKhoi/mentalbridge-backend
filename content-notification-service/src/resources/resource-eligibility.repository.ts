@@ -6,6 +6,7 @@ import type { DatabaseClient, DatabaseService } from '../database/database.servi
 import type {
   EligibilityDeclaration,
   PublishResourceEligibilityRequest,
+  ResourceCurrentVersionBatchResponse,
   ResourceEligibilityBatchResponse,
   ResourceEligibilityPublication,
   ResourceEligibilityQuery,
@@ -312,6 +313,27 @@ export class ResourceEligibilityRepository {
       policyVersion: 'content-eligibility-v1',
       resolvedAt,
       results: result.rows.map(resolveRow),
+    };
+  }
+
+  async currentVersions(
+    resourceIds: readonly string[],
+  ): Promise<ResourceCurrentVersionBatchResponse> {
+    const result = await this.db.query<{ readonly content_version: string | null }>(
+      `SELECT r.version::text AS content_version
+       FROM unnest($1::uuid[]) WITH ORDINALITY AS q(resource_id, ordinal)
+       LEFT JOIN resource r ON r.id = q.resource_id
+       ORDER BY q.ordinal`,
+      [resourceIds],
+    );
+    if (result.rows.length !== resourceIds.length) {
+      throw new Error('Current version lookup returned an unexpected row count');
+    }
+    return {
+      results: resourceIds.map((resourceId, index) => ({
+        resourceId,
+        contentVersion: result.rows[index].content_version,
+      })),
     };
   }
 
