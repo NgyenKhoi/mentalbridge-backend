@@ -46,7 +46,7 @@ public class VideoSessionService {
 				transactions.end(id);
 			}
 			catch (RuntimeException exception) {
-				LOGGER.error("Video session end failed for appointmentId={}", id, exception);
+				LOGGER.error("Video session end failed for appointmentId={} error={}", id, error(exception));
 			}
 		}
 		for (var id : transactions.dueCloseIds()) {
@@ -54,9 +54,13 @@ public class VideoSessionService {
 				close(id);
 			}
 			catch (RuntimeException exception) {
-				LOGGER.error("Video room close failed for appointmentId={}", id, exception);
+				LOGGER.error("Video room close failed for appointmentId={} error={}", id, error(exception));
 			}
 		}
+	}
+
+	private static String error(RuntimeException exception) {
+		return exception instanceof ApiException api ? api.code() : exception.getClass().getSimpleName();
 	}
 
 	public void close(UUID id) {
