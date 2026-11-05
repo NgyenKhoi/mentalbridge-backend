@@ -311,6 +311,9 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 			assertThat(credit(fixture)).isEqualTo("HELD");
 		});
 		assertThat(appointmentStatus(later.id)).isEqualTo("SESSION_ENDED");
+		assertThat(jdbc.sql(com.mentalbridge.consultation.OperatorAuditQueries.mb795().get(1))
+				.query((rs, row) -> rs.getObject("id", UUID.class)).list())
+				.containsAll(poisoned.stream().map(fixture -> fixture.id).toList()).doesNotContain(later.id);
 	}
 
 	@Test
