@@ -13,6 +13,8 @@ import {
 } from '../application.tokens.js';
 import type {
   PublishResourceEligibilityRequest,
+  ResourceCurrentVersionBatchRequest,
+  ResourceCurrentVersionBatchResponse,
   ResourceEligibilityBatchRequest,
   ResourceEligibilityBatchResponse,
   ResourceEligibilityPublication,
@@ -86,6 +88,21 @@ export class ResourceEligibilityService {
     } catch (error) {
       this.logger.warn({
         event: 'resource_eligibility_resolution_unavailable',
+        code: databaseErrorCode(error),
+      });
+      throw this.unavailable();
+    }
+  }
+
+  async currentVersions(
+    request: ResourceCurrentVersionBatchRequest,
+  ): Promise<ResourceCurrentVersionBatchResponse> {
+    if (this.outageState.enabled) throw this.unavailable();
+    try {
+      return await this.repository.currentVersions(request.resourceIds);
+    } catch (error) {
+      this.logger.warn({
+        event: 'resource_current_version_resolution_unavailable',
         code: databaseErrorCode(error),
       });
       throw this.unavailable();

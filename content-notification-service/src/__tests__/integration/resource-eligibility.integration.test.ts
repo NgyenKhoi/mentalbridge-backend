@@ -283,6 +283,57 @@ describe('ResourceEligibilityRepository integration', () => {
     ]);
   });
 
+  it('discovers current versions as metadata while the exact check stays authoritative', async () => {
+    const edited = '10000000-0000-4000-8000-000000000021';
+    const archived = '10000000-0000-4000-8000-000000000022';
+    const missing = '10000000-0000-4000-8000-000000000099';
+    await migrationPool.query(
+      `INSERT INTO resource
+        (id, category, locale, title, summary, content_body, status, reviewed_by, reviewed_at,
+         effective_at, expires_at, version)
+       VALUES
+         ($1, 'BREATHING', 'vi-VN', 'Edited breathing', 'Reviewed fixture', 'Body',
+          'PUBLISHED', $3, now(), '2026-01-01T00:00:00Z', NULL, 0),
+         ($2, 'BREATHING', 'vi-VN', 'Archived breathing', 'Reviewed fixture', 'Body',
+          'ARCHIVED', $3, now(), '2026-01-01T00:00:00Z', NULL, 5)`,
+      [edited, archived, ADMIN],
+    );
+    await repository.publish(edited, '0', publicationRequest(), 'publish-edited-v0', context());
+
+    const discovered = await repository.currentVersions([
+      missing,
+      DRAFT_RESOURCE,
+      edited,
+      archived,
+    ]);
+    expect(discovered.results).toEqual([
+      { resourceId: missing, contentVersion: null },
+      { resourceId: DRAFT_RESOURCE, contentVersion: '3' },
+      { resourceId: edited, contentVersion: '0' },
+      { resourceId: archived, contentVersion: '5' },
+    ]);
+
+    // A content edit between discovery and the exact check must surface as STALE, never as success.
+    await migrationPool.query('UPDATE resource SET version = version + 1 WHERE id = $1', [edited]);
+    const exact = await repository.resolve([
+      query('20000000-0000-4000-8000-000000000021', edited, '0', 'PRIMARY_OR_ADJUNCT'),
+    ]);
+    expect(exact.results[0]).toMatchObject({
+      outcome: 'STALE',
+      reasonCode: 'CONTENT_VERSION_STALE',
+    });
+
+    const rediscovered = await repository.currentVersions([edited]);
+    expect(rediscovered.results).toEqual([{ resourceId: edited, contentVersion: '1' }]);
+    const unpublished = await repository.resolve([
+      query('20000000-0000-4000-8000-000000000022', edited, '1', 'PRIMARY_OR_ADJUNCT'),
+    ]);
+    expect(unpublished.results[0]).toMatchObject({
+      outcome: 'INELIGIBLE',
+      reasonCode: 'NO_ELIGIBILITY_PUBLICATION',
+    });
+  });
+
   it('resolves every resource lifecycle and effective-window branch fail closed', async () => {
     await repository.publish(
       ARCHIVED_RESOURCE,
