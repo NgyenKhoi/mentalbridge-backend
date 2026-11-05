@@ -232,8 +232,11 @@ public class AdaptiveSupportPlanReviewService {
 				.map(item -> item.current().assessmentId()).sorted().toList();
 		if (!evaluation.contributingDomains().stream().map(item -> item.assessmentId()).sorted().toList().equals(expected)) return;
 		var storedPreferences = materializationPreferences(userId, plan.supportPlanId());
-		var request = planPolicy.request(evaluation, storedPreferences);
-		var proposal = planPolicy.compose(request, eligibility.resolve(request.batch(), bearer, correlation), storedPreferences);
+		var template = planPolicy.template(evaluation, storedPreferences);
+		var request = planPolicy.request(template,
+				eligibility.currentVersions(template.resourceIds(), bearer, correlation));
+		var proposal = planPolicy.composeNative(request, eligibility.resolve(request.batch(), bearer, correlation),
+				storedPreferences);
 		var currentSlots = actions(plan).stream().filter(action -> "RESOURCE".equals(action.actionType()))
 				.map(action -> action.provenance().referenceId()).sorted().toList();
 		if (!proposal.slots().stream().map(SlotDraft::slotId).sorted().toList().equals(currentSlots)) return;

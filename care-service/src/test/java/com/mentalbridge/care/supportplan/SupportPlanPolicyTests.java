@@ -4,8 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +36,13 @@ import com.mentalbridge.care.supportplan.SupportPlanPersonalizationService.Prefe
 
 class SupportPlanPolicyTests {
 
+	private static final String ARTICLE_DEPRESSION = "00000000-0000-4000-8000-000000000205";
+	private static final String ACTIVITY_DEPRESSION = "00000000-0000-4000-8000-000000000208";
+	private static final String ARTICLE_ANXIETY = "00000000-0000-4000-8000-000000000206";
+	private static final String ACTIVITY_ANXIETY = "00000000-0000-4000-8000-000000000201";
+	private static final String SLEEP_ADJUNCT = "00000000-0000-4000-8000-000000000207";
+	private static final String JOURNAL_ADJUNCT = "00000000-0000-4000-8000-000000000212";
+
 	private final SupportPlanPolicy policy = new SupportPlanPolicy();
 
 	@Test
@@ -42,7 +53,7 @@ class SupportPlanPolicyTests {
 						SafetyStatus.NEGATIVE_SAFETY_SCREEN, "MB-SAFETY-PHQ9-001-v1",
 						SafetyReasonCode.PHQ9_ITEM9_NEGATIVE),
 				"SCREENING_NOT_DIAGNOSIS", "Synthetic disclaimer");
-		var request = policy.request(evaluation);
+		var request = request(evaluation, null);
 		var proposal = policy.compose(request, eligible(request));
 
 		assertThat(proposal.families()).extracting(SupportPlanPolicy.FamilyDraft::family)
@@ -56,9 +67,8 @@ class SupportPlanPolicyTests {
 
 	@Test
 	void composesTwoDomainMildProposalDeterministicallyWithinBounds() {
-		var request = policy.request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD));
-		assertThat(request.batch().requests()).allSatisfy(query -> assertThat(query.contentVersion())
-				.isEqualTo(query.resourceId().endsWith("0201") ? "1" : "0"));
+		var request = request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD), null);
+		assertThat(request.batch().requests()).allSatisfy(query -> assertThat(query.contentVersion()).isEqualTo("0"));
 		var first = policy.compose(request, eligible(request));
 		var second = policy.compose(request, eligible(request));
 
@@ -72,7 +82,7 @@ class SupportPlanPolicyTests {
 
 	@Test
 	void composesProfessionalAdjunctsWithoutDuplicatingAnExactResourceVersion() {
-		var request = policy.request(evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MODERATE));
+		var request = request(evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MODERATE), null);
 		var proposal = policy.compose(request, eligible(request));
 
 		assertThat(proposal.slots()).hasSize(2);
@@ -82,7 +92,7 @@ class SupportPlanPolicyTests {
 
 	@Test
 	void rejectsStaleUnavailableAndMissingCoreFacts() {
-		var request = policy.request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD));
+		var request = request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD), null);
 
 		assertThatThrownBy(() -> policy.compose(request,
 				response(request, ResourceEligibilityOutcome.STALE, ResourceEligibilityReasonCode.CONTENT_VERSION_STALE)))
@@ -110,7 +120,7 @@ class SupportPlanPolicyTests {
 		var personalization = new PersonalizationSnapshot(UUID.randomUUID(), UUID.randomUUID(),
 				SupportPlanPersonalizationService.SCHEMA_VERSION, 1, PreferredFocus.MOTIVATION, null, 10,
 				PreferredDaypart.MORNING, List.of(ActivityMode.READING), List.of(), Instant.EPOCH);
-		var request = policy.request(evaluation, personalization);
+		var request = request(evaluation, personalization);
 		var results = request.batch().requests().stream().map(query -> new ResourceEligibilityResult(
 				query.requestId(), query.resourceId(), query.contentVersion(), ResourceEligibilityOutcome.ELIGIBLE,
 				ResourceEligibilityReasonCode.ELIGIBLE_MATCH, EligibilityRole.PRIMARY,
@@ -138,7 +148,7 @@ class SupportPlanPolicyTests {
 					SupportPlanPersonalizationService.SCHEMA_VERSION, 1, focus, null, 10,
 					PreferredDaypart.EVENING, List.of(), List.of(), Instant.EPOCH);
 
-			var request = policy.request(evaluation, personalization);
+			var request = request(evaluation, personalization);
 			var proposal = policy.compose(request, eligible(request), personalization);
 
 			assertThat(proposal.families()).allSatisfy(family -> {
@@ -147,6 +157,128 @@ class SupportPlanPolicyTests {
 				assertThat(family.focusReasonCode()).isNull();
 			});
 		}
+	}
+
+	@Test
+	void queriesEachCandidateAtItsDiscoveredCurrentVersionAndPersistsThatExactVersion() {
+		var template = policy.template(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD));
+		assertThat(template.resourceIds()).containsExactly(ARTICLE_DEPRESSION, ACTIVITY_DEPRESSION, ARTICLE_ANXIETY,
+				ACTIVITY_ANXIETY);
+		var versions = new HashMap<String, String>(versions(template, "0"));
+		versions.put(ACTIVITY_ANXIETY, "1");
+		var request = policy.request(template, versions);
+
+		assertThat(request.batch().requests()).extracting(query -> query.resourceId() + "@" + query.contentVersion())
+				.containsExactly(ARTICLE_DEPRESSION + "@0", ACTIVITY_DEPRESSION + "@0", ARTICLE_ANXIETY + "@0",
+						ACTIVITY_ANXIETY + "@1");
+		var proposal = policy.compose(request, eligible(request));
+		assertThat(proposal.slots()).filteredOn(slot -> slot.slotId().equals("anxiety-support-activity"))
+				.singleElement().satisfies(slot -> assertThat(slot.selectedResource().key())
+						.isEqualTo(ACTIVITY_ANXIETY + ":1"));
+	}
+
+	@Test
+	void choosesAnAdmittedAlternativeWhenTheCurrentVersionHasNoEligibilityPublication() {
+		var request = request(evaluation(ScreeningLevel.MINIMAL, ScreeningLevel.MINIMAL), null);
+		var results = new ArrayList<>(eligible(request).results());
+		results.replaceAll(result -> result.resourceId().equals(ACTIVITY_ANXIETY)
+				? ineligible(result, ResourceEligibilityReasonCode.NO_ELIGIBILITY_PUBLICATION) : result);
+
+		var proposal = policy.compose(request,
+				new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-19T00:00:00Z", results));
+
+		assertThat(proposal.slots()).filteredOn(slot -> slot.slotId().equals("anxiety-maintenance"))
+				.singleElement().satisfies(slot -> {
+					assertThat(slot.selectedResource().resourceId().toString()).isEqualTo(ARTICLE_ANXIETY);
+					assertThat(slot.allowedAlternatives()).isEmpty();
+				});
+	}
+
+	@Test
+	void treatsAKnownMissingResourceAsAbsentAndAnUnansweredCandidateAsUncertainty() {
+		var template = policy.template(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD));
+		var missingCore = new HashMap<String, String>(versions(template, "0"));
+		missingCore.put(ACTIVITY_ANXIETY, null);
+		var request = policy.request(template, missingCore);
+		assertThat(request.batch().requests()).extracting(query -> query.resourceId()).doesNotContain(ACTIVITY_ANXIETY);
+		assertThatThrownBy(() -> policy.compose(request, eligible(request)))
+				.isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("SUPPORT_PLAN_CORE_UNAVAILABLE"));
+
+		var unanswered = new HashMap<String, String>(versions(template, "0"));
+		unanswered.remove(ACTIVITY_ANXIETY);
+		assertThatThrownBy(() -> policy.request(template, unanswered))
+				.isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+	}
+
+	@Test
+	void dropsOnlyAnOptionalSlotWhoseCandidatesAreAllKnownMissing() {
+		var template = policy.template(evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MODERATE));
+		var versions = new HashMap<String, String>(versions(template, "0"));
+		for (String id : List.of(SLEEP_ADJUNCT, JOURNAL_ADJUNCT, ACTIVITY_ANXIETY)) versions.put(id, null);
+		var request = policy.request(template, versions);
+
+		var proposal = policy.compose(request, eligible(request));
+
+		assertThat(proposal.slots()).singleElement().satisfies(slot -> {
+			assertThat(slot.slotId()).isEqualTo("anxiety-adjunct");
+			assertThat(slot.selectedResource().resourceId().toString()).isEqualTo(ACTIVITY_DEPRESSION);
+		});
+	}
+
+	@Test
+	void legacyKeepsItsOneResourceBoundWhileNativeDropsEveryUnfilledOptionalSlot() {
+		var template = policy.template(evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MODERATE));
+		var request = policy.request(template, template.resourceIds().stream()
+				.collect(HashMap<String, String>::new, (map, id) -> map.put(id, null), HashMap::putAll));
+		assertThat(request.batch().requests()).isEmpty();
+		var empty = new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-19T00:00:00Z", List.of());
+
+		assertThatThrownBy(() -> policy.compose(request, empty))
+				.isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("SUPPORT_PLAN_BOUNDS_UNSATISFIED"));
+		var proposal = policy.composeNative(request, empty, null);
+		assertThat(proposal.slots()).isEmpty();
+		assertThat(proposal.families()).hasSize(2);
+
+		var core = request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MILD), null);
+		var noCore = new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-19T00:00:00Z",
+				eligible(core).results().stream().map(result ->
+						ineligible(result, ResourceEligibilityReasonCode.NO_ELIGIBILITY_PUBLICATION)).toList());
+		assertThatThrownBy(() -> policy.composeNative(core, noCore, null))
+				.isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("SUPPORT_PLAN_CORE_UNAVAILABLE"));
+	}
+
+	@Test
+	void failsTheWholeProposalWhenAnOptionalCandidateIsStale() {
+		var request = request(evaluation(ScreeningLevel.MILD, ScreeningLevel.MODERATE), null);
+		var results = new ArrayList<>(eligible(request).results());
+		results.replaceAll(result -> result.resourceId().equals(SLEEP_ADJUNCT)
+				? new ResourceEligibilityResult(result.requestId(), result.resourceId(), result.contentVersion(),
+						ResourceEligibilityOutcome.STALE, ResourceEligibilityReasonCode.CONTENT_VERSION_STALE,
+						null, null, null, null, null, null)
+				: result);
+
+		assertThatThrownBy(() -> policy.compose(request,
+				new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-19T00:00:00Z", results)))
+				.isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("RESOURCE_VERSION_STALE"));
+	}
+
+	private SupportPlanPolicy.ProposalRequest request(EvaluationView evaluation, PersonalizationSnapshot personalization) {
+		var template = policy.template(evaluation, personalization);
+		return policy.request(template, versions(template, "0"));
+	}
+
+	private Map<String, String> versions(SupportPlanPolicy.Template template, String version) {
+		return template.resourceIds().stream().collect(Collectors.toMap(id -> id, id -> version));
+	}
+
+	private ResourceEligibilityResult ineligible(ResourceEligibilityResult result, ResourceEligibilityReasonCode reason) {
+		return new ResourceEligibilityResult(result.requestId(), result.resourceId(), result.contentVersion(),
+				ResourceEligibilityOutcome.INELIGIBLE, reason, null, null, null, null, null, null);
 	}
 
 	private EvaluationView evaluation(ScreeningLevel depression, ScreeningLevel anxiety) {

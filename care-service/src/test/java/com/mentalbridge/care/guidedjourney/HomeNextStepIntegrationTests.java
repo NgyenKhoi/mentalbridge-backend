@@ -63,6 +63,8 @@ class HomeNextStepIntegrationTests extends CareTestProperties {
 
 	@BeforeEach
 	void eligibleResources() {
+		when(eligibility.currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any())).thenAnswer(call ->
+				call.<java.util.List<String>>getArgument(0).stream().collect(java.util.stream.Collectors.toMap(id -> id, id -> "0")));
 		when(eligibility.resolve(any(), anyString(), any())).thenAnswer(invocation -> {
 			var request = (ResourceEligibilityBatchRequest) invocation.getArgument(0);
 			var results = request.requests().stream().map(query -> new ResourceEligibilityResult(query.requestId(),

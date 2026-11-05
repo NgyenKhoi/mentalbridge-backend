@@ -94,11 +94,15 @@ Construction rules:
 ## Known coverage gaps
 
 - `…0201` was bumped to content version 1 by
-  `review1/10_align_mb603_timed_practice_duration.sql` without an eligibility
-  publication for version 1. Where that migration ran, `…0201@0` resolves
-  `STALE`. Rows that list a later candidate fall back to it. The four
-  anxiety-only professional rows then save one resource (`PARTIAL`). Closing
-  this needs a reviewed eligibility publication for the new version plus map v2.
+  `review1/10_align_mb603_timed_practice_duration.sql`. Since the MB-794
+  owner-ruled hotfix (backend PR #254) the map lists `…0201@1`; the other five
+  candidates stay at `@0`. `…0201@1` is selected only where a reviewed
+  eligibility publication exists for version 1; otherwise it resolves
+  `INELIGIBLE`, later row candidates are used, and the four anxiety-only
+  professional rows save one resource. Guide deliberately keeps exact reviewed
+  versions instead of SupportPlan's current-version discovery, so any later
+  candidate edit needs a reviewed publication plus a map update, or the
+  candidate resolves `STALE` and its rows degrade to `PARTIAL`.
 - `…0212` Chuẩn bị trước khi trao đổi với chuyên gia fits professional rows, but
   it is ADJUNCT only, so Guide does not use it.
 - Domain/clinical review of every row remains a release gate, as it is for the
