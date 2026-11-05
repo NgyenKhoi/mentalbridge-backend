@@ -131,3 +131,16 @@ export interface ResourceEligibilityBatchResponse {
   readonly resolvedAt: string;
   readonly results: readonly ResourceEligibilityResult[];
 }
+
+export interface ResourceCurrentVersionBatchRequest {
+  readonly resourceIds: readonly string[];
+}
+
+export interface ResourceCurrentVersion {
+  readonly resourceId: string;
+  readonly contentVersion: string | null;
+}
+
+export interface ResourceCurrentVersionBatchResponse {
+  readonly results: readonly ResourceCurrentVersion[];
+}

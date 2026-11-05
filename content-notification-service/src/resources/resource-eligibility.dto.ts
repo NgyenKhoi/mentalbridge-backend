@@ -9,7 +9,7 @@ import {
   SCREENING_LEVELS,
   SUPPORT_TIERS,
 } from '../generated/resource-eligibility.contract.js';
-import { ResourceLocaleSchema } from './resource.dto.js';
+import { ResourceIdSchema, ResourceLocaleSchema } from './resource.dto.js';
 
 const policyVersion = z.enum(ELIGIBILITY_POLICY_VERSIONS);
 const screeningDomain = z.enum(SCREENING_DOMAINS);
@@ -134,6 +134,16 @@ export const ResourceEligibilityBatchSchema = z
   .refine((value) => unique(value.requests.map((request) => request.requestId)), {
     path: ['requests'],
     message: 'requestId values must be unique within the batch',
+  });
+
+export const ResourceCurrentVersionBatchSchema = z
+  .object({
+    resourceIds: z.array(ResourceIdSchema).min(1).max(50),
+  })
+  .strict()
+  .refine((value) => unique(value.resourceIds.map((id) => id.toLowerCase())), {
+    path: ['resourceIds'],
+    message: 'resourceIds must be unique within the batch',
   });
 
 function unique(values: readonly string[]): boolean {

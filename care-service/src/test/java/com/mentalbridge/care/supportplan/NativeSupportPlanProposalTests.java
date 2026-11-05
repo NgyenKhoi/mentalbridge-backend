@@ -104,6 +104,9 @@ class NativeSupportPlanProposalTests {
 		when(entitlements.current(eq(userId), anyString(), any())).thenReturn(entitlement(ServicePackage.PLUS));
 		when(preferences.currentSnapshot(userId)).thenAnswer(call -> Optional.ofNullable(preference));
 		when(evaluations.getCurrentCompatible(eq(userId), any())).thenAnswer(call -> evaluation);
+		when(eligibility.currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any())).thenAnswer(call ->
+				call.<List<String>>getArgument(0).stream().collect(java.util.stream.Collectors.toMap(id -> id,
+						id -> id.endsWith("0201") ? "1" : "0")));
 		when(plans.saveAndFlush(any())).thenAnswer(call -> storedPlan = call.getArgument(0));
 		when(plans.findByIdAndUserId(any(), eq(userId))).thenAnswer(call -> Optional.ofNullable(storedPlan));
 		when(plans.findByIdAndUserIdForUpdate(any(), eq(userId))).thenAnswer(call -> Optional.ofNullable(storedPlan));
@@ -312,9 +315,71 @@ class NativeSupportPlanProposalTests {
 	}
 
 	@Test
+	void currentVersionUncertaintyFailsClosedBeforeExactEligibilityWithoutPersistingDraft() {
+		eligible(query -> true);
+		when(eligibility.currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any()))
+				.thenThrow(new ApiException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+						"RESOURCE_ELIGIBILITY_UNAVAILABLE", "Current resource versions could not be verified"));
+
+		assertThatThrownBy(this::propose).isInstanceOfSatisfying(ApiException.class,
+				exception -> assertThat(exception.code()).isEqualTo("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+
+		assertThat(storedPlan).isNull();
+		verify(eligibility, never()).resolve(any(), anyString(), any());
+	}
+
+	@Test
+	void activationRevalidatesTheStoredExactVersionsWithoutRediscovery() {
+		eligible(query -> true);
+		propose();
+		activate();
+
+		verify(eligibility, times(1)).currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any());
+		var batches = org.mockito.Mockito.mockingDetails(eligibility).getInvocations().stream()
+				.filter(call -> call.getMethod().getName().equals("resolve"))
+				.map(call -> (ResourceEligibilityBatchRequest) call.getArgument(0)).toList();
+		assertThat(batches).hasSizeGreaterThan(1).allSatisfy(batch -> assertThat(batch.requests())
+				.filteredOn(query -> query.resourceId().endsWith("0201"))
+				.allSatisfy(query -> assertThat(query.contentVersion()).isEqualTo("1")));
+	}
+
+	@Test
+	void professionalProposalWithoutAnyEligibleOptionalResourceKeepsItsOtherActionsAndActivates() {
+		evaluation = evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MODERATE, false);
+		eligible(query -> false);
+
+		propose();
+
+		assertThat(ofType("RESOURCE")).isEmpty();
+		assertThat(ofType("PROFESSIONAL_SUPPORT")).isNotEmpty();
+		assertThat(ofType("EMOTION_CHECK_IN")).hasSize(1);
+		assertThat(ofType("REASSESSMENT_SCREENING")).hasSize(1);
+		activate();
+		assertThat(storedPlan.status()).isEqualTo("ACTIVE");
+	}
+
+	@Test
+	void professionalProposalWhoseOptionalResourcesAreAllKnownMissingSkipsTheExactCheck() {
+		evaluation = evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MODERATE, false);
+		eligible(query -> true);
+		when(eligibility.currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any())).thenAnswer(call ->
+				call.<List<String>>getArgument(0).stream().collect(java.util.HashMap<String, String>::new,
+						(map, id) -> map.put(id, null), java.util.HashMap::putAll));
+
+		propose();
+
+		assertThat(ofType("RESOURCE")).isEmpty();
+		assertThat(ofType("PROFESSIONAL_SUPPORT")).isNotEmpty();
+		var batches = org.mockito.Mockito.mockingDetails(eligibility).getInvocations().stream()
+				.filter(call -> call.getMethod().getName().equals("resolve"))
+				.map(call -> (ResourceEligibilityBatchRequest) call.getArgument(0)).toList();
+		assertThat(batches).allSatisfy(batch -> assertThat(batch.requests()).isEmpty());
+	}
+
+	@Test
 	void sparseOptionalResourcesAreDroppedAndRemainingProposalActivates() {
 		evaluation = evaluation(ScreeningLevel.MODERATE, ScreeningLevel.MILD, false);
-		var request = new SupportPlanPolicy().request(evaluation);
+		var request = new SupportPlanPolicy().template(evaluation);
 		var optionalRequests = request.slots().stream().filter(slot -> "OPTIONAL".equals(slot.kind()))
 				.flatMap(slot -> slot.resourceIds().stream()).toList();
 		eligible(query -> query.requiredRole().name().equals("PRIMARY") || !optionalRequests.contains(query.resourceId()));
@@ -469,7 +534,9 @@ class NativeSupportPlanProposalTests {
 	@Test
 	void reviewedFocusOrderSurvivesActivationAndLaterAdmission() {
 		var policy = new SupportPlanPolicy();
-		var request = policy.request(evaluation);
+		var template = policy.template(evaluation);
+		var request = policy.request(template,
+				eligibility.currentVersions(template.resourceIds(), "bearer", correlationId));
 		var proposal = policy.compose(request, eligibility.resolve(request.batch(), "bearer", correlationId));
 		var reversed = new ArrayList<>(proposal.families());
 		java.util.Collections.reverse(reversed);

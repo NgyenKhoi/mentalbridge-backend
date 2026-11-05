@@ -61,6 +61,12 @@ const repository = {
       },
     ],
   })),
+  currentVersions: vi.fn(async (ids: readonly string[]) => ({
+    results: ids.map((resourceId) => ({
+      resourceId,
+      contentVersion: resourceId === RESOURCE_ID ? '1' : null,
+    })),
+  })),
 } as unknown as ResourceEligibilityRepository;
 
 let privateKey: KeyLike;
@@ -307,6 +313,85 @@ describe('Resource Eligibility HTTP boundary', () => {
         title: 'Reviewed support article',
       }),
     ]);
+  });
+
+  it('requires a USER credential for current versions and preserves request order', async () => {
+    const path = '/internal/v1/resources/current-versions:resolve';
+    await request(server())
+      .post(path)
+      .send({ resourceIds: [RESOURCE_ID] })
+      .expect(401);
+    await request(server())
+      .post(path)
+      .set('authorization', `Bearer ${await token(ADMIN_ID, ['ADMIN'])}`)
+      .send({ resourceIds: [RESOURCE_ID] })
+      .expect(403);
+
+    const response = await request(server())
+      .post(path)
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'])}`)
+      .send({ resourceIds: [UUID_V7_RESOURCE_ID, RESOURCE_ID] })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      results: [
+        { resourceId: UUID_V7_RESOURCE_ID, contentVersion: null },
+        { resourceId: RESOURCE_ID, contentVersion: '1' },
+      ],
+    });
+    expect(repository.currentVersions).toHaveBeenCalledWith([UUID_V7_RESOURCE_ID, RESOURCE_ID]);
+  });
+
+  it.each([
+    ['empty', { resourceIds: [] }],
+    [
+      'over 50',
+      {
+        resourceIds: Array.from(
+          { length: 51 },
+          (_, index) => `c13e4567-e89b-42d3-a456-${String(index).padStart(12, '0')}`,
+        ),
+      },
+    ],
+    ['duplicate', { resourceIds: [RESOURCE_ID, RESOURCE_ID.toUpperCase()] }],
+    ['invalid UUID', { resourceIds: ['not-a-uuid'] }],
+    ['unknown field', { resourceIds: [RESOURCE_ID], contentVersion: '0' }],
+  ])('rejects a %s current-version batch', async (_, body) => {
+    const response = await request(server())
+      .post('/internal/v1/resources/current-versions:resolve')
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'])}`)
+      .send(body)
+      .expect(422);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(repository.currentVersions).not.toHaveBeenCalled();
+  });
+
+  it('accepts exactly 50 unique current-version IDs', async () => {
+    const ids = Array.from(
+      { length: 50 },
+      (_, index) => `c13e4567-e89b-42d3-a456-${String(index).padStart(12, '0')}`,
+    );
+    const response = await request(server())
+      .post('/internal/v1/resources/current-versions:resolve')
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'])}`)
+      .send({ resourceIds: ids })
+      .expect(200);
+    expect(response.body.results).toHaveLength(50);
+  });
+
+  it('fails closed without a partial result when current versions cannot be read', async () => {
+    vi.mocked(repository.currentVersions).mockRejectedValueOnce(
+      Object.assign(new Error('db down'), { code: '57P01' }),
+    );
+    const response = await request(server())
+      .post('/internal/v1/resources/current-versions:resolve')
+      .set('authorization', `Bearer ${await token(USER_ID, ['USER'])}`)
+      .send({ resourceIds: [RESOURCE_ID] })
+      .expect(503);
+    expect(response.body).toEqual(
+      expect.objectContaining({ code: 'DEPENDENCY_UNAVAILABLE', status: 503 }),
+    );
+    expect(response.body.results).toBeUndefined();
   });
 
   it('fails closed when the provider dependency is unavailable', async () => {

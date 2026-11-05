@@ -5,6 +5,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCurrentVersionBatchRequest;
+import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCurrentVersionBatchResponse;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchRequest;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchResponse;
 
@@ -20,4 +22,10 @@ public interface ContentResourceEligibilityHttpClient {
 			@RequestHeader("Authorization") String authorization,
 			@RequestHeader("X-Correlation-Id") String correlationId,
 			@RequestBody ResourceEligibilityBatchRequest request);
+
+	@PostMapping("/internal/v1/resources/current-versions:resolve")
+	ResourceCurrentVersionBatchResponse currentVersions(
+			@RequestHeader("Authorization") String authorization,
+			@RequestHeader("X-Correlation-Id") String correlationId,
+			@RequestBody ResourceCurrentVersionBatchRequest request);
 }

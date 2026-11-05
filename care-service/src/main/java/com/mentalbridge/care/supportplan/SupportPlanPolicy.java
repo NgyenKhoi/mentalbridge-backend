@@ -40,13 +40,11 @@ class SupportPlanPolicy {
 	private static final String ACTIVITY_ANXIETY = "00000000-0000-4000-8000-000000000201";
 	private static final String SLEEP_ADJUNCT = "00000000-0000-4000-8000-000000000207";
 	private static final String JOURNAL_ADJUNCT = "00000000-0000-4000-8000-000000000212";
-	private static final Map<String, String> PINNED_VERSIONS = Map.of(ACTIVITY_ANXIETY, "1");
-
-	ProposalRequest request(EvaluationView evaluation) {
-		return request(evaluation, null);
+	Template template(EvaluationView evaluation) {
+		return template(evaluation, null);
 	}
 
-	ProposalRequest request(EvaluationView evaluation, PersonalizationSnapshot personalization) {
+	Template template(EvaluationView evaluation, PersonalizationSnapshot personalization) {
 		var families = new ArrayList<FamilyDraft>();
 		var slots = new ArrayList<SlotSpec>();
 		String personalizedDomain = personalizedDomain(evaluation, personalization);
@@ -59,13 +57,22 @@ class SupportPlanPolicy {
 					focus == null ? null : "USER_PREFERENCE_AND_CARE_POLICY"));
 			slots.addAll(slots(domain, family));
 		}
+		return new Template(List.copyOf(families), List.copyOf(slots));
+	}
+
+	ProposalRequest request(Template template, Map<String, String> currentVersions) {
 		var queries = new ArrayList<ResourceEligibilityQuery>();
-		for (SlotSpec slot : slots) {
+		for (SlotSpec slot : template.slots()) {
 			for (String resourceId : slot.resourceIds()) {
-				queries.add(query(slot, resourceId));
+				if (!currentVersions.containsKey(resourceId)) {
+					throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "RESOURCE_ELIGIBILITY_UNAVAILABLE",
+							"Current resource versions could not be verified");
+				}
+				String version = currentVersions.get(resourceId);
+				if (version != null) queries.add(query(slot, resourceId, version));
 			}
 		}
-		return new ProposalRequest(List.copyOf(families), List.copyOf(slots),
+		return new ProposalRequest(template.families(), template.slots(),
 				new ResourceEligibilityBatchRequest(List.copyOf(queries)));
 	}
 
@@ -75,6 +82,16 @@ class SupportPlanPolicy {
 
 	Proposal compose(ProposalRequest request, ResourceEligibilityBatchResponse response,
 			PersonalizationSnapshot personalization) {
+		return compose(request, response, personalization, false);
+	}
+
+	Proposal composeNative(ProposalRequest request, ResourceEligibilityBatchResponse response,
+			PersonalizationSnapshot personalization) {
+		return compose(request, response, personalization, true);
+	}
+
+	private Proposal compose(ProposalRequest request, ResourceEligibilityBatchResponse response,
+			PersonalizationSnapshot personalization, boolean allowNoResources) {
 		Map<String, ResourceEligibilityResult> byRequest = new HashMap<>();
 		for (ResourceEligibilityResult result : response.results()) {
 			if (result.outcome() == ResourceEligibilityOutcome.UNAVAILABLE) {
@@ -110,7 +127,7 @@ class SupportPlanPolicy {
 			composed.add(new SlotDraft(slot.slotId(), slot.kind(), slot.targetDomain(), slot.purposeCode(),
 					selected, alternatives));
 		}
-		if (composed.isEmpty() || composed.size() > 5) {
+		if ((composed.isEmpty() && !allowNoResources) || composed.size() > 5) {
 			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_BOUNDS_UNSATISFIED",
 					"The deterministic proposal could not satisfy SupportPlan resource bounds");
 		}
@@ -177,7 +194,7 @@ class SupportPlanPolicy {
 	}
 
 	RevalidationRequest revalidationRequest(EvaluationView evaluation, List<SelectedResource> selections) {
-		var proposal = request(evaluation);
+		var proposal = template(evaluation);
 		var slotsById = new HashMap<String, SlotSpec>();
 		for (SlotSpec slot : proposal.slots()) {
 			slotsById.put(slot.slotId(), slot);
@@ -285,10 +302,6 @@ class SupportPlanPolicy {
 				evidence.supportPathway().name(), List.of(resourceIds));
 	}
 
-	private ResourceEligibilityQuery query(SlotSpec slot, String resourceId) {
-		return query(slot, resourceId, PINNED_VERSIONS.getOrDefault(resourceId, "0"));
-	}
-
 	private ResourceEligibilityQuery query(SlotSpec slot, String resourceId, String contentVersion) {
 		return new ResourceEligibilityQuery(requestId(slot.slotId(), resourceId), resourceId, contentVersion,
 				com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ScreeningDomain.valueOf(slot.targetDomain()),
@@ -307,6 +320,11 @@ class SupportPlanPolicy {
 				result.summary(), result.externalUrl());
 	}
 
+	record Template(List<FamilyDraft> families, List<SlotSpec> slots) {
+		List<String> resourceIds() {
+			return slots.stream().flatMap(slot -> slot.resourceIds().stream()).distinct().toList();
+		}
+	}
 	record ProposalRequest(List<FamilyDraft> families, List<SlotSpec> slots, ResourceEligibilityBatchRequest batch) { }
 	record Proposal(List<FamilyDraft> families, List<SlotDraft> slots, String resourcePolicyVersion,
 			java.time.Instant resourcesResolvedAt) { }

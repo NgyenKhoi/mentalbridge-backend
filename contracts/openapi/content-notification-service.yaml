@@ -1149,6 +1149,40 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /internal/v1/resources/current-versions:resolve:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Resources]
+      summary: Resolve current Content-owned resource versions for Care in one bounded batch
+      description: >
+        Care forwards the authenticated USER bearer credential and correlation ID before
+        its exact-version eligibility check. Results preserve request order. A version is
+        metadata only and never implies eligibility; DRAFT and ARCHIVED rows still return
+        their current version so the exact resolver decides publication status.
+        contentVersion is null only for an ID with no resource row. Dependency
+        uncertainty is HTTP 503 with no partial result.
+      operationId: resolveResourceCurrentVersions
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceCurrentVersionBatchRequest"
+      responses:
+        "200":
+          description: Current version per requested resource, in request order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceCurrentVersionBatchResponse"
+        "400": { $ref: "#/components/responses/RequestRejected" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /api/v1/safety-directory/admin/entries:
     x-mentalbridge-status: implemented
     get:
@@ -3634,6 +3668,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ResourceEligibilityResult"
+
+    ResourceCurrentVersionBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [resourceIds]
+      properties:
+        resourceIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+
+    ResourceCurrentVersion:
+      type: object
+      additionalProperties: true
+      required: [resourceId, contentVersion]
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        contentVersion:
+          type: string
+          nullable: true
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+          description: Current resource row version; null only when no resource row exists.
+
+    ResourceCurrentVersionBatchResponse:
+      type: object
+      additionalProperties: true
+      required: [results]
+      properties:
+        results:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ResourceCurrentVersion"
 
     NotificationOperationsSummary:
       type: object

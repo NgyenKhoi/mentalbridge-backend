@@ -3,6 +3,7 @@ package com.mentalbridge.care.resourceeligibility.generated;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public final class ResourceEligibilityContract {
 
@@ -56,5 +57,19 @@ public final class ResourceEligibilityContract {
 			String policyVersion,
 			String resolvedAt,
 			List<ResourceEligibilityResult> results) {
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public record ResourceCurrentVersionBatchRequest(List<String> resourceIds) {
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public record ResourceCurrentVersion(
+			@JsonProperty(required = true) String resourceId,
+			@JsonProperty(required = true) Object contentVersion) {
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public record ResourceCurrentVersionBatchResponse(List<ResourceCurrentVersion> results) {
 	}
 }

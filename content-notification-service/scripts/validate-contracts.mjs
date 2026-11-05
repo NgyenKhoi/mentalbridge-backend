@@ -37,6 +37,7 @@ const expectedImplemented = new Set([
   'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications',
   'POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal',
   'POST /internal/v1/resource-eligibility:resolve',
+  'POST /internal/v1/resources/current-versions:resolve',
   'GET /api/v1/safety-directory/admin/entries',
   'POST /api/v1/safety-directory/admin/entries',
   'PATCH /api/v1/safety-directory/admin/entries/{entryId}',
@@ -106,6 +107,10 @@ const implementedResponses = new Map([
   ],
   [
     'POST /internal/v1/resource-eligibility:resolve',
+    new Set(['200', '400', '401', '403', '422', '503']),
+  ],
+  [
+    'POST /internal/v1/resources/current-versions:resolve',
     new Set(['200', '400', '401', '403', '422', '503']),
   ],
   ['GET /api/v1/safety-directory/admin/entries', new Set(['200', '401', '403', '503'])],

@@ -1,17 +1,28 @@
 # Care Service
 
-## MB-794 staging demo pin hotfix
+## SupportPlan current resource versions (MB-794)
 
-The owner-authorized 2026-11-03 hotfix pins Resource
-`00000000-0000-4000-8000-000000000201` to exact content version `1` in new
-SupportPlan proposals and Support Guide candidates; other template pins stay
-at `0`. Stored draft revalidation keeps its saved exact versions. Exact Content
-eligibility remains mandatory, with no version-0 fallback: without a reviewed
-version-1 publication the candidate is ineligible, and missing required CORE
-content still fails closed. No publication or shared-data repair is included.
-MB-794 stays open for bounded current-version discovery; a later Resource edit
-can invalidate this temporary pin again. The Guide pin extension is explicitly
-included in the demo ruling despite the original brief's narrower scope.
+New SupportPlan proposals (legacy v2, native, and adaptive replacement options)
+no longer assume template resource versions. Before the unchanged exact-version
+eligibility batch, Care asks Content once for the current version of each
+distinct template candidate through
+`POST /internal/v1/resources/current-versions:resolve`, outside any Care write
+transaction and with the same deadlines, transient-only retries and circuit
+breaker as the eligibility resolver. Each candidate is then checked at exactly
+that version. A version is metadata only: Content's exact resolver still decides
+eligibility, so an edited Resource without a reviewed publication for its new
+version is `INELIGIBLE` (an alternative may be used, a missing CORE fails with
+`SUPPORT_PLAN_CORE_UNAVAILABLE`, an unsatisfied OPTIONAL is dropped). An edit
+between discovery and the exact check is `STALE` and fails the whole proposal
+with `RESOURCE_VERSION_STALE`; Care never retries to a newer version. A
+nonexistent Resource is treated as a known absent candidate. Missing, partial,
+reordered or malformed version metadata, timeouts and provider rejection fail
+closed with 503 `RESOURCE_ELIGIBILITY_UNAVAILABLE` and persist nothing.
+Idempotent replay returns before any Content call, and stored drafts, activation
+and choice changes keep revalidating their saved exact versions.
+
+Support Guide keeps its reviewed exact resource map
+(`docs/policies/support-guide-resource-map-v1.md`); it is not version-discovered.
 
 MB-779 rechecks authenticated JWT subjects against Identity before protected
 requests. Configure `IDENTITY_SERVICE_BASE_URL` and the dedicated

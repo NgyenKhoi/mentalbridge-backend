@@ -115,6 +115,7 @@ a compatibility repair path for accounts created before this consumer existed.
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications` — ADMIN-only immutable eligibility publication with persisted idempotent replay
 - `POST /api/v1/resources/{id}/versions/{contentVersion}/eligibility-publications/withdrawal` — ADMIN-only append-only eligibility withdrawal
 - `POST /internal/v1/resource-eligibility:resolve` — authenticated USER-context batch resolution for Care with exact-version outcomes and no content or moderation payload
+- `POST /internal/v1/resources/current-versions:resolve` — authenticated USER-context lookup of 1–50 unique resource IDs returning each current row version in request order (`null` only for a nonexistent ID); metadata only, never eligibility; DRAFT/ARCHIVED rows still report their version and database uncertainty is 503 with no partial result
 - MB-337 controlled-demo eligibility matrix — six explicit immutable `vi-VN` resource-version decisions with reviewed provenance and Care-compatible fixture evidence
 - `POST /api/v1/safety-directory:lookup` — public coarse-area lookup returning only active reviewed records verified within 90 days; no coordinates or proximity claim
 - `/api/v1/safety-directory/admin/entries` — ADMIN-only create, review/verify/activate, update/invalidate, deactivate, and audit-preserving lifecycle

@@ -643,6 +643,36 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void persistsTheDiscoveredCurrentVersionAndFailsClosedWhenDiscoveryIsUncertain() throws Exception {
+		var userId = insertProfile();
+		var evaluationId = evaluation(userId, "MILD", "MILD", false);
+		eligible(ResourceEligibilityOutcome.ELIGIBLE, ResourceEligibilityReasonCode.ELIGIBLE_MATCH);
+
+		var created = mvc.perform(post("/api/v1/support-plans").with(user(userId))
+				.header("Idempotency-Key", "support-plan-current-version-1")
+				.contentType(MediaType.APPLICATION_JSON).content(body(evaluationId)))
+				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		assertThat(objectMapper.readTree(created).findValues("selectedResource")).anySatisfy(resource -> {
+			assertThat(resource.path("resourceId").asText()).isEqualTo("00000000-0000-4000-8000-000000000201");
+			assertThat(resource.path("contentVersion").asText()).isEqualTo("1");
+		});
+
+		var uncertainUser = insertProfile();
+		var uncertainEvaluation = evaluation(uncertainUser, "MILD", "MILD", false);
+		org.mockito.Mockito.doThrow(new com.mentalbridge.care.shared.ApiException(
+				org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "RESOURCE_ELIGIBILITY_UNAVAILABLE",
+				"Current resource versions could not be verified"))
+				.when(eligibility).currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any());
+		mvc.perform(post("/api/v1/support-plans").with(user(uncertainUser))
+				.header("Idempotency-Key", "support-plan-current-version-2")
+				.contentType(MediaType.APPLICATION_JSON).content(body(uncertainEvaluation)))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id = :user").param("user", uncertainUser)
+				.query(Long.class).single()).isZero();
+	}
+
+	@Test
 	void staleEvaluationPolicyFailsClosedBeforeResolvingResources() throws Exception {
 		var userId = insertProfile();
 		var evaluationId = evaluation(userId, "MILD", "MILD", false);
@@ -1922,6 +1952,9 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 					null)).toList();
 			return new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-19T00:00:00Z", results);
 		}).when(eligibility).resolve(any(), anyString(), any());
+		org.mockito.Mockito.doAnswer(call -> { return call.<java.util.List<String>>getArgument(0).stream()
+				.collect(java.util.stream.Collectors.toMap(id -> id, id -> id.endsWith("0201") ? "1" : "0")); })
+				.when(eligibility).currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any());
 	}
 
 	private CurrentEntitlementResponse paid(UUID userId) {
