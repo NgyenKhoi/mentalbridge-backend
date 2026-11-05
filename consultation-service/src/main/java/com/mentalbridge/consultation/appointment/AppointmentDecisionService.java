@@ -70,12 +70,12 @@ public class AppointmentDecisionService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<UUID> dueRequestIds() {
+	public List<UUID> dueRequestIds(UUID after) {
 		return jdbc.sql("""
 				select id from appointment
-				where status='REQUESTED' and decision_deadline_at<=:now
-				order by decision_deadline_at, id limit :limit
-				""").param("now", database(clock.instant())).param("limit", EXPIRY_BATCH_SIZE)
+				where status='REQUESTED' and decision_deadline_at<=:now and id>:after
+				order by id limit :limit
+				""").param("now", database(clock.instant())).param("after", after).param("limit", EXPIRY_BATCH_SIZE)
 				.query(UUID.class).list();
 	}
 
