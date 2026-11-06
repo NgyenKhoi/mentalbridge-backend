@@ -194,7 +194,17 @@ class SupportPlanPolicy {
 	}
 
 	RevalidationRequest revalidationRequest(EvaluationView evaluation, List<SelectedResource> selections) {
-		var proposal = template(evaluation);
+		return revalidationRequest(evaluation, selections, null);
+	}
+
+	RevalidationRequest revalidationRequest(EvaluationView evaluation, List<SelectedResource> selections,
+			ReassessmentSymptomMapping mapping) {
+		var proposal = template(evaluation, null, mapping);
+		if (mapping != null && mapping.resourceReasons().stream().anyMatch(reason -> selections.stream().noneMatch(selection ->
+				reason.slotId().equals(selection.slotId()) && reason.resourceId().equals(selection.resourceId())
+						&& reason.contentVersion().equals(Long.toString(selection.contentVersion()))))) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_POLICY_STALE", "Stored checklist provenance no longer matches selected resources");
+		}
 		var slotsById = new HashMap<String, SlotSpec>();
 		for (SlotSpec slot : proposal.slots()) {
 			slotsById.put(slot.slotId(), slot);
@@ -202,14 +212,29 @@ class SupportPlanPolicy {
 		var queries = new ArrayList<ResourceEligibilityQuery>();
 		for (SelectedResource selection : selections) {
 			var slot = slotsById.get(selection.slotId());
-			if (slot == null || !slot.resourceIds().contains(selection.resourceId().toString())) {
+			if (slot == null || !slot.resourceIds().contains(selection.resourceId().toString())
+					|| !template(evaluation).slots().stream().filter(value -> value.slotId().equals(selection.slotId()))
+							.anyMatch(value -> value.resourceIds().contains(selection.resourceId().toString()))
+							&& (mapping == null || !mapping.admits(selection))) {
 				throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_POLICY_STALE",
 						"The stored SupportPlan slot is no longer admitted by current template policy");
 			}
 			queries.add(query(slot, selection.resourceId().toString(), Long.toString(selection.contentVersion())));
 		}
 		return new RevalidationRequest(proposal.families(), proposal.slots(), selections,
-				new ResourceEligibilityBatchRequest(List.copyOf(queries)));
+				new ResourceEligibilityBatchRequest(List.copyOf(queries)), mapping);
+	}
+
+	Template template(EvaluationView evaluation, PersonalizationSnapshot preferences, ReassessmentSymptomMapping mapping) {
+		var base = template(evaluation, preferences);
+		if (mapping == null) return base;
+		return new Template(base.families(), base.slots().stream().map(slot -> {
+			var ids = new ArrayList<>(slot.resourceIds());
+			mapping.resourceReasons().stream().filter(reason -> slot.slotId().equals(reason.slotId()))
+					.map(reason -> reason.resourceId().toString()).filter(id -> !ids.contains(id)).forEach(ids::add);
+			return new SlotSpec(slot.slotId(), slot.kind(), slot.targetDomain(), slot.purposeCode(), slot.requiredRole(),
+					slot.instrument(), slot.screeningLevel(), slot.supportTier(), List.copyOf(ids));
+		}).toList());
 	}
 
 	RevalidationResult validate(RevalidationRequest request, ResourceEligibilityBatchResponse response) {
@@ -234,6 +259,14 @@ class SupportPlanPolicy {
 				throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_INVALID_CHOICE",
 						"A core SupportPlan slot requires PRIMARY eligibility");
 			}
+		}
+		if (request.symptomMapping() != null && request.symptomMapping().resourceReasons().stream().anyMatch(reason -> {
+			var result = byRequest.get(requestId(reason.slotId(), reason.resourceId().toString()));
+			return result == null || !reason.contentVersion().equals(result.contentVersion())
+					|| !reason.publicationId().toString().equals(result.publicationId()) || result.role() == null
+					|| !reason.role().equals(result.role().name()) || !reason.eligibilityPolicyVersion().equals(response.policyVersion());
+		})) {
+			throw new ApiException(HttpStatus.CONFLICT, "RESOURCE_VERSION_STALE", "Exact checklist resource admission changed");
 		}
 		return new RevalidationResult(response.policyVersion(), OffsetDateTime.parse(response.resolvedAt()).toInstant());
 	}
@@ -327,7 +360,11 @@ class SupportPlanPolicy {
 	}
 	record ProposalRequest(List<FamilyDraft> families, List<SlotSpec> slots, ResourceEligibilityBatchRequest batch) { }
 	record Proposal(List<FamilyDraft> families, List<SlotDraft> slots, String resourcePolicyVersion,
-			java.time.Instant resourcesResolvedAt) { }
+			java.time.Instant resourcesResolvedAt, ReassessmentSymptomMapping symptomMapping) {
+		Proposal(List<FamilyDraft> families, List<SlotDraft> slots, String resourcePolicyVersion, java.time.Instant resourcesResolvedAt) {
+			this(families, slots, resourcePolicyVersion, resourcesResolvedAt, null);
+		}
+	}
 	record FamilyDraft(String family, String targetDomain, String focusTitle,
 			String focusRationale, String focusReasonCode) {
 		FamilyDraft(String family, String targetDomain) {
@@ -346,6 +383,6 @@ class SupportPlanPolicy {
 	}
 	record SelectedResource(String slotId, UUID resourceId, long contentVersion) { }
 	record RevalidationRequest(List<FamilyDraft> families, List<SlotSpec> slots,
-			List<SelectedResource> selections, ResourceEligibilityBatchRequest batch) { }
+			List<SelectedResource> selections, ResourceEligibilityBatchRequest batch, ReassessmentSymptomMapping symptomMapping) { }
 	record RevalidationResult(String resourcePolicyVersion, java.time.Instant resourcesResolvedAt) { }
 }

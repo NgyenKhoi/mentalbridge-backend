@@ -192,7 +192,7 @@ public class SupportPlanV3Service {
 		return new SupportPlanV3View(plan.id(), 3, policyVersion, representation(plan), plan.status(), plan.version(), safety, values,
 				plan.createdAt(), plan.updatedAt(), plan.activatedAt(), plan.completedAt(), plan.completionReason(),
 				plan.supersededAt(), plan.discardedAt(), "WELLBEING_SUPPORT_NOT_TREATMENT",
-				SupportPlanService.disclaimer(), SupportPlanCycle.view(plan, clock.instant()));
+				SupportPlanService.disclaimer(), SupportPlanCycle.view(plan, clock.instant()), plan.checklistProvenance());
 	}
 
 	private List<PlanFocusView> adaptedFocuses(SupportPlanEntity plan) {
@@ -406,7 +406,16 @@ public class SupportPlanV3Service {
 			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,
 			Instant discardedAt, String disclaimerCode, String disclaimer,
-			@JsonInclude(JsonInclude.Include.NON_NULL) SupportPlanCycle.View cycle) { }
+			@JsonInclude(JsonInclude.Include.NON_NULL) SupportPlanCycle.View cycle,
+			@JsonInclude(JsonInclude.Include.NON_NULL) ReassessmentSymptomMapping symptomMapping) {
+		public SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
+				String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
+				Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,
+				Instant discardedAt, String disclaimerCode, String disclaimer, SupportPlanCycle.View cycle) {
+			this(supportPlanId, modelVersion, planPolicyVersion, representationMode, status, version, safety, focuses, createdAt,
+					updatedAt, activatedAt, completedAt, completionReason, supersededAt, discardedAt, disclaimerCode, disclaimer, cycle, null);
+		}
+	}
 	public record SafetyView(String status, String reasonCode, String policyVersion,
 			String guidanceCode, String guidance) { }
 	public record PlanFocusView(String focusId, String title, String rationale,

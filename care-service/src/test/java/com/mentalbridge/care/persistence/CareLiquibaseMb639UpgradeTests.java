@@ -56,6 +56,8 @@ class CareLiquibaseMb639UpgradeTests {
 		assertThat(slotSnapshot()).isEqualTo(slotBefore);
 		assertThat(legacyScheduleSnapshot()).isEqualTo(scheduleBefore);
 		assertThat(legacyOccurrenceSnapshot()).isEqualTo(occurrenceBefore);
+		assertThat(scalar("select checklist_provenance is null from support_plan where id = '%s'"
+				.formatted(PLAN_ID))).isEqualTo("t");
 		assertThat(scalar("select activated_at = created_at from support_plan_activity_schedule where id = '%s'"
 				.formatted(SCHEDULE_ID))).isEqualTo("t");
 		assertThat(scalar("""
@@ -262,7 +264,7 @@ class CareLiquibaseMb639UpgradeTests {
 				select (to_jsonb(sp) - 'model_version' - 'plan_policy_version' - 'action_count'
 				        - 'personalization_id' - 'personalization_revision'
 				        - 'personalization_schema_version' - 'cycle_number' - 'cycle_timezone'
-				        - 'cycle_started_on' - 'cycle_paused_days' - 'cycle_paused_on')::text
+				        - 'cycle_started_on' - 'cycle_paused_days' - 'cycle_paused_on' - 'checklist_provenance')::text
 				from support_plan sp where id = '%s'
 				""".formatted(PLAN_ID));
 	}

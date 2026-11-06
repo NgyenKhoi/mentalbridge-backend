@@ -31,6 +31,20 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 	private JdbcClient jdbc;
 
 	@Test
+	void checklistSchemaIsAdditiveForSourcesAndNativePlans() {
+		assertThat(jdbc.sql("""
+				select column_name || '|' || data_type || '|' || is_nullable
+				from information_schema.columns where table_schema='public'
+				and ((table_name='reassessment_self_report' and column_name in ('symptom_catalog_revision','symptom_codes'))
+				or (table_name='support_plan' and column_name='checklist_provenance'))
+				order by column_name
+				""").query(String.class).list()).containsExactly(
+				"checklist_provenance|jsonb|YES", "symptom_catalog_revision|character varying|YES", "symptom_codes|ARRAY|NO");
+		assertThat(jdbc.sql("select count(*) from databasechangelog where id='care-035-reassessment-symptom-checklist'")
+				.query(Long.class).single()).isOne();
+	}
+
+	@Test
 	void migrationPublishesVersionedCombinedSupportPolicyAndReviewedSafetyFallback() {
 		var policy = jdbc.sql("""
 				select version || '|' || locale || '|' || status

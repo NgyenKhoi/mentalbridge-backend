@@ -51,6 +51,7 @@ public class SecurityConfiguration {
 								"/api/v2/support-plan-personalization/**",
 								"/api/v1/plan-change-requests/**",
 								"/api/v1/support-plan-occurrences/**", "/api/v1/reassessment-summaries/**",
+								"/api/v1/reassessment-self-reports/**",
 								"/api/v1/consultation-briefs/**", "/api/v1/activity-dashboard").hasRole("USER")
 						.requestMatchers("/api/v1/specialist/consultation-briefs/**",
 								"/api/v1/specialist/client-continuity",

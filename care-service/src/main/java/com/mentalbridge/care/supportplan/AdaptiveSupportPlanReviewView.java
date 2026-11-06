@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import com.mentalbridge.care.reassessment.AdaptiveReviewEvidenceService.OccurrenceEvidence;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.Period;
@@ -26,7 +28,13 @@ public record AdaptiveSupportPlanReviewView(String schemaVersion, String policyV
 	public record Change(String field, String before, String after) { }
 	public record Option(String optionId, String kind, String executionKind, UUID actionId, String focusId,
 			List<String> rationaleCodes, List<EvidenceRef> evidenceRefs, List<EvidenceRef> conflictingEvidenceRefs,
-			List<Change> changes) { }
+			List<Change> changes, @JsonInclude(JsonInclude.Include.NON_NULL) ReassessmentSymptomMapping symptomMapping) {
+		public Option(String optionId, String kind, String executionKind, UUID actionId, String focusId,
+				List<String> rationaleCodes, List<EvidenceRef> evidenceRefs, List<EvidenceRef> conflictingEvidenceRefs,
+				List<Change> changes) {
+			this(optionId, kind, executionKind, actionId, focusId, rationaleCodes, evidenceRefs, conflictingEvidenceRefs, changes, null);
+		}
+	}
 	public record UnavailableOption(String kind, String reasonCode) { }
 	public record EvidenceContext(String comparisonPolicyVersion, Period previousPeriod, Period currentPeriod,
 			String timezone, SelfReportedExperienceDimension selfReportedExperience,

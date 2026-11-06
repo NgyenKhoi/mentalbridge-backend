@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Checklist;
 
 @Repository
 class ReassessmentSelfReportStore {
@@ -66,19 +68,29 @@ class ReassessmentSelfReportStore {
 	StoredSelfReport persist(UUID id, UUID userId, String idempotencyKey, String requestHash,
 			ReassessmentSummaryView.Period period, String currentExperience, String helpfulContext,
 			String difficultContext, Instant now) {
+		return persist(id, userId, idempotencyKey, requestHash, period, currentExperience, helpfulContext, difficultContext,
+				null, now);
+	}
+
+	@Transactional
+	StoredSelfReport persist(UUID id, UUID userId, String idempotencyKey, String requestHash,
+			ReassessmentSummaryView.Period period, String currentExperience, String helpfulContext,
+			String difficultContext, Checklist checklist, Instant now) {
 		lockOwner(userId);
 		int inserted = jdbc.sql("""
 				insert into reassessment_self_report
 					(id,user_id,idempotency_key,request_hash,source_version,current_period_start,
 					 current_period_end,current_experience,helpful_context,difficult_context,version,
-					 authored_at,updated_at)
+					 authored_at,updated_at,symptom_catalog_revision,symptom_codes)
 				values (:id,:userId,:key,:hash,'reassessment-self-report-v1',:startAt,:endAt,
-					:experience,:helpful,:difficult,0,:now,:now)
+					:experience,:helpful,:difficult,0,:now,:now,:catalogRevision,:codes)
 				on conflict (user_id,idempotency_key) do nothing
 				""").param("id", id).param("userId", userId).param("key", idempotencyKey)
 				.param("hash", requestHash).param("startAt", at(period.startAt())).param("endAt", at(period.endAt()))
 				.param("experience", currentExperience).param("helpful", helpfulContext)
-				.param("difficult", difficultContext).param("now", at(now)).update();
+				.param("difficult", difficultContext).param("now", at(now))
+				.param("catalogRevision", checklist == null ? null : checklist.catalogRevision())
+				.param("codes", codes(checklist), java.sql.Types.ARRAY).update();
 		if (inserted == 1) return find(userId, id).orElseThrow();
 		return findByRequest(userId, idempotencyKey).orElseThrow();
 	}
@@ -86,15 +98,25 @@ class ReassessmentSelfReportStore {
 	@Transactional
 	Optional<StoredSelfReport> replace(UUID userId, UUID id, long expectedVersion, String currentExperience,
 			String helpfulContext, String difficultContext, Instant now) {
+		return replace(userId, id, expectedVersion, currentExperience, helpfulContext, difficultContext, null, now);
+	}
+
+	@Transactional
+	Optional<StoredSelfReport> replace(UUID userId, UUID id, long expectedVersion, String currentExperience,
+			String helpfulContext, String difficultContext, Checklist checklist, Instant now) {
 		lockOwner(userId);
 		int updated = jdbc.sql("""
 				update reassessment_self_report
 				set current_experience=:experience, helpful_context=:helpful,
-					difficult_context=:difficult, version=version+1, updated_at=:now
+					difficult_context=:difficult, version=version+1, updated_at=:now,
+					symptom_catalog_revision=case when :replaceChecklist then :catalogRevision else symptom_catalog_revision end,
+					symptom_codes=case when :replaceChecklist then :codes else symptom_codes end
 				where user_id=:userId and id=:id and version=:version and deleted_at is null
 				""").param("experience", currentExperience).param("helpful", helpfulContext)
 				.param("difficult", difficultContext).param("now", at(now)).param("userId", userId)
-				.param("id", id).param("version", expectedVersion).update();
+				.param("id", id).param("version", expectedVersion).param("replaceChecklist", checklist != null)
+				.param("catalogRevision", checklist == null ? null : checklist.catalogRevision())
+				.param("codes", codes(checklist), java.sql.Types.ARRAY).update();
 		return updated == 1 ? find(userId, id) : Optional.empty();
 	}
 
@@ -104,6 +126,7 @@ class ReassessmentSelfReportStore {
 		return jdbc.sql("""
 				update reassessment_self_report
 				set current_experience=null, helpful_context=null, difficult_context=null,
+					symptom_catalog_revision=null, symptom_codes='{}',
 					version=version+1, updated_at=:now, deleted_at=:now
 				where user_id=:userId and id=:id and version=:version and deleted_at is null
 				""").param("now", at(now)).param("userId", userId).param("id", id)
@@ -116,7 +139,13 @@ class ReassessmentSelfReportStore {
 				row.getTimestamp("current_period_start").toInstant(), row.getTimestamp("current_period_end").toInstant(),
 				row.getString("current_experience"), row.getString("helpful_context"),
 				row.getString("difficult_context"), row.getLong("version"), row.getTimestamp("authored_at").toInstant(),
-				row.getTimestamp("updated_at").toInstant(), nullableInstant(row, "deleted_at"));
+				row.getTimestamp("updated_at").toInstant(), nullableInstant(row, "deleted_at"),
+				ReassessmentSymptomCatalog.stored(row.getString("symptom_catalog_revision"),
+						List.of((String[]) row.getArray("symptom_codes").getArray())));
+	}
+
+	private String[] codes(Checklist checklist) {
+		return checklist == null ? new String[0] : checklist.selectedCodes().toArray(String[]::new);
 	}
 
 	private OffsetDateTime at(Instant value) {
@@ -135,7 +164,15 @@ class ReassessmentSelfReportStore {
 
 	record StoredSelfReport(UUID id, UUID userId, String idempotencyKey, String requestHash, String sourceVersion,
 			Instant periodStart, Instant periodEnd, String currentExperience, String helpfulContext,
-			String difficultContext, long version, Instant authoredAt, Instant updatedAt, Instant deletedAt) {
+			String difficultContext, long version, Instant authoredAt, Instant updatedAt, Instant deletedAt,
+			Checklist symptomChecklist) {
+		StoredSelfReport(UUID id, UUID userId, String idempotencyKey, String requestHash, String sourceVersion,
+				Instant periodStart, Instant periodEnd, String currentExperience, String helpfulContext,
+				String difficultContext, long version, Instant authoredAt, Instant updatedAt, Instant deletedAt) {
+			this(id, userId, idempotencyKey, requestHash, sourceVersion, periodStart, periodEnd, currentExperience,
+					helpfulContext, difficultContext, version, authoredAt, updatedAt, deletedAt, null);
+		}
+
 		boolean deleted() {
 			return deletedAt != null;
 		}

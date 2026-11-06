@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -15,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -23,6 +25,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -586,6 +591,352 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		assertThat(fresh.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
 	}
 
+	@Test
+	void symptomChecklistPreparesReloadsAndExplicitlyReplacesNativePlanWithoutBarrierPatterns() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		var context = checklistContext(user, plan, "PERSISTENT_WORRY");
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("patterns")).isEmpty();
+		var option = adaptiveOption(review, "ALTERNATIVE_ACTION");
+		assertThat(option.path("symptomMapping").path("resourceReasons").findValuesAsText("resourceId"))
+				.containsExactly("00000000-0000-4000-8000-000000000211");
+		var prepared = confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-prepare-happy-0001");
+		var draft = prepared.path("draft");
+		var saved = response(mvc.perform(get("/api/v2/support-plans/{id}", draft.path("supportPlanId").asText()).with(user(user)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertThat(saved.path("symptomMapping")).isEqualTo(option.path("symptomMapping"));
+		assertThat(adaptiveReview(user, plan).path("reviewFingerprint")).isEqualTo(review.path("reviewFingerprint"));
+		mvc.perform(get("/api/v2/support-plans/{id}", draft.path("supportPlanId").asText()).with(user(profile())))
+				.andExpect(status().isNotFound());
+		mvc.perform(post("/api/v2/support-plans/{id}/activate", draft.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "symptom-bypass-activate-0001"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ADAPTIVE_REVIEW_CONFIRM_REQUIRED"));
+		var replace = mapper.createObjectNode().put("currentSupportPlanId", plan.path("supportPlanId").asText())
+				.put("currentVersion", plan.path("version").asLong()).put("reassessmentSummaryId", context.summaryId().toString());
+		mvc.perform(post("/api/v2/support-plans/{id}/replacement-review", draft.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON).content(replace.toString())).andExpect(status().isOk());
+		mvc.perform(post("/api/v2/support-plans/{id}/replace", draft.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "symptom-bypass-replace-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(replace.toString()))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ADAPTIVE_REVIEW_CONFIRM_REQUIRED"));
+		var finalBody = symptomFinalBody(review, draft);
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"0\"").header("Idempotency-Key", "symptom-final-stale-version-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(finalBody.toString())).andExpect(status().isPreconditionFailed());
+		var replaced = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-final-happy-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(finalBody.toString())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertThat(replaced.path("result").asText()).isEqualTo("REPLACED");
+		assertThat(replaced.path("plan").path("symptomMapping")).isEqualTo(saved.path("symptomMapping"));
+		assertCareSchema(replaced, "AdaptiveReviewConfirmation");
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-final-happy-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(finalBody.toString())).andExpect(status().isOk());
+		var changedPayload = finalBody.deepCopy().put("reviewFingerprint", "f".repeat(64));
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-final-happy-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(changedPayload.toString()))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+		var rereview = adaptiveReview(user, replaced.path("plan"));
+		assertThat(rereview.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+		assertThat(rereview.path("options").findValuesAsText("kind")).doesNotContain("ALTERNATIVE_ACTION");
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", context.report().path("selfReportId").asText()).with(user(user))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"currentExperience\":\"UNSURE\",\"symptomChecklist\":{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":[\"APPETITE_CHANGE\"]}}"))
+				.andExpect(status().isOk());
+		var changedReview = adaptiveReview(user, replaced.path("plan"));
+		assertThat(changedReview.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+		assertThat(changedReview.path("reassessment").path("state").asText()).isEqualTo("STALE");
+		assertThat(changedReview.path("options").findValuesAsText("kind")).doesNotContain("ALTERNATIVE_ACTION");
+	}
+
+	@Test
+	void equivalentGenericAlternativePersistsMergedChecklistReasonsThroughBothConfirmations() throws Exception {
+		UUID user = profile();
+		var initial = activeAdaptivePlan(user);
+		UUID initialId = UUID.fromString(initial.path("supportPlanId").asText());
+		adaptiveContext(user, initialId);
+		var initialAction = actions(initial).stream().filter(item -> "depression-maintenance".equals(item.path("provenance").path("referenceId").asText()))
+				.findFirst().orElseThrow();
+		assertThat(initialAction.path("source").path("sourceId").asText()).isEqualTo("00000000-0000-4000-8000-000000000208");
+		adaptiveFeedback(user, initialId, UUID.fromString(initialAction.path("actionId").asText()), "NOT_A_GOOD_FIT", true);
+		var genericReview = adaptiveReview(user, initial);
+		assertThat(adaptiveOption(genericReview, "ALTERNATIVE_ACTION").path("rationaleCodes"))
+				.isEqualTo(mapper.valueToTree(List.of("REPEATED_NOT_A_GOOD_FIT", "PRACTICAL_FIT_ONLY")));
+		var genericDraft = confirmAdaptive(user, initial, genericReview, "ALTERNATIVE_ACTION", "symptom-overlap-generic-prepare-0001").path("draft");
+		var plan = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", initialId).with(user(user))
+				.header("If-Match", '"' + initial.path("version").asText() + '"').header("Idempotency-Key", "symptom-overlap-generic-final-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(symptomFinalBody(genericReview, genericDraft).toString()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("plan");
+		var depression = actions(plan).stream().filter(item -> "depression-maintenance".equals(item.path("provenance").path("referenceId").asText()))
+				.findFirst().orElseThrow();
+		assertThat(depression.path("source").path("sourceId").asText()).isEqualTo("00000000-0000-4000-8000-000000000205");
+		UUID planId = UUID.fromString(plan.path("supportPlanId").asText());
+		adaptiveFeedback(user, planId, UUID.fromString(depression.path("actionId").asText()), "NOT_A_GOOD_FIT", true);
+		var context = checklistContext(user, plan, "LOW_ENERGY", "LOW_MOOD");
+		var review = adaptiveReview(user, plan);
+		var alternatives = java.util.stream.StreamSupport.stream(review.path("options").spliterator(), false)
+				.filter(item -> "ALTERNATIVE_ACTION".equals(item.path("kind").asText())).toList();
+		assertThat(alternatives).hasSize(1);
+		var option = alternatives.getFirst();
+		assertThat(option.path("rationaleCodes"))
+				.isEqualTo(mapper.valueToTree(List.of("REPEATED_NOT_A_GOOD_FIT", "PRACTICAL_FIT_ONLY", "SELF_REPORTED_SYMPTOM_MATCH")));
+		assertThat(option.path("evidenceRefs").findValuesAsText("source")).containsExactly("PATTERN", "SELF_REPORTED_EXPERIENCE");
+		assertThat(option.path("evidenceRefs").get(1).path("refId").asText()).isEqualTo(context.report().path("selfReportId").asText());
+		assertThat(option.path("symptomMapping").path("resourceReasons").findValuesAsText("code")).containsExactly("LOW_ENERGY", "LOW_MOOD");
+		assertThat(option.path("symptomMapping").path("resourceReasons").findValuesAsText("resourceId"))
+				.containsExactly("00000000-0000-4000-8000-000000000208", "00000000-0000-4000-8000-000000000208");
+		var draft = confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-overlap-prepare-0001").path("draft");
+		var saved = response(mvc.perform(get("/api/v2/support-plans/{id}", draft.path("supportPlanId").asText()).with(user(user)))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertThat(saved.path("symptomMapping")).isEqualTo(option.path("symptomMapping"));
+		var finalBody = symptomFinalBody(review, draft);
+		var replaced = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", planId).with(user(user))
+				.header("If-Match", '"' + plan.path("version").asText() + '"').header("Idempotency-Key", "symptom-overlap-final-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(finalBody.toString()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertThat(replaced.path("result").asText()).isEqualTo("REPLACED");
+		assertThat(replaced.path("plan").path("symptomMapping")).isEqualTo(saved.path("symptomMapping"));
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id=:user and command_type='REPLACE'")
+				.param("user", user).query(Long.class).single()).isEqualTo(2);
+		assertThat(jdbc.sql("select status from support_plan where user_id=:user").param("user", user).query(String.class).list())
+				.containsExactlyInAnyOrder("SUPERSEDED", "SUPERSEDED", "ACTIVE");
+	}
+
+	@Test
+	void laterReassessmentStillOffersAnIndependentOptionWhenAStandardResourceCarriesAnObsoleteReason() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		checklistContext(user, plan, "LOW_MOOD", "PERSISTENT_WORRY");
+		var review = adaptiveReview(user, plan);
+		assertThat(adaptiveOption(review, "ALTERNATIVE_ACTION").path("symptomMapping").path("resourceReasons").findValuesAsText("code"))
+				.containsExactly("PERSISTENT_WORRY", "LOW_MOOD");
+		var draft = confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-successive-prepare-0001").path("draft");
+		var replaced = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-successive-final-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(symptomFinalBody(review, draft).toString()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("plan");
+		assertThat(replaced.path("symptomMapping").path("resourceReasons").findValuesAsText("resourceId")).containsExactlyInAnyOrder(
+				"00000000-0000-4000-8000-000000000208", "00000000-0000-4000-8000-000000000211");
+		checklistContext(user, replaced, "STRESS_OVERLOAD");
+		var later = adaptiveReview(user, replaced);
+		var option = adaptiveOption(later, "ALTERNATIVE_ACTION");
+		assertThat(option.path("symptomMapping").path("resourceReasons").findValuesAsText("code")).containsExactly("STRESS_OVERLOAD");
+		assertThat(option.path("symptomMapping").path("resourceReasons").findValuesAsText("resourceId"))
+				.containsExactly("00000000-0000-4000-8000-000000000209");
+		String version = '"' + replaced.path("version").asText() + '"';
+		var nextDraft = confirmAdaptive(user, replaced, later, "ALTERNATIVE_ACTION", "symptom-successive-prepare-0002").path("draft");
+		var next = response(mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", replaced.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", version).header("Idempotency-Key", "symptom-successive-final-0002")
+				.contentType(MediaType.APPLICATION_JSON).content(symptomFinalBody(later, nextDraft).toString()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		assertThat(next.path("result").asText()).isEqualTo("REPLACED");
+		assertThat(next.path("plan").path("symptomMapping")).isEqualTo(option.path("symptomMapping"));
+		assertThat(jdbc.sql("select status from support_plan where user_id=:user").param("user", user).query(String.class).list())
+				.containsExactlyInAnyOrder("SUPERSEDED", "SUPERSEDED", "ACTIVE");
+	}
+
+	@ParameterizedTest
+	@CsvSource({"false,false", "false,true", "true,false", "true,true"})
+	void symptomSourceEditOrDeletionInvalidatesEitherConfirmationAndPreparedReplayStillSucceeds(boolean prepared, boolean deleted) throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		var context = checklistContext(user, plan, "PERSISTENT_WORRY");
+		var review = adaptiveReview(user, plan);
+		var first = prepared ? confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-source-prepare-0001") : null;
+		var reportId = context.report().path("selfReportId").asText();
+		if (deleted) {
+			mvc.perform(delete("/api/v1/reassessment-self-reports/{id}", reportId).with(user(user)).header("If-Match", "\"0\""))
+					.andExpect(status().isNoContent());
+		}
+		else {
+			mvc.perform(put("/api/v1/reassessment-self-reports/{id}", reportId).with(user(user)).header("If-Match", "\"0\"")
+					.contentType(MediaType.APPLICATION_JSON).content("{\"currentExperience\":\"UNSURE\",\"symptomChecklist\":{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":[\"PERSISTENT_WORRY\"]}}"))
+					.andExpect(status().isOk());
+		}
+		var body = prepared ? symptomFinalBody(review, first.path("draft")) : symptomConfirmBody(review);
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-source-stale-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ADAPTIVE_REVIEW_STALE"));
+		assertThat(jdbc.sql("select status from support_plan where id=:id").param("id", UUID.fromString(plan.path("supportPlanId").asText())).query(String.class).single()).isEqualTo("ACTIVE");
+		if (prepared) {
+			assertThat(confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-source-prepare-0001").path("draft"))
+					.isEqualTo(first.path("draft"));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({"false", "true"})
+	void newerSummaryWithTheSameChecklistInvalidatesEitherConfirmationWithoutChangingPlans(boolean prepared) throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		var context = checklistContext(user, plan, "PERSISTENT_WORRY");
+		var review = adaptiveReview(user, plan);
+		var first = prepared ? confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-summary-prepare-0001") : null;
+		UUID newSummaryId = UUID.randomUUID();
+		Instant composedAt = Instant.now();
+		var snapshot = (com.fasterxml.jackson.databind.node.ObjectNode) review.path("reassessment").path("summary").deepCopy();
+		snapshot.put("summaryId", newSummaryId.toString()).put("composedAt", composedAt.toString());
+		jdbc.sql("""
+				insert into reassessment_summary(id,user_id,idempotency_key,request_hash,summary_version,journal_job_id,
+				journal_analysis_id,previous_period_start,previous_period_end,current_period_start,current_period_end,snapshot,composed_at)
+				select :id,user_id,:key,request_hash,summary_version,journal_job_id,journal_analysis_id,
+				previous_period_start,previous_period_end,current_period_start,current_period_end,cast(:snapshot as jsonb),:composedAt
+				from reassessment_summary where id=:source and user_id=:user
+				""").param("id", newSummaryId).param("key", "symptom-new-summary-" + newSummaryId)
+				.param("snapshot", snapshot.toString()).param("composedAt", java.sql.Timestamp.from(composedAt))
+				.param("source", context.summaryId()).param("user", user).update();
+		var fresh = adaptiveReview(user, plan);
+		assertThat(fresh.path("reassessment").path("summary").path("summaryId").asText()).isEqualTo(newSummaryId.toString());
+		assertThat(adaptiveOption(fresh, "ALTERNATIVE_ACTION").path("symptomMapping").path("resourceReasons"))
+				.isEqualTo(adaptiveOption(review, "ALTERNATIVE_ACTION").path("symptomMapping").path("resourceReasons"));
+		var body = prepared ? symptomFinalBody(review, first.path("draft")) : symptomConfirmBody(review);
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-summary-stale-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ADAPTIVE_REVIEW_STALE"));
+		assertThat(jdbc.sql("select status || ':' || version from support_plan where user_id=:user")
+				.param("user", user).query(String.class).list())
+				.containsExactlyInAnyOrderElementsOf(prepared ? List.of("ACTIVE:1", "DRAFT:0") : List.of("ACTIVE:1"));
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id=:user and command_type='REPLACE'")
+				.param("user", user).query(Long.class).single()).isZero();
+		if (prepared) {
+			assertThat(confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-summary-prepare-0001").path("draft"))
+					.isEqualTo(first.path("draft"));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({"WITHDRAWN,409,ADAPTIVE_REVIEW_STALE", "UNAVAILABLE,503,RESOURCE_ELIGIBILITY_UNAVAILABLE"})
+	void contentAdmissionFailureAfterSymptomPreparationPreservesPlansAndExactPreparedReplay(String outcome, int expectedStatus, String expectedCode) throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		checklistContext(user, plan, "PERSISTENT_WORRY");
+		var review = adaptiveReview(user, plan);
+		var prepared = confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-admission-prepare-0001");
+		eligible(ResourceEligibilityOutcome.valueOf(outcome), "UNAVAILABLE".equals(outcome)
+				? ResourceEligibilityReasonCode.DEPENDENCY_UNAVAILABLE : ResourceEligibilityReasonCode.RESOURCE_NOT_FOUND);
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-admission-final-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(symptomFinalBody(review, prepared.path("draft")).toString()))
+				.andExpect(status().is(expectedStatus)).andExpect(jsonPath("$.code").value(expectedCode));
+		assertThat(jdbc.sql("select status || ':' || version from support_plan where user_id=:user")
+				.param("user", user).query(String.class).list()).containsExactlyInAnyOrder("ACTIVE:1", "DRAFT:0");
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id=:user and command_type='REPLACE'")
+				.param("user", user).query(Long.class).single()).isZero();
+		assertThat(confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-admission-prepare-0001").path("draft"))
+				.isEqualTo(prepared.path("draft"));
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = ResourceEligibilityOutcome.class, names = {"STALE", "WITHDRAWN", "UNAVAILABLE", "INELIGIBLE"})
+	void latestSymptomResourceNeverFallsBackToOlderVersionOnFailedAdmission(ResourceEligibilityOutcome failure) throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		checklistContext(user, plan, "PERSISTENT_WORRY");
+		// Default fixture keeps every current tuple (201:1, others :0); only the mapped resource advances.
+		doAnswer(call -> call.<List<String>>getArgument(0).stream().collect(java.util.stream.Collectors.toMap(id -> id,
+				id -> id.endsWith("0211") || id.endsWith("0201") ? "1" : "0")))
+				.when(eligibility).currentVersions(org.mockito.ArgumentMatchers.anyList(), anyString(), any());
+		var mappedOutcome = new java.util.concurrent.atomic.AtomicReference<>(ResourceEligibilityOutcome.ELIGIBLE);
+		doAnswer(call -> {
+			assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+			var request = call.getArgument(0, ResourceEligibilityBatchRequest.class);
+			return new ResourceEligibilityBatchResponse("content-eligibility-v1", Instant.now().toString(), request.requests().stream().map(query -> {
+				var outcome = mappedOutcome.get();
+				boolean failed = query.resourceId().endsWith("0211") && outcome != ResourceEligibilityOutcome.ELIGIBLE;
+				if (query.resourceId().endsWith("0211")) assertThat(query.contentVersion()).isEqualTo("1");
+				return failed ? new ResourceEligibilityResult(query.requestId(), query.resourceId(), query.contentVersion(), outcome,
+						outcome == ResourceEligibilityOutcome.UNAVAILABLE ? ResourceEligibilityReasonCode.DEPENDENCY_UNAVAILABLE : ResourceEligibilityReasonCode.RESOURCE_NOT_FOUND,
+						null, null, null, null, null, null)
+						: new ResourceEligibilityResult(query.requestId(), query.resourceId(), query.contentVersion(), ResourceEligibilityOutcome.ELIGIBLE,
+								ResourceEligibilityReasonCode.ELIGIBLE_MATCH, query.requiredRole().name().equals("PRIMARY") ? EligibilityRole.PRIMARY : EligibilityRole.ADJUNCT,
+								UUID.nameUUIDFromBytes(query.resourceId().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString(), ResourceCategory.ARTICLE, "Resource", "Summary", null);
+			}).toList());
+		}).when(eligibility).resolve(any(), anyString(), any());
+		var control = adaptiveReview(user, plan);
+		var offered = adaptiveOption(control, "ALTERNATIVE_ACTION").path("symptomMapping").path("resourceReasons");
+		assertThat(offered.findValuesAsText("resourceId")).containsExactly("00000000-0000-4000-8000-000000000211");
+		assertThat(offered.findValuesAsText("contentVersion")).containsExactly("1");
+		var planRows = jdbc.sql("select id || ':' || status || ':' || version from support_plan where user_id=:user").param("user", user).query(String.class).list();
+		long commands = jdbc.sql("select count(*) from support_plan_command where user_id=:user").param("user", user).query(Long.class).single();
+		mappedOutcome.set(failure);
+		var review = adaptiveReview(user, plan);
+		assertThat(review.path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
+		assertThat(review.path("options").findValuesAsText("kind")).doesNotContain("ALTERNATIVE_ACTION");
+		if (failure == ResourceEligibilityOutcome.UNAVAILABLE) {
+			assertThat(review.path("unavailableOptions").findValuesAsText("reasonCode")).contains("ADMISSION_UNAVAILABLE");
+		}
+		mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "symptom-latest-failed-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(symptomConfirmBody(control).toString()))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ADAPTIVE_REVIEW_STALE"));
+		assertThat(planRows).singleElement().asString().endsWith(":ACTIVE:1");
+		assertThat(jdbc.sql("select id || ':' || status || ':' || version from support_plan where user_id=:user")
+				.param("user", user).query(String.class).list()).isEqualTo(planRows);
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id=:user").param("user", user).query(Long.class).single())
+				.isEqualTo(commands);
+	}
+
+	@Test
+	void simultaneousSymptomFinalConfirmationsApplyExactlyOneReplacement() throws Exception {
+		UUID user = profile();
+		var plan = activeAdaptivePlan(user);
+		checklistContext(user, plan, "PERSISTENT_WORRY");
+		var review = adaptiveReview(user, plan);
+		var draft = confirmAdaptive(user, plan, review, "ALTERNATIVE_ACTION", "symptom-race-prepare-0001").path("draft");
+		String body = symptomFinalBody(review, draft).toString();
+		var start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var results = List.of("symptom-race-final-0001", "symptom-race-final-0002").stream().map(key -> executor.submit(() -> {
+				start.await(5, TimeUnit.SECONDS);
+				return mvc.perform(post("/api/v2/support-plans/{id}/adaptive-review/confirm", plan.path("supportPlanId").asText()).with(user(user))
+						.header("If-Match", "\"1\"").header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body))
+						.andReturn().getResponse();
+			})).toList();
+			start.countDown();
+			var responses = List.of(results.get(0).get(20, TimeUnit.SECONDS), results.get(1).get(20, TimeUnit.SECONDS));
+			assertThat(responses).filteredOn(result -> result.getStatus() == 200).hasSize(1);
+			var rejected = responses.stream().filter(result -> result.getStatus() != 200).findFirst().orElseThrow();
+			assertThat(rejected.getStatus()).isIn(409, 412);
+			assertThat(response(rejected.getContentAsString()).path("code").asText()).isEqualTo(rejected.getStatus() == 409
+					? "ADAPTIVE_REVIEW_STALE" : "SUPPORT_PLAN_VERSION_MISMATCH");
+		}
+		assertThat(jdbc.sql("select count(*) from support_plan_command where user_id=:user and command_type='REPLACE'").param("user", user).query(Long.class).single()).isEqualTo(1);
+		assertThat(jdbc.sql("select status from support_plan where user_id=:user").param("user", user).query(String.class).list())
+				.containsExactlyInAnyOrder("SUPERSEDED", "ACTIVE");
+	}
+
+	private com.fasterxml.jackson.databind.node.ObjectNode symptomConfirmBody(JsonNode review) {
+		return mapper.createObjectNode().put("reviewFingerprint", review.path("reviewFingerprint").asText())
+				.put("optionId", adaptiveOption(review, "ALTERNATIVE_ACTION").path("optionId").asText())
+				.put("reassessmentSummaryId", review.path("reassessment").path("summary").path("summaryId").asText());
+	}
+	private com.fasterxml.jackson.databind.node.ObjectNode symptomFinalBody(JsonNode review, JsonNode draft) {
+		return symptomConfirmBody(review).put("proposedPlanId", draft.path("supportPlanId").asText()).put("proposedVersion", draft.path("version").asLong());
+	}
+	private ChecklistContext checklistContext(UUID user, JsonNode plan, String... codes) throws Exception {
+		jdbc.sql("update screening_episode set purpose='REASSESSMENT' where user_id=:user").param("user", user).update();
+		UUID summaryId = summary(user, UUID.fromString(plan.path("supportPlanId").asText()));
+		var snapshot = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(jdbc.sql("select snapshot::text from reassessment_summary where id=:id")
+				.param("id", summaryId).query(String.class).single());
+		var body = mapper.createObjectNode().put("currentExperience", "UNSURE");
+		body.set("currentPeriod", snapshot.path("currentPeriod"));
+		body.putObject("symptomChecklist").put("catalogRevision", "reassessment-symptoms-v1").set("selectedCodes", mapper.valueToTree(codes));
+		var report = response(mvc.perform(post("/api/v1/reassessment-self-reports").with(user(user)).header("Idempotency-Key", "symptom-report-" + UUID.randomUUID())
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+		var source = (com.fasterxml.jackson.databind.node.ObjectNode) report.deepCopy();
+		source.put("sourceRevision", report.path("version").asLong()).remove("version");
+		var dimension = mapper.createObjectNode().put("state", "AVAILABLE").putNull("unavailableReason");
+		dimension.set("source", source);
+		snapshot.set("selfReportedExperience", dimension);
+		jdbc.sql("update reassessment_summary set snapshot=cast(:snapshot as jsonb) where id=:id").param("id", summaryId).param("snapshot", snapshot.toString()).update();
+		return new ChecklistContext(summaryId, report);
+	}
+	private record ChecklistContext(UUID summaryId, JsonNode report) { }
+
 	private JsonNode activeAdaptivePlan(UUID user) throws Exception {
 		var draft = propose(user, evaluation(user, false), "adaptive-propose-" + UUID.randomUUID());
 		return activate(user, UUID.fromString(draft.path("supportPlanId").asText()), 0, "adaptive-activate-" + UUID.randomUUID());
@@ -821,7 +1172,7 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	private UUID summary(UUID user, UUID draftId) throws Exception {
 		UUID id = UUID.randomUUID();
 		UUID job = UUID.randomUUID();
-		Instant end = Instant.now().minusSeconds(1);
+		Instant end = Instant.now().minusSeconds(1).truncatedTo(ChronoUnit.MICROS);
 		Instant currentStart = end.minusSeconds(14L * 86400);
 		Instant previousStart = currentStart.minusSeconds(14L * 86400);
 		var assessmentIds = jdbc.sql("""

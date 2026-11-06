@@ -1,5 +1,83 @@
 # SupportPlan policy v2
 
+## MB-808 reassessment checklist amendment — 2026-11-06
+
+Approved by the owner on 2026-11-06 under the
+[ADR 0022 amendment](../adr/0022-current-product-blueprint-amendments.md#mb-808-reassessment-checklist-amendment--2026-11-06).
+The catalog/map draft was approved as written, including native-v3-only mapped
+options within existing slots. The immutable Care bundle is
+`reassessment-symptoms-v1` / `reassessment-symptom-resource-map-v1`.
+Any code, label or mapping edit releases a new bundle; prior bundles remain
+available for immutable provenance.
+
+| Code | Approved Vietnamese label | Candidate resource suffix |
+| --- | --- | --- |
+| `SLEEP_DIFFICULTY` | Khó ngủ hoặc giấc ngủ bị gián đoạn | `207` |
+| `LOW_ENERGY` | Thiếu năng lượng cho việc thường ngày | `208` |
+| `PERSISTENT_WORRY` | Lo lắng lặp đi lặp lại | `211` |
+| `LOW_MOOD` | Buồn hoặc ít hứng thú với việc thường thích | `208` |
+| `CONCENTRATION_DIFFICULTY` | Khó tập trung vào việc đang làm | `203` |
+| `APPETITE_CHANGE` | Ăn uống thay đổi so với thường ngày | No approved mapping |
+| `SOCIAL_WITHDRAWAL` | Ít muốn gặp gỡ hoặc trò chuyện | No approved mapping |
+| `STRESS_OVERLOAD` | Cảm thấy căng thẳng hoặc quá tải | `209` |
+
+Each suffix completes UUID prefix `00000000-0000-4000-8000-000000000`.
+Resource `207` is allowed only in `depression-adjunct` / `anxiety-adjunct`;
+`208` in `depression-maintenance`, `depression-support-activity` or
+`anxiety-adjunct`; `211` in `anxiety-maintenance` /
+`anxiety-support-activity`; and `203` / `209` in those two anxiety slots or
+`depression-adjunct`. These are candidate allowlists, never admission grants.
+Family, slot, kind, domain, purpose, bounds and PRIMARY-for-CORE remain in force;
+no practices enter psychoeducation slots and no new slot is created.
+
+The optional checklist supplements explicit user-authored period experience in
+dimension four; the four dimensions and contradictory evidence remain separate.
+Care accepts zero through eight exact unique closed codes, rejecting invalid,
+duplicate, null or excess selections before canonical sorting. Unsupported
+catalog revisions conflict. POST omission records no checklist; PUT omission
+preserves it for older clients, and an explicit empty selection records/clears
+the selection under its revision. Neither omission nor empty selection means
+no symptoms. DELETE clears codes and revision with private source content and
+retains the non-resurrectable tombstone. There is no inferred symptom, diagnosis,
+severity, total or recovery score. Physical red flags (breathlessness, chest pain,
+fainting/loss of consciousness and headache/body pain) and medical advice/triage
+copy are outside this checklist.
+
+Summary snapshots freeze complete sorted selections, catalog/map revisions,
+candidate reasons and exact source ID/revision/period; historical fields remain
+absent when absent originally, without current-source/catalog/Content hydration.
+`SELF_REPORTED_SYMPTOM_MATCH` denotes approved candidate mapping only;
+`NO_APPROVED_RESOURCE_MAPPING` preserves evidence without promising an option.
+No local checklist CRUD or summary evidence depends on Content or AI.
+
+New native-v3 review options require latest current Content version discovery
+and exact publication, review/withdrawal/effective-state, locale, instrument,
+domain, level, pathway and role admission, repeated before preparation and final
+confirmation. There is no older-version fallback or seed-derived runtime right.
+Private codes/context are never sent to Content. Missing CORE and dependency
+uncertainty fail closed using existing conflict/unavailable behavior. Retain
+existing non-checklist options first, deduplicate equivalent resources and merge
+their reasons, then fill compatible slots in deterministic catalog/slot order
+within the existing eight-option and one-through-five-resource bounds. No
+repeated-pattern threshold is required for the user's explicit selections.
+
+Only the confirmed native draft's accepted exact mapping is persisted in
+owner-only `checklist_provenance`, exposed as optional `symptomMapping`.
+It carries summary/report/revision/period, revisions, complete selections and
+exact admitted slot/resource/version/publication/role/policy/reason tuples.
+Later slot revalidation trusts only this validated Care-authored stored map,
+never client candidates or mutable current source. Codes/reasons remain absent
+from logs, events, AI/specialist context and Content's minimized plan projection.
+Fingerprint/local identity includes this evidence and reasons, excluding current
+observation timestamps. After exact ledger replay, a checklist-bound draft's
+direct native activate/replace returns `ADAPTIVE_REVIEW_CONFIRM_REQUIRED`;
+the existing two-stage adaptive confirmation performs source/deletion/latest-
+summary checks under the owner lock and atomic supersede/activate. Remote calls
+remain outside transactions. The user chooses; no automatic replacement occurs.
+Legacy v2 reports/summaries can carry evidence while existing v2 plan behavior
+and immutable history remain unchanged. No displayed/declined-review store is
+introduced. Production content-readiness gates remain separate.
+
 ## Policy metadata
 
 | Field | Value |

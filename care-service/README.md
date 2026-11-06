@@ -744,3 +744,55 @@ none writes completion. Accepted retries return the persisted completion without
 another dependency call. Content facts cannot reopen an accepted occurrence.
 Migration 031 expands the Resource evidence CHECK and scopes the fact uniqueness
 by owner so deterministic daily-progress fact IDs cannot collide across users.
+## MB-808 reassessment symptom checklist and native review mapping
+
+Owner approval dated 2026-11-06 is recorded in
+[ADR 0022](../docs/adr/0022-current-product-blueprint-amendments.md#mb-808-reassessment-checklist-amendment--2026-11-06)
+and [SupportPlan policy v2](../docs/policies/support-plan-policy-v2.md#mb-808-reassessment-checklist-amendment--2026-11-06).
+The authenticated USER catalog is local and immutable:
+`GET /api/v1/reassessment-self-reports/catalog`, bundle
+`reassessment-symptoms-v1` / `reassessment-symptom-resource-map-v1`, eight
+optional coded selections, no scoring or inferred absence. The approved catalog
+and slot map live in `reassessment/ReassessmentSymptomCatalog.java`.
+
+Create omission preserves legacy hash bytes; explicit empty selection is
+authored evidence. PUT omission preserves a prior checklist for older clients,
+while an explicit empty selection clears codes under its supplied revision.
+Unknown, duplicate, null or excess codes fail with safe 400 validation; an
+unsupported catalog returns 409. Exact recorded create replay precedes current
+catalog validation. DELETE clears the checklist with the existing private
+response content and retains a tombstone. Immutable summaries copy exact
+source revision/period, codes, bundle revisions and candidate reasons; reload
+never adds checklist fields to historical JSON.
+
+Only native-v3 adaptive review creates the new mapped replacement options.
+Selections alone create candidates inside existing compatible resource slots;
+Care discovers current Content versions and admits exact publication/role/
+policy tuples before offering them. No match or compatible slot leaves the
+selection saved without an option. Reviewed seed IDs grant no runtime right.
+AI does not compose options. Existing independent options take precedence, and
+the eight-option bound and one-to-five resource bound remain unchanged.
+
+Preparing a mapped draft and replacing the current plan remain two explicit
+confirmations. The draft stores owner-only `checklist_provenance`, exposed as
+optional `symptomMapping`. Revalidation uses its approved exact tuples and fresh
+Content admission; source edit/deletion or a new summary invalidates stale
+confirmation under the shared owner lock. Direct native activate/replace of a
+checklist-bound draft returns `ADAPTIVE_REVIEW_CONFIRM_REQUIRED` after checking
+exact ledger replay. Comparison and discard remain available. Legacy-v2
+evidence remains readable without new mapped options or conversion. Checklist
+codes and reasons never enter logs, events, AI/specialist contexts or Content's
+minimized current-plan resource-action projection.
+
+Migration `034-reassessment-symptom-checklist.sql` / `care-035` is additive with
+no backfill or historical JSON update. Deploy schema first and drain old Care
+mutation instances before enabling checklist writes, since an older binary
+cannot apply the new tombstone-clearing rules. Database constraints bound
+source arrays and enforce native-only plan JSON objects; Care validates closed
+catalog membership, uniqueness, mapping bounds and exact approved tuples.
+
+Consumer: ngocquyen's MB-809 web work runs `npm run contracts:sync` using this
+story's `CARE_OPENAPI_SOURCE`, then consumer contract/BFF/client checks. The
+provider merges first. Tests cover source/replay/snapshot, deterministic
+mapping, owner/concurrency/failure boundaries and upgrade from 033; exact local
+gate evidence is recorded in the story backend handoff.

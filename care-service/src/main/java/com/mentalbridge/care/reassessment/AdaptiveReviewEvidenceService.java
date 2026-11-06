@@ -24,6 +24,8 @@ import com.mentalbridge.care.reassessment.ReassessmentSummaryView.JournalDimensi
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.Period;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.ReflectionDimension;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.SelfReportedExperienceDimension;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Checklist;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.SelectionReason;
 import com.mentalbridge.care.shared.ApiException;
 
 @Service
@@ -127,14 +129,18 @@ public class AdaptiveReviewEvidenceService {
 		}
 		return new SelfReportedExperienceDimension("AVAILABLE", null, new ExplicitSelfReport(value.id(),
 				value.sourceVersion(), value.version(), period, value.currentExperience(), value.helpfulContext(),
-				value.difficultContext(), value.authoredAt(), value.updatedAt()));
+				value.difficultContext(), value.authoredAt(), value.updatedAt(), value.symptomChecklist(),
+				ReassessmentSymptomCatalog.reasons(value.symptomChecklist())));
 	}
 
 	private boolean changedSelfReport(ReassessmentSummaryView summary, Optional<StoredSelfReport> report) {
 		var source = summary.selfReportedExperience() == null ? null : summary.selfReportedExperience().source();
 		return source != null && (report.isEmpty() || report.get().deleted()
 				|| !source.sourceVersion().equals(report.get().sourceVersion())
-				|| source.sourceRevision() != report.get().version());
+				|| source.sourceRevision() != report.get().version()
+				|| !Objects.equals(source.symptomChecklist(), report.get().symptomChecklist())
+				|| !Objects.equals(source.symptomSelectionReasons(),
+						ReassessmentSymptomCatalog.reasons(report.get().symptomChecklist())));
 	}
 
 	private boolean matchesScreeningContext(ReassessmentSummaryView summary, ReassessmentContextView context) {
@@ -205,9 +211,12 @@ public class AdaptiveReviewEvidenceService {
 		String engagementState = previous.isEmpty() || current.isEmpty() ? "INSUFFICIENT_DATA" : "AVAILABLE";
 		var freshEngagement = new ReassessmentSummaryView.EngagementDimension(engagementState, previousCounts,
 				currentCounts, sources);
+		var snapshotReport = summary.selfReportedExperience();
+		var safeReport = snapshotReport == null || snapshotReport.source() == null || report.source() != null
+				? snapshotReport : report;
 		return new ReassessmentSummaryView(summary.summaryId(), summary.summaryVersion(), summary.composedAt(),
 				summary.previousPeriod(), summary.currentPeriod(), summary.screening(), currentJournal,
-				freshEngagement, report, safeReflections(summary.activityReflection(), all, summary.currentPeriod()),
+				freshEngagement, safeReport, safeReflections(summary.activityReflection(), all, summary.currentPeriod()),
 				safeReflections(summary.userReflection(), all, summary.currentPeriod()), summary.disclaimerCode());
 	}
 
@@ -248,9 +257,15 @@ public class AdaptiveReviewEvidenceService {
 			}
 		}
 		var report = sourceReport.map(item -> new ReportIdentity(item.id(), item.sourceVersion(),
-				item.version(), item.periodStart(), item.periodEnd(), item.deletedAt())).orElse(null);
+				item.version(), item.periodStart(), item.periodEnd(), item.deletedAt(), item.symptomChecklist(),
+				ReassessmentSymptomCatalog.reasons(item.symptomChecklist()))).orElse(null);
+		var snapshotReport = selected == null || selected.selfReportedExperience() == null
+				? null : selected.selfReportedExperience().source();
 		return new LocalSnapshot(comparison, latestSummaryId,
-				selected == null ? null : selected.summaryId(), report, assessments, currentOccurrences, previousOccurrences);
+				selected == null ? null : selected.summaryId(), report,
+				snapshotReport == null ? null : snapshotReport.symptomChecklist(),
+				snapshotReport == null ? null : snapshotReport.symptomSelectionReasons(),
+				assessments, currentOccurrences, previousOccurrences);
 	}
 
 	private String hash(Object value) {
@@ -278,9 +293,11 @@ public class AdaptiveReviewEvidenceService {
 			Instant engagementUpdatedAt) { }
 
 	private record ReportIdentity(UUID id, String sourceVersion, long revision, Instant periodStart,
-			Instant periodEnd, Instant deletedAt) { }
+			Instant periodEnd, Instant deletedAt, Checklist symptomChecklist,
+			List<SelectionReason> symptomSelectionReasons) { }
 
 	private record LocalSnapshot(ReassessmentContextView context, UUID latestSummaryId, UUID selectedSummaryId,
-			ReportIdentity selfReport, List<ReassessmentEvidenceRepository.AssessmentEvidence> assessments,
+			ReportIdentity selfReport, Checklist snapshotChecklist, List<SelectionReason> snapshotSelectionReasons,
+			List<ReassessmentEvidenceRepository.AssessmentEvidence> assessments,
 			List<OccurrenceEvidence> occurrences, List<OccurrenceEvidence> previousOccurrences) { }
 }

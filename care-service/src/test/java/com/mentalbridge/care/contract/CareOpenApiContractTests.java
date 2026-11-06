@@ -3,6 +3,7 @@ package com.mentalbridge.care.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +65,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/catalog",
 			"GET /api/v1/reassessment-self-reports/current",
 			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
 			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
@@ -160,6 +162,7 @@ class CareOpenApiContractTests {
 			"/api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
 			"/api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"/api/v1/reassessment-self-reports",
+			"/api/v1/reassessment-self-reports/catalog",
 			"/api/v1/reassessment-self-reports/current",
 			"/api/v1/reassessment-self-reports/{selfReportId}",
 			"/api/v1/reassessment-summaries",
@@ -248,6 +251,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/home-next-step",
 			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
 			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/catalog",
 			"GET /api/v1/reassessment-self-reports/current",
 			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
 			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
@@ -432,6 +436,95 @@ class CareOpenApiContractTests {
 				"sourceJournalRevisions", "provenance").doesNotContainKeys("journalText", "rawResponse");
 		assertThat(String.valueOf(example.getValue())).contains("DECREASED", "MORE_FREQUENT", "MORE_DIFFICULT",
 				"FOUR_DIMENSIONS_NOT_COMBINED");
+	}
+
+	@Test
+	void symptomChecklistContractKeepsInputOptionalClosedAndSemanticallyVersioned() throws Exception {
+		var contract = checklistContract();
+		var schemas = contract.path("components").path("schemas");
+		assertThat(contract.path("info").path("version").asText()).isEqualTo("1.12.0");
+		var checklist = schemas.path("ReassessmentSymptomChecklist");
+		assertThat(checklist.path("additionalProperties").asBoolean()).isFalse();
+		assertThat(checklist.path("required")).isEqualTo(io.swagger.v3.core.util.Json.mapper()
+				.valueToTree(List.of("catalogRevision", "selectedCodes")));
+		assertThat(checklist.path("properties").path("catalogRevision").has("const")).isFalse();
+		assertThat(checklist.path("properties").path("mappingRevision").path("readOnly").asBoolean()).isTrue();
+		assertThat(checklist.path("properties").path("selectedCodes").path("uniqueItems").asBoolean()).isTrue();
+		assertThat(checklist.path("properties").path("selectedCodes").path("maxItems").asInt()).isEqualTo(8);
+		for (var name : List.of("ReassessmentSelfReportCreateRequest", "ReassessmentSelfReportReplaceRequest")) {
+			assertThat(schemas.path(name).path("properties").has("symptomChecklist")).isTrue();
+			assertThat(schemas.path(name).path("required").toString()).doesNotContain("symptomChecklist");
+		}
+		for (var name : List.of("ReassessmentSelfReport", "ReassessmentExplicitSelfReport")) {
+			assertThat(schemas.path(name).path("properties").has("symptomChecklist")).isTrue();
+			assertThat(schemas.path(name).path("properties").has("symptomSelectionReasons")).isTrue();
+			assertThat(schemas.path(name).path("required").toString())
+					.doesNotContain("symptomChecklist", "symptomSelectionReasons");
+		}
+		var catalog = contract.path("paths").path("/api/v1/reassessment-self-reports/catalog").path("get");
+		assertThat(catalog.path("operationId").asText()).isEqualTo("getReassessmentSymptomCatalog");
+		assertThat(catalog.path("responses").path("200").path("headers").path("Cache-Control")
+				.path("schema").path("const").asText()).isEqualTo("no-store");
+		assertThat(contract.path("paths").path("/api/v1/reassessment-self-reports/{selfReportId}")
+				.path("put").path("responses").has("409")).isTrue();
+	}
+
+	@Test
+	void checklistNamedExamplesValidateAndRejectInvalidSelectionsWithoutPrivateEchoes() throws Exception {
+		var contract = checklistContract();
+		var examples = contract.path("components").path("examples");
+		var exampleSchemas = Map.of(
+				"LegacySelfReportCreate", "ReassessmentSelfReportCreateRequest",
+				"SymptomSelfReportCreate", "ReassessmentSelfReportCreateRequest",
+				"EmptySymptomSelfReportReplace", "ReassessmentSelfReportReplaceRequest",
+				"ReassessmentSymptomCatalog", "ReassessmentSymptomCatalog",
+				"AdmittedWorryAdaptiveReviewOption", "AdaptiveReviewOption",
+				"DuplicateSymptomSelectionProblem", "Problem",
+				"UnsupportedSymptomCatalogProblem", "Problem",
+				"ContradictoryReassessmentSummary", "ReassessmentSummary");
+		exampleSchemas.forEach((name, schema) -> assertChecklistSchemaValid(contract, schema,
+				examples.path(name).path("value")));
+		var catalog = examples.path("ReassessmentSymptomCatalog").path("value");
+		assertThat(catalog).isEqualTo(io.swagger.v3.core.util.Json.mapper()
+				.valueToTree(com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.current()));
+		assertThat(catalog.path("items")).hasSize(8);
+		assertThat(catalog.path("items").findValuesAsText("code"))
+				.containsExactly("SLEEP_DIFFICULTY", "LOW_ENERGY", "PERSISTENT_WORRY", "LOW_MOOD",
+						"CONCENTRATION_DIFFICULTY", "APPETITE_CHANGE", "SOCIAL_WITHDRAWAL", "STRESS_OVERLOAD");
+		assertThat(examples.path("LegacySelfReportCreate").path("value").has("symptomChecklist")).isFalse();
+		assertThat(examples.path("ContradictoryReassessmentSummary").path("value")
+				.path("selfReportedExperience").path("source").has("symptomChecklist")).isFalse();
+		assertThat(examples.path("DuplicateSymptomSelectionProblem").path("value").toString())
+				.doesNotContain("SLEEP_DIFFICULTY", "PERSISTENT_WORRY");
+		for (var selected : List.of("[\"LOW_ENERGY\",\"LOW_ENERGY\"]", "[\"UNKNOWN\"]", "[null]",
+				"[\"SLEEP_DIFFICULTY\",\"LOW_ENERGY\",\"PERSISTENT_WORRY\",\"LOW_MOOD\","
+						+ "\"CONCENTRATION_DIFFICULTY\",\"APPETITE_CHANGE\",\"SOCIAL_WITHDRAWAL\","
+						+ "\"STRESS_OVERLOAD\",\"LOW_ENERGY\"]")) {
+			var input = io.swagger.v3.core.util.Json.mapper().readTree(
+					"{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":" + selected + "}");
+			assertThat(checklistValidator(contract, "ReassessmentSymptomChecklist").validate(input)).isNotEmpty();
+		}
+		assertThat(checklistValidator(contract, "ReassessmentSymptomChecklist")
+				.validate(io.swagger.v3.core.util.Json.mapper().nullNode())).isNotEmpty();
+		assertChecklistSchemaValid(contract, "ReassessmentSymptomChecklist", io.swagger.v3.core.util.Json.mapper()
+				.readTree("{\"catalogRevision\":\"future-nonblank-revision\",\"selectedCodes\":[]}"));
+	}
+
+	private JsonNode checklistContract() throws Exception {
+		return io.swagger.v3.core.util.Yaml.mapper().readTree(Files.readString(
+				Path.of("..", "contracts", "openapi", "care-service-v1.yaml")));
+	}
+
+	private void assertChecklistSchemaValid(JsonNode contract, String name, JsonNode value) {
+		assertThat(checklistValidator(contract, name).validate(value)).as("%s example %s", name, value).isEmpty();
+	}
+
+	private com.networknt.schema.Schema checklistValidator(JsonNode contract, String name) {
+		var schema = io.swagger.v3.core.util.Json.mapper().createObjectNode()
+				.put("$ref", "#/components/schemas/" + name);
+		schema.set("components", contract.path("components"));
+		return com.networknt.schema.SchemaRegistry.withDialect(com.networknt.schema.dialect.Dialects.getDraft202012())
+				.getSchema(schema.toString(), com.networknt.schema.InputFormat.JSON);
 	}
 
 	@Test

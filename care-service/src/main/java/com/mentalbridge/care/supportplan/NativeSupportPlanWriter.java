@@ -112,6 +112,7 @@ class NativeSupportPlanWriter {
 				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyCode, safetyCopy,
 				proposal.slots().size() + professionalCount + (emotion ? 1 : 0) + (journal ? 1 : 0) + 1, now);
 		plan.snapshotPersonalization(preferences);
+		plan.snapshotChecklist(proposal.symptomMapping());
 		plan.initializeCycle(profiles.findTimezoneByAccountId(userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
 		plan = plans.saveAndFlush(plan);
@@ -246,6 +247,7 @@ class NativeSupportPlanWriter {
 		var replay = replay(userId, key, hash, "ACTIVATE");
 		if (replay != null) return replay;
 		var plan = lockedDraft(userId, planId, expectedVersion);
+		requireAdaptiveConfirmation(plan);
 		if (plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED")).isPresent()) {
 			throw conflict("SUPPORT_PLAN_CURRENT_EXISTS", "Another current SupportPlan requires an explicit reassessment-backed replacement");
 		}
@@ -277,6 +279,7 @@ class NativeSupportPlanWriter {
 		var replay = replay(userId, key, hash, "REPLACE");
 		if (replay != null) return replay;
 		var draft = lockedDraft(userId, draftId, expectedVersion);
+		if (!reviewed) requireAdaptiveConfirmation(draft);
 		var current = plans.findByIdAndUserIdForUpdate(currentId, userId).orElseThrow(this::notFound);
 		if (current.version() != currentVersion) throw versionConflict();
 		if (current.id().equals(draft.id()) || !List.of("ACTIVE", "PAUSED").contains(current.status())) {
@@ -398,6 +401,12 @@ class NativeSupportPlanWriter {
 	private void lockOwner(UUID userId) {
 		profiles.findByIdForUpdate(userId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
 				"PROFILE_NOT_FOUND", "Care profile was not found"));
+	}
+
+	private void requireAdaptiveConfirmation(SupportPlanEntity plan) {
+		if (plan.checklistProvenance() != null) {
+			throw conflict("ADAPTIVE_REVIEW_CONFIRM_REQUIRED", "Checklist-bound drafts require adaptive review confirmation");
+		}
 	}
 
 	private ApiException notFound() { return new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"); }

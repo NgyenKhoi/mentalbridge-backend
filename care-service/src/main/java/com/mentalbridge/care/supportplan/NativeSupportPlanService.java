@@ -96,6 +96,7 @@ public class NativeSupportPlanService {
 		var replay = writer.replay(userId, key, hash, "ACTIVATE");
 		if (replay != null) return views.get(userId, replay);
 		var draft = draft(userId, draftId, version);
+		requireAdaptiveConfirmation(draft.plan());
 		var evidence = revalidate(userId, bearer, correlationId, draft, paid(userId, bearer, correlationId));
 		UUID activated = writer.activate(userId, draftId, version, key, hash, evidence, correlationId, clock.instant());
 		return views.get(userId, activated);
@@ -112,7 +113,10 @@ public class NativeSupportPlanService {
 		requireSafeProposal(evaluation);
 		var selections = proposal.slots().stream().map(slot -> new SelectedResource(slot.slotId(),
 				slot.selectedResource().resourceId(), slot.selectedResource().contentVersion())).toList();
-		var request = policy.revalidationRequest(evaluation, selections);
+		var request = policy.revalidationRequest(evaluation, selections, proposal.symptomMapping());
+		if (proposal.symptomMapping() != null && (!proposal.symptomMapping().matches(proposal.slots())
+				|| proposal.symptomMapping().resourceReasons().stream().anyMatch(reason ->
+						!reason.eligibilityPolicyVersion().equals(proposal.resourcePolicyVersion())))) throw stale();
 		if (!proposal.families().stream().map(family -> family.family() + ":" + family.targetDomain()).sorted().toList()
 				.equals(request.families().stream().map(family -> family.family() + ":" + family.targetDomain()).sorted().toList())
 				|| proposal.slots().size() > 5
@@ -155,6 +159,7 @@ public class NativeSupportPlanService {
 				+ "\n" + command.currentVersion() + "\n" + command.reassessmentSummaryId());
 		var replay = writer.replay(userId, key, hash, "REPLACE");
 		if (replay != null) return views.get(userId, replay);
+		requireAdaptiveConfirmation(draft(userId, draftId, version).plan());
 		var reviewed = prepareReplacement(userId, draftId, version, bearer, command, correlationId);
 		if ("CURRENT_PLAN_VALID_NO_BETTER_ALTERNATIVE".equals(reviewed.view().outcome())) {
 			throw conflict("SUPPORT_PLAN_REPLACEMENT_UNCHANGED", "The proposed plan has no different admitted action intent");
@@ -312,7 +317,12 @@ public class NativeSupportPlanService {
 			selections.add(new SelectedResource(action.provenanceReferenceId(), UUID.fromString(action.sourceId()),
 					Long.parseLong(action.sourceRevision())));
 		}
-		var request = policy.revalidationRequest(evaluation, selections);
+		var request = policy.revalidationRequest(evaluation, selections, plan.checklistProvenance());
+		if (plan.checklistProvenance() != null && plan.checklistProvenance().resourceReasons().stream().anyMatch(reason ->
+				snapshot.actions().stream().noneMatch(action -> "RESOURCE".equals(action.actionType())
+						&& reason.slotId().equals(action.provenanceReferenceId()) && reason.resourceId().toString().equals(action.sourceId())
+						&& reason.contentVersion().equals(action.sourceRevision()) && reason.publicationId().equals(action.sourcePublicationId())
+						&& reason.eligibilityPolicyVersion().equals(action.sourceEligibilityPolicyVersion())))) throw stale();
 		if (!snapshot.families().stream().map(family -> family.family() + ":" + family.targetDomain()).toList()
 				.equals(request.families().stream().map(family -> family.family() + ":" + family.targetDomain()).toList())) throw stale();
 		long requiredProfessional = request.families().stream().filter(family -> family.family().endsWith("_PROFESSIONAL_ADJUNCT")).count();
@@ -403,6 +413,12 @@ public class NativeSupportPlanService {
 		if (!"DRAFT".equals(snapshot.plan().status())) throw conflict("SUPPORT_PLAN_NOT_DRAFT", "Only a native draft accepts this command");
 		if (snapshot.plan().version() != version) throw versionConflict();
 		return snapshot;
+	}
+
+	private void requireAdaptiveConfirmation(SupportPlanEntity plan) {
+		if (plan.checklistProvenance() != null) {
+			throw conflict("ADAPTIVE_REVIEW_CONFIRM_REQUIRED", "Checklist-bound drafts require adaptive review confirmation");
+		}
 	}
 
 	CurrentEntitlementResponse paid(UUID userId, String bearer, UUID correlation) {
