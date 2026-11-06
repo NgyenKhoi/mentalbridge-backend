@@ -1,7 +1,47 @@
 # Content and Notification Service
 
-The service OpenAPI is v1.11.0. MB-677 adds the closed `OPEN_APPOINTMENT`
+The service OpenAPI is v1.12.0. MB-677 adds the closed `OPEN_APPOINTMENT`
 notification action used by Content-owned appointment push reminders.
+
+## Specialist live inbox signals (MB-800)
+
+New eligible specialist appointment inbox inserts atomically enqueue migration
+`31_add_specialist_notification_live_outbox.sql`'s dedicated outbox. Intake locks
+the exact SPECIALIST preference row consistently with preference updates.
+Duplicates, fingerprint conflicts, rolled-back inserts and notification
+`CANCELLED` rows create no creation event. Appointment status `CANCELLED` remains
+an allowed notification and must not be confused with notification delivery state.
+No legacy rows are backfilled or replayed; the 40 historical source payloads
+without specialist recipient remain outside this feature.
+
+`CONTENT_SPECIALIST_LIVE_RELAY_ENABLED=false` disables only the relay; eligible
+new inbox inserts still enqueue. When enabled, typed configuration requires
+`KAFKA_BOOTSTRAP_SERVERS`. No push-delivery flag changes. A one-second tick claims
+at most 20 rows, one at a time, using expiring 30-second fencing tokens. Kafka I/O
+runs after each short claim transaction. The relay rechecks owner/preferences,
+kind/source, DELIVERED, deletion and expiry before publication, then sends the
+strict minimized `content.notification.created` v1.0 fact to
+`mentalbridge.content.notification-created.v1`, keyed by notification UUID.
+An idempotent Kafka producer uses `acks=all`; only ACK permits a fenced
+`PUBLISHED` outcome. Outages retry after 1/5/30/60 seconds up to five claims,
+then remain observable `FAILED`; current suppression is terminal `SUPPRESSED`.
+Safe event/correlation IDs, lag and outcome counts are logged without payloads.
+
+`GET /internal/v1/notifications/{notificationId}/live-eligibility` reuses the
+forwarded Identity bearer, requires SPECIALIST role and derives owner only from
+verified `sub`. It returns strict `{notificationId}` for current eligible rows,
+uniform `404 NOTIFICATION_NOT_FOUND` for foreign/absent/suppressed rows, and 503
+on storage uncertainty. Responses are `Cache-Control: private, no-store`.
+
+Realtime owns the shared consumer, bounded retry/DLQ and ephemeral Redis fan-out.
+It emits the separate named `notification.created` event on authenticated
+`/realtime`; existing chat `realtime.event` v1 is unchanged. Kafka ACK and inbox
+`DELIVERED` never mean socket receipt. Crash after ACK may repeat an event UUID;
+disconnect/Redis loss may miss it. MB-801 (ngocquyen) must refetch inbox/list and
+absolute unread count on connection.ready/reconnect and coalesce event-triggered
+refetches. Read/delete/preference races resolve through current REST state. No
+socket ACK, replay guarantee, reusable browser bearer or Community enablement is
+introduced. Accepted transport authority remains ADR 0016; no new ADR is needed.
 
 ## Mobile reminder overview (MB-676)
 

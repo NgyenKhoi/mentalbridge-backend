@@ -579,3 +579,28 @@ CREATE TABLE content.content_admin_audit_outbox (
     next_attempt_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE content.specialist_notification_live_outbox (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    notification_id uuid NOT NULL UNIQUE REFERENCES content.notification(id) ON DELETE CASCADE,
+    recipient_account_id uuid NOT NULL,
+    recipient_role varchar(16) NOT NULL DEFAULT 'SPECIALIST' CHECK (recipient_role = 'SPECIALIST'),
+    aggregate_version bigint NOT NULL CHECK (aggregate_version >= 0),
+    correlation_id uuid NOT NULL,
+    causation_id uuid NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL,
+    state varchar(16) NOT NULL DEFAULT 'PENDING' CHECK (state IN ('PENDING', 'PUBLISHED', 'SUPPRESSED', 'FAILED')),
+    attempt_count smallint NOT NULL DEFAULT 0 CHECK (attempt_count BETWEEN 0 AND 5),
+    next_attempt_at timestamptz DEFAULT now(),
+    claim_token uuid,
+    claim_until timestamptz,
+    published_at timestamptz,
+    last_error_code varchar(32),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (expires_at > occurred_at),
+    CHECK ((claim_token IS NULL) = (claim_until IS NULL)),
+    CHECK ((state = 'PUBLISHED') = (published_at IS NOT NULL)),
+    CHECK ((state = 'PENDING') = (next_attempt_at IS NOT NULL)),
+    CHECK (last_error_code IN ('NOT_ELIGIBLE', 'PUBLISH_UNAVAILABLE', 'CLAIM_EXHAUSTED'))
+);

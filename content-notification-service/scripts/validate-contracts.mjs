@@ -1,4 +1,7 @@
 import SwaggerParser from '@apidevtools/swagger-parser';
+import Ajv2020 from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const contractPath = fileURLToPath(
@@ -51,6 +54,7 @@ const expectedImplemented = new Set([
   'GET /api/v1/wellbeing-digest/preview',
   'GET /api/v1/reminder-overview',
   'GET /api/v1/notifications',
+  'GET /internal/v1/notifications/{notificationId}/live-eligibility',
   'PATCH /api/v1/notifications/{notificationId}/read',
   'POST /api/v1/notifications/mark-all-read',
   'DELETE /api/v1/notifications/{notificationId}',
@@ -144,6 +148,10 @@ const implementedResponses = new Map([
     new Set(['204', '401', '404', '422', '429', '503']),
   ],
   ['GET /api/v1/notifications', new Set(['200', '401', '422', '503'])],
+  [
+    'GET /internal/v1/notifications/{notificationId}/live-eligibility',
+    new Set(['200', '401', '403', '404', '422', '503']),
+  ],
   [
     'PATCH /api/v1/notifications/{notificationId}/read',
     new Set(['200', '401', '404', '410', '422', '503']),
@@ -249,7 +257,41 @@ if (
   throw new Error('Resource eligibility outcomes differ from the frozen v1 boundary');
 }
 
-console.log('Validated OpenAPI contract: ../contracts/openapi/content-notification-service.yaml');
+const liveEligibility = contract.components.schemas.NotificationLiveEligibility;
+if (
+  liveEligibility.additionalProperties !== false ||
+  !setsEqual(new Set(liveEligibility.required), new Set(['notificationId'])) ||
+  !setsEqual(new Set(Object.keys(liveEligibility.properties)), new Set(['notificationId'])) ||
+  liveEligibility.properties.notificationId.format !== 'uuid'
+) {
+  throw new Error('NotificationLiveEligibility must expose only the exact UUID pointer');
+}
+
+const notificationSchema = JSON.parse(
+  await readFile(
+    new URL('../../contracts/events/content/notification-created-v1.schema.json', import.meta.url),
+    'utf8',
+  ),
+);
+const notificationFixture = JSON.parse(
+  await readFile(
+    new URL('../../contracts/fixtures/content/notification-created-v1.json', import.meta.url),
+    'utf8',
+  ),
+);
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+addFormats(ajv);
+const validateNotification = ajv.compile(notificationSchema);
+if (!validateNotification(notificationFixture)) {
+  throw new Error(
+    `Invalid notification creation fixture: ${ajv.errorsText(validateNotification.errors)}`,
+  );
+}
+if (notificationFixture.aggregateId !== notificationFixture.payload.notificationId) {
+  throw new Error('Notification creation aggregate must equal its notificationId');
+}
+
+console.log('Validated Content OpenAPI and specialist notification creation contract/fixture');
 
 function setsEqual(left, right) {
   if (!right) return true;

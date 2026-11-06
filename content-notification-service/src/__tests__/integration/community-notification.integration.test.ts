@@ -41,6 +41,15 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
   let authorizations = 0;
   const owner = randomUUID();
   const clock = { now: () => instant ?? new Date(Date.now() + databaseClockOffsetMs + 1000) };
+  async function synchronizeClock(): Promise<void> {
+    if (instant) return;
+    const result = await db.query<{ now: Date }>('SELECT clock_timestamp() AS now');
+    databaseClockOffsetMs = result.rows[0]!.now.getTime() - Date.now();
+  }
+  async function runDue(...workers: CommunityNotificationWorker[]): Promise<void> {
+    await synchronizeClock();
+    await Promise.all((workers.length ? workers : [worker]).map((current) => current.runDue()));
+  }
   const digest = (value: CommunityNotificationProjection) =>
     createHash('sha256').update(JSON.stringify(value)).digest('hex');
   function projection(): CommunityNotificationProjection {
@@ -121,8 +130,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
       KAFKA_BOOTSTRAP_SERVERS: broker.getHost() + ':' + String(broker.getMappedPort(9093)),
     });
     db = new DatabaseService(configuration);
-    const databaseClock = await db.query<{ now: Date }>('SELECT clock_timestamp() AS now');
-    databaseClockOffsetMs = databaseClock.rows[0]!.now.getTime() - Date.now();
+    await synchronizeClock();
     const migrations = (await readdir(new URL('../../../migrations/', import.meta.url)))
       .filter((name) => /^\d+_.+\.sql$/.test(name))
       .sort((a, b) => parseInt(a) - parseInt(b));
@@ -182,7 +190,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
       ownerClient,
       clock,
     );
-    await Promise.all([worker.runDue(), replica.runDue()]);
+    await runDue(worker, replica);
     let page = await inbox.list(owner, 20, null);
     expect(page.items).toHaveLength(1);
     expect(page.unreadCount).toBe(1);
@@ -195,13 +203,13 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
     await inbox.markRead(owner, notice.id);
     const third = { ...first, eventId: randomUUID() };
     await jobs.enqueue(third, digest(third));
-    await worker.runDue();
+    await runDue();
     page = await inbox.list(owner, 20, null);
     expect(page.items).toHaveLength(2);
     expect(page.unreadCount).toBe(1);
     await inbox.delete(owner, notice.id);
     await jobs.enqueue(first, digest(first));
-    await worker.runDue();
+    await runDue();
     expect((await inbox.list(owner, 20, null)).items).toHaveLength(1);
   });
   it('defers new inbox notices through quiet hours and reauthorizes the exact target at deferred delivery', async () => {
@@ -216,13 +224,13 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
     const event = communityChatProjection(CommunityChatFactSchema.parse(chat()));
     if (!event) throw new Error('Missing projection');
     await jobs.enqueue(event, digest(event));
-    await worker.runDue();
+    await runDue();
     expect((await inbox.list(owner, 20, null)).items).toEqual([]);
     expect(authorizations).toBe(1);
     allow = false;
     instant.setUTCDate(instant.getUTCDate() + 1);
     instant.setUTCHours(7, 1, 0, 0);
-    await worker.runDue();
+    await runDue();
     expect(authorizations).toBe(2);
     expect((await inbox.list(owner, 20, null)).items).toEqual([]);
     expect(
@@ -242,17 +250,17 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
       [owner],
     );
     await jobs.enqueue(ignored, digest(ignored));
-    await worker.runDue();
+    await runDue();
     expect((await inbox.list(owner, 20, null)).items).toEqual([]);
     const event = communityChatProjection(CommunityChatFactSchema.parse(chat()));
     if (!event) throw new Error('Missing projection');
     await jobs.enqueue(event, digest(event));
     outage = true;
-    await worker.runDue();
+    await runDue();
     expect((await inbox.list(owner, 20, null)).items).toEqual([]);
     outage = false;
     instant = new Date(clock.now().getTime() + 5000);
-    await worker.runDue();
+    await runDue();
     expect((await inbox.list(owner, 20, null)).items).toHaveLength(1);
     await expect(jobs.enqueue({ ...event, body: 'Changed' }, 'f'.repeat(64))).rejects.toThrow(
       'identity conflict',
@@ -261,6 +269,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
   it('recovers an expired worker claim and fences stale completion before creating the inbox item', async () => {
     const event = projection();
     await jobs.enqueue(event, digest(event));
+    await synchronizeClock();
     const abandoned = await jobs.claim(clock.now());
     if (!abandoned) throw new Error('Missing claim');
     instant = new Date(clock.now().getTime() + 32_000);
@@ -327,7 +336,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
       } finally {
         await admin.disconnect();
       }
-      await worker.runDue();
+      await runDue();
       const page = await inbox.list(owner, 20, null);
       expect(page.items).toHaveLength(1);
       expect(page.items[0]?.action).toEqual({
@@ -369,7 +378,7 @@ describe('Community notice durable delivery on PostgreSQL and Kafka', () => {
           { timeout: 30_000 },
         )
         .toBe('4');
-      await worker.runDue();
+      await runDue();
       const all = await inbox.list(owner, 20, null);
       expect(all.items.map((item) => item.kind).sort()).toEqual(
         [

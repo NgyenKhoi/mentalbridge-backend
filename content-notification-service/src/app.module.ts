@@ -152,6 +152,9 @@ import { PushDeviceRepository } from './push-delivery/push-device.repository.js'
 import { PushDeviceService } from './push-delivery/push-device.service.js';
 import { ExpoPushProvider, type PushProvider } from './push-delivery/expo-push.provider.js';
 import { PushDeliveryWorker } from './push-delivery/push-delivery.worker.js';
+import { SpecialistNotificationLiveController } from './specialist-notifications/specialist-notification-live.controller.js';
+import { SpecialistNotificationLiveRepository } from './specialist-notifications/specialist-notification-live.repository.js';
+import { SpecialistNotificationLiveRelay } from './specialist-notifications/specialist-notification-live.relay.js';
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -174,6 +177,7 @@ export interface ApplicationDependencies {
   readonly contentAdminAuditPublisher?: ContentAdminAuditPublisher;
   readonly pushDeviceRepository?: PushDeviceRepository;
   readonly pushProvider?: PushProvider;
+  readonly specialistNotificationLiveRepository?: SpecialistNotificationLiveRepository;
 }
 
 @Module({})
@@ -267,6 +271,7 @@ export const createAppModule = (
     module: ContentNotificationModule,
     imports: [AuthModule],
     controllers: [
+      SpecialistNotificationLiveController,
       HealthController,
       ResourceController,
       ResourceProgressController,
@@ -350,6 +355,13 @@ export const createAppModule = (
       { provide: APPOINTMENT_REMINDER_SERVICE_TOKEN, useClass: AppointmentReminderService },
       AppointmentStatusProjector,
       SpecialistAppointmentNotificationRepository,
+      dependencies.specialistNotificationLiveRepository
+        ? {
+            provide: SpecialistNotificationLiveRepository,
+            useValue: dependencies.specialistNotificationLiveRepository,
+          }
+        : SpecialistNotificationLiveRepository,
+      SpecialistNotificationLiveRelay,
       AppointmentStatusConsumer,
       AppointmentReminderScheduler,
       AppointmentPushReminderService,

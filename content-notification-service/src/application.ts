@@ -32,6 +32,13 @@ export const createApplication = async (
     next();
   });
   app.use(pinoHttp({ logger }));
+  app.use(
+    '/internal/v1/notifications',
+    (_request: Request, response: Response, next: NextFunction) => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      next();
+    },
+  );
   app.enableCors({
     origin: configuration.ALLOWED_ORIGINS.length ? configuration.ALLOWED_ORIGINS : false,
     credentials: true,
