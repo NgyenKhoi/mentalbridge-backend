@@ -170,7 +170,10 @@ export interface LongitudinalAnalysisResult {
 
 export type LongitudinalSourceLoad =
   | { readonly state: "CURRENT"; readonly sources: LongitudinalPromptSource[] }
-  | { readonly state: "SOURCE_REVISION_CHANGED" | "SOURCE_DELETED" };
+  | {
+      readonly state:
+        "SOURCE_REVISION_CHANGED" | "SOURCE_DELETED" | "UNAUTHORIZED";
+    };
 
 export interface LongitudinalAnalysisRepository {
   findByKey(
@@ -193,9 +196,11 @@ export interface LongitudinalAnalysisRepository {
     currentPeriod: LongitudinalPeriod,
     excludedJournalIds: readonly string[],
   ): Promise<LongitudinalSourceRevision[]>;
+  /** `authorize` runs after the awaited read, immediately before decryption. */
   loadSources(
     ownerAccountId: string,
     sources: readonly LongitudinalSourceRevision[],
+    authorize: () => Promise<boolean>,
   ): Promise<LongitudinalSourceLoad>;
   claim(
     workerId: string,
@@ -394,6 +399,7 @@ export class MongoLongitudinalAnalysisRepository
   async loadSources(
     ownerAccountId: string,
     sources: readonly LongitudinalSourceRevision[],
+    authorize: () => Promise<boolean>,
   ): Promise<LongitudinalSourceLoad> {
     await this.connect();
     if (sources.length === 0) return { state: "CURRENT", sources: [] };
@@ -403,6 +409,7 @@ export class MongoLongitudinalAnalysisRepository
         _id: { $in: sources.map((source) => source.journalId) },
       })
       .toArray();
+    if (!(await authorize())) return { state: "UNAUTHORIZED" };
     const byId = new Map(journals.map((journal) => [journal._id, journal]));
     const promptSources: LongitudinalPromptSource[] = [];
     for (const source of sources) {
@@ -656,26 +663,28 @@ export class LongitudinalAnalysisWorker
       await this.finishFailure(job, "AUTHORIZATION_CONTEXT_LOST");
       return;
     }
+    const denial = await this.contextDenial(context);
+    if (denial) {
+      await this.finishFailure(job, denial);
+      return;
+    }
+    const latest: { denial: LongitudinalTerminalReason | null } = {
+      denial: null,
+    };
     const source = await this.repository.loadSources(
       job.ownerAccountId,
       job.sourceJournalRevisions,
+      async () => {
+        latest.denial = await this.contextDenial(context);
+        return latest.denial === null;
+      },
     );
+    if (source.state === "UNAUTHORIZED") {
+      await this.finishFailure(job, latest.denial ?? "CONSENT_REQUIRED");
+      return;
+    }
     if (source.state !== "CURRENT") {
       await this.finishFailure(job, source.state);
-      return;
-    }
-    let consent: ConsentDecision;
-    try {
-      consent = await this.consent.check(context.bearer, context.correlationId);
-    } catch {
-      await this.finishFailure(job, "CONSENT_UNAVAILABLE");
-      return;
-    }
-    if (!consent.authorized) {
-      await this.finishFailure(
-        job,
-        consent.reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
-      );
       return;
     }
     let candidateRoute: LongitudinalAnalysisRoute;
@@ -720,6 +729,11 @@ export class LongitudinalAnalysisWorker
     );
     if (!activeJob) {
       await this.finishFailure(routedJob, "PROVIDER_UNAVAILABLE");
+      return;
+    }
+    const finalDenial = await this.contextDenial(context);
+    if (finalDenial) {
+      await this.finishFailure(activeJob, finalDenial);
       return;
     }
     try {
@@ -814,6 +828,24 @@ export class LongitudinalAnalysisWorker
         },
       ],
     };
+  }
+
+  private async contextDenial(context: {
+    bearer: string;
+    correlationId: string;
+  }): Promise<LongitudinalTerminalReason | null> {
+    let consent: ConsentDecision;
+    try {
+      consent = (
+        await this.consent.snapshot(context.bearer, context.correlationId)
+      ).context;
+    } catch {
+      return "CONSENT_UNAVAILABLE";
+    }
+    if (consent.authorized) return null;
+    return consent.reason === "REVOKED"
+      ? "CONSENT_REVOKED"
+      : "CONSENT_REQUIRED";
   }
 
   private async withTimeout<T>(result: Promise<T>): Promise<T> {
@@ -996,6 +1028,11 @@ export class LongitudinalAnalysisService {
       analysisId,
     );
     if (!result) throw new NotFoundException();
+    await this.requireConsent(
+      bearerToken(request),
+      request.id ?? randomUUID(),
+      true,
+    );
     return this.evidence(result);
   }
 
@@ -1065,13 +1102,15 @@ export class LongitudinalAnalysisService {
   ): Promise<void> {
     let decision: ConsentDecision;
     try {
-      decision = await this.consent.check(bearer, correlationId);
-    } catch {
-      throw new ServiceUnavailableException();
+      decision = (await this.consent.snapshot(bearer, correlationId)).context;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new ServiceUnavailableException({ code: "CONSENT_UNAVAILABLE" });
     }
     if (!decision.authorized) {
-      if (read) throw new ForbiddenException();
-      throw new ConflictException();
+      if (read)
+        throw new ForbiddenException({ code: "AI_CONTEXT_CONSENT_REQUIRED" });
+      throw new ConflictException({ code: "AI_CONTEXT_CONSENT_REQUIRED" });
     }
   }
 

@@ -31,4 +31,20 @@ class AiProcessingDisclosureServiceTests {
 				.isInstanceOfSatisfying(ApiException.class,
 						exception -> assertThat(exception.code()).isEqualTo("AI_PROCESSING_DISCLOSURE_NOT_FOUND"));
 	}
+
+	@Test
+	void contextNoticeIsSeparatelyVersionedAndStatesItsDependencyAndWithdrawal() {
+		var context = new AiContextProcessingDisclosureService();
+		var notice = context.current("vi-VN");
+		assertThat(notice.consentType()).isEqualTo("AI_CONTEXT_PROCESSING");
+		assertThat(notice.version()).isEqualTo("ai-context-processing-capstone-v1");
+		assertThat(notice.title()).isEqualTo("AI dùng bối cảnh");
+		assertThat(notice.content()).contains("các nguồn dữ liệu cá nhân đã được cho phép và bạn chọn",
+				"chỉ có hiệu lực khi bạn đang đồng ý AI trò chuyện", "tạm dừng AI dùng bối cảnh",
+				"có hiệu lực trở lại khi bạn đồng ý AI trò chuyện lại");
+		assertThatThrownBy(() -> context.requireCurrent("ai-processing-capstone-v2"))
+				.isInstanceOfSatisfying(ApiException.class, exception -> assertThat(exception.code()).isEqualTo("AI_CONTEXT_DISCLOSURE_REQUIRED"));
+		assertThatThrownBy(() -> context.current("en-US"))
+				.isInstanceOfSatisfying(ApiException.class, exception -> assertThat(exception.code()).isEqualTo("AI_CONTEXT_DISCLOSURE_NOT_FOUND"));
+	}
 }

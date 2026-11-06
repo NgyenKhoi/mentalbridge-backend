@@ -32,18 +32,24 @@ Care-owned non-credential user profile. Locale, timezone, and reminders are fixe
 ### `public.consent_decision`
 
 Append-only evidence of a user grant or refusal for a versioned platform consent.
+MB-806 adds only the `AI_CONTEXT_PROCESSING` category; historical rows, versions,
+keys and grants are never rewritten or backfilled. Effective L2 is derived from
+its current true decision and effective L1, rather than stored as another grant.
+L1 withdrawal suspends L2, and L1 regrant restores an existing current true L2.
+Both AI level writes take the same owner profile lock before replay/dependency
+validation. The effective snapshot reads both streams at repeatable-read isolation.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID used to cite this exact consent decision in audit and REST results. |
 | `user_id` | Care-owned user profile that made the consent decision. |
-| `consent_type` | Stable independent platform-consent category. Runtime accepts `PRIVACY_POLICY` and `AI_PROCESSING` through the unchanged generic API; `AI_VOICE_PROCESSING` has a separate voice API and immutable disclosure version. Voice authorization requires both current AI streams. Research/marketing remain unavailable, and specialist access uses a separate scoped grant. |
+| `consent_type` | Stable independent platform-consent category. The generic API exposes `PRIVACY_POLICY`, `AI_PROCESSING` (L1 active conversation, current v2 grants remain valid) and `AI_CONTEXT_PROCESSING` (new L2 personal-context processing, v1). L2 requires effective L1; no L1 grant implies L2. `AI_VOICE_PROCESSING` retains its separate voice API and immutable v2 disclosure and requires L1 plus Voice, without L2. Research/marketing remain unavailable; specialist access uses a separate scoped grant. |
 | `policy_version` | Exact approved policy text/version accepted or refused so the decision remains reproducible. |
-| `granted` | Authoritative decision value; false records an explicit refusal or withdrawal. |
+| `granted` | Authoritative explicit decision value; false records a refusal or withdrawal. Raw true is not effective authorization: the latest decision must use the current version, and L2 additionally depends on effective L1. |
 | `evidence` | Minimized JSON object such as approved channel or document hash; never raw health content. |
-| `idempotency_key` | Required retry fingerprint unique for one user and consent type so an uncertain retry returns the original decision. Voice stores a purpose- and owner-bound HMAC-SHA256 hex digest of the caller UUID using `CARE_IDEMPOTENCY_HMAC_KEY`; existing generic consent rows retain their original key semantics without backfill. |
+| `idempotency_key` | Required retry fingerprint unique for one user and consent type. Exact replay resolves before current-version/dependency validation and returns the original outcome without reinstating authority; changed intent/version conflicts. Historical AI-processing v1 accepts exact replay only. Voice stores a purpose- and owner-bound HMAC-SHA256 hex digest of the caller UUID using `CARE_IDEMPOTENCY_HMAC_KEY`; generic rows retain their original key semantics without backfill. |
 | `request_hash` | Lowercase SHA-256 digest used to reject reuse of the key with different consent content; request plaintext is not recoverable from it. |
-| `decided_at` | Server-issued UTC decision instant. Voice writes hold the profile row lock and advance at least one PostgreSQL microsecond beyond the previous voice decision when the clock ties or moves backward, so the latest withdrawal cannot lose to a random UUID tie-break. |
+| `decided_at` | Server-issued UTC decision instant, truncated to PostgreSQL microseconds. Under the profile lock, L1/L2 writes advance at least one microsecond beyond the latest decision across both AI levels when the clock ties or moves backward. Privacy does the same within its stream; Voice retains its own monotonic stream. Latest withdrawal therefore cannot lose to a random UUID tie-break. |
 | `created_at` | Immutable UTC insertion instant for storage and audit ordering. |
 
 ### `public.anonymous_assessment_session`
@@ -882,4 +888,4 @@ Append-only content-free access facts. It stores actor, action, allowed/denied o
 
 ### `public.consultation_brief_ai_draft_job`
 
-Owner-private asynchronous AI suggestion state. `brief_version`, `support_evaluation_id`, `source_set_version`, and the request fingerprint bind the result to one exact saved draft. The nullable consent, entitlement, routing, provider, model, prompt, and schema fields record the successful provider decision. Suggested situation/goals exist only for `SUCCEEDED`; terminal failures retain a reason without generated content. Brief deletion marks jobs `SOURCE_DELETED` and clears both suggestion fields. The table contains no raw Journal content, screening answers, chat, diagnosis, or private specialist notes.
+Owner-private asynchronous AI suggestion state. `brief_version`, `support_evaluation_id`, `source_set_version`, and the request fingerprint bind the result to one exact saved draft. The nullable consent, entitlement, routing, provider, model, prompt, and schema fields record the successful provider decision. New MB-806 suggestions cite effective L2 `ai-context-processing-capstone-v1` in `consent_policy_version`; historical v2 provenance remains unchanged. Enqueue and every worker attempt require effective L2; denied work retains `CONSENT_REQUIRED` without a suggestion. A local consent database outage fails closed through the existing `PROVIDER_UNAVAILABLE` worker reason (enqueue returns `503 CONSENT_UNAVAILABLE`). Suggested situation/goals exist only for `SUCCEEDED`; terminal failures retain a reason without generated content. Brief deletion marks jobs `SOURCE_DELETED` and clears both suggestion fields. The table contains no raw Journal content, screening answers, chat, diagnosis, or private specialist notes.

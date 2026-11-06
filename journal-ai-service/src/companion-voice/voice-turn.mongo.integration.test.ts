@@ -1114,6 +1114,42 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     },
   );
 
+  await t.test(
+    "L1 withdrawal after the durable speech claim refuses the final provider attempt and publication",
+    async () => {
+      const f = await fixture();
+      const recordSpeechActivity = f.left.sessions.recordSpeechActivity.bind(
+        f.left.sessions,
+      );
+      f.left.sessions.recordSpeechActivity = async (...input) => {
+        await recordSpeechActivity(...input);
+        f.revokeAi();
+      };
+      const result = await f.send(f.input(), randomUUID(), 403);
+      assert.equal((result.body as { code: string }).code, "CONSENT_REQUIRED");
+      assert.equal(f.calls(), 0);
+      assert.deepEqual(f.contexts, []);
+      await f.left.sessions.reconcile();
+      const media = await f.db
+        .collection<RawRecord>("ai_voice_media")
+        .findOne({ _id: f.active.id });
+      assert.equal(media?.expectedReplyId, null);
+      const session = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(session);
+      assert.equal(session.deliveredSession, false);
+      assert.ok(["ENDED", "FAILED"].includes(String(session.state)));
+      const commands = await f.db
+        .collection<RawRecord>("ai_voice_media_commands")
+        .find({ operation: "turn" })
+        .toArray();
+      assert.equal(commands.length, 1);
+      assert.equal(JSON.stringify(commands).includes("finalTranscript"), false);
+      assert.equal(JSON.stringify(commands).includes("replyId"), false);
+    },
+  );
+
   for (const consent of ["voice", "ai", "package"] as const)
     await t.test(
       `current ${consent} withdrawal blocks generation/publication and clears context`,

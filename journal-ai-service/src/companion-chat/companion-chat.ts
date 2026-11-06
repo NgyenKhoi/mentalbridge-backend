@@ -14,6 +14,7 @@ import {
   Post,
   Put,
   Req,
+  Res,
   type DynamicModule,
   type OnApplicationShutdown,
 } from "@nestjs/common";
@@ -50,10 +51,15 @@ import {
   estimateInputTokens,
   type FriendInput,
 } from "./companion-text-request.js";
-import { recentHistory } from "./conversation-history.js";
+import { conversationMemory } from "./conversation-history.js";
 import { ResourceCatalog } from "./resource-catalog.js";
 
-import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
+import {
+  CareConsentClient,
+  ConsentUnavailableError,
+  assertAiContextProcessingConsent,
+  type ConsentClient,
+} from "../analysis/analysis.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { Entry, Revision } from "../journals/journal.js";
 import {
@@ -151,6 +157,19 @@ export interface ConversationContextSources {
   screening: boolean;
   resourceIds: string[];
 }
+
+const emptySources = (): ConversationContextSources => ({
+  plan: false,
+  diary: false,
+  screening: false,
+  resourceIds: [],
+});
+
+const hasPersonalSelection = (sources: ConversationContextSources) =>
+  sources.plan ||
+  sources.diary ||
+  sources.screening ||
+  sources.resourceIds.length > 0;
 
 export interface ConversationContext {
   sources: ConversationContextSources;
@@ -1021,7 +1040,10 @@ export class OwnerVerifiedContextAssembler
   private readonly client: MongoClient;
   private readonly journals: Collection<Entry>;
 
-  constructor(private readonly configuration: ServiceConfiguration) {
+  constructor(
+    private readonly configuration: ServiceConfiguration,
+    private readonly consent: ConsentClient,
+  ) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
@@ -1040,11 +1062,21 @@ export class OwnerVerifiedContextAssembler
     correlationId: string,
     selection: ContextSelection,
   ): Promise<MinimizedContext> {
-    await this.client.connect();
     const sections: string[] = [];
     const kinds = new Set<MinimizedContext["kinds"][number]>();
 
     if (selection.diary) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      await this.client.connect();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       const rows = await this.journals
         .find({
           ownerAccountId,
@@ -1053,6 +1085,11 @@ export class OwnerVerifiedContextAssembler
         .sort({ occurredAt: -1, createdAt: -1, _id: -1 })
         .limit(3)
         .toArray();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       for (const row of rows) {
         const revision = row.revisions.find(
           (candidate: Revision) => candidate.revision === row.currentRevision,
@@ -1084,6 +1121,11 @@ export class OwnerVerifiedContextAssembler
     }
 
     if (selection.screening) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       let response: Response;
       try {
         response = await fetch(
@@ -1119,6 +1161,11 @@ export class OwnerVerifiedContextAssembler
           "CHAT_CONTEXT_UNAVAILABLE",
           "Care context is invalid",
         );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       if (parsed.data.items.length > 0) {
         sections.push(
           `Recent screening summaries (not diagnoses): ${JSON.stringify(
@@ -1136,6 +1183,11 @@ export class OwnerVerifiedContextAssembler
     }
 
     if (selection.plan) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       let response: Response;
       try {
         response = await fetch(
@@ -1172,6 +1224,11 @@ export class OwnerVerifiedContextAssembler
             "CHAT_CONTEXT_UNAVAILABLE",
             "Care context is invalid",
           );
+        await assertAiContextProcessingConsent(
+          this.consent,
+          authorization,
+          correlationId,
+        );
         sections.push(
           `Current SupportPlan: ${JSON.stringify({
             status: parsed.data.status,
@@ -1193,6 +1250,11 @@ export class OwnerVerifiedContextAssembler
     }
 
     if (selection.resourceIds.length > 0) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       const now = new Date();
       const from = new Date(now.getTime() - 31 * 86_400_000);
       const progressUrl = new URL(
@@ -1241,6 +1303,11 @@ export class OwnerVerifiedContextAssembler
         );
       const resources = await Promise.all(
         selection.resourceIds.map(async (resourceId) => {
+          await assertAiContextProcessingConsent(
+            this.consent,
+            authorization,
+            correlationId,
+          );
           let response: Response;
           try {
             response = await fetch(
@@ -1277,6 +1344,11 @@ export class OwnerVerifiedContextAssembler
             );
           return parsed.data;
         }),
+      );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
       );
       sections.push(
         `Resources the user viewed: ${JSON.stringify(
@@ -1724,12 +1796,7 @@ export class CompanionChatService {
       ownerAccountId: owner,
       title: body.data.title ?? "Cuộc trò chuyện mới",
       context: {
-        sources: {
-          plan: true,
-          diary: false,
-          screening: false,
-          resourceIds: [],
-        },
+        sources: emptySources(),
         updatedAt: now,
       },
       messages: [],
@@ -1772,6 +1839,27 @@ export class CompanionChatService {
       throw new BadRequestException();
     const parsed = conversationContextSchema.safeParse(request.body);
     if (!parsed.success) throw new BadRequestException();
+    if (!(await this.repository.findConversation(owner, conversationId)))
+      throw new NotFoundException();
+    if (hasPersonalSelection(parsed.data.sources)) {
+      const correlationId = request.id ?? randomUUID();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        bearer(request),
+        correlationId,
+      );
+      await this.context.assemble(
+        owner,
+        bearer(request),
+        correlationId,
+        parsed.data.sources,
+      );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        bearer(request),
+        correlationId,
+      );
+    }
     const context: ConversationContext = {
       sources: parsed.data.sources,
       updatedAt: this.clock.now(),
@@ -1843,11 +1931,11 @@ export class CompanionChatService {
 
     let decision: EntitlementDecision;
     try {
-      const consent = await this.consent.check(
+      const consent = await this.consent.snapshot(
         bearer(request),
         request.id ?? randomUUID(),
       );
-      if (!consent.authorized)
+      if (!consent.chat.authorized)
         throw new ChatProblem(
           403,
           "AI_CONSENT_REQUIRED",
@@ -1870,6 +1958,12 @@ export class CompanionChatService {
         failure.title,
       );
       if (error instanceof HttpException) throw error;
+      if (error instanceof ConsentUnavailableError)
+        throw new ChatProblem(
+          503,
+          "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+          "Consent is unavailable",
+        );
       throw new ChatProblem(
         503,
         "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
@@ -1920,25 +2014,97 @@ export class CompanionChatService {
     }
 
     try {
-      const minimized = await this.context.assemble(
-        owner,
+      const correlationId = request.id ?? randomUUID();
+      let authorization = await this.consent.snapshot(
         bearer(request),
-        request.id ?? randomUUID(),
-        conversation.context.sources,
+        correlationId,
       );
+      if (!authorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      let minimized: MinimizedContext = { kinds: [], prompt: "" };
+      if (
+        authorization.context.authorized &&
+        hasPersonalSelection(conversation.context.sources)
+      ) {
+        try {
+          minimized = await this.context.assemble(
+            owner,
+            bearer(request),
+            correlationId,
+            conversation.context.sources,
+          );
+        } catch (error) {
+          authorization = await this.consent.snapshot(
+            bearer(request),
+            correlationId,
+          );
+          if (!authorization.chat.authorized)
+            throw new ChatProblem(
+              403,
+              "AI_CONSENT_REQUIRED",
+              "AI processing consent is required",
+            );
+          if (authorization.context.authorized) throw error;
+        }
+      }
+      authorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!authorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      if (!authorization.context.authorized)
+        minimized = { kinds: [], prompt: "" };
       const route = this.route(decision);
-      const friend: FriendInput | undefined = this.configuration
+      const sources = authorization.context.authorized
+        ? conversation.context.sources
+        : emptySources();
+      const memory = this.configuration.COMPANION_GUIDANCE_V2_ENABLED
+        ? conversationMemory(conversation.messages, sources, (message) =>
+            this.crypto.decrypt(owner, conversationId, message),
+          )
+        : { history: [], kinds: [] };
+      let friend: FriendInput | undefined = this.configuration
         .COMPANION_GUIDANCE_V2_ENABLED
         ? {
-            history: recentHistory(
-              conversation.messages,
-              conversation.context.sources,
-              (message) => this.crypto.decrypt(owner, conversationId, message),
-            ),
+            history: memory.history,
             catalog: await this.catalog.items(),
           }
         : undefined;
-      // Refuse before spend: the estimate measures the same text the provider receives.
+      minimized = {
+        ...minimized,
+        kinds: [...new Set([...minimized.kinds, ...memory.kinds])],
+      };
+      const finalAuthorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!finalAuthorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      if (!finalAuthorization.context.authorized) {
+        minimized = { kinds: [], prompt: "" };
+        if (friend)
+          friend = {
+            ...friend,
+            history: conversationMemory(
+              conversation.messages,
+              emptySources(),
+              (message) => this.crypto.decrypt(owner, conversationId, message),
+            ).history,
+          };
+      }
       const estimate = estimateInputTokens(
         companionGuidanceSystem({ channel: "TEXT", friend: !!friend }),
         companionUserInput({
@@ -1986,7 +2152,7 @@ export class CompanionChatService {
         ),
         createdAt,
         route: null,
-        contextKinds: [],
+        contextKinds: minimized.kinds,
       };
       const assistantMessage: ChatMessage = {
         messageId: assistantMessageId,
@@ -2054,6 +2220,12 @@ export class CompanionChatService {
         failure.title,
       );
       if (error instanceof HttpException) throw error;
+      if (error instanceof ConsentUnavailableError)
+        throw new ChatProblem(
+          503,
+          "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+          "Consent is unavailable",
+        );
       throw new ChatProblem(503, failure.code, failure.title);
     }
   }
@@ -2120,6 +2292,30 @@ export class CompanionChatService {
         status: error.getStatus(),
         title: error.safeTitle,
       };
+    if (error instanceof ConsentUnavailableError)
+      return {
+        code: "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+        status: 503,
+        title: "Consent is unavailable",
+      };
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      return {
+        code:
+          typeof response === "object" &&
+          "code" in response &&
+          typeof response.code === "string"
+            ? response.code
+            : code,
+        status: error.getStatus(),
+        title:
+          typeof response === "object" &&
+          "title" in response &&
+          typeof response.title === "string"
+            ? response.title
+            : title,
+      };
+    }
     return { code, status: 503, title };
   }
 }
@@ -2158,7 +2354,10 @@ export class CompanionChatController {
   updateContext(
     @Req() request: ChatRequest,
     @Param("conversationId") conversationId: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
   ) {
+    response.setHeader("Cache-Control", "no-store");
     return this.service.updateContext(request, conversationId);
   }
 
@@ -2201,7 +2400,9 @@ export const registerCompanionChatModule = (
       ? { provide: CONTEXT, useValue: dependencies.contextAssembler }
       : {
           provide: CONTEXT,
-          useFactory: () => new OwnerVerifiedContextAssembler(configuration),
+          useFactory: (consent: ConsentClient) =>
+            new OwnerVerifiedContextAssembler(configuration, consent),
+          inject: [CONSENT],
         },
     dependencies.provider
       ? { provide: PROVIDER, useValue: dependencies.provider }

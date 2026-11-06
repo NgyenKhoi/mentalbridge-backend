@@ -1,5 +1,12 @@
 # Opt-in selected Text context for Voice
 
+Prospective MB-806 consent amendment: [ADR 0050 / MB-TWO-LEVEL-AI-CONSENT-001](0050-two-level-ai-consent.md)
+narrows existing current `AI_PROCESSING` v2 grants to L1 conversation and requires
+new dependent `AI_CONTEXT_PROCESSING` v1 for personal sources, analysis and
+accompaniment. Historical notices/decisions remain immutable. Voice retains L1
+plus its separate unchanged Voice v2 grant and eligible empty-kind Text handoff.
+
+
 - Decision ID: `MB-TEXT-VOICE-HANDOFF-001`
 - Status: Accepted for MB-790 implementation by Product Owner, 2026-11-02.
 - Owners: Journal/AI (context and authorization), Care (consent), Web (choice).

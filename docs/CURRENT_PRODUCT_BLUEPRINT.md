@@ -4,6 +4,15 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+MB-806's accepted [two-level AI consent amendment / MB-TWO-LEVEL-AI-CONSENT-001](adr/0050-two-level-ai-consent.md)
+and [Care consent policy 1.2-capstone](policies/care-consent-and-retention-policy.md)
+are current for AI authorization. Existing current `AI_PROCESSING` v2 grants
+remain valid for L1 “AI trò chuyện” only. New `AI_CONTEXT_PROCESSING` v1 is L2
+“AI dùng bối cảnh”, requires effective L1 and is never backfilled. Personal
+sources, Journal analysis and accompaniment require L2; deterministic Care
+fallbacks stay available. Voice keeps L1 plus its separate unchanged Voice v2
+grant and bounded empty-kind Text handoff.
+
 AI Voice Companion has an accepted prospective contract in
 [ADR 0046 / MB-AI-VOICE-COMPANION-001](adr/0046-ai-voice-companion-contract.md)
 and [Companion Voice policy v1](policies/companion-voice-policy-v1.md), frozen by

@@ -11,6 +11,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mentalbridge.care.consent.ConsentService;
 import com.mentalbridge.care.consultationbrief.ConsultationBriefAiDraftClient.DraftProviderRequest;
 import com.mentalbridge.care.consultationbrief.ConsultationBriefService.AiDraftSource;
 
@@ -24,24 +25,34 @@ public class ConsultationBriefAiDraftWorker {
 	private final TransactionTemplate transactions;
 	private final ObjectMapper json;
 	private final Clock clock;
+	private final ConsentService consents;
 
 	public ConsultationBriefAiDraftWorker(ConsultationBriefAiDraftClient client, JdbcClient jdbc,
-			TransactionTemplate transactions, ObjectMapper json, Clock clock) {
+			TransactionTemplate transactions, ObjectMapper json, Clock clock, ConsentService consents) {
 		this.client = client;
 		this.jdbc = jdbc;
 		this.transactions = transactions;
 		this.json = json;
 		this.clock = clock;
+		this.consents = consents;
 	}
 
 	@Async
-	public void dispatch(UUID jobId, AiDraftSource source, String bearerToken, UUID correlationId) {
-		var request = new DraftProviderRequest(source.appointmentId(), source.briefId(), source.briefVersion(),
-				source.supportEvaluationId(), source.currentSituation(), source.userGoals(), source.screeningContext(),
-				ConsultationBriefAiDraftService.SOURCE_SET_VERSION);
+	public void dispatch(UUID jobId, UUID userId, AiDraftSource source, String bearerToken, UUID correlationId) {
 		for (int attempt = 1; attempt <= 2; attempt++) {
-			markAttempt(jobId, attempt);
 			try {
+				if (!consents.authorizeAiContextProcessing(userId).authorized()) {
+					fail(jobId, "CONSENT_REQUIRED");
+					return;
+				}
+				var request = new DraftProviderRequest(source.appointmentId(), source.briefId(), source.briefVersion(),
+						source.supportEvaluationId(), source.currentSituation(), source.userGoals(), source.screeningContext(),
+						ConsultationBriefAiDraftService.SOURCE_SET_VERSION);
+				markAttempt(jobId, attempt);
+				if (!consents.authorizeAiContextProcessing(userId).authorized()) {
+					fail(jobId, "CONSENT_REQUIRED");
+					return;
+				}
 				var result = client.draft(request, bearerToken, correlationId);
 				complete(jobId, source, result);
 				return;

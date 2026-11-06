@@ -40,7 +40,7 @@ access or fabricate external owner completion.
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `user_profile` | care-service | PostgreSQL | ACTIVE | `account_id` is a logical/external Identity reference, not a physical cross-service FK. |
-| `consent_decision` | care-service | PostgreSQL | ACTIVE | Physical many-to-one to `user_profile`; append-only versioned decisions. |
+| `consent_decision` | care-service | PostgreSQL | ACTIVE | Physical many-to-one to `user_profile`; append-only versioned privacy, L1 `AI_PROCESSING`, dependent L2 `AI_CONTEXT_PROCESSING`, and separate Voice decisions. No L2 backfill; shared profile lock and monotonic microsecond ordering; raw decisions are not effective authority. |
 | `anonymous_assessment_session` | care-service | PostgreSQL | ACTIVE | Physical optional owner of anonymous `assessment_submission`; never links to an account. |
 | `questionnaire_definition` | care-service | PostgreSQL | ACTIVE | Physical parent of questions, score bands, and assessment submissions. |
 | `questionnaire_question` | care-service | PostgreSQL | ACTIVE | Physical many-to-one to exact questionnaire definition. |

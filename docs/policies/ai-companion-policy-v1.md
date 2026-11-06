@@ -1,5 +1,14 @@
 # AI Companion policy v1
 
+Current AI authorization is prospectively amended by
+[ADR 0050 / MB-TWO-LEVEL-AI-CONSENT-001](../adr/0050-two-level-ai-consent.md)
+and [Care consent policy 1.2-capstone](care-consent-and-retention-policy.md).
+Existing current `AI_PROCESSING` v2 is L1 only; personal sources, analysis and
+accompaniment require the independent dependent `AI_CONTEXT_PROCESSING` v1 L2.
+Voice retains L1 plus unchanged Voice v2 and bounded empty-kind Text handoff.
+Historical policy snapshots and notices below remain unchanged.
+
+
 ## Policy metadata
 
 | Field                           | Value                                                                                                                 |

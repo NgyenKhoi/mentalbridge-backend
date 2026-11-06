@@ -1,5 +1,49 @@
 # Care Service
 
+## MB-806 two AI consent levels
+
+[ADR 0050](../docs/adr/0050-two-level-ai-consent.md) and the
+[Care consent policy](../docs/policies/care-consent-and-retention-policy.md)
+make `AI_PROCESSING` v2 effective L1 (AI trò chuyện). Existing current grants stay
+valid; its immutable Vietnamese notice is unchanged. New
+`AI_CONTEXT_PROCESSING` v1 is L2 (AI dùng bối cảnh); nobody receives it by default.
+Its backend-owned notice is public at
+`GET /api/v1/ai-context-processing-disclosures/current`.
+
+`GET /api/v1/consents/ai-authorizations` returns the USER subject's effective
+`chat`, `context` and `checkedAt` in one repeatable-read snapshot, even without a
+profile. L2 requires current true L1 and L2 decisions. L1 withdrawal gives a
+current true L2 `DEPENDENCY_REQUIRED`; L1 regrant resumes that same decision.
+Own missing/revoked/outdated L2 wins over dependency. The existing five-field
+`/consents/ai-processing/authorization` authorizes L1 only. Raw latest decisions
+now expose at most three generic streams and never imply effective authority.
+Consent/disclosure successes and errors send `Cache-Control: no-store`.
+
+Both AI level commands serialize on the existing profile lock. New L2 true without
+L1 returns `409 AI_PROCESSING_CONSENT_REQUIRED`; L2 false remains available.
+Exact owner/type/key replay happens before current-version and dependency
+validation, returns the original decision and cannot restore authority. Historical
+AI-processing v1 supports exact replay only; changed intent/version conflicts.
+L1/L2 timestamps strictly increase at PostgreSQL-microsecond precision across
+both streams, including frozen/backward clocks. Privacy ordering is monotonic
+within its stream. No remote call occurs while those locks are held.
+
+Saved-brief AI enqueue requires effective L2 before loading personal draft sources;
+the async worker checks it before assembling and sending every attempt, including
+retry. Refusal leaves no suggestion and the existing deterministic brief stays
+available. Successful new suggestions cite the current L2 version. Voice remains
+L1 plus independent Voice v2 with no additional source access from L2.
+
+Migration `033-ai-consent-levels.sql` (`care-034-ai-consent-levels`) only expands
+the consent type constraint and preserves all rows/checksums, without backfill.
+Deploy the Care provider before Journal/AI consumers and MB-805/807 contract sync;
+coordinate consumer cutover because old broad L1 consumers cannot enforce L2.
+Tests cover the purpose matrix, historical replay, immutable rows, dependency
+regrant, real PostgreSQL grant/revoke races and monotonic snapshots, migration
+upgrade and provider-payload/retry refusal. The full gate is
+`SPRINGDOTENV_ENABLED=false .\mvnw.cmd -B test` on Java 21 with disposable
+PostgreSQL Testcontainers.
+
 ## SupportPlan current resource versions (MB-794)
 
 New SupportPlan proposals (legacy v2, native, and adaptive replacement options)
@@ -52,8 +96,8 @@ UTF-8 bytes and the existing counted 1,900-input-token ceiling, then purges the
 RAM snapshot on end/withdrawal. Consent alone never attaches context, authorizes
 another conversation, starts media or expands access to Journal, assessments,
 SupportPlan, private notes or all chats.
-The generic consent API still exposes only privacy and AI-processing streams;
-its enum, two-item collection and existing clients are unchanged. Voice writes
+MB-806 adds the context stream to the generic consent API's privacy and L1
+AI-processing streams, increasing its collection bound to three. Voice writes
 require an existing owned Care profile, serialize on that profile, keep immutable
 decision history and persist an HMAC of the owner-scoped idempotency UUID rather
 than the raw key. A new v1 command is rejected. An exact historical v1 replay
@@ -102,7 +146,7 @@ versioned grants; consent data contains no handoff content or transcript.
 MB-375 adds the Care-authoritative reassessment review and the single audited,
 idempotent, atomic SupportPlan replacement path described below.
 
-Care owns user profiles, independent `PRIVACY_POLICY` and `AI_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, persisted Support Guides, and the single official SupportPlan with its focuses, typed actions, schedules, occurrences, reassessment, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. MB-386 introduced immutable reassessment snapshots; MB-559 completes the canonical fourth dimension with an explicit owner-authored current-period self-report while keeping occurrence helpfulness/reflection separately labelled as supporting activity evidence. MB-639 introduces native cross-domain PlanActions while preserving v2 resource plans through an explicit read adapter. Care never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
+Care owns user profiles, independent `PRIVACY_POLICY`, L1 `AI_PROCESSING` and dependent L2 `AI_CONTEXT_PROCESSING` consent decisions, questionnaires, assessment submissions and results, deterministic safety/support policy, SupportEvaluation, persisted Support Guides, and the single official SupportPlan with its focuses, typed actions, schedules, occurrences, reassessment, and follow-up. Story 1103 exposes immutable coarse v1 evaluation. MB-335 adds `/api/v2/support-evaluations` with exact PHQ-9/GAD-7 provenance, two independent domain contributions, and separate PHQ-9 item-9 safety evidence. MB-372 adds paid deterministic draft creation and current-draft reload. MB-373 adds bounded admitted-choice replacement, exact revalidation, explicit activation idempotency, and authoritative current-plan reload. MB-513 adds deterministic local-time schedules and persisted activity occurrences. MB-374 completes the owner lifecycle with optional coded completion context and immutable terminal history/detail reads. MB-376 adds versioned owner-only completion, skip, reopen, visibility, helpfulness, barrier, private reflection, and deletion semantics on exact occurrences. MB-386 introduced immutable reassessment snapshots; MB-559 completes the canonical fourth dimension with an explicit owner-authored current-period self-report while keeping occurrence helpfulness/reflection separately labelled as supporting activity evidence. MB-639 introduces native cross-domain PlanActions while preserving v2 resource plans through an explicit read adapter. Care never creates a global severity, treatment-adherence score, recovery score, specialist-monitoring feed, or AI-controlled state. Safety-critical scoring and evaluation remain local and do not depend on Eureka, Kafka, Redis, AI, or notification availability.
 
 MB-292 persists `screening_episode` as the Care-authoritative resume and
 grouping context for guided initial checks and reassessments. PHQ-9 and GAD-7
@@ -183,7 +227,7 @@ journey. Historical episodes (MB-667) never use either endpoint.
 
 ## MB-88 foundation
 
-The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/AI-processing disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-370 uses the existing `AI_PROCESSING` decision/UI at current policy v2 for optional ConsultationBrief suggestions; production-provider approval remains separately gated.
+The canonical [`care-service-v1.yaml`](../contracts/openapi/care-service-v1.yaml) contract marks profile, independent privacy/L1/L2 disclosure and consent, questionnaire retrieval, assessment history, and authenticated/anonymous screening paths as `implemented`. MB-806 requires effective `AI_CONTEXT_PROCESSING` for optional ConsultationBrief suggestions; production-provider approval remains separately gated.
 
 MB-205 adds authenticated descriptive progress for a selected owned assessment. Care compares it only with the immediately preceding non-voided result for the same instrument and identical scoring version, ordered by submission instant and assessment ID. The response contains arithmetic score direction, raw delta, band transition and elapsed duration without safety-status comparison, clinical interpretation, causation or optional-service side effects. Missing, voided or incompatible evidence returns `INSUFFICIENT_COMPARABLE_DATA`; missing and cross-owner identifiers share the same `ASSESSMENT_NOT_FOUND` response.
 
@@ -646,7 +690,7 @@ The canonical policy register is maintained in [`docs/policies/`](../docs/polici
 
 Questionnaire publication does not depend on SupportPlan or specialist workflow. Each capability follows its own gate. Publishing localized content must update the source artifact/provenance record, tests, configuration, append-only migrations/data dictionary when needed, and this README together. ADR 0012 requires the forward plan to be system-proposed from domain-aware evaluation and exact eligible content; ADR 0013 freezes the product policy and still does not change active v1 contracts or rows. Public real-user deployment additionally requires production privacy, retention, security, legal, safety-content, and operational review.
 
-MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned, versioned privacy disclosure and `PRIVACY_POLICY`; Story 1102 makes `privacy-capstone-v3` current for PHQ-9/GAD-7. MB-367 introduced the independent `AI_PROCESSING` stream. MB-370 makes `ai-processing-capstone-v2` current and extends the explicit user-request scope to an already saved private ConsultationBrief plus minimized PHQ-9/GAD-7 levels. The AI output remains an editable suggestion and cannot save, approve, share, grant access, change appointments, score answers, or create clinical conclusions.
+MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned, versioned privacy disclosure and `PRIVACY_POLICY`; Story 1102 makes `privacy-capstone-v3` current for PHQ-9/GAD-7. MB-367 introduced the independent `AI_PROCESSING` stream. MB-370 originally made `ai-processing-capstone-v2` current and included a saved private ConsultationBrief plus minimized PHQ-9/GAD-7 levels. MB-806 prospectively narrows that stream to L1 conversation and requires separate effective L2 for brief suggestions. The immutable v2 notice and historical decisions stay unchanged. AI output remains an editable suggestion and cannot save, approve, share, grant access, change appointments, score answers, or create clinical conclusions.
 
 ## Integration
 
@@ -668,7 +712,7 @@ MB-89 implements the deterministic PHQ-9 runtime. MB-178 adds the backend-owned,
   and never embeds an owner-domain payload.
 - Outbound REST: the consumer-owned OpenFeign Resource Eligibility v1 adapter queries Content with the end-user bearer context, explicit correlation, 500 ms connect and 2 s read deadlines, bounded exponential transient retry with jitter, and a Resilience4j circuit breaker. HTTP 429 is not retried because the provider contract does not define `Retry-After`; timeout, dependency errors, malformed payloads and enum evolution map every candidate to `UNAVAILABLE`. Callers must commit no proposal mutation. No Care transaction spans the call.
 - Outbound reassessment REST: the consumer-owned Journal/AI adapter forwards the verified end-user bearer and correlation ID to the canonical `REASSESSMENT_SUMMARY` projection. It applies a 200 ms connect deadline, 800 ms read deadline, at most one transient retry, and a separate circuit breaker. Startup rejects overrides whose conservative two-attempt budget exceeds 2.5 seconds, preserving time for Care to return the explicit safe fallback before the three-second caller deadline. It validates attribution, exact periods, source counts, coverage sufficiency, directions, and provenance before persistence. No transaction spans the remote call; every safe fallback is snapshotted explicitly.
-- Outbound Support Guide phrasing REST: Care forwards the verified end-user bearer and only the exact approved explanation copy to Journal/AI. The call has bounded connect/read deadlines, no retry, and a fail-fast circuit breaker. Current `AI_PROCESSING` consent and real-provider approval remain Journal/AI responsibilities; any rejection, timeout, open circuit, malformed output, or provider failure persists the exact Care-approved fallback with `AI_UNAVAILABLE_FALLBACK`.
+- Outbound Support Guide phrasing REST: Care forwards the verified end-user bearer and only the exact approved explanation copy to Journal/AI. The call has bounded connect/read deadlines, no retry, and a fail-fast circuit breaker. Effective L2 `AI_CONTEXT_PROCESSING` consent and real-provider approval remain Journal/AI responsibilities; any rejection, timeout, open circuit, malformed output, or provider failure persists the exact Care-approved fallback with `AI_UNAVAILABLE_FALLBACK`.
 - Outbound ConsultationBrief AI draft REST: an owner-only asynchronous Care job sends one exact saved draft version and minimized screening levels to Journal/AI with the verified bearer. Care persists source and model provenance, retries a transient provider failure once, rejects stale results, and never mutates or shares the brief from the worker.
 - Async: future assessment, support, consent, intervention, and follow-up events use Kafka with a transactional outbox and language-neutral schemas.
 - Discovery: Care registers as `care-service`; registry metadata never grants authorization.

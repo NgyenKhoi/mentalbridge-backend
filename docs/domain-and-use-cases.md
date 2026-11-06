@@ -158,7 +158,7 @@ current owned revisions by `occurredAt`, supports explicit exclusions, and
 caps selection at 50 entries per period. Directional comparison requires at
 least three entries in each period and no greater than a 2:1 count imbalance.
 Care consumes only the minimized exact-source evidence under current
-`AI_PROCESSING` consent.
+effective L2 `AI_CONTEXT_PROCESSING` consent under [ADR 0050](adr/0050-two-level-ai-consent.md).
 
 MB-386 implements the first Care composition baseline as an immutable owner
 snapshot. MB-559 adds a versioned explicit current-period self-report and
@@ -207,7 +207,7 @@ backfilled or silently dual-written.
 
 ### Consent and access
 
-1. General privacy acceptance, AI-processing consent, research-data consent, and specialist access are separate decisions.
+1. General privacy acceptance, L1 AI trò chuyện (`AI_PROCESSING` v2), dependent L2 AI dùng bối cảnh (`AI_CONTEXT_PROCESSING` v1), separate Voice v2, research-data consent, and specialist access are separate decisions. Existing current AI v2 grants remain L1-only; L2 is never backfilled. Withdrawal suspends dependent L2 without rewriting its decision; explicit L1 regrant restores a current true L2. See [ADR 0050](adr/0050-two-level-ai-consent.md).
 2. Specialist grants are scoped: `ASSESSMENTS`, `RISK_SUMMARY`, `EMOTION_TRENDS`, `JOURNAL_ENTRIES`.
 3. Journal access should support selected-entry scope; "all past and future journals" must never be the quiet default.
 4. Revocation blocks new reads immediately but does not falsify historical audit records.
@@ -332,7 +332,7 @@ The project-tracking workbook currently groups the 162 functions into seven deli
 
 **Scope:** journal CRUD, PHQ-9/GAD-7 submission/result/history/deletion, LLM emotion analysis and re-run, benchmark execution/results, screening/safety/support display, and personal emotional analytics.
 
-**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. On an explicit user request for one exact current journal revision, Journal/AI forwards the verified user bearer to check current `AI_PROCESSING` consent, creates an idempotent MongoDB job, atomically claims it with a lease, and re-checks consent immediately before each attempt. It also obtains the current server-authoritative package from Consultation and snapshots one versioned `EXACT_REVISION` route before invoking the selected adapter. `FREE`/`PLUS` share the baseline route and `PREMIUM` may use a stronger approved route; retries never change provider/model. The bearer is never persisted. Real Gemini/OpenAI execution remains disabled until its exact provider/model configuration has approved synthetic benchmark evidence; CI uses the deterministic fake and PhoBERT remains deferred.
+**Main flow:** Care serves an immutable questionnaire version, validates complete answers, scores deterministically and returns screening guidance synchronously. On an explicit user request for one exact current journal revision, Journal/AI forwards the verified user bearer to check effective L2 `AI_CONTEXT_PROCESSING` before any source content access, creates an idempotent MongoDB job, atomically claims it with a lease, and re-checks consent immediately before each attempt. It also obtains the current server-authoritative package from Consultation and snapshots one versioned `EXACT_REVISION` route before invoking the selected adapter. `FREE`/`PLUS` share the baseline route and `PREMIUM` may use a stronger approved route; retries never change provider/model. The bearer is never persisted. Real Gemini/OpenAI execution remains disabled until its exact provider/model configuration has approved synthetic benchmark evidence; CI uses the deterministic fake and PhoBERT remains deferred.
 
 **Exceptions and acceptance:** incomplete/invalid answers do not persist a final score; duplicate submission/analysis is idempotent; stale questionnaire requires restart; AI/provider failure never makes the journal or assessment unavailable. Consent or entitlement uncertainty fails closed before a provider call. A run has a 30-second timeout per attempt and at most one retry for HTTP 429, provider 5xx, or transport failure, with no automatic cross-provider fallback. Raw journal content, bearer tokens, raw provider output, and chain-of-thought do not enter persistence, events, or logs. AI cannot calculate PHQ/GAD scores, downgrade a safety path, determine entitlement/resource eligibility, provide the user's explicit reassessment self-report, or mutate a SupportPlan. Analytics distinguish missing data from zero and expose source freshness.
 

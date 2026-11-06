@@ -1,6 +1,18 @@
+import {
+  aiConsentAuthorizationsFixture,
+  pausedRead,
+  sealedJournalRow,
+  withdrawnAuthorizations,
+} from "./consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from "@nestjs/common";
 
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { ProviderAnalysis } from "../llm-providers/llm-providers.js";
@@ -9,6 +21,11 @@ import {
   AnalysisService,
   AnalysisWorker,
   CareConsentClient,
+  ConsentUnavailableError,
+  MongoAnalysisRepository,
+  parseAiConsentAuthorizations,
+  assertAiProcessingConsent,
+  assertAiContextProcessingConsent,
   ProviderFailure,
   type AnalysisJob,
   type AnalysisRepository,
@@ -26,6 +43,7 @@ import {
 class MemoryRepository implements AnalysisRepository {
   readonly jobs: AnalysisJob[] = [];
   readonly results: AnalysisResult[] = [];
+  sourceReads = 0;
   sourceValue: JournalSource = { state: "CURRENT", text: "private reflection" };
 
   findByKey(owner: string, keyHash: string) {
@@ -51,7 +69,16 @@ class MemoryRepository implements AnalysisRepository {
       this.results.find((result) => result.jobId === jobId) ?? null,
     );
   }
-  source() {
+  realSource?: AnalysisRepository["source"];
+  source(
+    owner: string,
+    journal: string,
+    revision: number,
+    authorize: () => Promise<boolean>,
+  ) {
+    this.sourceReads += 1;
+    if (this.realSource)
+      return this.realSource(owner, journal, revision, authorize);
     return Promise.resolve(this.sourceValue);
   }
   claim(workerId: string, now: Date, leaseExpiresAt: Date, jobId?: string) {
@@ -157,6 +184,9 @@ class MemoryRepository implements AnalysisRepository {
 }
 
 class SequenceConsent implements ConsentClient {
+  async snapshot(bearer: string) {
+    return aiConsentAuthorizationsFixture(await this.check(bearer));
+  }
   readonly calls: string[] = [];
   constructor(private readonly decisions: ConsentDecision[]) {}
   check(bearer: string) {
@@ -169,8 +199,10 @@ class SequenceConsent implements ConsentClient {
 
 class SequenceProvider implements ExactRevisionProvider {
   calls = 0;
+  readonly payloads: { text: string; route: AnalysisRoute }[] = [];
   constructor(private readonly results: unknown[]) {}
-  analyze(): Promise<ProviderAnalysis> {
+  analyze(text: string, route: AnalysisRoute): Promise<ProviderAnalysis> {
+    this.payloads.push({ text, route });
     this.calls += 1;
     const result = this.results.shift();
     if (result instanceof Error) return Promise.reject(result);
@@ -254,7 +286,7 @@ const request = (account = owner, key = "analysis-command-0001") => ({
 });
 
 const subject = (
-  consent = new SequenceConsent([granted, granted]),
+  consent = new SequenceConsent([granted, granted, granted]),
   provider = new SequenceProvider([normalized]),
   entitlement = new SequenceEntitlement([freeEntitlement, freeEntitlement]),
   router: ModelRouter = new TestRouter(),
@@ -295,18 +327,14 @@ void test("Care consent adapter preserves policy provenance", async () => {
         : input instanceof URL
           ? input.href
           : input.url,
-      "http://care.test/api/v1/consents/ai-processing/authorization",
+      "http://care.test/api/v1/consents/ai-authorizations",
     );
     const headers = new Headers(init?.headers);
     assert.equal(headers.get("authorization"), "Bearer synthetic-token");
     assert.equal(headers.get("x-correlation-id"), "correlation-id");
     return Promise.resolve(
-      Response.json({
-        authorized: true,
-        reason: "GRANTED",
-        consentType: "AI_PROCESSING",
-        policyVersion: "ai-processing-capstone-v1",
-        decidedAt: "2026-09-17T02:00:00.000Z",
+      Response.json(aiConsentAuthorizationsFixture(), {
+        headers: { "cache-control": "no-store" },
       }),
     );
   };
@@ -319,8 +347,8 @@ void test("Care consent adapter preserves policy provenance", async () => {
     assert.deepEqual(await client.check("synthetic-token", "correlation-id"), {
       authorized: true,
       reason: "GRANTED",
-      policyVersion: "ai-processing-capstone-v1",
-      decidedAt: "2026-09-17T02:00:00.000Z",
+      policyVersion: "ai-processing-capstone-v2",
+      decidedAt: "2026-11-06T04:00:00Z",
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -336,7 +364,13 @@ void test("runs a consented exact revision and persists only normalized output",
   assert.equal(completed.status, "SUCCEEDED");
   assert.equal(completed.attemptCount, 1);
   assert.equal(completed.result?.provider, "DETERMINISTIC_FAKE");
-  assert.equal(value.consent.calls.length, 2);
+  assert.equal(value.consent.calls.length, 3);
+  assert.deepEqual(value.provider.payloads, [
+    {
+      text: "private reflection",
+      route: new TestRouter().route(freeEntitlement),
+    },
+  ]);
   assert.deepEqual(
     Object.keys(value.repository.results[0] ?? {}).includes("rawResponse"),
     false,
@@ -349,7 +383,7 @@ void test("retries one eligible provider failure and returns the same idempotent
     normalized,
   ]);
   const value = subject(
-    new SequenceConsent([granted, granted, granted, granted]),
+    new SequenceConsent([granted, granted, granted, granted, granted, granted]),
     provider,
   );
   const accepted = await value.service.create(request(), journalId, "1");
@@ -461,7 +495,7 @@ void test("fails closed when Care becomes unavailable before the provider attemp
 void test("fails closed when Consultation entitlement is unavailable", async () => {
   const provider = new SequenceProvider([normalized]);
   const value = subject(
-    new SequenceConsent([granted, granted]),
+    new SequenceConsent([granted, granted, granted]),
     provider,
     new SequenceEntitlement([]),
   );
@@ -497,7 +531,7 @@ void test("does not change provider route when entitlement changes before retry"
     }),
   };
   const value = subject(
-    new SequenceConsent([granted, granted, granted]),
+    new SequenceConsent([granted, granted, granted, granted, granted]),
     provider,
     new SequenceEntitlement([freeEntitlement, premiumEntitlement]),
     router,
@@ -549,7 +583,7 @@ void test("returns stable stale and deleted terminal reasons without provider ca
 
 void test("does not retry invalid or permanent provider failures", async () => {
   const invalid = subject(
-    new SequenceConsent([granted, granted]),
+    new SequenceConsent([granted, granted, granted]),
     new SequenceProvider([{ unexpected: true }]),
   );
   await invalid.service.create(request(), journalId, "1");
@@ -561,7 +595,7 @@ void test("does not retry invalid or permanent provider failures", async () => {
   assert.equal(invalid.provider.calls, 1);
 
   const permanent = subject(
-    new SequenceConsent([granted, granted]),
+    new SequenceConsent([granted, granted, granted]),
     new SequenceProvider([new ProviderFailure("PERMANENT", "UNAVAILABLE")]),
   );
   await permanent.service.create(
@@ -579,7 +613,13 @@ void test("does not retry invalid or permanent provider failures", async () => {
 
 void test("times out each attempt and performs only one allowed retry", async () => {
   const repository = new MemoryRepository();
-  const consent = new SequenceConsent([granted, granted, granted]);
+  const consent = new SequenceConsent([
+    granted,
+    granted,
+    granted,
+    granted,
+    granted,
+  ]);
   const provider: ExactRevisionProvider = {
     analyze: () => new Promise<ProviderAnalysis>(() => undefined),
   };
@@ -608,3 +648,337 @@ const randomJobId = (state: "STALE" | "DELETED") =>
   state === "STALE"
     ? "66666666-6666-4666-8666-666666666666"
     : "77777777-7777-4777-8777-777777777777";
+
+void test("strictly validates both Care authorization levels and immutable provenance", () => {
+  const snapshot = aiConsentAuthorizationsFixture();
+  assert.deepEqual(parseAiConsentAuthorizations(snapshot), snapshot);
+  const missing = aiConsentAuthorizationsFixture(
+    { authorized: false, reason: "MISSING" },
+    { authorized: false, reason: "MISSING" },
+  );
+  assert.deepEqual(parseAiConsentAuthorizations(missing), missing);
+  const suspended = aiConsentAuthorizationsFixture(
+    { authorized: false, reason: "DEPENDENCY_REQUIRED" },
+    { authorized: false, reason: "REVOKED" },
+  );
+  assert.deepEqual(parseAiConsentAuthorizations(suspended), suspended);
+  const historicRevocation = aiConsentAuthorizationsFixture({
+    authorized: false,
+    reason: "REVOKED",
+    policyVersion: "historical-context-v0",
+  });
+  assert.deepEqual(
+    parseAiConsentAuthorizations(historicRevocation),
+    historicRevocation,
+  );
+  for (const invalid of [
+    { ...snapshot, extra: true },
+    { ...snapshot, checkedAt: "invalid" },
+    {
+      ...snapshot,
+      chat: { ...snapshot.chat, consentType: "AI_CHAT_PROCESSING" },
+    },
+    {
+      ...snapshot,
+      context: { ...snapshot.context, consentType: "AI_PROCESSING" },
+    },
+    {
+      ...snapshot,
+      chat: { ...snapshot.chat, policyVersion: "ai-processing-capstone-v1" },
+    },
+    {
+      ...snapshot,
+      context: { ...snapshot.context, policyVersion: "old-context-v0" },
+    },
+    { ...snapshot, context: { ...snapshot.context, authorized: false } },
+    {
+      ...snapshot,
+      context: { ...snapshot.context, reason: "MISSING", authorized: false },
+    },
+    { ...snapshot, context: { ...snapshot.context, decidedAt: null } },
+    {
+      ...snapshot,
+      context: {
+        ...snapshot.context,
+        reason: "POLICY_OUTDATED",
+        authorized: false,
+      },
+    },
+    {
+      ...snapshot,
+      context: { ...snapshot.context, reason: "UNKNOWN", authorized: false },
+    },
+    {
+      ...snapshot,
+      context: {
+        ...snapshot.context,
+        reason: "DEPENDENCY_REQUIRED",
+        authorized: false,
+      },
+    },
+    {
+      ...snapshot,
+      chat: { ...snapshot.chat, authorized: false, reason: "REVOKED" },
+    },
+    {
+      ...missing,
+      context: {
+        ...missing.context,
+        policyVersion: "ai-context-processing-capstone-v1",
+      },
+    },
+  ])
+    assert.throws(
+      () => parseAiConsentAuthorizations(invalid),
+      ConsentUnavailableError,
+    );
+});
+
+void test("Care outage, non-2xx, invalid JSON and malformed levels fail closed", async () => {
+  const originalFetch = globalThis.fetch;
+  const client = new CareConsentClient({
+    ...configuration,
+    CARE_BASE_URL: "http://care.test",
+    CARE_TIMEOUT_MS: 1,
+  });
+  try {
+    for (const response of [
+      () =>
+        Promise.reject(new DOMException("Synthetic timeout", "TimeoutError")),
+      () => Promise.resolve(new Response(null, { status: 503 })),
+      () => Promise.resolve(Response.json(aiConsentAuthorizationsFixture())),
+      () =>
+        Promise.resolve(
+          new Response("{", {
+            status: 200,
+            headers: { "cache-control": "no-store" },
+          }),
+        ),
+      () =>
+        Promise.resolve(
+          Response.json(
+            { authorized: true },
+            { headers: { "cache-control": "no-store" } },
+          ),
+        ),
+    ]) {
+      globalThis.fetch = response;
+      await assert.rejects(
+        () => assertAiContextProcessingConsent(client, "synthetic-token", "id"),
+        ServiceUnavailableException,
+      );
+    }
+    globalThis.fetch = () =>
+      Promise.resolve(new Response(null, { status: 401 }));
+    await assert.rejects(
+      () => client.snapshot("expired-token", "id"),
+      UnauthorizedException,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("purpose helpers distinguish valid L1 from refused L2 and preserve caller 401", async () => {
+  const client: ConsentClient = {
+    check: () => Promise.resolve(granted),
+    snapshot: () =>
+      Promise.resolve(
+        aiConsentAuthorizationsFixture({
+          authorized: false,
+          reason: "MISSING",
+        }),
+      ),
+  };
+  assert.equal(
+    (await assertAiProcessingConsent(client, "synthetic-token", "id"))
+      .authorized,
+    true,
+  );
+  await assert.rejects(
+    () => assertAiContextProcessingConsent(client, "synthetic-token", "id"),
+    (error) =>
+      error instanceof ForbiddenException &&
+      (error.getResponse() as { code: string }).code ===
+        "AI_CONTEXT_CONSENT_REQUIRED",
+  );
+  await assert.rejects(
+    () =>
+      assertAiContextProcessingConsent(
+        {
+          ...client,
+          snapshot: () => Promise.reject(new UnauthorizedException()),
+        },
+        "",
+        "id",
+      ),
+    UnauthorizedException,
+  );
+});
+
+void test("exact analysis never reads a source under absent L2 or suspended L1 dependency", async () => {
+  for (const reason of [
+    "MISSING",
+    "REVOKED",
+    "POLICY_OUTDATED",
+    "DEPENDENCY_REQUIRED",
+  ] as const) {
+    const value = subject(new SequenceConsent([{ authorized: false, reason }]));
+    await assert.rejects(
+      () =>
+        value.service.create(
+          request(owner, `analysis-denied-${reason}`),
+          journalId,
+          "1",
+        ),
+      (error) =>
+        error instanceof ConflictException &&
+        (error.getResponse() as { code: string }).code ===
+          "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    assert.equal(value.repository.sourceReads, 0);
+    assert.equal(value.provider.calls, 0);
+    assert.equal(value.repository.jobs.length, 0);
+  }
+});
+
+void test("exact analysis rechecks L2 after assembly and before a retry source read", async () => {
+  for (const reason of ["REVOKED", "DEPENDENCY_REQUIRED"] as const) {
+    const finalDenied = subject(
+      new SequenceConsent([granted, granted, { authorized: false, reason }]),
+    );
+    await finalDenied.service.create(
+      request(owner, `analysis-final-${reason}`),
+      journalId,
+      "1",
+    );
+    await waitForTerminal(finalDenied.repository);
+    assert.equal(finalDenied.provider.calls, 0);
+    assert.equal(
+      finalDenied.repository.jobs[0]?.terminalReason,
+      reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
+    );
+    const provider = new SequenceProvider([
+      new ProviderFailure("RETRYABLE", "UNAVAILABLE"),
+      normalized,
+    ]);
+    const retryDenied = subject(
+      new SequenceConsent([
+        granted,
+        granted,
+        granted,
+        { authorized: false, reason },
+      ]),
+      provider,
+    );
+    await retryDenied.service.create(
+      request(owner, `analysis-retry-${reason}`),
+      journalId,
+      "1",
+    );
+    await waitForTerminal(retryDenied.repository);
+    assert.equal(provider.calls, 1);
+    assert.equal(retryDenied.repository.sourceReads, 2);
+    assert.equal(
+      retryDenied.repository.jobs[0]?.terminalReason,
+      reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
+    );
+  }
+});
+
+const sealedSourceRepository = (onRead: () => Promise<void>) => {
+  const key = Buffer.alloc(32, 7);
+  const real = new MongoAnalysisRepository({
+    ...configuration,
+    MONGODB_URI: "mongodb://127.0.0.1:1",
+    MONGODB_DATABASE: "synthetic_mb806",
+    MONGODB_CONNECTION_TIMEOUT_MS: 1,
+    JOURNAL_ENCRYPTION_KEY: key,
+  });
+  const row = sealedJournalRow(key, owner, journalId);
+  const internals = real as unknown as {
+    connect: () => Promise<void>;
+    journals: { findOne: () => Promise<unknown> };
+    decrypt: (...args: unknown[]) => string;
+  };
+  const decrypt = internals.decrypt.bind(real);
+  const spy = { decrypts: 0 };
+  internals.connect = () => Promise.resolve();
+  internals.journals = {
+    findOne: async () => {
+      await onRead();
+      return row;
+    },
+  };
+  internals.decrypt = (...args) => {
+    spy.decrypts += 1;
+    return decrypt(...args);
+  };
+  return { real, spy };
+};
+
+void test("exact analysis reauthorizes L2 after a paused source read and decrypts nothing after withdrawal", async () => {
+  for (const reason of ["REVOKED", "DEPENDENCY_REQUIRED"] as const) {
+    let allowed = true;
+    const consent = Object.assign(new SequenceConsent([]), {
+      snapshot: () =>
+        Promise.resolve(
+          allowed
+            ? aiConsentAuthorizationsFixture()
+            : withdrawnAuthorizations(reason),
+        ),
+    });
+
+    const requestRead = pausedRead();
+    const requestSource = sealedSourceRepository(requestRead.wait);
+    const requested = subject(consent);
+    requested.repository.realSource = requestSource.real.source.bind(
+      requestSource.real,
+    );
+    const created = requested.service.create(
+      request(owner, `analysis-paused-request-${reason}`),
+      journalId,
+      "1",
+    );
+    await requestRead.started;
+    allowed = false;
+    requestRead.resume();
+    await assert.rejects(
+      created,
+      (error) =>
+        error instanceof ConflictException &&
+        (error.getResponse() as { code: string }).code ===
+          "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    assert.equal(requestSource.spy.decrypts, 0);
+    assert.equal(requested.repository.jobs.length, 0);
+    assert.equal(requested.provider.calls, 0);
+
+    allowed = true;
+    let reads = 0;
+    const workerRead = pausedRead();
+    const workerSource = sealedSourceRepository(() =>
+      ++reads === 1 ? Promise.resolve() : workerRead.wait(),
+    );
+    const worked = subject(consent);
+    worked.repository.realSource = workerSource.real.source.bind(
+      workerSource.real,
+    );
+    await worked.service.create(
+      request(owner, `analysis-paused-worker-${reason}`),
+      journalId,
+      "1",
+    );
+    await workerRead.started;
+    allowed = false;
+    const decryptsBeforeWithdrawal = workerSource.spy.decrypts;
+    workerRead.resume();
+    await waitForTerminal(worked.repository);
+    assert.equal(workerSource.spy.decrypts, decryptsBeforeWithdrawal);
+    assert.equal(worked.provider.calls, 0);
+    assert.equal(
+      worked.repository.jobs[0]?.terminalReason,
+      reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
+    );
+  }
+});

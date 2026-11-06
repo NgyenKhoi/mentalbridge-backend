@@ -1,5 +1,12 @@
 # ADR 0021: AI Companion conversation and quota contract
 
+Prospective MB-806 consent amendment: [ADR 0050 / MB-TWO-LEVEL-AI-CONSENT-001](0050-two-level-ai-consent.md)
+narrows existing current `AI_PROCESSING` v2 grants to L1 conversation and requires
+new dependent `AI_CONTEXT_PROCESSING` v1 for personal sources, analysis and
+accompaniment. Historical notices/decisions remain immutable. Voice retains L1
+plus its separate unchanged Voice v2 grant and eligible empty-kind Text handoff.
+
+
 - Status: Accepted
 - Date: 2026-09-22
 - Decision ID: `MB-AI-COMPANION-CHAT-001`

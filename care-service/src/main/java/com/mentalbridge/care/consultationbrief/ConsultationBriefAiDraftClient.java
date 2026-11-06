@@ -7,6 +7,8 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
+import com.mentalbridge.care.consent.AiContextProcessingDisclosureService;
+
 @Component
 public class ConsultationBriefAiDraftClient {
 
@@ -28,7 +30,7 @@ public class ConsultationBriefAiDraftClient {
 				&& value.userGoals().size() >= 1 && value.userGoals().size() <= 5
 				&& value.userGoals().stream().allMatch(goal -> text(goal, 200))
 				&& "consultation-brief-ai-source-v1".equals(value.sourceSetVersion())
-				&& text(value.consentPolicyVersion(), 64) && text(value.servicePlan(), 16)
+				&& AiContextProcessingDisclosureService.VERSION.equals(value.consentPolicyVersion()) && text(value.servicePlan(), 16)
 				&& text(value.entitlementSource(), 32) && text(value.entitlementPolicyVersion(), 96)
 				&& value.entitlementVersion() != null && value.entitlementVersion() >= 0
 				&& text(value.routingPolicyVersion(), 96) && text(value.providerApprovalVersion(), 96)

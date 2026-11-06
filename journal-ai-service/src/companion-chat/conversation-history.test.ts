@@ -5,7 +5,7 @@ import type {
   ContextKind,
   ConversationContextSources,
 } from "./companion-chat.js";
-import { recentHistory } from "./conversation-history.js";
+import { conversationMemory, recentHistory } from "./conversation-history.js";
 
 const texts = new Map<string, string>();
 const message = (
@@ -62,7 +62,7 @@ void test("keeps at most the last 8 messages, oldest first", () => {
   );
 });
 
-void test("drops an assistant turn whose context kind is no longer selected", () => {
+void test("drops the complete pair before decrypting when a context kind is no longer selected", () => {
   const messages = [
     message(0, "Hôm nay mình buồn"),
     message(1, "Từ nhật ký của bạn", ["JOURNAL"]),
@@ -76,7 +76,7 @@ void test("drops an assistant turn whose context kind is no longer selected", ()
   );
   assert.deepEqual(
     history.map((turn) => turn.text),
-    ["Hôm nay mình buồn", "Ừ", "Theo kế hoạch"],
+    ["Ừ", "Theo kế hoạch"],
   );
   const withdrawn: [ContextKind, ConversationContextSources][] = [
     ["SUPPORT_PLAN", { ...allSelected, plan: false }],
@@ -110,7 +110,7 @@ void test("keeps the newest turns within 3000 UTF-8 bytes", () => {
   const history = recentHistory(messages, allSelected, decrypt);
   assert.deepEqual(
     history.map((turn) => turn.text),
-    [long, long, "mới nhất"],
+    [long, "mới nhất"],
   );
   assert.ok(
     history.reduce((sum, turn) => sum + Buffer.byteLength(turn.text), 0) <=
@@ -120,4 +120,53 @@ void test("keeps the newest turns within 3000 UTF-8 bytes", () => {
 
 void test("an empty conversation gives no history", () => {
   assert.deepEqual(recentHistory([], allSelected, decrypt), []);
+});
+
+void test("L1 memory excludes every personal kind on either side without decrypting it", () => {
+  const empty = {
+    plan: false,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  };
+  for (const kind of [
+    "JOURNAL",
+    "SUPPORT_PLAN",
+    "REASSESSMENT",
+    "RESOURCE",
+  ] as const) {
+    for (const side of [0, 1]) {
+      const pair = [
+        message(0, "PRIVATE_USER"),
+        message(1, "PRIVATE_ASSISTANT"),
+      ];
+      const tainted = pair[side];
+      assert.ok(tainted);
+      tainted.contextKinds = [kind];
+      const calls: string[] = [];
+      assert.deepEqual(
+        conversationMemory(pair, empty, (row) => {
+          calls.push(row.messageId);
+          return decrypt(row);
+        }),
+        { history: [], kinds: [] },
+      );
+      assert.deepEqual(calls, []);
+    }
+  }
+});
+
+void test("returns the kinds of retained complete pairs and excludes orphan messages", () => {
+  const rows = [
+    message(0, "U", ["JOURNAL"]),
+    message(1, "A", ["SUPPORT_PLAN"]),
+    message(2, "orphan", ["RESOURCE"]),
+  ];
+  assert.deepEqual(conversationMemory(rows, allSelected, decrypt), {
+    history: [
+      { role: "USER", text: "U" },
+      { role: "ASSISTANT", text: "A" },
+    ],
+    kinds: ["JOURNAL", "SUPPORT_PLAN"],
+  });
 });

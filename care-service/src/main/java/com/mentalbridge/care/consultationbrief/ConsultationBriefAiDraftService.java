@@ -11,9 +11,11 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.TransactionException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -53,12 +55,9 @@ public class ConsultationBriefAiDraftService {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "IDEMPOTENCY_KEY_INVALID",
 					"Idempotency-Key must contain 8 to 128 safe characters");
 		}
-		var authorization = consents.authorizeAiProcessing(userId);
-		if (!authorization.authorized()) {
-			throw new ApiException(HttpStatus.CONFLICT, "AI_PROCESSING_CONSENT_REQUIRED",
-					"Current AI processing consent is required");
-		}
-		var source = briefs.aiDraftSource(userId, bearerToken, correlationId, appointmentId, expectedVersion);
+		requireAiContextConsent(userId);
+		var source = briefs.aiDraftSource(userId, bearerToken, correlationId, appointmentId, expectedVersion,
+				() -> requireAiContextConsent(userId));
 		var fingerprint = fingerprint(source);
 		var existing = findByKey(userId, idempotencyKey);
 		if (existing != null) {
@@ -81,8 +80,21 @@ public class ConsultationBriefAiDraftService {
 				.param("evaluationId", source.supportEvaluationId()).param("key", idempotencyKey)
 				.param("fingerprint", fingerprint).param("sourceSet", SOURCE_SET_VERSION)
 				.param("now", Timestamp.from(now)).update());
-		worker.dispatch(jobId, source, bearerToken, correlationId);
+		worker.dispatch(jobId, userId, source, bearerToken, correlationId);
 		return view(jobId);
+	}
+
+	private void requireAiContextConsent(UUID userId) {
+		ConsentService.AiAuthorizationView authorization;
+		try { authorization = consents.authorizeAiContextProcessing(userId); }
+		catch (DataAccessException | TransactionException exception) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "CONSENT_UNAVAILABLE",
+					"Current consent authority is unavailable");
+		}
+		if (!authorization.authorized()) {
+			throw new ApiException(HttpStatus.CONFLICT, "AI_CONTEXT_CONSENT_REQUIRED",
+					"Current AI context processing consent is required");
+		}
 	}
 
 	public JobView get(UUID userId, UUID appointmentId, UUID jobId) {

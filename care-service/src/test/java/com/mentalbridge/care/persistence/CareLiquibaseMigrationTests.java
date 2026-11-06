@@ -256,6 +256,12 @@ class CareLiquibaseMigrationTests extends CareTestProperties {
 		assertThat(historyCount).isEqualTo(2);
 		assertThatThrownBy(() -> insertConsent(userId, "consent-key-00000001", "c".repeat(64), false))
 				.isInstanceOf(DataIntegrityViolationException.class);
+		jdbc.sql("""
+				insert into consent_decision(user_id,consent_type,policy_version,granted,idempotency_key,request_hash,decided_at)
+				values(:userId,'AI_CONTEXT_PROCESSING','ai-context-processing-capstone-v1',false,'consent-key-00000001',:hash,now())
+				""").param("userId", userId).param("hash", "d".repeat(64)).update();
+		assertThat(jdbc.sql("select count(*) from consent_decision where user_id=:userId").param("userId", userId).query(Long.class).single()).isEqualTo(3);
+		assertThat(jdbc.sql("select count(*) from databasechangelog where id='care-034-ai-consent-levels'").query(Long.class).single()).isEqualTo(1);
 	}
 
 	@Test

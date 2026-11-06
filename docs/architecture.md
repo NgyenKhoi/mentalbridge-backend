@@ -188,8 +188,8 @@ At-least-once business delivery is assumed. See ADR 0016.
 ### Journal analysis
 
 1. User saves a journal revision in MongoDB.
-2. On an explicit request for one exact revision, Node.js Journal/AI forwards the verified end-user bearer context to Care REST, verifies current `AI_PROCESSING` consent, and creates one idempotent durable MongoDB job. The bearer credential is held only in memory and is never persisted or logged.
-3. A local worker atomically claims the job with a bounded lease and re-checks Care consent with the same ephemeral bearer immediately before each provider attempt. It also forwards that bearer to Consultation's current-entitlement endpoint; no client tier claim or cross-service database read participates in routing. Absence of an effective stored entitlement is authoritative `FREE` with `DEFAULT_FREE` provenance.
+2. On an explicit request for one exact revision, Node.js Journal/AI forwards the verified end-user bearer context to Care REST, verifies effective L2 `AI_CONTEXT_PROCESSING` through Care's atomic L1/L2 snapshot before personal-source access, and creates one idempotent durable MongoDB job. The bearer credential is held only in memory and is never persisted or logged.
+3. A local worker atomically claims the job with a bounded lease and re-checks effective L2 with the same ephemeral bearer before source access and immediately before each provider attempt. It also forwards that bearer to Consultation's current-entitlement endpoint; no client tier claim or cross-service database read participates in routing. Absence of an effective stored entitlement is authoritative `FREE` with `DEFAULT_FREE` provenance.
 4. The versioned `EXACT_REVISION` router selects one approved provider/model route from the current `FREE`/`PLUS`/`PREMIUM` decision. `FREE` and `PLUS` share the baseline route; `PREMIUM` may use a stronger approved route. The first attempt snapshots the route, every retry must keep it, and entitlement change or dependency uncertainty stops the attempt. There is no automatic cross-provider fallback. Each provider attempt times out after 30 seconds and has at most one retry for HTTP 429, provider 5xx, or transport failure.
 5. The worker rejects malformed/unsafe output and stores only the normalized structured result plus entitlement, routing, provider/model/prompt/schema provenance, usage/cost estimate, timing, and job state. Raw provider responses and hidden reasoning are not persisted. Gemini/OpenAI stay config- and approval-gated; local/test/CI uses the deterministic fake.
 6. Care consumes only approved structured indicators, never free-form model reasoning. Canonical v2 composition keeps standardized screening trend, non-standardized available-journal context trend with coverage, SupportPlan engagement, and explicit user-authored reassessment self-report as separate dimensions. Activity helpfulness/reflection is separately labelled supporting evidence and never replaces dimension four. Historical MB-386 v1 snapshots retain their original interpretation. Care never creates a combined improvement score.
@@ -202,13 +202,19 @@ displayed daily-response cap. All remain subject to server token, rate, abuse,
 cost, and fair-use enforcement.
 
 AI Companion conversations are Journal/AI-owned encrypted MongoDB aggregates,
-not Realtime specialist-chat records. Each answer rechecks Care consent and
-Consultation entitlement, reserves quota atomically, assembles only selected
-owner-verified minimized context, and persists the answer/quota/idempotency
-outcome in one Mongo transaction. The default 90-day conversation retention is
+not Realtime specialist-chat records. [ADR 0050](adr/0050-two-level-ai-consent.md)
+requires effective L1 at request and immediately before each provider attempt.
+Personal context and retained personal-kind memory require effective L2 before
+source access and dispatch. Known L2-off skips source assembly; loss during
+assembly discards personal input and rebuilds plain input after a final valid L1
+check. Consent uncertainty fails closed and releases the reservation.
+Consultation entitlement and atomic quota remain unchanged. New conversations
+select no sources; saved preferences are revalidated only with effective L2.
+The answer/quota/idempotency outcome persists in one Mongo transaction. The default 90-day conversation retention is
 TTL-backed and owner deletion removes message and replay content immediately.
 Reminder context remains fail-closed until Content/Notification publishes its
-authorization contract. See ADR 0021.
+authorization contract. See [MB-AI-COMPANION-CHAT-001](adr/0021-ai-companion-conversation-and-quota.md)
+and its [two-level consent amendment](adr/0050-two-level-ai-consent.md).
 
 ### Consent-enforced specialist read
 

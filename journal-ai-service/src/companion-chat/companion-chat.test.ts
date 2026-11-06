@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HttpException } from "@nestjs/common";
 
-import type { ConsentClient } from "../analysis/analysis.js";
+import {
+  ConsentUnavailableError,
+  type AiConsentAuthorizations,
+  type ConsentClient,
+} from "../analysis/analysis.js";
+import { pausedRead } from "../analysis/consent.fixture.js";
 import { loadConfiguration } from "../configuration/configuration.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { EntitlementDecision } from "../model-routing/model-routing.js";
@@ -10,6 +15,8 @@ import {
   CompanionChatService,
   ChatCrypto,
   RoutedChatProvider,
+  OwnerVerifiedContextAssembler,
+  providerOutputJsonSchemaV2,
   type ChatCommand,
   type ChatContextAssembler,
   type ChatMessage,
@@ -188,9 +195,33 @@ class MemoryRepository implements ChatRepository {
   }
 }
 
-const granted: ConsentClient = {
-  check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
-};
+const authorizations = (
+  chat = true,
+  context = true,
+): AiConsentAuthorizations => ({
+  chat: {
+    authorized: chat,
+    reason: chat ? "GRANTED" : "REVOKED",
+    consentType: "AI_PROCESSING",
+    policyVersion: "ai-processing-capstone-v2",
+    decidedAt: "2026-11-06T00:00:00Z",
+  },
+  context: {
+    authorized: chat && context,
+    reason: !context ? "REVOKED" : chat ? "GRANTED" : "DEPENDENCY_REQUIRED",
+    consentType: "AI_CONTEXT_PROCESSING",
+    policyVersion: "ai-context-processing-capstone-v1",
+    decidedAt: "2026-11-06T00:00:00Z",
+  },
+  checkedAt: "2026-11-06T00:01:00Z",
+});
+const consentClient = (
+  read: () => AiConsentAuthorizations | Promise<AiConsentAuthorizations>,
+): ConsentClient => ({
+  snapshot: () => Promise.resolve(read()),
+  check: async () => (await read()).chat,
+});
+const granted = consentClient(() => authorizations());
 const context: ChatContextAssembler = {
   assemble: () =>
     Promise.resolve({
@@ -303,7 +334,7 @@ void test("persists context per conversation and ignores client-supplied send co
   const { service } = subject("FREE", { context: verifiedContext });
   const conversation = await create(service);
   assert.deepEqual(conversation.context.sources, {
-    plan: true,
+    plan: false,
     diary: false,
     screening: false,
     resourceIds: [],
@@ -907,15 +938,15 @@ void test("the pre-call estimate counts tokens already used today", async () => 
 void test("the pre-call estimate includes conversation history", async () => {
   const budget = 100_000;
   const message = "Ừ, mình muốn thử";
-  const first = "ệ".repeat(1_400);
+  const first = "ệ".repeat(800);
   const estimate = (history: FriendInput["history"]) =>
     estimateInputTokens(
       companionGuidanceSystem({ channel: "TEXT", friend: true }),
       companionUserInput({
         message,
         context: {
-          kinds: ["SUPPORT_PLAN"],
-          prompt: "Approved current plan summary",
+          kinds: [],
+          prompt: "",
         },
         friend: { history, catalog: [] },
       }),
@@ -1002,9 +1033,7 @@ void test("does not consume a successful answer when provider execution fails", 
 
 void test("fails closed for withdrawn consent and unsupported reminder context", async () => {
   const withdrawn = subject("FREE", {
-    consent: {
-      check: () => Promise.resolve({ authorized: false, reason: "REVOKED" }),
-    },
+    consent: consentClient(() => authorizations(false)),
   });
   const withdrawnConversation = await create(withdrawn.service);
   await assert.rejects(
@@ -1026,6 +1055,9 @@ void test("fails closed for withdrawn consent and unsupported reminder context",
     },
   });
   const reminderConversation = await create(reminder.service);
+  const reminderRow = reminder.repository.conversations[0];
+  assert.ok(reminderRow);
+  reminderRow.context.sources.plan = true;
   await assert.rejects(
     () =>
       reminder.service.send(
@@ -1041,6 +1073,567 @@ void test("fails closed for withdrawn consent and unsupported reminder context",
       ),
     (error: unknown) =>
       error instanceof HttpException && error.getStatus() === 409,
+  );
+});
+
+void test("L1-only chat sends the whole plain provider payload and never decrypts personal memory", async () => {
+  const originalFetch = globalThis.fetch;
+  const payloads: unknown[] = [];
+  let reads = 0;
+  globalThis.fetch = (_input, init) => {
+    assert.ok(_input instanceof URL);
+    assert.equal(_input.href, "https://api.openai.com/v1/responses");
+    assert.ok(init && typeof init.body === "string");
+    payloads.push(JSON.parse(init.body));
+    return Promise.resolve(
+      Response.json({
+        output: [
+          {
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  message: "Mình đang lắng nghe.",
+                  language: "vi",
+                  authority: "SUPPORT_ONLY",
+                  clinicalAssessment: "NONE",
+                  safetyDecision: "NONE",
+                  eligibilityDecision: "NONE",
+                  businessAction: "NONE",
+                  thirdPartyAction: "NONE",
+                  suggestion: null,
+                }),
+              },
+            ],
+          },
+        ],
+        usage: { input_tokens: 20, output_tokens: 10 },
+      }),
+    );
+  };
+  try {
+    const { service, repository } = subject(
+      "FREE",
+      {
+        consent: consentClient(() => authorizations(true, false)),
+        context: {
+          assemble: () => {
+            reads += 1;
+            throw new Error("Personal source read");
+          },
+        },
+        provider: {
+          reply: (message, minimized, _route, options) =>
+            new RoutedChatProvider(configuration).reply(
+              message,
+              minimized,
+              chatRoute("OPENAI"),
+              options,
+            ),
+        },
+      },
+      friendConfiguration,
+    );
+    const conversation = await create(service);
+    const row = repository.conversations[0];
+    assert.ok(row);
+    row.context.sources = {
+      plan: true,
+      diary: true,
+      screening: true,
+      resourceIds: [breathing.resourceId],
+    };
+    const crypto = new ChatCrypto(configuration);
+    for (const [role, text] of [
+      ["USER", "Chào"],
+      ["ASSISTANT", "Mình nghe bạn."],
+    ] as const) {
+      const messageId = `${role}-plain`;
+      row.messages.push({
+        messageId,
+        role,
+        content: crypto.encrypt(
+          ownerId,
+          conversation.conversationId,
+          messageId,
+          text,
+        ),
+        createdAt: new Date(),
+        route: null,
+        contextKinds: [],
+      });
+    }
+    for (const kind of [
+      "JOURNAL",
+      "SUPPORT_PLAN",
+      "REASSESSMENT",
+      "RESOURCE",
+    ] as const) {
+      for (const role of ["USER", "ASSISTANT"] as const) {
+        row.messages.push({
+          messageId: `${kind}-${role}`,
+          role,
+          content: {
+            ciphertext: Buffer.from("cannot decrypt"),
+            iv: Buffer.alloc(12),
+            tag: Buffer.alloc(16),
+            algorithm: "AES-256-GCM",
+            keyId: "single-key",
+          },
+          createdAt: new Date(),
+          route: null,
+          contextKinds: role === "ASSISTANT" ? [kind] : [],
+        });
+      }
+    }
+    const result = await service.send(
+      request({ message: "Nói chuyện tiếp" }),
+      conversation.conversationId,
+    );
+    assert.equal(reads, 0);
+    assert.deepEqual(result.contextKinds, []);
+    assert.deepEqual(payloads, [
+      {
+        model: "reviewed-model",
+        store: false,
+        instructions: companionGuidanceSystem({
+          channel: "TEXT",
+          friend: true,
+        }),
+        input: JSON.stringify({
+          message: "Nói chuyện tiếp",
+          context: { kinds: [], data: "" },
+          history: [],
+          catalog: [],
+        }),
+        max_output_tokens: 2_000,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "mentalbridge_companion_reply",
+            strict: true,
+            schema: providerOutputJsonSchemaV2,
+          },
+        },
+      },
+    ]);
+    assert.deepEqual(
+      row.messages.slice(-2).map((message) => message.contextKinds),
+      [[], []],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("L2 loss during assembly discards all personal input and keeps only ordinary pairs", async () => {
+  let contextAllowed = true;
+  let assembled = 0;
+  const outgoing: unknown[] = [];
+  const { service, repository } = subject(
+    "FREE",
+    {
+      consent: consentClient(() => authorizations(true, contextAllowed)),
+      context: {
+        assemble: () => {
+          assembled += 1;
+          contextAllowed = false;
+          return Promise.resolve({
+            kinds: ["JOURNAL"],
+            prompt: "PRIVATE_SOURCE",
+          });
+        },
+      },
+      provider: {
+        reply: (message, minimized, route, options) => {
+          outgoing.push({ message, minimized, route, options });
+          return provider.reply(message, minimized, route, options);
+        },
+      },
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  const row = repository.conversations[0];
+  assert.ok(row);
+  row.context.sources.diary = true;
+  const crypto = new ChatCrypto(configuration);
+  for (const [role, text] of [
+    ["USER", "Ordinary user"],
+    ["ASSISTANT", "Ordinary answer"],
+  ] as const) {
+    const messageId = `ordinary-${role}`;
+    row.messages.push({
+      messageId,
+      role,
+      content: crypto.encrypt(
+        ownerId,
+        conversation.conversationId,
+        messageId,
+        text,
+      ),
+      contextKinds: [],
+      route: null,
+      createdAt: new Date(),
+    });
+  }
+  for (const role of ["USER", "ASSISTANT"] as const)
+    row.messages.push({
+      messageId: `withdrawn-${role}`,
+      role,
+      content: {
+        ciphertext: Buffer.from("must not decrypt after withdrawal"),
+        iv: Buffer.alloc(12),
+        tag: Buffer.alloc(16),
+        algorithm: "AES-256-GCM",
+        keyId: "single-key",
+      },
+      contextKinds: ["JOURNAL"],
+      route: null,
+      createdAt: new Date(),
+    });
+  const result = await service.send(
+    request({ message: "CURRENT" }),
+    conversation.conversationId,
+  );
+  assert.equal(assembled, 1);
+  assert.deepEqual(result.contextKinds, []);
+  assert.deepEqual(outgoing, [
+    {
+      message: "CURRENT",
+      minimized: { kinds: [], prompt: "" },
+      route: {
+        workload: "COMPANION_CHAT",
+        servicePlan: "FREE",
+        entitlementSource: "DEFAULT_FREE",
+        entitlementPolicyVersion: "service-entitlement-v1",
+        entitlementVersion: 1,
+        routingPolicyVersion: configuration.CHAT_ROUTING_POLICY_VERSION,
+        providerApprovalVersion: "local-deterministic-v1",
+        provider: "DETERMINISTIC_FAKE",
+        model: "deterministic-companion-v1",
+        promptVersion: "companion-chat-v1",
+      },
+      options: {
+        friend: {
+          history: [
+            { role: "USER", text: "Ordinary user" },
+            { role: "ASSISTANT", text: "Ordinary answer" },
+          ],
+          catalog: [],
+        },
+      },
+    },
+  ]);
+});
+
+void test("L1 loss or uncertain final authorization refuses dispatch and releases the reservation", async () => {
+  for (const [unavailable, withdrawalAt] of [
+    [false, "assembly"],
+    [true, "assembly"],
+    [false, "catalog"],
+    [true, "catalog"],
+  ] as const) {
+    let withdrawn = false;
+    let calls = 0;
+    const { service, repository } = subject(
+      "FREE",
+      {
+        consent: consentClient(() => {
+          if (withdrawn && unavailable)
+            throw new ConsentUnavailableError("synthetic timeout");
+          return authorizations(!withdrawn, true);
+        }),
+        context: {
+          assemble: () => {
+            if (withdrawalAt === "assembly") withdrawn = true;
+            return Promise.resolve({
+              kinds: ["SUPPORT_PLAN"],
+              prompt: "PRIVATE_PLAN",
+            });
+          },
+        },
+        catalog: {
+          items: () => {
+            if (withdrawalAt === "catalog") withdrawn = true;
+            return Promise.resolve([]);
+          },
+        },
+        provider: {
+          reply: () => {
+            calls += 1;
+            return Promise.reject(new Error("must not call"));
+          },
+        },
+      },
+      friendConfiguration,
+    );
+    const conversation = await create(service);
+    const row = repository.conversations[0];
+    assert.ok(row);
+    row.context.sources.plan = true;
+    for (let replay = 0; replay < 2; replay += 1)
+      await assert.rejects(
+        service.send(
+          request({ message: "CURRENT" }),
+          conversation.conversationId,
+        ),
+        (error: unknown) =>
+          error instanceof HttpException &&
+          error.getStatus() === (unavailable ? 503 : 403),
+      );
+    assert.equal(calls, 0);
+    assert.equal([...repository.quota.values()][0]?.reservations.size, 0);
+    assert.equal([...repository.quota.values()][0]?.successes, 0);
+  }
+});
+
+void test("personal selection requires L2; clearing remains allowed without consent", async () => {
+  let reads = 0;
+  const { service } = subject("FREE", {
+    consent: consentClient(() => authorizations(false, false)),
+    context: {
+      assemble: () => {
+        reads += 1;
+        throw new Error("must not read");
+      },
+    },
+  });
+  const conversation = await create(service);
+  await assert.rejects(
+    service.updateContext(
+      request({
+        sources: {
+          plan: true,
+          diary: false,
+          screening: false,
+          resourceIds: [],
+        },
+      }),
+      conversation.conversationId,
+    ),
+    (error: unknown) =>
+      error instanceof HttpException && error.getStatus() === 403,
+  );
+  const cleared = await service.updateContext(
+    request({
+      sources: { plan: false, diary: false, screening: false, resourceIds: [] },
+    }),
+    conversation.conversationId,
+  );
+  assert.deepEqual(cleared.context.sources, {
+    plan: false,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  });
+  assert.equal(reads, 0);
+});
+
+void test("the real context assembler refuses every source before Mongo connection or HTTP access without L2", async () => {
+  const originalFetch = globalThis.fetch;
+  let queries = 0;
+  globalThis.fetch = () => {
+    queries += 1;
+    throw new Error("must not fetch");
+  };
+  try {
+    for (const sources of [
+      { plan: true, diary: false, screening: false, resourceIds: [] },
+      { plan: false, diary: true, screening: false, resourceIds: [] },
+      { plan: false, diary: false, screening: true, resourceIds: [] },
+      {
+        plan: false,
+        diary: false,
+        screening: false,
+        resourceIds: [breathing.resourceId],
+      },
+    ]) {
+      const assembler = new OwnerVerifiedContextAssembler(
+        {
+          ...configuration,
+          MONGODB_URI: "mongodb://127.0.0.1:1",
+          MONGODB_CONNECTION_TIMEOUT_MS: 1,
+        },
+        consentClient(() => authorizations(true, false)),
+      );
+      try {
+        await assert.rejects(
+          assembler.assemble(
+            ownerId,
+            "synthetic-token",
+            "synthetic-correlation",
+            sources,
+          ),
+          (error: unknown) =>
+            error instanceof HttpException && error.getStatus() === 403,
+        );
+      } finally {
+        await assembler.onApplicationShutdown();
+      }
+    }
+    assert.equal(queries, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("the real context assembler reauthorizes L2 after each paused Care/Content read and never projects withdrawn context", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const kind of ["screening", "plan", "resource"] as const) {
+      for (const reason of ["REVOKED", "DEPENDENCY_REQUIRED"] as const) {
+        let allowed = true;
+        const consent = consentClient(() =>
+          allowed
+            ? authorizations()
+            : reason === "REVOKED"
+              ? authorizations(true, false)
+              : authorizations(false, true),
+        );
+        const read = pausedRead();
+        globalThis.fetch = async (input) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url;
+          if (url.includes("resource-progress"))
+            return Response.json({
+              items: [{ resourceId: breathing.resourceId }],
+            });
+          await read.wait();
+          if (kind === "screening")
+            return Response.json({
+              items: [
+                {
+                  assessmentId: breathing.resourceId,
+                  instrument: "PHQ9",
+                  submittedAt: "2026-11-06T04:00:00Z",
+                  result: {
+                    totalScore: 10,
+                    screeningLevel: "SYNTHETIC_PRIVATE_LEVEL",
+                    disclaimerCode: "SYNTHETIC",
+                  },
+                },
+              ],
+            });
+          if (kind === "plan")
+            return Response.json({
+              supportPlanId: breathing.resourceId,
+              status: "ACTIVE",
+              version: 1,
+              rationale: { text: "SYNTHETIC_PRIVATE_PLAN" },
+              slots: [],
+            });
+          return Response.json({
+            id: breathing.resourceId,
+            title: "SYNTHETIC_VIEWED_RESOURCE",
+            summary: "SYNTHETIC_PRIVATE_SUMMARY",
+          });
+        };
+        const assembler = new OwnerVerifiedContextAssembler(
+          {
+            ...configuration,
+            MONGODB_URI: "mongodb://127.0.0.1:1",
+            MONGODB_CONNECTION_TIMEOUT_MS: 1,
+          },
+          consent,
+        );
+        const projected: unknown[] = [];
+        const outgoing: unknown[] = [];
+        const { service, repository } = subject("FREE", {
+          consent,
+          context: {
+            assemble: async (...args) => {
+              const minimized = await assembler.assemble(...args);
+              projected.push(minimized);
+              return minimized;
+            },
+          },
+          provider: {
+            reply: (message, minimized, route, options) => {
+              outgoing.push(minimized);
+              return provider.reply(message, minimized, route, options);
+            },
+          },
+        });
+        try {
+          const conversation = await create(service);
+          const row = repository.conversations[0];
+          assert.ok(row);
+          row.context.sources = {
+            plan: kind === "plan",
+            diary: false,
+            screening: kind === "screening",
+            resourceIds: kind === "resource" ? [breathing.resourceId] : [],
+          };
+          const sent = service.send(
+            request({ message: "CURRENT" }, `paused-${kind}-${reason}`),
+            conversation.conversationId,
+          );
+          await read.started;
+          allowed = false;
+          read.resume();
+          if (reason === "REVOKED") {
+            const result = await sent;
+            assert.deepEqual(result.contextKinds, []);
+            assert.deepEqual(outgoing, [{ kinds: [], prompt: "" }]);
+          } else {
+            await assert.rejects(
+              sent,
+              (error: unknown) =>
+                error instanceof HttpException && error.getStatus() === 403,
+            );
+            assert.deepEqual(outgoing, []);
+          }
+          assert.deepEqual(projected, []);
+          assert.doesNotMatch(JSON.stringify(outgoing), /SYNTHETIC/);
+        } finally {
+          await assembler.onApplicationShutdown();
+        }
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("retained personal memory taints new messages even when current sources return nothing", async () => {
+  let assemblies = 0;
+  const { service, repository } = subject(
+    "FREE",
+    {
+      context: {
+        assemble: () => {
+          assemblies += 1;
+          return Promise.resolve({
+            kinds: assemblies === 1 ? ["JOURNAL"] : [],
+            prompt: assemblies === 1 ? "PRIVATE_SOURCE" : "",
+          });
+        },
+      },
+    },
+    friendConfiguration,
+  );
+  const conversation = await create(service);
+  const row = repository.conversations[0];
+  assert.ok(row);
+  row.context.sources.diary = true;
+  const first = await service.send(
+    request({ message: "First" }, "memory-taint-command-1"),
+    conversation.conversationId,
+  );
+  const second = await service.send(
+    request({ message: "Second" }, "memory-taint-command-2"),
+    conversation.conversationId,
+  );
+  assert.deepEqual(first.contextKinds, ["JOURNAL"]);
+  assert.deepEqual(second.contextKinds, ["JOURNAL"]);
+  assert.deepEqual(
+    row.messages.map((message) => message.contextKinds),
+    [["JOURNAL"], ["JOURNAL"], ["JOURNAL"], ["JOURNAL"]],
   );
 });
 
@@ -1068,6 +1661,9 @@ void test("prevents a concurrent quota race from delivering more than five FREE 
 void test("does not persist raw context or provider hidden reasoning metadata", async () => {
   const { repository, service } = subject();
   const conversation = await create(service);
+  const row = repository.conversations[0];
+  assert.ok(row);
+  row.context.sources.plan = true;
   await service.send(
     request({ message: "Dùng bối cảnh" }),
     conversation.conversationId,

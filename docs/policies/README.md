@@ -1,5 +1,9 @@
 # MentalBridge policy register
 
+MB-806 [Care consent policy 1.2-capstone](care-consent-and-retention-policy.md)
+and [ADR 0050](../adr/0050-two-level-ai-consent.md) govern current L1/L2 AI
+authorization; historical notice text and separate Voice v2 remain immutable.
+
 [Companion Voice policy v1](companion-voice-policy-v1.md) and its
 [machine-readable snapshot](companion-voice-policy-v1.json) are the MB-755
 approved target under [ADR 0046](../adr/0046-ai-voice-companion-contract.md).
@@ -37,7 +41,7 @@ Read [Current Product Blueprint](../CURRENT_PRODUCT_BLUEPRINT.md) first for the 
 | [Consultation journey state and settlement map](consultation-journey-state-map-v1.md) | `consultation-journey-v1` / MB-623 | Verification consolidation, not a new business-policy approval | Separates appointment/outcome/dispute dimensions and maps existing credit, completion, privacy and modality boundaries |
 | [AI Companion policy v1](ai-companion-policy-v1.md) | `MB-AI-COMPANION-001` | Historical policy; amended by ADR 0017 | Retains exact-source analysis, longitudinal evidence, provider execution, and AI/Care authority rationale |
 | [AI Companion policy v2](ai-companion-policy-v2.md) | `MB-SCOPE-V2-001` + `MB-SCOPE-V2-002` | Chat/quota and exact-revision runtimes implemented; real provider route approval-gated | Adds package quotas/model routing and bounded SupportPlan/reassessment/reminder accompaniment; AI never supplies the explicit reassessment self-report |
-| [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.1-capstone` | Product Owner approved for controlled Capstone use; production security/legal review required | `privacy-capstone-v3` gates PHQ-9/GAD-7; `ai-processing-capstone-v2` gates explicit journal analysis and optional saved-ConsultationBrief suggestions; specialist sharing remains separately scoped |
+| [Care consent and assessment retention](care-consent-and-retention-policy.md) | `1.2-capstone` | Product Owner approved for controlled Capstone use; production security/legal review required | `privacy-capstone-v3` gates PHQ-9/GAD-7; existing current `ai-processing-capstone-v2` is L1-only; new dependent `ai-context-processing-capstone-v1` gates personal sources, Journal analysis and accompaniment; specialist sharing and Voice remain separately scoped |
 | [Daily emotion check-in policy v1](daily-emotion-check-in-policy-v1.md) | `MB-DAILY-EMOTION-CHECK-IN-001` | Historical base policy; extended by `MB-EMOTION-CONTEXT-001` | Governs non-clinical daily values, local-day edits, encrypted note, deletion, and consented note-free AI projection |
 | [Daily emotion check-in policy v2](daily-emotion-check-in-policy-v2.md) | `MB-EMOTION-CONTEXT-001` | Implemented for MB-658 controlled development/demo use | Adds bounded optional encrypted factors, explicit owner-save consent copy, clearing, and strict downstream minimization |
 | [Resource reward policy v1](resource-reward-policy-v1.md) | `resource-reward-v1` / `MB-RESOURCE-REWARD-001` | Implemented for controlled development/demo use | Defines deterministic bounded participation XP, source provenance, levels, optional visibility, and strict non-clinical language |

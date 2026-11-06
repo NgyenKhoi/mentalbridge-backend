@@ -173,8 +173,9 @@ Conversation append, quota consumption, and command completion use a MongoDB
 transaction, so the deployed MongoDB must support replica-set transactions.
 Provider/context failures release their reservation and do not consume a
 success allowance. Consultation remains authoritative for the current service
-plan, and Care remains authoritative for current `AI_PROCESSING` consent and
-SupportPlan context.
+plan, and Care remains authoritative for the atomic current L1/L2 snapshot and SupportPlan
+context. Under [ADR 0050](../adr/0050-two-level-ai-consent.md), existing current
+`AI_PROCESSING` v2 is L1-only and new `AI_CONTEXT_PROCESSING` v1 is dependent L2.
 
 Migration `011_bedrock_provider.cjs` additively accepts `BEDROCK` in assistant
 route provenance. It retains the existing deterministic fake, Gemini, and
@@ -184,9 +185,14 @@ Migration `012_ai_companion_conversation_context.cjs` backfills every existing
 conversation with the conservative default `{ plan: true, diary: false,
 screening: false, resourceIds: [] }`, then requires the owner-scoped context
 subdocument under strict validation. It also extends message provenance with
-`RESOURCE`. The application treats this stored selection as authoritative and
-ignores legacy message-body context; resource IDs are revalidated against the
-owner's recent Content progress before any minimized context is assembled.
+`RESOURCE`. This is the immutable historical migration default. MB-806 changes the application's
+new-conversation default to all flags false and resourceIds empty without a
+persisted-shape or validator change. Stored selections are preferences, never
+consent authority; they are ignored without effective L2 and source ownership is
+revalidated before use. Resource IDs remain bounded by the owner's recent Content
+progress. Complete message pairs with any disallowed personal kind are filtered
+before decryption. New provenance unions actual fetched and retained-history kinds,
+while old labels and results are never rewritten. No Mongo migration is needed.
 
 ## AI Companion Voice admission and usage collections
 
@@ -448,7 +454,9 @@ the fixed 30-second provider timeout. At most two attempts are allowed. The
 forwarded end-user bearer JWT is held only in process memory and is never a job
 field; a reclaimed job without that context fails closed with
 `AUTHORIZATION_CONTEXT_LOST`. Request-time and pre-attempt Care checks use the
-current `AI_PROCESSING` decision. Revocation blocks an attempt or retry without
+effective L2 `AI_CONTEXT_PROCESSING` through Care's atomic snapshot, before
+source content access and immediately before every provider attempt. Revocation
+blocks an attempt or retry without
 deleting earlier results.
 
 The first attempt also resolves the current entitlement through Consultation
