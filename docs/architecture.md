@@ -33,6 +33,16 @@ PUSH provider/device delivery remain downstream.
 > The architecture follows ADR 0017 as prospectively amended by ADR 0022 and
 > distinguishes approved targets from implemented runtime.
 
+MB-800 adds specialist appointment inbox invalidations through the existing
+Content-to-Kafka-to-Realtime boundary under [ADR 0016](adr/0016-feature-scoped-kafka-and-opentelemetry.md).
+Content commits one minimized creation pointer in a dedicated transactional
+outbox. Realtime fans out through ephemeral Redis and revalidates each recipient
+with the socket's existing Identity credential at Content before emitting the
+separately named `notification.created` event on `/realtime`. Current REST inbox
+state repairs missed signals; no browser receipt or socket replay is promised.
+The feature flags remain off by default. See the
+[MB-800 delivery boundary](requirements-traceability/stories/mb-800.md).
+
 ## 1. Architectural drivers
 
 1. Mental-health and journal data require least privilege, consent enforcement, traceability, deletion, and minimized exposure.

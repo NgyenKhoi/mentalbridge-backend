@@ -56,6 +56,9 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.care-user-notification-dead-letter.v1 --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content.notification-created.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.realtime.specialist-notification-retry.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.realtime.specialist-notification-dead-letter.v1 --partitions 1 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.admin.audit-event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name mentalbridge.admin.audit-event.v1 --add-config retention.ms=604800000,cleanup.policy=delete
     depends_on:
@@ -434,6 +437,7 @@ services:
       CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY: ${CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY:-}
       CONTENT_COMMUNITY_NOTIFICATION_KEY_ID: ${CONTENT_COMMUNITY_NOTIFICATION_KEY_ID:-}
       CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED: ${CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED:-true}
+      CONTENT_SPECIALIST_LIVE_RELAY_ENABLED: ${CONTENT_SPECIALIST_LIVE_RELAY_ENABLED:-false}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONTENT_PORT:-3003}:3003"
     depends_on:
@@ -596,6 +600,9 @@ services:
     environment:
       NODE_ENV: production
       REALTIME_PORT: 3004
+      REALTIME_SPECIALIST_LIVE_ENABLED: ${REALTIME_SPECIALIST_LIVE_ENABLED:-false}
+      CONTENT_NOTIFICATION_SERVICE_URL: ${CONTENT_NOTIFICATION_SERVICE_URL:-http://content-notification:3003}
+      CONTENT_NOTIFICATION_TIMEOUT_MS: ${CONTENT_NOTIFICATION_TIMEOUT_MS:-2000}
       REALTIME_COMMUNITY_ENABLED: ${REALTIME_COMMUNITY_ENABLED:-false}
       REALTIME_COMMUNITY_BASE_URL: ${REALTIME_COMMUNITY_BASE_URL:-http://community:8084}
       REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: ${REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY:-}
