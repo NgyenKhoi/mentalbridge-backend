@@ -8,6 +8,30 @@ governed dataset metadata/samples, and benchmark coordination. Consultation
 provides versioned package entitlement; Care remains the consent, safety,
 Support Guide, SupportPlan, eligibility, and confirmation authority.
 
+## Current two-level consent boundary (MB-806)
+
+[ADR 0050](../adr/0050-two-level-ai-consent.md) is the prospective authority.
+Existing current `AI_PROCESSING` v2 remains L1 for actively sent content and
+eligible bounded conversational memory. `AI_CONTEXT_PROCESSING` v1 is independent
+L2, effective only with L1 and never backfilled. Exact/longitudinal analysis,
+Care evidence reuse, personal context selection/fetch, plan companion, saved-brief
+AI draft, Guide phrasing and emotion projection all require L2 before personal
+source access and immediately before every provider attempt, including retries.
+
+The single strict Care snapshot adapter forwards an ephemeral verified bearer.
+Unknown/malformed/inconsistent or unavailable authority fails closed with
+`CONSENT_UNAVAILABLE` (chat retains `CONSENT_OR_ENTITLEMENT_UNAVAILABLE`);
+the caller's own invalid bearer retains `401`. No grant
+cache, shadow consent, persisted bearer, saved prompt or new retry is added.
+Chat requires L1 at request and final attempt. Known L2-off skips personal
+assembly and excludes complete personal-kind pairs before decryption; loss
+during assembly discards all personal input and rebuilds plain input under the
+final successful read. New labels union fetched and retained-history kinds.
+New conversations select no source; saved preferences require fresh L2 and
+source checks, while clearing stays available. Existing history remains readable
+and immutable. Deterministic Guide/plan fallbacks stay available without consent.
+Voice remains L1 plus separate Voice v2 with unchanged empty-kind handoff limits.
+
 ## Use cases and acceptance
 
 | Capability             | Main behavior                                                                                                                                | Acceptance                                                                                                                                                                                              |
@@ -32,7 +56,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - Use MongoDB for every Journal/AI operational aggregate. Analysis workers use atomic claim and bounded leases; future publication requires a Mongo-owned outbox or another accepted recoverable design.
 - AI adapters receive minimized decrypted content only for the approved operation; raw provider responses and hidden reasoning are never persisted.
 - Support Guide phrasing accepts only Care-approved Vietnamese copy, rechecks
-  current `AI_PROCESSING` consent using the forwarded user bearer, and returns
+  effective L2 `AI_CONTEXT_PROCESSING` consent using the forwarded user bearer, and returns
   structured provider/model/prompt provenance. It cannot receive raw
   assessment answers or change Care-owned safety, resource, eligibility, or
   action decisions; Care retains its exact approved copy on every failure.
@@ -67,7 +91,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [x] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] JAI-02 Resolve journal retention/encryption plus dataset license/edit and benchmark label policies; AI provider/result retention is fixed by ADR 0015.
 - [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema. The exact-revision request/status/result slice is complete; dataset and benchmark contracts remain deferred.
-- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and `AI_PROCESSING` contracts are complete; specialist-sharing remains deferred.
+- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and Care L1/L2 consent contracts are complete; specialist-sharing remains deferred.
 - [x] MB-370 provides an internal ConsultationBrief suggestion boundary with exact minimized sources, current consent/entitlement/provider checks, strict editable output, and no persistence or specialist delivery.
 - [x] MB-649 implements bounded SupportPlan Companion message orchestration, deterministic fallback, provider output guards, safe telemetry, and the callable v1 REST contract without persistence or mutation authority.
 - [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, exact-revision and longitudinal job/result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
@@ -81,7 +105,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 
 MB-371 adds owner-scoped idempotent longitudinal jobs over two equal 7-31 day
 periods. Journal/AI selects at most 50 active current revisions per period,
-persists the exact selected versions, rechecks `AI_PROCESSING` consent before
+persists the exact selected versions, rechecks effective L2 `AI_CONTEXT_PROCESSING` consent before
 provider execution, and uses the existing entitlement-aware single-provider
 route with one bounded retry. At least three entries per period and a maximum
 2:1 count ratio are required for a directional comparison; otherwise every

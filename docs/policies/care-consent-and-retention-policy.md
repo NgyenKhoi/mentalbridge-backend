@@ -5,61 +5,103 @@
 | Field | Value |
 | --- | --- |
 | Policy ID | `MB-PRIVACY-CARE-001` |
-| Policy version | `1.1-capstone` |
+| Policy version | `1.2-capstone` |
 | Status | `PRODUCT OWNER APPROVED — CONTROLLED CAPSTONE ONLY` |
-| Effective date | 2026-09-10 for controlled local/test/demo use |
+| Effective date | 2026-11-06 for MB-806 AI-purpose amendment; existing controlled local/test/demo scope |
 | Capstone decision | MB-178 consent, disclosure, anonymous lifetime, and bounded retention decisions approved on 2026-09-02; Story 1102 instrument-neutral `privacy-capstone-v3` text approved by the Product Owner on 2026-09-10 |
 | Owning service | Care Service |
 | Applies to | Anonymous and registered Care assessment flows in Vietnam |
 
 ## Separate consent and disclosure paths
 
-### Accepted prospective Voice consent boundary (MB-755)
+### Current AI-purpose amendment (MB-806)
 
-[ADR 0046](../adr/0046-ai-voice-companion-contract.md) approves a future independent
-`AI_VOICE_PROCESSING` stream under `ai-voice-processing-capstone-v1`. Voice
-requires both that stream and current `AI_PROCESSING`; neither substitutes for
-the other. Care owns disclosure, server-issued acceptance/withdrawal timestamps
-and current decision. The immutable Vietnamese target notice is in
-[Companion Voice policy v1](companion-voice-policy-v1.md). Material audio-provider
-or processing-purpose changes require a new voice version and explicit voice
-reconsent, without resetting text consent.
-
-This is an accepted target only. MB-755 changes no current Care handler,
-`ConsentType`, collection limit, active OpenAPI constant or migration. Runtime
-delivery must add voice decisions/disclosure/current authorization before
-Journal/AI can enable voice; existing user-bearer reads cannot substitute for
-the planned service-only current owner checks. Withdrawal of either consent
-ends voice processing and purges session context. Voice usage/operational
-metadata has a separate 30-day bound; it does not rewrite existing assessment,
-text-history or Care decision retention.
-
-### Existing runtime consent purposes
+[ADR 0050 / MB-TWO-LEVEL-AI-CONSENT-001](../adr/0050-two-level-ai-consent.md)
+is the current prospective authority. Immutable historical disclosures and
+decisions retain their exact text and versions.
 
 MentalBridge must not combine these purposes into one broad toggle:
 
-| Purpose | Required treatment |
+| Purpose | Current type/version and treatment |
 | --- | --- |
-| Deterministic assessment processing | The user must view and grant the backend-owned `privacy-capstone-v3` consent; this is a processing gate, not a clinical-eligibility rule, and no AI processing is implied |
-| AI processing | Backend consent type `AI_PROCESSING` at `ai-processing-capstone-v2`; covers explicit exact-source journal analysis and optional suggestions from one saved private ConsultationBrief plus minimized screening levels |
-| Specialist sharing | Product semantics approved by `MB-CONSULTATION-FLOW-001`; separate revocable grant scopes subject, specialist, appointment, approved snapshot, purpose, and time window |
-| Research use | Deferred; `RESEARCH_DATA` is not exposed and production data is excluded by default |
-| Marketing notification | Deferred; `MARKETING_NOTIFICATION` is not exposed until a corresponding feature exists |
+| Deterministic assessment processing | `PRIVACY_POLICY` / `privacy-capstone-v3`; independent processing gate, never AI permission |
+| L1 — AI trò chuyện | `AI_PROCESSING` / `ai-processing-capstone-v2`; actively sent content and bounded eligible same-conversation memory only; current existing v2 grants remain valid without reconsent |
+| L2 — AI dùng bối cảnh | `AI_CONTEXT_PROCESSING` / `ai-context-processing-capstone-v1`; new independent grant for bounded approved personal context, effective only with current granted L1; no backfill |
+| Voice microphone/processing | Separate `AI_VOICE_PROCESSING` / `ai-voice-processing-capstone-v2`, plus effective L1; L2 cannot replace it or broaden Voice sources |
+| Specialist sharing | Separate revocable subject/specialist/appointment/snapshot/purpose/window grant |
+| Research use | Deferred; `RESEARCH_DATA` remains unavailable |
+| Marketing notification | Deferred; `MARKETING_NOTIFICATION` remains unavailable |
 
-Care accepts and exposes `PRIVACY_POLICY` and `AI_PROCESSING` as independent append-only decision streams. Care publishes each exact Vietnamese disclosure and version; clients must not maintain independent copies. `AI_PROCESSING` does not authorize research, marketing, specialist sharing, or safety decisions. A registered withdrawal takes effect for new processing immediately but neither deletes historical assessments or analysis results nor rewrites audit evidence. Deletion is a separate workflow. `RESEARCH_DATA` and `MARKETING_NOTIFICATION` remain reserved and unavailable.
+Care owns immutable Vietnamese notices, append-only subject-scoped decisions and
+the atomic effective L1/L2 snapshot. Raw granted decisions are not effective
+authorization. L1 never permits personal-record retrieval. L2 covers owned,
+minimized, explicitly eligible Journal/context sources, exact and longitudinal
+analysis, Care AI-evidence reuse, plan companion, saved-brief AI draft, Guide AI
+phrasing and emotion AI projection. Consent cannot grant source access, raw
+assessment answers, unlimited records, specialist sharing, research or marketing.
+Neither checkbox is preselected.
 
-Journal/AI checks the current `AI_PROCESSING` decision through the narrow Care
-REST authorization endpoint when accepting an analysis request and again
-immediately before every provider attempt. It forwards the already verified
-end-user bearer JWT received through the gateway. The token is not persisted in
-the analysis job or logged. Care unavailability, an expired token, a missing
-decision, or a withdrawal all fail closed. Revocation prevents a new provider
-attempt and retry but does not erase a previously normalized result.
+A new L2 grant without effective L1 returns `409 AI_PROCESSING_CONSENT_REQUIRED`
+without inserting a decision. L2 withdrawal is always accepted. L1 withdrawal
+suspends current true L2 (`DEPENDENCY_REQUIRED`) without fabricating withdrawal;
+explicit L1 regrant restores its effectiveness and selects no new sources. Each
+level's own missing, revoked or outdated reason takes precedence over dependency.
+Both streams share the existing profile lock and strictly increasing microsecond
+decision order. Exact idempotent replay precedes new-policy/dependency validation,
+returns the original decision and never restores authority.
+
+Journal/AI checks current effective L2 before each personal source
+query/decryption/projection and again immediately before each provider attempt,
+including retries, redispatch and reclaimed jobs. Chat checks effective L1 at
+request and final attempt; known L2-off skips personal assembly and filters whole
+personal-kind memory pairs before decryption. Loss during assembly discards
+personal input and rebuilds plain input under the final successful L1 read.
+Dependency uncertainty fails closed, rather than treating it as an L2 refusal.
+The verified end-user bearer remains ephemeral and unlogged; no consent cache,
+shadow grant, saved prompt or raw provider output is introduced.
+
+All current context kinds (`JOURNAL`, `SUPPORT_PLAN`, `REASSESSMENT`, `RESOURCE`)
+are personal. New labels preserve the union of actual fetched and retained-memory
+kinds; old messages/results remain immutable. New conversations select no source;
+saved selections are preferences and resume only with L2 and fresh source checks.
+Clearing sources remains allowed. Deterministic screening, safety, Guide and plan
+fallbacks require neither AI level. Withdrawal prevents new work without deleting
+history; deletion remains a separate workflow. Existing source bounds, retention,
+encryption, quotas, public-catalogue suggestions and Care decision authority stay.
+
+### Current Voice consent boundary
+
+The implemented Voice v2 boundary follows
+[ADR 0046](../adr/0046-ai-voice-companion-contract.md) as amended by
+[ADR 0048](../adr/0048-opt-in-text-voice-context.md). Voice requires L1 and its
+separate immutable `ai-voice-processing-capstone-v2` notice, entitlement/quota and
+fresh owner/session authority at admission, reconnect, renewal, every generation
+and publication. The explicitly selected Text handoff remains bounded to eligible
+empty-kind pairs; L2 unlocks no further Voice source. Withdrawal follows existing
+current-call cutoff and RAM purge. Voice v1 is historical; the v2 notice and
+reacceptance rules are unchanged. Voice metadata's separate 30-day bound does not
+rewrite assessment, text-history or Care decision retention.
+
+### Immutable L2 disclosure text
+
+`ai-context-processing-capstone-v1` is current and publishes exactly:
+
+> **AI dùng bối cảnh**
+>
+> MentalBridge dùng AI để xử lý các nguồn dữ liệu cá nhân đã được cho phép và bạn chọn, gồm nhật ký, thông tin sàng lọc tối giản, kế hoạch hỗ trợ và tiến độ tài nguyên, để phân tích nhật ký, trò chuyện có bối cảnh, hỗ trợ kế hoạch, gợi ý bản tóm tắt trước buổi tư vấn và diễn đạt Hướng dẫn hỗ trợ. Mức đồng ý này chỉ có hiệu lực khi bạn đang đồng ý AI trò chuyện. Bạn có thể rút lại từng mức đồng ý để chặn việc xử lý mới; rút lại AI trò chuyện sẽ tạm dừng AI dùng bối cảnh, và mức bối cảnh hiện tại có hiệu lực trở lại khi bạn đồng ý AI trò chuyện lại.
+
+### Coordinated rollout
+
+Deploy Care's additive L2 stream/snapshot before Journal/AI's new checks. Coordinate
+cutover of every existing broad AI consumer: the valid L1 endpoint cannot prevent
+old consumers from incorrectly treating L1 as L2. Nobody receives L2 until an
+explicit new grant. MB-805/807 frontend consumers synchronize the merged contract
+and render backend notices/current authority; existing grants establish L1 only.
 
 ### Immutable AI-processing disclosure text
 
-`ai-processing-capstone-v2` is current. It covers the existing explicit journal
-analysis purposes and an explicit request to create an editable suggestion from
+`ai-processing-capstone-v2` stays current for L1 under ADR 0050. Its immutable
+original notice described explicit journal analysis and an editable suggestion from
 one saved private ConsultationBrief plus minimized PHQ-9/GAD-7 levels. The
 ConsultationBrief purpose excludes raw Journal content, screening answers, chat,
 diagnoses, private notes, automatic saving, approval, sharing, access grants, and
@@ -150,7 +192,7 @@ The existing null registered-retention deadline means only that the controlled d
 
 - [x] Product Owner approved synthetic/test-data-only Sprint 2 validation and the non-executable MB-179 sharing boundary.
 - [x] Product Owner approved the versioned assessment-processing disclosure and its separation from clinical eligibility.
-- [x] Product Owner approved backend ownership of immutable versioned disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and MB-370 makes `ai-processing-capstone-v2` current for explicit journal analysis and optional saved-ConsultationBrief suggestions. Specialist sharing remains a separate explicit grant; research and marketing remain deferred.
+- [x] Product Owner approved backend ownership of immutable versioned disclosure text; `privacy-capstone-v3` is current for PHQ-9/GAD-7 while v1/v2 remain historical, and MB-370 introduced immutable `ai-processing-capstone-v2`; MB-806 narrows that current grant to L1 and adds the independent L2 notice for personal context. Specialist sharing remains a separate explicit grant; research and marketing remain deferred.
 - [x] Product Owner approved a 30-minute sliding inactivity deadline, two-hour absolute lifetime, and persisted idempotent completion semantics.
 - [x] Product Owner approved registered history only for controlled synthetic/test/demo use without a production retention claim.
 - [x] Product Owner approved the appointment-scoped `SPECIALIST_SHARING` grant and user-approved `ConsultationBrief` boundary under ADR 0014.

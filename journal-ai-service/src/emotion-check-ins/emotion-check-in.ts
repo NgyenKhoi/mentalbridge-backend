@@ -33,7 +33,11 @@ import {
 import { z } from "zod";
 
 import type { ServiceConfiguration as Configuration } from "../configuration/configuration.js";
-import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
+import {
+  CareConsentClient,
+  assertAiContextProcessingConsent,
+  type ConsentClient,
+} from "../analysis/analysis.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
 import {
   calculateEmotionStreak,
@@ -900,24 +904,25 @@ export class EmotionCheckInService {
   ) {
     const parsed = contextQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException();
-    let decision: Awaited<ReturnType<ConsentClient["check"]>>;
-    try {
-      decision = await this.consent.check(
-        bearerToken(request),
-        request.id ?? randomUUID(),
-      );
-    } catch (error) {
-      throw new ServiceUnavailableException({ cause: error });
-    }
-    if (!decision.authorized) throw new HttpException("", HttpStatus.FORBIDDEN);
+    const bearer = bearerToken(request);
+    await assertAiContextProcessingConsent(
+      this.consent,
+      bearer,
+      request.id ?? randomUUID(),
+    );
     const result = await this.repository.list(
       owner(request),
       parsed.data.limit,
     );
+    const decision = await assertAiContextProcessingConsent(
+      this.consent,
+      bearer,
+      request.id ?? randomUUID(),
+    );
     return {
       purpose: parsed.data.purpose,
       consent: {
-        type: "AI_PROCESSING" as const,
+        type: "AI_CONTEXT_PROCESSING" as const,
         policyVersion: decision.policyVersion ?? null,
         decidedAt: decision.decidedAt ?? null,
       },

@@ -1,3 +1,4 @@
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -39,11 +40,17 @@ const request = {
 
 void test("returns only validated phrasing with provider provenance", async () => {
   const consent: ConsentClient = {
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
   };
   const provider: SupportGuidePhrasingProvider = {
-    phrase: () =>
-      Promise.resolve({
+    phrase: (approvedText) => {
+      assert.equal(approvedText, request.body.approvedText);
+      return Promise.resolve({
         output: { text: "Một cách diễn đạt rõ ràng và gần gũi hơn." },
         latencyMs: 12,
         usage: {
@@ -51,7 +58,8 @@ void test("returns only validated phrasing with provider provenance", async () =
           outputTokens: 12,
           estimatedCostMicroUsd: 1,
         },
-      }),
+      });
+    },
   };
 
   const result = await new SupportGuidePhrasingService(
@@ -69,24 +77,86 @@ void test("returns only validated phrasing with provider provenance", async () =
   });
 });
 
-void test("rejects phrasing when current AI consent is absent", async () => {
-  const consent: ConsentClient = {
-    check: () => Promise.resolve({ authorized: false, reason: "MISSING" }),
-  };
+void test("refuses Guide provider use for every ineffective L2 reason", async () => {
+  let providerCalls = 0;
   const provider: SupportGuidePhrasingProvider = {
-    phrase: () => Promise.reject(new Error("provider must not be called")),
+    phrase: () => {
+      providerCalls += 1;
+      return Promise.reject(new Error("provider must not be called"));
+    },
   };
+  for (const reason of [
+    "MISSING",
+    "REVOKED",
+    "POLICY_OUTDATED",
+    "DEPENDENCY_REQUIRED",
+  ] as const) {
+    const consent: ConsentClient = {
+      check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+      snapshot: () =>
+        Promise.resolve(
+          aiConsentAuthorizationsFixture(
+            {
+              authorized: false,
+              reason,
+              ...(reason === "POLICY_OUTDATED"
+                ? { policyVersion: "historical-context-v0" }
+                : {}),
+            },
+            reason === "DEPENDENCY_REQUIRED"
+              ? { authorized: false, reason: "REVOKED" }
+              : { authorized: true, reason: "GRANTED" },
+          ),
+        ),
+    };
+    await assert.rejects(
+      new SupportGuidePhrasingService(consent, provider, configuration).phrase(
+        request,
+      ),
+      (error) =>
+        error instanceof ForbiddenException &&
+        (error.getResponse() as { code: string }).code ===
+          "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+  }
+  assert.equal(providerCalls, 0);
+});
 
-  await assert.rejects(
-    new SupportGuidePhrasingService(consent, provider, configuration).phrase(
-      request,
-    ),
-    ForbiddenException,
-  );
+void test("Guide consent uncertainty refuses provider use and preserves caller 401", async () => {
+  let providerCalls = 0;
+  for (const failure of [
+    new Error("Care unavailable"),
+    new UnauthorizedException(),
+  ]) {
+    const consent: ConsentClient = {
+      check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+      snapshot: () => Promise.reject(failure),
+    };
+    const provider: SupportGuidePhrasingProvider = {
+      phrase: () => {
+        providerCalls += 1;
+        return Promise.reject(new Error("provider must not be called"));
+      },
+    };
+    await assert.rejects(
+      new SupportGuidePhrasingService(consent, provider, configuration).phrase(
+        request,
+      ),
+      failure instanceof UnauthorizedException
+        ? UnauthorizedException
+        : ServiceUnavailableException,
+    );
+  }
+  assert.equal(providerCalls, 0);
 });
 
 void test("maps malformed provider output to dependency unavailable", async () => {
   const consent: ConsentClient = {
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
   };
   const provider: SupportGuidePhrasingProvider = {
@@ -113,6 +183,11 @@ void test("maps malformed provider output to dependency unavailable", async () =
 void test("rejects callers without the user role and invalid copy before consent", async () => {
   let consentChecks = 0;
   const consent: ConsentClient = {
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: () => {
       consentChecks += 1;
       return Promise.resolve({ authorized: true, reason: "GRANTED" });

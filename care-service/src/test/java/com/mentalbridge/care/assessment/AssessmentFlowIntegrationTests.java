@@ -55,6 +55,8 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
+			"GET /api/v1/consents/ai-authorizations",
+			"GET /api/v1/ai-context-processing-disclosures/current",
 			"GET /api/v1/consents/ai-processing/authorization",
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/questionnaires/{instrument}/current",

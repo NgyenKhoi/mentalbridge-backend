@@ -349,6 +349,19 @@ export class VoiceTurnService {
       ]);
       if (this.isAborted(requestSignal))
         throw new VoiceLedgerError("SESSION_EXPIRED");
+      const dispatch = await this.sessions.authorizeTurn(
+        id,
+        input.attemptId,
+        input.leaseId,
+        correlationId,
+      );
+      if (
+        this.digest(
+          JSON.stringify(this.route(dispatch.entitlement.packageCode)),
+        ) !== routeHash ||
+        this.isAborted(requestSignal)
+      )
+        throw new VoiceMediaError();
       let rejectAbort: () => void = () => undefined;
       const cancelled = new Promise<never>((_resolve, reject) => {
         rejectAbort = () => {

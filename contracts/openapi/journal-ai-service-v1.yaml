@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.17.0
+  version: 1.18.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -35,7 +35,7 @@ paths:
       summary: generateAuthorizedVoiceTurn
       description: >-
         Ephemeral final vi-VN STT only; validate trimmed nonempty text, language, finality, order, attempt/lease
-        and unique turn. Freshly verify BOTH consent streams, Consultation entitlement, remaining independent
+        and unique turn. Freshly verify effective L1 AI_PROCESSING and separate Voice v2 consent, Consultation entitlement, remaining independent
         voice usage and current approved pinned Bedrock route BEFORE EVERY generation and before publication. Do
         not call persisted text send or consume text answers. Dedicated service identity; no client/worker user
         selection. RAM-only recent4turnpairs/2000tokens; transcript2000chars/reply1000chars; no
@@ -109,7 +109,7 @@ paths:
       operationId: prepareVoiceContextHandoff
       summary: Prepare an explicitly selected owner Text conversation for Voice.
       description: >-
-        Disabled by default. Requires current AI_PROCESSING, Voice disclosure v2 and PLUS/PREMIUM.
+        Disabled by default. Requires effective L1 AI_PROCESSING, Voice disclosure v2 and PLUS/PREMIUM.
         Return a content-free signed ticket expiring in 120 seconds; no admission, provider or microphone.
         Only the last two complete adjacent pairs with empty contextKinds and at most 1200 UTF-8 bytes
         are eligible; stop at an ineligible/oversized pair rather than silently cross a private-context gap.
@@ -156,7 +156,7 @@ paths:
       operationId: startVoiceSession
       summary: startVoiceSession
       description: >-
-        USER only. Resolve current subject, both consents and entitlement before atomic Mongo admission. Reserve
+        USER only. Resolve current subject, effective L1 plus Voice v2 and entitlement before atomic Mongo admission. Reserve
         user1/global2 and finite session+seconds before any room/dispatch effect. Existing attempt conflict
         SESSION_LIMIT; duplicate same key reuses logical session. Snapshot day/route/deadline; no text quota or
         financial writes. Optional handoffToken is an explicit Text-context opt-in; absence means zero
@@ -258,7 +258,7 @@ paths:
       operationId: authorizeVoiceConnection
       summary: authorizeVoiceConnection
       description: >-
-        Freshly check both consents/current entitlement/voice budget/active attempt before every initial token
+        Freshly check effective L1 plus Voice v2/current entitlement/voice budget/active attempt before every initial token
         or reconnect. Mint room+participant-scoped audio-only token for at most60seconds and never beyond
         hardStopAt; grant no camera/data/admin/egress. New token cannot extend session. LiveKit token expiry
         alone cannot stop a connected participant; owner revokes/removes/tears down explicitly.
@@ -505,7 +505,7 @@ paths:
       operationId: getVoiceEligibility
       summary: getVoiceEligibility
       description: >-
-        Current owner-sourced capability, not authority to connect. Resolve BOTH Care consents, Consultation
+        Current owner-sourced capability, not authority to connect. Resolve effective L1 plus separate Voice v2 Care consent, Consultation
         current entitlement, independent voice quota and provider readiness. Uncertainty never maps to ELIGIBLE.
         No client package/policy/clock authority. MB-756 uses a fresh server-generated check UUID for this read;
         it creates no Voice Session or quota reservation. Live readiness remains unavailable until
@@ -756,7 +756,7 @@ paths:
     get:
       tags: [Emotion check-ins]
       summary: Return a factor- and note-free minimized projection for consented AI reflection.
-      description: Reminder composition is deliberately unavailable until a separate reminder consent contract is accepted.
+      description: Requires effective L2 AI_CONTEXT_PROCESSING before source projection; consent.type reports AI_CONTEXT_PROCESSING. Reminder composition remains unavailable until a separate reminder consent contract is accepted.
       operationId: getEmotionCheckInConsumerContext
       parameters:
         - name: purpose
@@ -1010,6 +1010,7 @@ paths:
       tags: [Analysis jobs]
       summary: Request analysis of one exact owned journal revision.
       operationId: createExactRevisionAnalysisJob
+      description: Requires effective L2 AI_CONTEXT_PROCESSING before source content access and immediately before every provider attempt/retry; 409 AI_CONTEXT_CONSENT_REQUIRED denies new work, while owner history reads remain available. Verified bearer remains memory-only; consent uncertainty returns 503 CONSENT_UNAVAILABLE.
       parameters:
         - $ref: "#/components/parameters/JournalId"
         - $ref: "#/components/parameters/JournalRevision"
@@ -1134,6 +1135,16 @@ paths:
       tags: [AI Companion]
       operationId: sendAiCompanionMessage
       summary: Deliver one bounded response using only owner-verified minimized context.
+      description: |
+        Requires effective L1 AI_PROCESSING at request and immediately before each
+        provider attempt (403 AI_CONSENT_REQUIRED on refusal). Effective L2
+        AI_CONTEXT_PROCESSING is required before personal source access and use.
+        Known L2-off produces plain chat with no personal source assembly and no
+        personal-kind memory. If L2 is lost during assembly, discard personal
+        input and rebuild plain input before final L1 authorization. Uncertain
+        consent returns 503 CONSENT_OR_ENTITLEMENT_UNAVAILABLE and releases reservations.
+        contextKinds is the union of actual fetched sources and retained-history
+        kinds; a pair with a disallowed kind is excluded before decryption.
       parameters:
         - $ref: "#/components/parameters/ConversationId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1149,6 +1160,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SendAiMessageResponse" }
+              examples:
+                l1OnlyPlainChat:
+                  summary: L1 is granted and L2 is off; saved sources and personal-kind history are ignored.
+                  value:
+                    conversationId: '11111111-1111-4111-8111-111111111111'
+                    userMessageId: '22222222-2222-4222-8222-222222222222'
+                    assistantMessageId: '33333333-3333-4333-8333-333333333333'
+                    assistant: Mình đang nghe bạn.
+                    createdAt: '2026-11-06T04:00:00Z'
+                    contextKinds: []
+                    quota: { plan: FREE, policyVersion: companion-quota-v2, remaining: 9, resetAt: '2026-11-06T17:00:00Z', limitDisplayed: true }
+                    suggestion: null
+                bothLevelsActualContext:
+                  summary: Both levels are granted; only an actually used Journal source or retained Journal-derived memory is reported.
+                  value:
+                    conversationId: '11111111-1111-4111-8111-111111111111'
+                    userMessageId: '44444444-4444-4444-8444-444444444444'
+                    assistantMessageId: '55555555-5555-4555-8555-555555555555'
+                    assistant: Bạn muốn nói thêm về điều đã ghi lại không?
+                    createdAt: '2026-11-06T04:01:00Z'
+                    contextKinds: [JOURNAL]
+                    quota: { plan: FREE, policyVersion: companion-quota-v2, remaining: 8, resetAt: '2026-11-06T17:00:00Z', limitDisplayed: true }
+                    suggestion: null
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -1159,14 +1193,27 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
-        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+        "503":
+          description: CONSENT_OR_ENTITLEMENT_UNAVAILABLE when Care or Consultation cannot establish current authority; fails closed without a provider call and releases any quota reservation.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                careTimeout:
+                  value: { type: 'about:blank', title: Consent is unavailable, status: 503, code: CONSENT_OR_ENTITLEMENT_UNAVAILABLE, correlationId: '66666666-6666-4666-8666-666666666666' }
   /api/v1/ai-companion/conversations/{conversationId}/context:
     x-mentalbridge-status: implemented
     put:
       tags: [AI Companion]
       operationId: replaceAiCompanionConversationContext
       summary: Replace the owner-scoped sources used by one conversation.
-      description: Message sends read this persisted configuration; client-supplied source lists are never authoritative.
+      description: |
+        Saved sources are preferences, never authorization. Selecting any personal
+        source requires effective L2 AI_CONTEXT_PROCESSING before source validation
+        (403 AI_CONTEXT_CONSENT_REQUIRED; uncertainty 503 CONSENT_UNAVAILABLE).
+        Clearing all sources remains allowed without consent. New conversations
+        default to all flags false and resourceIds empty. Existing preferences are
+        ignored while L2 is ineffective and freshly revalidated when L2 resumes.
       parameters:
         - $ref: "#/components/parameters/ConversationId"
         - $ref: "#/components/parameters/CorrelationId"
@@ -1183,13 +1230,16 @@ paths:
               schema: { $ref: "#/components/schemas/AiConversation" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AiContextConsentRequired" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/longitudinal-analysis-jobs:
     x-mentalbridge-status: implemented
     post:
       tags: [Longitudinal analysis]
       summary: Request a consented comparison of owned journals across two bounded periods.
       operationId: createLongitudinalAnalysisJob
+      description: Requires effective L2 AI_CONTEXT_PROCESSING before source content access and immediately before every provider attempt/retry; 409 AI_CONTEXT_CONSENT_REQUIRED denies new work, while owner history reads remain available. Verified bearer remains memory-only; consent uncertainty returns 503 CONSENT_UNAVAILABLE.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/CorrelationId"
@@ -1239,7 +1289,7 @@ paths:
     get:
       tags: [Longitudinal analysis]
       summary: Return minimized longitudinal evidence for Care reassessment composition.
-      description: Requires the verified end-user bearer context forwarded by Care, a matching user ID, current AI_PROCESSING consent, and purpose REASSESSMENT_SUMMARY. The response never contains raw journal text or a clinical improvement conclusion.
+      description: Requires the verified end-user bearer context forwarded by Care, a matching user ID, effective L2 AI_CONTEXT_PROCESSING consent, and purpose REASSESSMENT_SUMMARY. The response never contains raw journal text or a clinical improvement conclusion.
       operationId: getLongitudinalEvidenceForCare
       parameters:
         - $ref: "#/components/parameters/UserId"
@@ -1266,7 +1316,7 @@ paths:
     post:
       tags: [Support Guide phrasing]
       summary: Rephrase exact Care-approved Support Guide copy.
-      description: Care forwards the verified end-user bearer. Journal/AI verifies current AI_PROCESSING consent and may only rephrase the supplied approved text; it cannot add resources, decide safety or eligibility, or mutate Care state.
+      description: Care forwards the verified end-user bearer. Journal/AI verifies effective L2 AI_CONTEXT_PROCESSING consent and may only rephrase the supplied approved text; it cannot add resources, decide safety or eligibility, or mutate Care state.
       operationId: phraseSupportGuideCopy
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
@@ -1292,7 +1342,7 @@ paths:
     post:
       tags: [SupportPlan Companion]
       summary: Phrase one policy-selected SupportPlan Companion intent.
-      description: Care authenticates with its dedicated service credential and forwards the verified end-user bearer plus one exact v1 intent envelope containing only the approved minimized context. Journal/AI validates both caller boundaries, surface, intent and context before checking current AI consent or calling one configured provider. Missing consent, provider rate/quota limit, timeout, provider failure, malformed output and policy rejection return deterministic template copy. The operation cannot create or mutate a plan, action, schedule, review, consent, booking or source-domain record.
+      description: Care authenticates with its dedicated service credential and forwards the verified end-user bearer plus one exact v1 intent envelope containing only the approved minimized context. Journal/AI validates both caller boundaries, surface, intent and context before checking effective L2 AI_CONTEXT_PROCESSING at request and immediately before one configured provider attempt. Missing consent, provider rate/quota limit, timeout, provider failure, malformed output and policy rejection return deterministic template copy. The operation cannot create or mutate a plan, action, schedule, review, consent, booking or source-domain record.
       operationId: createSupportPlanCompanionMessage
       security:
         - bearerAuth: []
@@ -1319,7 +1369,7 @@ paths:
     post:
       tags: [Consultation brief draft]
       summary: Generate an editable suggestion from one exact minimized Care-owned draft source
-      description: Requires the forwarded verified end-user bearer and current AI_PROCESSING consent. It may rewrite only currentSituation and userGoals. It cannot change the screening source, save or approve a brief, grant specialist access, or consume Journal, chat, raw assessment answers, or private specialist notes.
+      description: Requires the forwarded verified end-user bearer and effective L2 AI_CONTEXT_PROCESSING consent. It may rewrite only currentSituation and userGoals. It cannot change the screening source, save or approve a brief, grant specialist access, or consume Journal, chat, raw assessment answers, or private specialist notes.
       operationId: generateConsultationBriefDraftSuggestion
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
@@ -1597,6 +1647,16 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/VoiceProblem"
+    AiContextConsentRequired:
+      description: AI_CONTEXT_CONSENT_REQUIRED; current effective L2 does not permit this personal source or provider operation.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            l2Required:
+              value: { type: 'about:blank', title: Forbidden, status: 403, code: AI_CONTEXT_CONSENT_REQUIRED, detail: AI context consent is required., correlationId: synthetic-mb806 }
     BadRequest:
       description: Request failed validation.
       content:
@@ -1634,7 +1694,11 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     DependencyUnavailable:
-      description: A required dependency was unavailable and the request failed closed.
+      description: A required dependency was unavailable and the request failed closed; CONSENT_UNAVAILABLE covers Care timeout, malformed/inconsistent snapshots or unavailable current authority.
+      headers:
+        Cache-Control:
+          description: Returned as no-store for consent refusals from PUT /api/v1/ai-companion/conversations/{conversationId}/context.
+          schema: { const: no-store }
       content:
         application/problem+json:
           schema:
@@ -2828,6 +2892,7 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 80 }
     AiContextSources:
+      description: Personal-source preferences only; default all false and empty resourceIds. Use requires current effective L2 and fresh source ownership checks.
       type: object
       additionalProperties: false
       required: [plan, diary, screening, resourceIds]
@@ -2864,6 +2929,7 @@ components:
           maxLength: 2000
           pattern: '.*\S.*'
     AiContextKind:
+      description: All four kinds are personal; bounded ordinary conversation memory has no kinds. New labels include fetched sources and retained-memory kinds; historical labels are immutable.
       type: string
       enum: [JOURNAL, SUPPORT_PLAN, REASSESSMENT, RESOURCE]
     AiCompanionSuggestion:
@@ -3296,7 +3362,7 @@ components:
           additionalProperties: false
           required: [type, policyVersion, decidedAt]
           properties:
-            type: { type: string, const: AI_PROCESSING }
+            type: { type: string, const: AI_CONTEXT_PROCESSING }
             policyVersion: { type: [string, "null"], maxLength: 64 }
             decidedAt: { type: [string, "null"], format: date-time }
         items:
@@ -3550,6 +3616,7 @@ components:
         updatedAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
     AnalysisTerminalReason:
+      description: Consent reasons refer to effective L2. Missing/outdated L2 or lost L1 dependency is CONSENT_REQUIRED; own L2 withdrawal is CONSENT_REVOKED; unavailable authority is CONSENT_UNAVAILABLE.
       type: string
       enum:
         - CONSENT_REQUIRED
@@ -3812,6 +3879,7 @@ components:
         updatedAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
     LongitudinalTerminalReason:
+      description: Consent reasons refer to effective L2. Missing/outdated L2 or lost L1 dependency is CONSENT_REQUIRED; own L2 withdrawal is CONSENT_REVOKED; unavailable authority is CONSENT_UNAVAILABLE.
       type: string
       enum:
         - CONSENT_REQUIRED

@@ -1,3 +1,4 @@
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -57,11 +58,16 @@ const request = {
 } as const;
 
 const consent = (authorized = true): ConsentClient => ({
+  snapshot: async function (bearer, correlationId) {
+    return aiConsentAuthorizationsFixture(
+      await this.check(bearer, correlationId),
+    );
+  },
   check: () =>
     Promise.resolve({
       authorized,
       reason: authorized ? "GRANTED" : "REVOKED",
-      policyVersion: "ai-processing-capstone-v2",
+      policyVersion: "ai-context-processing-capstone-v1",
     }),
 });
 
@@ -116,11 +122,35 @@ void test("returns an editable suggestion with consent and provider provenance",
     consent(),
     entitlement,
     router,
-    provider,
+    {
+      draft: (source, route) => {
+        assert.deepEqual(source, {
+          currentSituation: request.body.currentSituation,
+          userGoals: request.body.userGoals,
+          screeningContext: [
+            { instrument: "PHQ9", screeningLevel: "MILD" },
+            { instrument: "GAD7", screeningLevel: "MODERATE" },
+          ],
+        });
+        assert.deepEqual(
+          route,
+          router.route({
+            packageCode: "PLUS",
+            source: "DEMO",
+            policyVersion: "service-entitlement-v1",
+            version: 4,
+          }),
+        );
+        return provider.draft(source, route);
+      },
+    },
   ).draft(request);
 
   assert.equal(result.sourceSetVersion, "consultation-brief-ai-source-v1");
-  assert.equal(result.consentPolicyVersion, "ai-processing-capstone-v2");
+  assert.equal(
+    result.consentPolicyVersion,
+    "ai-context-processing-capstone-v1",
+  );
   assert.equal(result.providerApprovalVersion, "benchmark-approval-v1");
   assert.equal(result.promptVersion, "consultation-brief-draft-v1");
   assert.equal(result.currentSituation.includes("táº­p trung"), true);
@@ -218,4 +248,49 @@ void test("prompt forbids diagnosis and preserves a strict editable shape", () =
   assert.match(prompt.system, /Screening levels are context only/);
   assert.equal(prompt.schema.additionalProperties, false);
   assert.deepEqual(prompt.schema.required, ["currentSituation", "userGoals"]);
+});
+
+void test("rechecks L2 after entitlement assembly and refuses late denial or uncertainty", async () => {
+  let providerCalls = 0;
+  for (const failure of [
+    "REVOKED",
+    "DEPENDENCY_REQUIRED",
+    new Error("Care unavailable"),
+    new UnauthorizedException(),
+  ] as const) {
+    let reads = 0;
+    const client: ConsentClient = {
+      check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+      snapshot: () => {
+        reads += 1;
+        if (reads === 1)
+          return Promise.resolve(aiConsentAuthorizationsFixture());
+        if (failure instanceof Error) return Promise.reject(failure);
+        return Promise.resolve(
+          aiConsentAuthorizationsFixture(
+            { authorized: false, reason: failure },
+            failure === "DEPENDENCY_REQUIRED"
+              ? { authorized: false, reason: "REVOKED" }
+              : { authorized: true, reason: "GRANTED" },
+          ),
+        );
+      },
+    };
+    await assert.rejects(
+      () =>
+        new ConsultationBriefDraftService(client, entitlement, router, {
+          draft: () => {
+            providerCalls += 1;
+            return Promise.reject(new Error("must not execute"));
+          },
+        }).draft(request),
+      failure instanceof UnauthorizedException
+        ? UnauthorizedException
+        : failure instanceof Error
+          ? ServiceUnavailableException
+          : ForbiddenException,
+    );
+    assert.equal(reads, 2);
+  }
+  assert.equal(providerCalls, 0);
 });

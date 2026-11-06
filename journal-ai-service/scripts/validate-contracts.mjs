@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { tsImport } from "tsx/esm/api";
 
 const contractPath = fileURLToPath(
   new URL(
@@ -318,7 +319,7 @@ const implementedResponses = new Map([
   ],
   [
     "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
-    new Set(["200", "400", "401", "404"]),
+    new Set(["200", "400", "401", "403", "404", "503"]),
   ],
 ]);
 const plannedOperations = new Set();
@@ -511,6 +512,217 @@ if (
     "SupportPlan Companion must require both end-user bearer and the dedicated Care service token",
   );
 }
+
+const careContractPath = fileURLToPath(
+  new URL("../../contracts/openapi/care-service-v1.yaml", import.meta.url),
+);
+const care = await SwaggerParser.validate(careContractPath);
+const careSchemas = care.components.schemas;
+assert.equal(care.info.version, "1.11.0");
+assert.equal(contract.info.version, "1.18.0");
+assert.deepEqual(careSchemas.ConsentType.enum, [
+  "PRIVACY_POLICY",
+  "AI_PROCESSING",
+  "AI_CONTEXT_PROCESSING",
+]);
+assert.equal(careSchemas.ConsentCollection.properties.decisions.maxItems, 3);
+assert.equal(
+  careSchemas.AiProcessingDisclosure.properties.version.const,
+  "ai-processing-capstone-v2",
+);
+for (const name of [
+  "AiConsentAuthorizations",
+  "AiContextAuthorization",
+  "AiContextConsentDecisionRequest",
+  "AiContextProcessingDisclosure",
+]) {
+  assert.equal(careSchemas[name].additionalProperties, false, name);
+  assert.deepEqual(
+    new Set(careSchemas[name].required),
+    new Set(Object.keys(careSchemas[name].properties)),
+    name,
+  );
+}
+assert.equal(
+  careSchemas.AiContextAuthorization.properties.consentType.const,
+  "AI_CONTEXT_PROCESSING",
+);
+assert.deepEqual(careSchemas.AiContextAuthorization.properties.reason.enum, [
+  "GRANTED",
+  "MISSING",
+  "REVOKED",
+  "POLICY_OUTDATED",
+  "DEPENDENCY_REQUIRED",
+]);
+const snapshotOperation = care.paths["/api/v1/consents/ai-authorizations"].get;
+assert.deepEqual(snapshotOperation.security, [{ bearerAuth: [] }]);
+assert.deepEqual(Object.keys(snapshotOperation.responses), [
+  "200",
+  "401",
+  "403",
+  "503",
+]);
+for (const response of Object.values(snapshotOperation.responses)) {
+  assert.equal(response.headers["Cache-Control"].schema.const, "no-store");
+}
+const { parseAiConsentAuthorizations, ConsentUnavailableError } =
+  await tsImport("../src/analysis/analysis.ts", import.meta.url);
+const snapshotExamples =
+  snapshotOperation.responses["200"].content["application/json"].examples;
+assert.deepEqual(Object.keys(snapshotExamples), [
+  "missingBoth",
+  "l1Only",
+  "bothGranted",
+  "l2Suspended",
+]);
+for (const [name, { value }] of Object.entries(snapshotExamples)) {
+  assert.deepEqual(parseAiConsentAuthorizations(value), value, name);
+}
+const invalidSnapshots = [
+  (value) => {
+    value.context.authorized = true;
+    value.context.reason = "MISSING";
+  },
+  (value) => {
+    value.context.policyVersion = "ai-context-processing-capstone-v0";
+  },
+  (value) => {
+    value.chat.policyVersion = "ai-processing-capstone-v1";
+  },
+  (value) => {
+    value.context.consentType = "AI_PROCESSING";
+  },
+  (value) => {
+    value.chat.authorized = false;
+    value.chat.reason = "REVOKED";
+  },
+  (value) => {
+    value.context.authorized = false;
+    value.context.reason = "DEPENDENCY_REQUIRED";
+  },
+  (value) => {
+    value.context.reason = "UNKNOWN";
+  },
+  (value) => {
+    value.checkedAt = "yesterday";
+  },
+  (value) => {
+    value.context.extraGrant = true;
+  },
+];
+for (const mutate of invalidSnapshots) {
+  const invalid = structuredClone(snapshotExamples.bothGranted.value);
+  mutate(invalid);
+  assert.throws(
+    () => parseAiConsentAuthorizations(invalid),
+    ConsentUnavailableError,
+  );
+}
+const noticeOperation =
+  care.paths["/api/v1/ai-context-processing-disclosures/current"].get;
+assert.equal(noticeOperation.security, undefined);
+const notice =
+  noticeOperation.responses["200"].content["application/json"].examples
+    .currentVietnameseNotice.value;
+for (const key of [
+  "consentType",
+  "version",
+  "locale",
+  "title",
+  "capstoneOnly",
+]) {
+  assert.equal(
+    notice[key],
+    careSchemas.AiContextProcessingDisclosure.properties[key].const,
+  );
+}
+assert.ok(notice.content.length <= 4000);
+assert.equal(
+  schemas.EmotionCheckInConsumerContext.properties.consent.properties.type
+    .const,
+  "AI_CONTEXT_PROCESSING",
+);
+const contextSelection =
+  contract.paths["/api/v1/ai-companion/conversations/{conversationId}/context"]
+    .put;
+assert.match(
+  contextSelection.responses["403"].description,
+  /AI_CONTEXT_CONSENT_REQUIRED/,
+);
+assert.match(
+  contextSelection.responses["503"].description,
+  /CONSENT_UNAVAILABLE/,
+);
+const Ajv2020 = createRequire(require.resolve("@apidevtools/swagger-parser"))(
+  "ajv/dist/2020.js",
+).default;
+const { z } = require("zod");
+const exampleValidator = new Ajv2020({ strict: true, allErrors: true });
+exampleValidator.addFormat(
+  "uuid",
+  /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i,
+);
+exampleValidator.addFormat(
+  "date-time",
+  (value) => z.string().datetime({ offset: true }).safeParse(value).success,
+);
+exampleValidator.addFormat(
+  "uri-reference",
+  (value) =>
+    !/[\s<>]/u.test(value) &&
+    URL.canParse(value, "https://mentalbridge.invalid"),
+);
+const chatOperation =
+  contract.paths["/api/v1/ai-companion/conversations/{conversationId}/messages"]
+    .post;
+const chatResponse = chatOperation.responses["201"].content["application/json"];
+assert.deepEqual(Object.keys(chatResponse.examples), [
+  "l1OnlyPlainChat",
+  "bothLevelsActualContext",
+]);
+const validateChatResponse = exampleValidator.compile(chatResponse.schema);
+for (const [name, { value }] of Object.entries(chatResponse.examples)) {
+  assert.equal(
+    validateChatResponse(value),
+    true,
+    `${name}: ${JSON.stringify(validateChatResponse.errors)}`,
+  );
+}
+assert.deepEqual(chatResponse.examples.l1OnlyPlainChat.value.contextKinds, []);
+assert.deepEqual(
+  chatResponse.examples.bothLevelsActualContext.value.contextKinds,
+  ["JOURNAL"],
+);
+const chatUnavailable =
+  chatOperation.responses["503"].content["application/problem+json"];
+const validateChatUnavailable = exampleValidator.compile(
+  chatUnavailable.schema,
+);
+const careTimeout = chatUnavailable.examples.careTimeout.value;
+assert.equal(
+  validateChatUnavailable(careTimeout),
+  true,
+  `careTimeout: ${JSON.stringify(validateChatUnavailable.errors)}`,
+);
+assert.equal(careTimeout.status, 503);
+assert.equal(careTimeout.code, "CONSENT_OR_ENTITLEMENT_UNAVAILABLE");
+const consentCollection =
+  care.paths["/api/v1/consents"].get.responses["200"].content[
+    "application/json"
+  ];
+const validateConsentCollection = exampleValidator.compile(
+  consentCollection.schema,
+);
+const newAccountConsents = consentCollection.examples.newAccount.value;
+assert.equal(
+  validateConsentCollection(newAccountConsents),
+  true,
+  `newAccount: ${JSON.stringify(validateConsentCollection.errors)}`,
+);
+assert.deepEqual(newAccountConsents, { decisions: [] });
+console.log(
+  `Validated MB-806 Care-to-Journal binding: ${Object.keys(snapshotExamples).length} snapshot examples, ${invalidSnapshots.length} fail-closed mutations, 4 full response examples, immutable L1 and new L2 disclosure`,
+);
 
 console.log(
   "Validated OpenAPI contract: ../contracts/openapi/journal-ai-service-v1.yaml",

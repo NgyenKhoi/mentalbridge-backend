@@ -2,6 +2,38 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-806 two AI consent levels
+
+[ADR 0050](../docs/adr/0050-two-level-ai-consent.md) narrows the existing
+`AI_PROCESSING` v2 stream to L1, “AI trò chuyện”. Existing current grants remain
+valid for actively sent content and bounded eligible conversation memory.
+The independent `AI_CONTEXT_PROCESSING` v1 stream is L2, “AI dùng bối cảnh”,
+and has no automatic grants. L2 requires effective L1; withdrawing L1 suspends
+L2 and an explicit L1 regrant restores a current L2 grant.
+
+Journal uses Care's atomic `GET /api/v1/consents/ai-authorizations` snapshot,
+validating both decisions and their dependency. Unknown or inconsistent data,
+timeouts and dependency failures stop new processing. Verified bearer tokens
+remain ephemeral. Personal source reads/decryption, exact and longitudinal
+analysis, AI-evidence reuse for Care, plan accompaniment, saved-brief drafting,
+Guide AI phrasing and emotion AI projection require L2. Every provider attempt,
+including retries and reclaimed jobs, rechecks current authority. Deterministic
+screening, safety, Guide and plan fallbacks remain available without either grant.
+
+New chat conversations select no sources. Saved selections remain preferences:
+L1-only sends skip personal assembly and exclude complete USER/ASSISTANT pairs
+with any personal context kind before decrypting them. Retained-history kinds
+join actual fetched kinds on both new messages and the response. If L2 is lost
+during assembly, chat rebuilds plain input and its token estimate; L1 loss or
+uncertainty refuses dispatch and releases the quota reservation. Clearing source
+selection needs no consent; selecting sources requires L2 and owner validation.
+All existing context kinds are personal; the public Resource catalogue is separate.
+
+Voice continues to require L1 plus Voice v2, current entitlement, quota and lease
+authority. Its explicit bounded Text handoff still accepts only empty-kind pairs;
+L2 does not expand Voice sources. Existing encrypted shapes and validators are
+unchanged, so this story adds no Mongo migration or provider rollout.
+
 ## MB-789 shared Text and Voice guidance
 
 Both real-provider paths use `companion-guidance-v1` and the reviewed,
@@ -407,7 +439,7 @@ The service provides:
 
 MB-236 implements the authenticated private journal CRUD contract. ADR 0015
 freezes a Mongo-only AI Companion runtime: an explicit exact-revision request,
-current `AI_PROCESSING` consent checked through Care, a durable leased job, one
+effective L2 `AI_CONTEXT_PROCESSING` consent checked through Care, a durable leased job, one
 provider per run, normalized result, bounded retry, and no raw-response or
 bearer-token persistence. MB-367 adds the backend runtime with a deterministic
 fake provider. MB-369 adds Consultation-authoritative package lookup,
@@ -632,7 +664,7 @@ is never stored in jobs, results, logs, or the Care projection. Deleting any
 source journal removes every dependent longitudinal job and result.
 
 The Care projection requires purpose `REASSESSMENT_SUMMARY`, a matching
-forwarded end-user bearer, and current `AI_PROCESSING` consent. MB-386 implements
+forwarded end-user bearer, and effective L2 `AI_CONTEXT_PROCESSING` consent. MB-386 implements
 Care Story 6501 as the composition consumer and calls this endpoint with its standard
 2-second internal REST deadline and fail safely when Journal/AI or consent is
 unavailable.
@@ -643,7 +675,7 @@ reviewed mood vocabulary; intensity means strength only. The IANA timezone is
 frozen at creation, updates use `If-Match-Revision`, optional notes remain inside
 the encrypted envelope, and deletion immediately removes all encrypted
 revisions. Only a note-free AI projection is exposed under current Care
-`AI_PROCESSING` consent. Reminder composition remains unavailable because it has
+L2 `AI_CONTEXT_PROCESSING` consent. Reminder composition remains unavailable because it has
 no approved consent authorization contract.
 
 ADR 0025 extends that aggregate with a recomputed, note-free progress read

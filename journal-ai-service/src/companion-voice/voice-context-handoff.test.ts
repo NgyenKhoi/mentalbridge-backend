@@ -248,3 +248,37 @@ void test("preparation limits each owner to four live tickets and releases expir
   f.advance(120000);
   assert.equal((await f.handoffs.prepare(f.owner, f.id)).selectedPairs, 1);
 });
+
+for (const kind of [
+  "JOURNAL",
+  "SUPPORT_PLAN",
+  "REASSESSMENT",
+  "RESOURCE",
+] as const) {
+  for (const role of ["USER", "ASSISTANT"] as const) {
+    void test(`L2 never admits ${kind} on ${role} into Voice and excluded pairs are filtered before decryption`, async () => {
+      const f = fixture();
+      f.add("SYNTHETIC_PRIVATE_USER", "SYNTHETIC_PRIVATE_ASSISTANT");
+      const row = f.row();
+      assert.ok(row);
+      for (const message of row.messages) {
+        message.content.ciphertext = Buffer.alloc(0);
+        message.contextKinds = message.role === role ? [kind] : [];
+      }
+      await assert.rejects(
+        f.handoffs.prepare(f.owner, f.id),
+        code("INVALID_REQUEST"),
+      );
+      f.add("SYNTHETIC_ORDINARY_USER", "SYNTHETIC_ORDINARY_ASSISTANT");
+      const ticket = await f.handoffs.prepare(f.owner, f.id);
+      const prepared = await f.handoffs.resolve(f.owner, ticket.handoffToken);
+      assert.equal(ticket.selectedPairs, 1);
+      assert.deepEqual(prepared.pairs, [
+        {
+          user: "SYNTHETIC_ORDINARY_USER",
+          assistant: "SYNTHETIC_ORDINARY_ASSISTANT",
+        },
+      ]);
+    });
+  }
+}

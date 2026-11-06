@@ -1,5 +1,12 @@
 # AI Companion friend voice, Text memory and suggestions
 
+Prospective MB-806 consent amendment: [ADR 0050 / MB-TWO-LEVEL-AI-CONSENT-001](0050-two-level-ai-consent.md)
+narrows existing current `AI_PROCESSING` v2 grants to L1 conversation and requires
+new dependent `AI_CONTEXT_PROCESSING` v1 for personal sources, analysis and
+accompaniment. Historical notices/decisions remain immutable. Voice retains L1
+plus its separate unchanged Voice v2 grant and eligible empty-kind Text handoff.
+
+
 - Decision ID: `MB-AI-COMPANION-FRIEND-001`
 - Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime ships behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`, default `false`.
 - Owners: Journal/AI (guidance, memory, catalogue use, suggestion resolution), Content/Notification (published Resource catalogue), Web (button, routes, labels).

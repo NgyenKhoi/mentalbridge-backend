@@ -133,6 +133,24 @@ class VoiceConsentIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void voiceUsesCurrentChatAndVoiceWithoutContextAndContextWithdrawalCannotEndIt() {
+		var owner = profile();
+		var session = UUID.randomUUID();
+		existing.record(owner, "synthetic-l1-voice-grant", new ConsentService.DecisionCommand("AI_PROCESSING", AiProcessingDisclosureService.VERSION, true));
+		voice.record(owner, UUID.randomUUID().toString(), VoiceConsentService.VERSION, true);
+		assertThat(existing.authorizeAiPurposes(owner).context().reason()).isEqualTo("MISSING");
+		assertThat(voice.authorize(owner, session).authorized()).isTrue();
+		existing.record(owner, "synthetic-l2-voice-grant", new ConsentService.DecisionCommand("AI_CONTEXT_PROCESSING", AiContextProcessingDisclosureService.VERSION, true));
+		existing.record(owner, "synthetic-l2-voice-revoke", new ConsentService.DecisionCommand("AI_CONTEXT_PROCESSING", AiContextProcessingDisclosureService.VERSION, false));
+		assertThat(voice.authorize(owner, session).authorized()).isTrue();
+		existing.record(owner, "synthetic-l1-voice-revoke", new ConsentService.DecisionCommand("AI_PROCESSING", AiProcessingDisclosureService.VERSION, false));
+		assertThat(voice.authorize(owner, session).authorized()).isFalse();
+		existing.record(owner, "synthetic-l1-voice-regrant", new ConsentService.DecisionCommand("AI_PROCESSING", AiProcessingDisclosureService.VERSION, true));
+		assertThat(voice.authorize(owner, session).authorized()).isTrue();
+		assertThat(existing.authorizeAiPurposes(owner).context().reason()).isEqualTo("REVOKED");
+	}
+
+	@Test
 	void constraintAllowsVoiceButStillRejectsUnknownPurposeAndPreservesLegacyDecision() {
 		var owner = profile();
 		existing.record(owner, "synthetic-privacy-consent-001", new ConsentService.DecisionCommand("PRIVACY_POLICY", "privacy-capstone-v3", true));

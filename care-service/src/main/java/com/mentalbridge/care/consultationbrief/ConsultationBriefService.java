@@ -108,9 +108,10 @@ public class ConsultationBriefService {
 	}
 
 	public AiDraftSource aiDraftSource(UUID userId, String bearerToken, UUID correlationId, UUID appointmentId,
-			long expectedVersion) {
+			long expectedVersion, Runnable authorizeSource) {
 		var context = appointments.get(appointmentId, bearerToken, correlationId);
 		requireOwnerConfirmed(context, userId);
+		authorizeSource.run();
 		return transactions.execute(status -> {
 			var brief = requiredBriefForUpdate(appointmentId, userId);
 			requireVersion(brief.version(), expectedVersion);

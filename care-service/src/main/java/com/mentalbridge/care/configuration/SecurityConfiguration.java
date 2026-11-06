@@ -39,6 +39,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
 								"/api/v1/ai-processing-disclosures/**",
+								"/api/v1/ai-context-processing-disclosures/**",
 								"/api/v1/anonymous-assessment-sessions/**", "/api/v1/safety-directory-lookups")
 						.permitAll()
 						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
@@ -63,6 +64,7 @@ public class SecurityConfiguration {
 						"/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**",
 						"/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
 						"/api/v1/ai-processing-disclosures/**", "/api/v1/anonymous-assessment-sessions/**",
+						"/api/v1/ai-context-processing-disclosures/**",
 						"/api/v1/safety-directory-lookups"), BearerTokenAuthenticationFilter.class);
 		return http.build();
 	}

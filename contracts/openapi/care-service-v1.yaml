@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.10.0
+  version: 1.11.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -24,6 +24,7 @@ tags:
   - name: Profile
   - name: Consent
   - name: Privacy disclosure
+  - name: AI context processing disclosure
   - name: AI processing disclosure
   - name: Questionnaire
   - name: Assessment
@@ -274,7 +275,10 @@ paths:
       summary: Read the latest explicit platform consent decisions
       description: |
         This lookup does not require a Care profile. A new account with no profile
-        and no decision receives 200 with decisions: []. A missing consent type
+        and no decision receives 200 with decisions: []. Returns the latest actual
+        PRIVACY_POLICY, AI_PROCESSING and AI_CONTEXT_PROCESSING decisions, omitting
+        never-decided streams. A raw granted decision is not effective authority.
+        A missing consent type
         means no decision has been recorded; it is not silently treated as a grant.
       security:
         - bearerAuth: []
@@ -283,11 +287,16 @@ paths:
       responses:
         "200":
           description: Latest decisions returned
+          headers:
+            Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConsentCollection" }
-        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
-        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+              examples:
+                newAccount:
+                  value: { decisions: [] }
+        "401": { $ref: "#/components/responses/ConsentUnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ConsentForbiddenProblem" }
   /api/v1/consents/ai-processing/authorization:
     x-mentalbridge-status: implemented
     get:
@@ -295,10 +304,10 @@ paths:
       operationId: authorizeOwnAiProcessing
       summary: Resolve the authenticated user's current AI-processing consent
       description: |
-        Returns a minimal current decision for exact-revision or bounded
-        longitudinal journal analysis. Journal/AI forwards the verified end-user
-        bearer credential for both request-time and pre-attempt checks. Missing,
-        revoked, or outdated consent fails closed.
+        Returns effective L1 (AI trò chuyện) only. Existing current v2 grants stay
+        valid without reconsent. This endpoint does not authorize personal context
+        or Journal analysis; those consumers must use the effective L2 snapshot.
+        Missing, revoked or outdated L1 fails closed.
       security:
         - bearerAuth: []
       parameters:
@@ -306,11 +315,63 @@ paths:
       responses:
         "200":
           description: Current authorization decision returned
+          headers:
+            Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiProcessingAuthorization" }
-        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
-        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "401": { $ref: "#/components/responses/ConsentUnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ConsentForbiddenProblem" }
+  /api/v1/consents/ai-authorizations:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Consent]
+      operationId: authorizeOwnAiPurposes
+      summary: Resolve effective L1 and dependent L2 in one current snapshot
+      description: |
+        USER subject only; no profile is required. Both levels are read in one
+        repeatable-read transaction. context.authorized implies chat.authorized.
+        Own MISSING, REVOKED or POLICY_OUTDATED takes precedence; DEPENDENCY_REQUIRED
+        applies only to a current true L2 blocked by ineffective L1. Regranting L1
+        restores a suspended current L2 decision, without selecting new sources.
+        Clients must not cache this response or derive authority from raw history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Atomic effective purpose snapshot returned
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiConsentAuthorizations" }
+              examples:
+                missingBoth:
+                  value:
+                    chat: { authorized: false, reason: MISSING, consentType: AI_PROCESSING, policyVersion: null, decidedAt: null }
+                    context: { authorized: false, reason: MISSING, consentType: AI_CONTEXT_PROCESSING, policyVersion: null, decidedAt: null }
+                    checkedAt: '2026-11-06T00:00:00Z'
+                l1Only:
+                  summary: Existing current AI-processing v2 grants remain valid for L1 only; L2 is never inferred.
+                  value:
+                    chat: { authorized: true, reason: GRANTED, consentType: AI_PROCESSING, policyVersion: ai-processing-capstone-v2, decidedAt: '2026-11-06T00:00:00Z' }
+                    context: { authorized: false, reason: MISSING, consentType: AI_CONTEXT_PROCESSING, policyVersion: null, decidedAt: null }
+                    checkedAt: '2026-11-06T00:01:00Z'
+                bothGranted:
+                  value:
+                    chat: { authorized: true, reason: GRANTED, consentType: AI_PROCESSING, policyVersion: ai-processing-capstone-v2, decidedAt: '2026-11-06T00:00:00Z' }
+                    context: { authorized: true, reason: GRANTED, consentType: AI_CONTEXT_PROCESSING, policyVersion: ai-context-processing-capstone-v1, decidedAt: '2026-11-06T00:01:00Z' }
+                    checkedAt: '2026-11-06T00:02:00Z'
+                l2Suspended:
+                  value:
+                    chat: { authorized: false, reason: REVOKED, consentType: AI_PROCESSING, policyVersion: ai-processing-capstone-v2, decidedAt: '2026-11-06T00:02:00Z' }
+                    context: { authorized: false, reason: DEPENDENCY_REQUIRED, consentType: AI_CONTEXT_PROCESSING, policyVersion: ai-context-processing-capstone-v1, decidedAt: '2026-11-06T00:01:00Z' }
+                    checkedAt: '2026-11-06T00:03:00Z'
+        "401": { $ref: "#/components/responses/ConsentUnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ConsentForbiddenProblem" }
+        "503": { $ref: "#/components/responses/ConsentDependencyProblem" }
   /api/v1/consent-decisions:
     x-mentalbridge-status: implemented
     post:
@@ -321,7 +382,11 @@ paths:
         Repeating the same user-scoped idempotency key and identical request returns
         the original decision. Reusing the key for a different request returns a
         conflict. Specialist access is a separate scoped grant workflow and is not
-        represented by a broad platform-consent toggle.
+        represented by a broad platform-consent toggle. Replay lookup precedes
+        current-version and dependency validation; exact replay returns the original
+        201 decision without restoring authority. New L2 true requires current L1
+        under the shared profile lock; L2 false is always allowed. Historical
+        AI_PROCESSING v1 is parsed only for exact replay; new commands require v2.
       security:
         - bearerAuth: []
       parameters:
@@ -332,20 +397,33 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ConsentDecisionRequest" }
-            example:
-              consentType: PRIVACY_POLICY
-              policyVersion: privacy-capstone-v3
-              granted: true
+            examples:
+              privacyGrant:
+                value: { consentType: PRIVACY_POLICY, policyVersion: privacy-capstone-v3, granted: true }
+              l1Grant:
+                value: { consentType: AI_PROCESSING, policyVersion: ai-processing-capstone-v2, granted: true }
+              l2Grant:
+                value: { consentType: AI_CONTEXT_PROCESSING, policyVersion: ai-context-processing-capstone-v1, granted: true }
+              l2Withdrawal:
+                value: { consentType: AI_CONTEXT_PROCESSING, policyVersion: ai-context-processing-capstone-v1, granted: false }
       responses:
         "201":
-          description: Consent decision appended
+          description: Consent decision appended or exact original decision replayed
+          headers:
+            Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConsentDecision" }
-        "400": { $ref: "#/components/responses/ValidationProblem" }
-        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
-        "403": { $ref: "#/components/responses/ForbiddenProblem" }
-        "409": { $ref: "#/components/responses/IdempotencyConflictProblem" }
+              examples:
+                currentL1Decision:
+                  value: { decisionId: '11111111-1111-4111-8111-111111111111', consentType: AI_PROCESSING, policyVersion: ai-processing-capstone-v2, granted: true, decidedAt: '2026-11-06T00:00:00Z' }
+                currentL2Decision:
+                  value: { decisionId: '22222222-2222-4222-8222-222222222222', consentType: AI_CONTEXT_PROCESSING, policyVersion: ai-context-processing-capstone-v1, granted: true, decidedAt: '2026-11-06T00:01:00Z' }
+        "400": { $ref: "#/components/responses/ConsentValidationProblem" }
+        "401": { $ref: "#/components/responses/ConsentUnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ConsentForbiddenProblem" }
+        "404": { $ref: "#/components/responses/ConsentProfileNotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConsentConflictProblem" }
   /api/v1/privacy-disclosures/current:
     x-mentalbridge-status: implemented
     get:
@@ -361,30 +439,63 @@ paths:
       responses:
         "200":
           description: Current disclosure returned
+          headers:
+            Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PrivacyDisclosure" }
-        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "404": { $ref: "#/components/responses/ConsentDisclosureNotFoundProblem" }
   /api/v1/ai-processing-disclosures/current:
     x-mentalbridge-status: implemented
     get:
       tags: [AI processing disclosure]
       operationId: getCurrentAiProcessingDisclosure
-      summary: Read the backend-owned disclosure for journal AI processing
+      summary: Read the immutable current L1 AI-processing disclosure
       description: |
-        Covers only explicit exact-revision and bounded longitudinal journal
-        analysis. It excludes research, marketing, specialist sharing, and safety
-        decisions. Story 6203 or a dedicated frontend follow-up renders this text.
+        Returns the unchanged ai-processing-capstone-v2 notice. ADR 0050 narrows
+        its current authority to L1 AI trò chuyện; existing current grants remain
+        valid without reconsent. Personal context and Journal analysis require the
+        separate L2 grant. Clients render backend text without independent copies.
       parameters:
         - $ref: "#/components/parameters/Locale"
         - $ref: "#/components/parameters/CorrelationId"
       responses:
         "200":
           description: Current AI-processing disclosure returned
+          headers:
+            Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiProcessingDisclosure" }
-        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "404": { $ref: "#/components/responses/ConsentDisclosureNotFoundProblem" }
+  /api/v1/ai-context-processing-disclosures/current:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [AI context processing disclosure]
+      operationId: getCurrentAiContextDisclosure
+      summary: Read the backend-owned current L2 notice
+      description: Public immutable vi-VN notice; neither checkbox is preselected. New L2 grants require effective L1.
+      parameters:
+        - $ref: "#/components/parameters/Locale"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current L2 disclosure returned
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiContextProcessingDisclosure" }
+              examples:
+                currentVietnameseNotice:
+                  value:
+                    consentType: AI_CONTEXT_PROCESSING
+                    version: ai-context-processing-capstone-v1
+                    locale: vi-VN
+                    title: AI dùng bối cảnh
+                    content: MentalBridge dùng AI để xử lý các nguồn dữ liệu cá nhân đã được cho phép và bạn chọn, gồm nhật ký, thông tin sàng lọc tối giản, kế hoạch hỗ trợ và tiến độ tài nguyên, để phân tích nhật ký, trò chuyện có bối cảnh, hỗ trợ kế hoạch, gợi ý bản tóm tắt trước buổi tư vấn và diễn đạt Hướng dẫn hỗ trợ. Mức đồng ý này chỉ có hiệu lực khi bạn đang đồng ý AI trò chuyện. Bạn có thể rút lại từng mức đồng ý để chặn việc xử lý mới; rút lại AI trò chuyện sẽ tạm dừng AI dùng bối cảnh, và mức bối cảnh hiện tại có hiệu lực trở lại khi bạn đồng ý AI trò chuyện lại.
+                    capstoneOnly: true
+        "404": { $ref: "#/components/responses/AiContextDisclosureNotFoundProblem" }
   /api/v1/questionnaires/{instrument}/current:
     x-mentalbridge-status: implemented
     get:
@@ -1085,7 +1196,7 @@ paths:
       tags: [Consultation brief]
       operationId: createConsultationBriefAiDraftJob
       summary: Request an optional AI suggestion for the exact current private draft
-      description: Care resolves the exact saved draft and minimized screening context. Journal/AI rechecks current AI_PROCESSING consent and the approved provider route. The job cannot save, approve, share, or change the ConsultationBrief.
+      description: Care verifies effective L2 AI_CONTEXT_PROCESSING before resolving the exact saved draft and minimized screening context and before each worker attempt. Journal/AI rechecks L2 immediately before its provider attempt. A missing effective L2 returns 409 AI_CONTEXT_CONSENT_REQUIRED; current L1 alone is insufficient. The job cannot save, approve, share, or change the ConsultationBrief.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/AppointmentId"
@@ -1105,6 +1216,7 @@ paths:
         "409": { $ref: "#/components/responses/ConflictProblem" }
         "412": { $ref: "#/components/responses/VersionProblem" }
         "428": { $ref: "#/components/responses/VersionRequiredProblem" }
+        "503": { $ref: "#/components/responses/ConsentDependencyProblem" }
   /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}:
     x-mentalbridge-status: implemented
     get:
@@ -3936,6 +4048,7 @@ components:
           "const": "AI_COMPANION_VOICE"
         "aiProcessingGranted":
           "type": "boolean"
+          "description": "Effective L1 AI_PROCESSING only; L2 is not required and cannot broaden Voice context."
         "voiceProcessingGranted":
           "type": "boolean"
         "voiceConsentVersion":
@@ -4567,16 +4680,18 @@ components:
         version: { type: integer, format: int64, minimum: 0 }
     ConsentType:
       type: string
-      enum: [PRIVACY_POLICY, AI_PROCESSING]
+      enum: [PRIVACY_POLICY, AI_PROCESSING, AI_CONTEXT_PROCESSING]
     ConsentDecisionRequest:
       oneOf:
         - $ref: "#/components/schemas/PrivacyConsentDecisionRequest"
         - $ref: "#/components/schemas/AiProcessingConsentDecisionRequest"
+        - $ref: "#/components/schemas/AiContextConsentDecisionRequest"
       discriminator:
         propertyName: consentType
         mapping:
           PRIVACY_POLICY: "#/components/schemas/PrivacyConsentDecisionRequest"
           AI_PROCESSING: "#/components/schemas/AiProcessingConsentDecisionRequest"
+          AI_CONTEXT_PROCESSING: "#/components/schemas/AiContextConsentDecisionRequest"
     PrivacyConsentDecisionRequest:
       type: object
       additionalProperties: false
@@ -4591,7 +4706,18 @@ components:
       required: [consentType, policyVersion, granted]
       properties:
         consentType: { type: string, const: AI_PROCESSING }
-        policyVersion: { type: string, const: ai-processing-capstone-v2 }
+        policyVersion:
+          type: string
+          enum: [ai-processing-capstone-v1, ai-processing-capstone-v2]
+          description: Historical v1 is valid only for exact replay; new commands require current v2.
+        granted: { type: boolean }
+    AiContextConsentDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [consentType, policyVersion, granted]
+      properties:
+        consentType: { type: string, const: AI_CONTEXT_PROCESSING }
+        policyVersion: { type: string, const: ai-context-processing-capstone-v1 }
         granted: { type: boolean }
     ConsentDecision:
       type: object
@@ -4610,7 +4736,7 @@ components:
       properties:
         decisions:
           type: array
-          maxItems: 2
+          maxItems: 3
           items: { $ref: "#/components/schemas/ConsentDecision" }
     AiProcessingAuthorization:
       type: object
@@ -4628,6 +4754,27 @@ components:
         decidedAt:
           type: [string, "null"]
           format: date-time
+    AiContextAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorized, reason, consentType, policyVersion, decidedAt]
+      properties:
+        authorized: { type: boolean }
+        reason:
+          type: string
+          enum: [GRANTED, MISSING, REVOKED, POLICY_OUTDATED, DEPENDENCY_REQUIRED]
+        consentType: { type: string, const: AI_CONTEXT_PROCESSING }
+        policyVersion: { type: [string, "null"], maxLength: 64 }
+        decidedAt: { type: [string, "null"], format: date-time }
+    AiConsentAuthorizations:
+      type: object
+      additionalProperties: false
+      required: [chat, context, checkedAt]
+      description: authorized is true iff reason is GRANTED; missing has null version/time; authorized context implies authorized chat.
+      properties:
+        chat: { $ref: "#/components/schemas/AiProcessingAuthorization" }
+        context: { $ref: "#/components/schemas/AiContextAuthorization" }
+        checkedAt: { type: string, format: date-time }
     PrivacyDisclosure:
       type: object
       additionalProperties: false
@@ -4648,6 +4795,17 @@ components:
         version: { type: string, const: ai-processing-capstone-v2 }
         locale: { type: string, const: vi-VN }
         title: { type: string, minLength: 1, maxLength: 160 }
+        content: { type: string, minLength: 1, maxLength: 4000 }
+        capstoneOnly: { type: boolean, const: true }
+    AiContextProcessingDisclosure:
+      type: object
+      additionalProperties: false
+      required: [consentType, version, locale, title, content, capstoneOnly]
+      properties:
+        consentType: { type: string, const: AI_CONTEXT_PROCESSING }
+        version: { type: string, const: ai-context-processing-capstone-v1 }
+        locale: { type: string, const: vi-VN }
+        title: { type: string, const: AI dùng bối cảnh }
         content: { type: string, minLength: 1, maxLength: 4000 }
         capstoneOnly: { type: boolean, const: true }
     Instrument:
@@ -7018,6 +7176,67 @@ components:
                   message: one answer is required for every question,
                 },
               ]
+    ConsentValidationProblem:
+      description: Request validation failed (VALIDATION_FAILED or CONSENT_TYPE_UNAVAILABLE).
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConsentUnauthorizedProblem:
+      description: Missing or invalid bearer token.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConsentForbiddenProblem:
+      description: Authenticated actor is not an allowed USER.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConsentDependencyProblem:
+      description: CONSENT_UNAVAILABLE; current consent authority unavailable; failed closed before source or provider access.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConsentProfileNotFoundProblem:
+      description: PROFILE_NOT_FOUND; creating a decision requires an owned Care profile.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConsentDisclosureNotFoundProblem:
+      description: Requested locale has no current disclosure (PRIVACY_DISCLOSURE_NOT_FOUND or AI_PROCESSING_DISCLOSURE_NOT_FOUND).
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AiContextDisclosureNotFoundProblem:
+      description: AI_CONTEXT_DISCLOSURE_NOT_FOUND; requested locale has no current L2 disclosure.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConsentConflictProblem:
+      description: IDEMPOTENCY_KEY_REUSED for changed intent; AI_PROCESSING_DISCLOSURE_REQUIRED or AI_CONTEXT_DISCLOSURE_REQUIRED for a non-current new command; AI_PROCESSING_CONSENT_REQUIRED for a new L2 true decision without effective L1.
+      headers:
+        Cache-Control: { schema: { const: no-store } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            l2RequiresL1:
+              value: { type: /problems/ai-processing-consent-required, title: AI processing consent is required, status: 409, code: AI_PROCESSING_CONSENT_REQUIRED, correlationId: '11111111-1111-4111-8111-111111111111' }
+            currentL2DisclosureRequired:
+              value: { type: /problems/ai-context-disclosure-required, title: Current AI context disclosure is required, status: 409, code: AI_CONTEXT_DISCLOSURE_REQUIRED, correlationId: '11111111-1111-4111-8111-111111111111' }
     UnauthorizedProblem:
       description: Authentication is missing or invalid (UNAUTHENTICATED)
       content:

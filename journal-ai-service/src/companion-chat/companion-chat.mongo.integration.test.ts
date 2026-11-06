@@ -8,6 +8,13 @@ import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 
 import { createApplication } from "../application.js";
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
+import { ConsentUnavailableError } from "../analysis/analysis.js";
+import {
+  ChatCrypto,
+  type ChatProvider,
+  type Conversation,
+} from "./companion-chat.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { ServicePlan } from "../model-routing/model-routing.js";
 
@@ -18,7 +25,7 @@ const migrations = [
   require("../../migrations/017_companion_message_suggestion.cjs"),
 ] as { up(database: unknown): Promise<void> }[];
 
-void test("persists encrypted quota-governed AI Companion conversations with real MongoDB", async () => {
+void test("persists encrypted quota-governed AI Companion conversations with real MongoDB", async (t) => {
   const externalUri = process.env.JOURNAL_INTEGRATION_MONGODB_URI;
   const mongo = externalUri
     ? undefined
@@ -119,6 +126,11 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
   let now = new Date("2026-09-20T16:58:00.000Z");
   let plan: ServicePlan = "FREE";
   let consentAuthorized = true;
+  let contextAuthorized = true;
+  let consentUnavailable = false;
+  let assemblyCalls = 0;
+  let afterAssembly: () => void = () => undefined;
+  const providerInputs: Parameters<ChatProvider["reply"]>[] = [];
   let providerFails = false;
   let replyOutputTokens = 10;
   let rendezvous: (() => void)[] | null = null;
@@ -132,6 +144,25 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
             authorized: consentAuthorized,
             reason: consentAuthorized ? "GRANTED" : "REVOKED",
           }),
+        snapshot: () =>
+          consentUnavailable
+            ? Promise.reject(new ConsentUnavailableError())
+            : Promise.resolve(
+                aiConsentAuthorizationsFixture(
+                  {
+                    authorized: consentAuthorized && contextAuthorized,
+                    reason: !consentAuthorized
+                      ? "DEPENDENCY_REQUIRED"
+                      : contextAuthorized
+                        ? "GRANTED"
+                        : "REVOKED",
+                  },
+                  {
+                    authorized: consentAuthorized,
+                    reason: consentAuthorized ? "GRANTED" : "REVOKED",
+                  },
+                ),
+              ),
       },
       entitlementClient: {
         current: () =>
@@ -143,14 +174,18 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
           }),
       },
       contextAssembler: {
-        assemble: () =>
-          Promise.resolve({
+        assemble: () => {
+          assemblyCalls++;
+          afterAssembly();
+          return Promise.resolve({
             kinds: ["SUPPORT_PLAN"],
             prompt: "Synthetic minimized plan context",
-          }),
+          });
+        },
       },
       provider: {
-        reply: async () => {
+        reply: async (...input) => {
+          providerInputs.push(structuredClone(input));
           if (providerFails) throw new Error("synthetic provider timeout");
           // Holds concurrent sends inside provider work until both arrive.
           const waiting = rendezvous;
@@ -466,6 +501,173 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
         .countDocuments({ conversationId }),
       0,
     );
+
+    configuration.CHAT_RATE_LIMIT_PER_MINUTE = 20;
+    (
+      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
+    ).COMPANION_GUIDANCE_V2_ENABLED = true;
+    plan = "FREE";
+    now = new Date("2026-10-01T00:00:00Z");
+    const crypto = new ChatCrypto(configuration);
+    for (const scenario of [
+      "l1-only",
+      "l2-lost",
+      "l1-lost",
+      "care-unavailable",
+    ] as const) {
+      await t.test(
+        `MB-806 ${scenario} fences personal payloads and settles real Mongo reservations`,
+        async () => {
+          now = new Date(now.getTime() + 86_400_000);
+          consentAuthorized = true;
+          contextAuthorized = scenario !== "l1-only";
+          consentUnavailable = false;
+          afterAssembly = () => {
+            if (scenario === "l2-lost") contextAuthorized = false;
+            if (scenario === "l1-lost") consentAuthorized = false;
+            if (scenario === "care-unavailable") consentUnavailable = true;
+          };
+          const created = await request(server)
+            .post("/api/v1/ai-companion/conversations")
+            .set(authorization)
+            .send({})
+            .expect(201);
+          const id = (created.body as { conversationId: string })
+            .conversationId;
+          const messages: Conversation["messages"] = [];
+          for (const [role, content, kinds] of [
+            ["USER", "SYNTHETIC_ORDINARY_TOPIC", []],
+            ["ASSISTANT", "SYNTHETIC_ORDINARY_REPLY", []],
+            ["USER", "SYNTHETIC_PERSONAL_QUESTION", []],
+            ["ASSISTANT", "SYNTHETIC_PERSONAL_REPLY", ["SUPPORT_PLAN"]],
+          ] as const) {
+            const messageId = `${String(messages.length + 1)}1111111-1111-4111-8111-111111111111`;
+            messages.push({
+              messageId,
+              role,
+              content: crypto.encrypt(ownerId, id, messageId, content),
+              contextKinds: [...kinds],
+              route: null,
+              createdAt: now,
+            });
+          }
+          await database
+            .collection<Conversation>("ai_companion_conversations")
+            .updateOne(
+              { _id: id },
+              {
+                $set: {
+                  "context.sources": {
+                    plan: true,
+                    diary: false,
+                    screening: false,
+                    resourceIds: [],
+                  },
+                  messages,
+                },
+              },
+            );
+          const historical = await database
+            .collection<Conversation>("ai_companion_conversations")
+            .findOne({ _id: id });
+          assert.ok(historical);
+          const callsBefore = providerInputs.length;
+          const assemblyBefore = assemblyCalls;
+          const denied =
+            scenario === "l1-lost" || scenario === "care-unavailable";
+          const result = await request(server)
+            .post(`/api/v1/ai-companion/conversations/${id}/messages`)
+            .set(authorization)
+            .set("Idempotency-Key", `mb806-${scenario}-synthetic-message`)
+            .send({ message: "SYNTHETIC_CURRENT_MESSAGE" })
+            .expect(
+              scenario === "l1-lost"
+                ? 403
+                : scenario === "care-unavailable"
+                  ? 503
+                  : 201,
+            );
+          assert.equal(
+            assemblyCalls - assemblyBefore,
+            scenario === "l1-only" ? 0 : 1,
+          );
+          assert.equal(providerInputs.length - callsBefore, denied ? 0 : 1);
+          if (denied) {
+            assert.equal(
+              (result.body as { code: string }).code,
+              scenario === "l1-lost"
+                ? "AI_CONSENT_REQUIRED"
+                : "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+            );
+          } else {
+            assert.deepEqual(providerInputs.at(-1), [
+              "SYNTHETIC_CURRENT_MESSAGE",
+              { kinds: [], prompt: "" },
+              {
+                workload: "COMPANION_CHAT",
+                servicePlan: "FREE",
+                entitlementSource: "DEFAULT_FREE",
+                entitlementPolicyVersion: "service-entitlement-v1",
+                entitlementVersion: 1,
+                provider: "DETERMINISTIC_FAKE",
+                model: "deterministic-companion-v1",
+                providerApprovalVersion: "local-deterministic-v1",
+                routingPolicyVersion: "companion-chat-routing-v1",
+                promptVersion: "companion-chat-v1",
+              },
+              {
+                friend: {
+                  history: [
+                    { role: "USER", text: "SYNTHETIC_ORDINARY_TOPIC" },
+                    { role: "ASSISTANT", text: "SYNTHETIC_ORDINARY_REPLY" },
+                  ],
+                  catalog: [
+                    {
+                      ref: "R1",
+                      resourceId: "33333333-3333-4333-8333-333333333333",
+                      category: "BREATHING",
+                      title: "Thở 4-7-8",
+                    },
+                  ],
+                },
+              },
+            ]);
+            assert.deepEqual(
+              (result.body as { contextKinds: string[] }).contextKinds,
+              [],
+            );
+          }
+          const saved = await database
+            .collection<Conversation>("ai_companion_conversations")
+            .findOne({ _id: id });
+          assert.ok(saved);
+          assert.deepEqual(saved.messages.slice(0, 4), historical.messages);
+          assert.equal(saved.messages.length, denied ? 4 : 6);
+          for (const message of saved.messages.slice(4))
+            assert.deepEqual(message.contextKinds, []);
+          const ledger = await database
+            .collection<{
+              ownerAccountId: string;
+              localDate: string;
+              reservations: string[];
+              successfulAnswers: number;
+              usedTokens: number;
+            }>("ai_companion_quota_ledgers")
+            .findOne({
+              ownerAccountId: ownerId,
+              localDate: now.toISOString().slice(0, 10),
+            });
+          assert.ok(ledger);
+          assert.deepEqual(ledger.reservations, []);
+          assert.equal(ledger.successfulAnswers, denied ? 0 : 1);
+          assert.equal(ledger.usedTokens, denied ? 0 : 30);
+          consentAuthorized = true;
+          contextAuthorized = true;
+          consentUnavailable = false;
+          afterAssembly = () => undefined;
+        },
+      );
+    }
   } finally {
     await app.close();
     if (externalUri) await database.dropDatabase();

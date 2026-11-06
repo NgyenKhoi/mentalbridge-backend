@@ -135,7 +135,13 @@ output, and hidden reasoning are not fields. Migration
 `012_ai_companion_conversation_context.cjs` backfills the default context before
 enforcing the strict validator. Migration `017_companion_message_suggestion.cjs`
 adds an optional encrypted `suggestion` on assistant messages (destination,
-Resource ID and title; ADR 0049).
+Resource ID and title; ADR 0049). Under [ADR 0050](../../adr/0050-two-level-ai-consent.md),
+MB-806 changes no persisted shape or validator and needs no Mongo migration. New
+conversations select no sources; stored selections remain preferences and require
+effective L2 plus fresh source authorization. All four existing context kinds are
+personal. Memory excludes an entire pair with a disallowed kind before decryption;
+new message labels union actual fetched and retained-history kinds without
+rewriting historical labels or result provenance.
 
 ### AI Companion Command — ACTIVE
 
@@ -192,7 +198,8 @@ Relationships:
 - `ownerId` is a logical/external Identity reference;
 - `quotaDay` and owner logically identify the Voice Daily Usage document;
 - a held Voice Capacity slot logically identifies this session and its fence;
-- current consent and entitlement are REST decisions from Care and Consultation,
+- effective L1 (`AI_PROCESSING`) plus separate Voice v2 consent and entitlement
+  are current REST decisions from Care and Consultation; L2 cannot broaden Voice,
   not database relationships or reusable authorization cached in this document.
 
 No audio, transcript, prompt, model reply, old Journal/text context, bearer or
