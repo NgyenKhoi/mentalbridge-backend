@@ -1,5 +1,14 @@
 # SupportPlan policy v3
 
+The owner-approved 2026-11-06 [MB-808 amendment](support-plan-policy-v2.md#mb-808-reassessment-checklist-amendment--2026-11-06)
+allows deterministic symptom-checklist resource alternatives only in existing
+compatible native-v3 slots. Exact Content admission, typed action provenance,
+professional/safety precedence, existing bounds and two explicit adaptive
+confirmations remain mandatory. Optional owner-only `symptomMapping` persists
+the accepted mapping and source identity; direct activate/replace cannot bypass
+its adaptive source guard. V2 evidence remains supported, without adding mapped
+v2 alternatives, converting history or exposing codes/reasons to other owners.
+
 ## Policy metadata
 
 | Field | Value |

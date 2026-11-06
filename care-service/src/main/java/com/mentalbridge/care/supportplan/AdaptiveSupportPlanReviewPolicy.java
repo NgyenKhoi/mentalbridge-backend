@@ -172,8 +172,14 @@ class AdaptiveSupportPlanReviewPolicy {
 
 	Option option(String kind, String execution, UUID actionId, String focusId, List<String> reasons,
 			List<EvidenceRef> evidence, List<EvidenceRef> conflicts, List<Change> changes) {
+		return option(kind, execution, actionId, focusId, reasons, evidence, conflicts, changes, null);
+	}
+
+	Option option(String kind, String execution, UUID actionId, String focusId, List<String> reasons,
+			List<EvidenceRef> evidence, List<EvidenceRef> conflicts, List<Change> changes, ReassessmentSymptomMapping mapping) {
 		String id = digest(POLICY + kind + execution + actionId + focusId + reasons + evidence + conflicts + changes);
-		return new Option(id, kind, execution, actionId, focusId, reasons, evidence, conflicts, changes);
+		if (mapping != null) id = digest(id + mapping);
+		return new Option(id, kind, execution, actionId, focusId, reasons, evidence, conflicts, changes, mapping);
 	}
 
 	static String digest(String value) {

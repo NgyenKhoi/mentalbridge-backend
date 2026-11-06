@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,7 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.mentalbridge.care.reassessment.ReassessmentSelfReportService.CreateCommand;
 import com.mentalbridge.care.reassessment.ReassessmentSelfReportService.ReplaceCommand;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.Period;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.CatalogView;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Selection;
 import com.mentalbridge.care.shared.ApiException;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.Nulls;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -46,9 +52,14 @@ public class ReassessmentSelfReportController {
 			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String key,
 			@Valid @RequestBody CreateRequest request) {
 		var value = reports.create(subject(jwt), key, new CreateCommand(request.currentPeriod().toPeriod(),
-				request.currentExperience(), request.helpfulContext(), request.difficultContext()));
+				request.currentExperience(), request.helpfulContext(), request.difficultContext(), request.symptomChecklist()));
 		return ResponseEntity.created(URI.create("/api/v1/reassessment-self-reports/" + value.selfReportId()))
 				.header(HttpHeaders.ETAG, etag(value.version())).body(value);
+	}
+
+	@GetMapping("/catalog")
+	ResponseEntity<CatalogView> catalog() {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ReassessmentSymptomCatalog.current());
 	}
 
 	@GetMapping("/current")
@@ -63,7 +74,8 @@ public class ReassessmentSelfReportController {
 			@RequestHeader("If-Match") @Pattern(regexp = "^\"[0-9]+\"$") String ifMatch,
 			@Valid @RequestBody ReplaceRequest request) {
 		var value = reports.replace(subject(jwt), selfReportId, version(ifMatch),
-				new ReplaceCommand(request.currentExperience(), request.helpfulContext(), request.difficultContext()));
+				new ReplaceCommand(request.currentExperience(), request.helpfulContext(), request.difficultContext(),
+						request.symptomChecklist()));
 		return ResponseEntity.ok().header(HttpHeaders.ETAG, etag(value.version())).body(value);
 	}
 
@@ -92,13 +104,51 @@ public class ReassessmentSelfReportController {
 		return '"' + Long.toString(version) + '"';
 	}
 
-	public record CreateRequest(@Valid @NotNull PeriodRequest currentPeriod,
-			@NotNull @Pattern(regexp = "^(BETTER|ABOUT_THE_SAME|MORE_DIFFICULT|UNSURE)$") String currentExperience,
-			@Size(max = 500) String helpfulContext, @Size(max = 500) String difficultContext) { }
+	public static final class CreateRequest extends ReplaceRequest {
+		@JsonProperty
+		@Valid
+		@NotNull
+		private PeriodRequest currentPeriod;
 
-	public record ReplaceRequest(
-			@NotNull @Pattern(regexp = "^(BETTER|ABOUT_THE_SAME|MORE_DIFFICULT|UNSURE)$") String currentExperience,
-			@Size(max = 500) String helpfulContext, @Size(max = 500) String difficultContext) { }
+		public PeriodRequest currentPeriod() {
+			return currentPeriod;
+		}
+	}
+
+	public static class ReplaceRequest {
+		@JsonProperty
+		@NotNull
+		@Pattern(regexp = "^(BETTER|ABOUT_THE_SAME|MORE_DIFFICULT|UNSURE)$")
+		private String currentExperience;
+		@JsonProperty
+		@Size(max = 500)
+		private String helpfulContext;
+		@JsonProperty
+		@Size(max = 500)
+		private String difficultContext;
+		private Selection symptomChecklist;
+
+		public String currentExperience() {
+			return currentExperience;
+		}
+
+		public String helpfulContext() {
+			return helpfulContext;
+		}
+
+		public String difficultContext() {
+			return difficultContext;
+		}
+
+		public Selection symptomChecklist() {
+			return symptomChecklist;
+		}
+
+		@JsonSetter(value = "symptomChecklist", nulls = Nulls.FAIL)
+		public void setSymptomChecklist(Selection symptomChecklist) {
+			this.symptomChecklist = symptomChecklist;
+		}
+	}
 
 	public record PeriodRequest(@NotNull Instant startAt, @NotNull Instant endAt) {
 		Period toPeriod() {

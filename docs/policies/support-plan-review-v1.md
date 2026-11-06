@@ -1,5 +1,31 @@
 # Adaptive SupportPlan review policy v1
 
+## MB-808 approved checklist supplement — 2026-11-06
+
+The owner-approved [policy v2 amendment](support-plan-policy-v2.md#mb-808-reassessment-checklist-amendment--2026-11-06)
+adds explicit checklist evidence to dimension four and deterministic candidate
+mapping. Native-v3 options use existing `ALTERNATIVE_ACTION` /
+`PREPARE_REPLACEMENT`, source `SELF_REPORTED_EXPERIENCE` and rationale
+`SELF_REPORTED_SYMPTOM_MATCH`; no new score, repeated-pattern threshold, option
+kind or execution kind is introduced. Absent/empty selections imply no absence
+of symptoms. Valid evidence without a compatible admitted candidate uses
+`NO_ADMITTED_CANDIDATE`; required admission uncertainty uses
+`ADMISSION_UNAVAILABLE`. Unchanged exact action intent is not an alternative.
+
+Preserve the existing screening pair, safety, paid entitlement, current-plan
+version, exact action/resource admission and two explicit confirmations.
+Fingerprint/local matches bind codes, both revisions, summary/report/revision/
+period and exact slot/resource/version/publication/role/policy/reasons, excluding
+observation timestamps. Source edit/deletion or a new summary invalidates the
+draft even if the selected resource IDs still match. Both preparation and final
+confirmation resolve remote checks first, then recheck local identity under the
+shared owner lock. Exact recorded ledger replay retains priority and legacy
+request hashes. Checklist-bound native drafts require adaptive confirmation;
+direct activate/replace returns `ADAPTIVE_REVIEW_CONFIRM_REQUIRED` after replay.
+Comparison and discard remain available. Accepted mapping provenance is stored
+on the draft/plan; this is no database of displayed or declined reviews. V2
+replacement behavior remains compatible without mapped options or conversion.
+
 | Field | Value |
 | --- | --- |
 | Policy version | `support-plan-review-v1` |

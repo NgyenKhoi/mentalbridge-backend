@@ -136,11 +136,17 @@ public class AdaptiveSupportPlanReviewService {
 				if (draft.version() != command.proposedVersion()) throw versionConflict();
 				if (!matches(userId, prepared.plan(), draft, candidate.proposal(), candidate.evaluationId())) throw stale();
 				var replace = new SupportPlanService.ReplacePlanCommand(planId, version, command.reassessmentSummaryId());
-				result = nativePlans.replaceReviewed(userId, command.proposedPlanId(), command.proposedVersion(), bearer,
-						key, hash, replace, correlation, () -> {
-							guard.run();
-							if (!matches(userId, prepared.plan(), views.get(userId, draft.supportPlanId()), candidate.proposal(), candidate.evaluationId())) throw stale();
-						});
+				try {
+					result = nativePlans.replaceReviewed(userId, command.proposedPlanId(), command.proposedVersion(), bearer,
+							key, hash, replace, correlation, () -> {
+								guard.run();
+								if (!matches(userId, prepared.plan(), views.get(userId, draft.supportPlanId()), candidate.proposal(), candidate.evaluationId())) throw stale();
+							});
+				}
+				catch (ApiException exception) {
+					if ("SUPPORT_PLAN_NOT_DRAFT".equals(exception.code())) throw stale();
+					throw exception;
+				}
 				return new Confirmation("REPLACED", command.optionId(), result, null);
 			}
 			default -> throw conflict("ADAPTIVE_REVIEW_OPTION_UNAVAILABLE", "The option cannot be confirmed");
@@ -200,6 +206,17 @@ public class AdaptiveSupportPlanReviewService {
 			candidates.add(new Candidate(policy.option("PROFESSIONAL_SUPPORT_NEXT_STEP", "NAVIGATE_PROFESSIONAL_SUPPORT", null, null,
 					List.of("PROFESSIONAL_SUPPORT_PRIMARY", "NO_AUTOMATIC_BOOKING"), refs, conflicts, List.of()), null, null, null));
 		}
+		if (!"UNAVAILABLE".equals(admission) && "AVAILABLE".equals(context.state()) && "ALLOWED".equals(access)
+				&& "NATIVE_V3".equals(plan.representationMode())) {
+			try {
+				var mapped = symptomOptions(userId, plan, context, conflicts, bearer, correlation, candidates);
+				candidates.addAll(mapped.stream().limit(Math.max(0, 8 - candidates.size())).toList());
+			}
+			catch (ApiException exception) {
+				if (exception.status() != HttpStatus.CONFLICT && exception.status() != HttpStatus.SERVICE_UNAVAILABLE) throw exception;
+				candidateAdmissionUnavailable |= exception.status() == HttpStatus.SERVICE_UNAVAILABLE;
+			}
+		}
 		var unavailable = new ArrayList<UnavailableOption>();
 		for (String kind : AdaptiveSupportPlanReviewPolicy.KINDS) {
 			if (candidates.stream().noneMatch(item -> kind.equals(item.option().kind()))) {
@@ -232,7 +249,7 @@ public class AdaptiveSupportPlanReviewService {
 				.map(item -> item.current().assessmentId()).sorted().toList();
 		if (!evaluation.contributingDomains().stream().map(item -> item.assessmentId()).sorted().toList().equals(expected)) return;
 		var storedPreferences = materializationPreferences(userId, plan.supportPlanId());
-		var template = planPolicy.template(evaluation, storedPreferences);
+		var template = planPolicy.template(evaluation, storedPreferences, plan.symptomMapping());
 		var request = planPolicy.request(template,
 				eligibility.currentVersions(template.resourceIds(), bearer, correlation));
 		var proposal = planPolicy.composeNative(request, eligibility.resolve(request.batch(), bearer, correlation),
@@ -256,7 +273,8 @@ public class AdaptiveSupportPlanReviewService {
 		var currentOrder = List.of(focusOrder(plan).split(","));
 		if (!proposal.families().stream().map(item -> item.targetDomain()).sorted().toList().equals(currentOrder.stream().sorted().toList())) return;
 		var orderedFamilies = proposal.families().stream().sorted(java.util.Comparator.comparingInt(item -> currentOrder.indexOf(item.targetDomain()))).toList();
-		var base = new Proposal(orderedFamilies, preserved, proposal.resourcePolicyVersion(), proposal.resourcesResolvedAt());
+		var base = new Proposal(orderedFamilies, preserved, proposal.resourcePolicyVersion(), proposal.resourcesResolvedAt(),
+				plan.symptomMapping() == null ? null : plan.symptomMapping().retaining(preserved));
 		var changedSlots = preserved.stream().filter(slot -> actions(plan).stream().noneMatch(action -> "RESOURCE".equals(action.actionType())
 				&& slot.slotId().equals(action.provenance().referenceId())
 				&& slot.selectedResource().resourceId().toString().equals(action.source().sourceId())
@@ -270,7 +288,7 @@ public class AdaptiveSupportPlanReviewService {
 					List.of("CURRENT_PLAN_NOT_ADMISSIBLE", "EXACT_ADMITTED_REPLACEMENT"),
 					context.summary().screening().trends().stream().filter(item -> item.current() != null)
 							.map(item -> new EvidenceRef("PHQ9".equals(item.instrument()) ? "SCREENING_PHQ9" : "SCREENING_GAD7", item.current().assessmentId().toString())).toList(),
-					conflicts, List.of(new Change("ACTION", action.presentation().title(), slot.selectedResource().title()))),
+					conflicts, List.of(new Change("ACTION", action.presentation().title(), slot.selectedResource().title())), base.symptomMapping()),
 					null, base, evaluation.supportEvaluationId()));
 			return;
 		}
@@ -284,10 +302,11 @@ public class AdaptiveSupportPlanReviewService {
 					&& item.selectedResource().key().equals(alternative.key()))) continue;
 			var changed = base.slots().stream().map(item -> item.slotId().equals(slot.slotId())
 					? new SlotDraft(item.slotId(), item.kind(), item.targetDomain(), item.purposeCode(), alternative, List.of()) : item).toList();
+			var mapping = base.symptomMapping() == null ? null : base.symptomMapping().retaining(changed);
 			candidates.add(new Candidate(policy.option("ALTERNATIVE_ACTION", "PREPARE_REPLACEMENT", pattern.actionId(), null,
 					List.of("REPEATED_NOT_A_GOOD_FIT", "PRACTICAL_FIT_ONLY"), List.of(AdaptiveSupportPlanReviewPolicy.ref(pattern)), conflicts,
-					List.of(new Change("ACTION", slot.selectedResource().title(), alternative.title()))), null,
-					new Proposal(base.families(), changed, base.resourcePolicyVersion(), base.resourcesResolvedAt()), evaluation.supportEvaluationId()));
+					List.of(new Change("ACTION", slot.selectedResource().title(), alternative.title())), mapping), null,
+					new Proposal(base.families(), changed, base.resourcePolicyVersion(), base.resourcesResolvedAt(), mapping), evaluation.supportEvaluationId()));
 			break;
 		}
 		String domain = personalization == null || personalization.preferredFocus() == null ? null
@@ -295,15 +314,54 @@ public class AdaptiveSupportPlanReviewService {
 		if (domain != null && base.families().size() > 1) {
 			var ordered = new ArrayList<>(base.families());
 			ordered.sort(java.util.Comparator.comparing(family -> !domain.equals(family.targetDomain())));
-			var desired = new Proposal(List.copyOf(ordered), base.slots(), base.resourcePolicyVersion(), base.resourcesResolvedAt());
+			var desired = new Proposal(List.copyOf(ordered), base.slots(), base.resourcePolicyVersion(), base.resourcesResolvedAt(), base.symptomMapping());
 			if (!sameFocusOrder(plan, desired)) {
 				candidates.add(new Candidate(policy.option("DIFFERENT_FOCUS", "PREPARE_REPLACEMENT", null, null,
 						List.of("EXPLICIT_FOCUS_PREFERENCE", "ADMITTED_FOCUS_ORDER_ONLY"),
 						List.of(new EvidenceRef("PREFERENCES", personalization.personalizationId().toString())), conflicts,
-						List.of(new Change("FOCUS_ORDER", focusOrder(plan), String.join(",", ordered.stream().map(item -> item.targetDomain()).toList())))),
+						List.of(new Change("FOCUS_ORDER", focusOrder(plan), String.join(",", ordered.stream().map(item -> item.targetDomain()).toList()))), base.symptomMapping()),
 						null, desired, evaluation.supportEvaluationId()));
 			}
 		}
+	}
+
+	private List<Candidate> symptomOptions(UUID userId, SupportPlanV3View plan, Context context, List<EvidenceRef> conflicts,
+			String bearer, UUID correlation, List<Candidate> candidates) {
+		var source = context.summary() == null || context.summary().selfReportedExperience() == null
+				? null : context.summary().selfReportedExperience().source();
+		if (source == null || source.symptomChecklist() == null || source.symptomChecklist().selectedCodes().isEmpty()) return List.of();
+		var episode = episodes.requiredCompleted(userId, "REASSESSMENT");
+		var evaluation = evaluations.getCurrentCompatible(userId, episode.supportEvaluationId());
+		if (evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN) return List.of();
+		var expected = context.summary().screening().trends().stream().filter(item -> item.current() != null)
+				.map(item -> item.current().assessmentId()).sorted().toList();
+		if (!evaluation.contributingDomains().stream().map(item -> item.assessmentId()).sorted().toList().equals(expected)) return List.of();
+		var storedPreferences = materializationPreferences(userId, plan.supportPlanId());
+		var template = ReassessmentSymptomMappingPolicy.expand(planPolicy.template(evaluation, storedPreferences, plan.symptomMapping()), source.symptomChecklist());
+		var request = planPolicy.request(template, eligibility.currentVersions(template.resourceIds(), bearer, correlation));
+		var proposal = planPolicy.composeNative(request, eligibility.resolve(request.batch(), bearer, correlation), storedPreferences);
+		var currentActions = actions(plan).stream().filter(action -> "RESOURCE".equals(action.actionType())).toList();
+		if (!proposal.slots().stream().map(SlotDraft::slotId).sorted().toList().equals(currentActions.stream()
+				.map(action -> action.provenance().referenceId()).sorted().toList())) return List.of();
+		var preserved = new ArrayList<SlotDraft>();
+		for (var slot : proposal.slots()) {
+			var action = currentActions.stream().filter(item -> slot.slotId().equals(item.provenance().referenceId())).findFirst().orElseThrow();
+			var available = new ArrayList<>(slot.allowedAlternatives());
+			available.addFirst(slot.selectedResource());
+			var selected = available.stream().filter(resource -> resource.resourceId().toString().equals(action.source().sourceId())
+					&& Long.toString(resource.contentVersion()).equals(action.source().sourceRevision())
+					&& resource.publicationId().equals(action.source().publicationId())
+					&& proposal.resourcePolicyVersion().equals(action.source().eligibilityPolicyVersion())).findFirst().orElse(null);
+			if (selected == null) return List.of();
+			preserved.add(new SlotDraft(slot.slotId(), slot.kind(), slot.targetDomain(), slot.purposeCode(), selected,
+					available.stream().filter(resource -> !resource.key().equals(selected.key())).toList()));
+		}
+		var order = List.of(focusOrder(plan).split(","));
+		if (!proposal.families().stream().map(item -> item.targetDomain()).sorted().toList().equals(order.stream().sorted().toList())) return List.of();
+		var families = proposal.families().stream().sorted(java.util.Comparator.comparingInt(item -> order.indexOf(item.targetDomain()))).toList();
+		return ReassessmentSymptomMappingPolicy.options(policy, plan,
+				new Proposal(families, preserved, proposal.resourcePolicyVersion(), proposal.resourcesResolvedAt(), plan.symptomMapping()),
+				planPolicy.template(evaluation), context.summary().summaryId(), source, evaluation.supportEvaluationId(), conflicts, candidates);
 	}
 
 	private boolean sameFocusOrder(SupportPlanV3View plan, Proposal proposal) {
@@ -321,9 +379,12 @@ public class AdaptiveSupportPlanReviewService {
 	private boolean matches(UUID userId, SupportPlanV3View current, SupportPlanV3View draft, Proposal proposal, UUID evaluationId) {
 		var entity = plans.findByIdAndUserId(draft.supportPlanId(), userId).orElseThrow();
 		if (!"DRAFT".equals(draft.status()) || !evaluationId.equals(entity.supportEvaluationId()) || !sameFocusOrder(draft, proposal)) return false;
-		var expected = proposal.slots().stream().map(slot -> slot.slotId() + ":" + slot.selectedResource().key()).sorted().toList();
+		if (!Objects.equals(entity.checklistProvenance(), proposal.symptomMapping())) return false;
+		var expected = proposal.slots().stream().map(slot -> slot.slotId() + ":" + slot.selectedResource().key()
+				+ ":" + slot.selectedResource().publicationId() + ":" + proposal.resourcePolicyVersion()).sorted().toList();
 		var actual = actions(draft).stream().filter(action -> "RESOURCE".equals(action.actionType()))
-				.map(action -> action.provenance().referenceId() + ":" + action.source().sourceId() + ":" + action.source().sourceRevision()).sorted().toList();
+				.map(action -> action.provenance().referenceId() + ":" + action.source().sourceId() + ":" + action.source().sourceRevision()
+						+ ":" + action.source().publicationId() + ":" + action.source().eligibilityPolicyVersion()).sorted().toList();
 		return expected.equals(actual) && schedules.reviewedDraftSchedulesMatch(current, draft);
 	}
 
@@ -357,7 +418,7 @@ public class AdaptiveSupportPlanReviewService {
 	private String semantic(Proposal proposal) {
 		return proposal == null ? "" : proposal.families() + ":" + proposal.slots().stream().map(slot ->
 				slot.slotId() + ":" + slot.kind() + ":" + slot.selectedResource().key() + ":" + slot.selectedResource().publicationId()
-				+ ":" + slot.selectedResource().role()).toList() + proposal.resourcePolicyVersion();
+				+ ":" + slot.selectedResource().role()).toList() + proposal.resourcePolicyVersion() + proposal.symptomMapping();
 	}
 
 	private void guard(UUID userId, Prepared prepared) {
@@ -375,7 +436,10 @@ public class AdaptiveSupportPlanReviewService {
 		if (List.of("LOWER_WORKLOAD", "DIFFERENT_TIME").contains(kind) && "PAUSED".equals(plan.status())) return "PLAN_PAUSED";
 		if (List.of("ALTERNATIVE_ACTION", "DIFFERENT_FOCUS").contains(kind) && !"AVAILABLE".equals(context.state())) return "REASSESSMENT_REQUIRED";
 		if ("DIFFERENT_TIME".equals(kind) && (personalization == null || personalization.preferredDaypart() == null)) return "NO_TIME_PREFERENCE";
-		if (List.of("LOWER_WORKLOAD", "ALTERNATIVE_ACTION").contains(kind) && patterns.stream().noneMatch(item ->
+		boolean checklistSelected = context.summary() != null && context.summary().selfReportedExperience() != null
+				&& context.summary().selfReportedExperience().source() != null && context.summary().selfReportedExperience().source().symptomChecklist() != null
+				&& !context.summary().selfReportedExperience().source().symptomChecklist().selectedCodes().isEmpty();
+		if (("LOWER_WORKLOAD".equals(kind) || "ALTERNATIVE_ACTION".equals(kind) && !checklistSelected) && patterns.stream().noneMatch(item ->
 				"ALTERNATIVE_ACTION".equals(kind) ? "NOT_A_GOOD_FIT".equals(item.code()) : List.of("LOW_ENERGY", "NOT_ENOUGH_TIME").contains(item.code()))) return "NO_SUPPORTING_PATTERN";
 		return "NO_ADMITTED_CANDIDATE";
 	}

@@ -523,7 +523,7 @@ const careContractPath = fileURLToPath(
 );
 const care = await SwaggerParser.validate(careContractPath);
 const careSchemas = care.components.schemas;
-assert.equal(care.info.version, "1.11.0");
+assert.equal(care.info.version, "1.12.0");
 assert.equal(contract.info.version, "1.19.0");
 assert.deepEqual(careSchemas.ConsentType.enum, [
   "PRIVACY_POLICY",

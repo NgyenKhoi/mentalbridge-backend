@@ -68,6 +68,21 @@ class NativeSupportPlanReviewedCommandTests {
 		verifyNoInteractions(profiles, activities);
 	}
 
+	@Test
+	void checklistDraftCannotBypassAdaptiveConfirmationThroughDirectWriterCommands() {
+		var draft = draft();
+		when(draft.modelVersion()).thenReturn(3);
+		when(draft.planPolicyVersion()).thenReturn(NativeSupportPlanWriter.PROPOSAL_POLICY);
+		when(draft.status()).thenReturn("DRAFT");
+		when(draft.checklistProvenance()).thenReturn(mock(ReassessmentSymptomMapping.class));
+		when(plans.findByIdAndUserIdForUpdate(draft.id(), userId)).thenReturn(Optional.of(draft));
+		assertConflict(() -> writer.activate(userId, draft.id(), 0, key, hash, null, UUID.randomUUID(), NOW), "ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+		assertConflict(() -> writer.replace(userId, draft.id(), 0, planId, 0, UUID.randomUUID(),
+				"CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE", key, hash, null, UUID.randomUUID(), NOW), "ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+		verifyNoInteractions(activities);
+		verify(plans, never()).saveAndFlush(any());
+	}
+
 	@ParameterizedTest
 	@ValueSource(booleans = {false, true})
 	void onlyGuardedReviewedReplacementUsesReviewedActivityActivation(boolean reviewed) {

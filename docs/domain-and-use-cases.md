@@ -144,6 +144,14 @@ when reuse is approved, but they do not substitute for the explicit
 reassessment self-report. AI or Care must not infer the user's self-report from
 Journal context or occurrence behavior alone.
 
+MB-808 adds an optional closed-catalog symptom checklist to that explicit
+source under the dated [policy v2 amendment](policies/support-plan-policy-v2.md#mb-808-reassessment-checklist-amendment--2026-11-06).
+It carries no score and an empty checklist proves no absence. Immutable
+snapshots preserve codes and catalog/map provenance; only native-v3 review can
+offer exact Content-admitted resource alternatives inside existing slots,
+followed by the user's existing two confirmations. Historical JSON and legacy
+plans are never hydrated or converted to obtain these options.
+
 The first dimension is the standardized symptom-measure comparison. The second
 is non-standardized, model-derived, context-dependent evidence and must expose
 data coverage. Sparse or imbalanced journal periods produce

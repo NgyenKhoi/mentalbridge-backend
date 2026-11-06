@@ -479,6 +479,7 @@ concurrent guards for one draft and one official current plan per owner.
 | `selection_policy_version` | Deterministic v2 Care composition version, fixed to `mb-support-plan-selection-v1`; null for v3. |
 | `resource_policy_version` / `resources_resolved_at` | Exact v2 Content eligibility policy and UTC resolution instant used before the Care transaction; both null for v3. |
 | `personalization_id` / `personalization_revision` / `personalization_schema_version` | Optional exact immutable preference revision snapshotted when the plan draft was composed. Later preference changes never rewrite this reference or the active plan. |
+| `checklist_provenance` | Nullable owner-only JSONB object, native model 3 only. Care persists the confirmed draft's immutable `symptomMapping`: exact summary/report ID and source revision, period, catalog/map revisions, complete sorted selections, and bounded resource-specific reasons including slot/resource/version/publication/role/eligibility-policy tuples. Care validates the closed mapping shape and approved slot map before storage/revalidation; the database enforces the native object envelope. It authorizes only those retained mapped tuples for template revalidation and never overrides fresh Content eligibility. It is excluded from logs, events, AI/specialist context and Content's minimized current-plan resource-action projection. Null on ordinary and historical plans; no backfill. |
 | `entitlement_package` / `entitlement_source` | Authoritative `PLUS`/`PREMIUM` and `DEMO`/`PAID` provenance returned by Consultation; never inferred from JWT/client state. |
 | `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Exact Consultation read-model version and UTC decision evidence that admitted creation. |
 | `rationale_code` / `rationale_text` | Stable general-wellbeing explanation snapshot; not diagnosis, treatment, or AI reasoning. |
@@ -714,8 +715,8 @@ generation idempotent.
 
 Versioned Care-owned source for the user's explicit, non-diagnostic account of
 the current comparison period. Only the authenticated owner may create, read,
-replace, or delete it. Deletion clears the categorical response and both
-optional contexts; the remaining tombstone prevents accidental resurrection
+replace, or delete it. Deletion clears the categorical response, both
+optional contexts and the symptom checklist; the remaining tombstone prevents accidental resurrection
 and preserves period/version provenance. Earlier immutable summary snapshots
 remain unchanged.
 
@@ -728,6 +729,8 @@ remain unchanged.
 | `current_period_start` / `current_period_end` | Half-open period the response describes. The canonical MB-559 flow uses the exact Care-issued 14-day policy window. |
 | `current_experience` | Required active categorical response: `BETTER`, `ABOUT_THE_SAME`, `MORE_DIFFICULT`, or `UNSURE`; cleared on deletion. |
 | `helpful_context` / `difficult_context` | Optional trimmed owner-authored context, each at most 500 characters; cleared on deletion. |
+| `symptom_catalog_revision` | Nullable immutable catalog bundle reference for the current source revision. Null means no checklist was authored; a present revision with zero codes means an explicitly empty selection. The bundle pins the mapping revision copied into response/snapshot provenance. PUT omission preserves this field; explicit replacement checks the supported catalog; deletion clears it. Care-owned sensitive self-report evidence, never an eligibility or diagnostic claim. |
+| `symptom_codes` | Non-null `text[]`, default empty, at most eight non-null codes. Care rejects unknown/duplicate codes before sorting and persists a complete canonical selection. Nonempty arrays require a nonblank catalog revision; deleted tombstones require no revision and an empty array. No selection never means no symptoms. No Content/AI call is needed for source CRUD or local evidence. |
 | `version` | Optimistic concurrency revision included in ETags and summary provenance. |
 | `authored_at` / `updated_at` | Original creation and latest accepted replacement/deletion instants. |
 | `deleted_at` | Null while active; deletion instant on a content-cleared tombstone. |
@@ -751,7 +754,7 @@ improvement verdict.
 | `journal_analysis_id` | Resolved analysis UUID when a v2 job succeeded, or the requested legacy v1 analysis UUID. It is nullable for failed/unavailable v2 jobs. |
 | `previous_period_start` / `previous_period_end` | Half-open UTC bounds for the prior evidence period. Database checks require 7-31 days. |
 | `current_period_start` / `current_period_end` | Half-open UTC bounds for the current evidence period. It must have the same duration and cannot overlap the prior period. |
-| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. V2 keeps explicit self-reported experience separate from supporting activity reflection, plus the other three dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. Reassessment composition is the only writer. |
+| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. V2 keeps explicit self-reported experience separate from supporting activity reflection, plus the other three dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. New MB-808 explicit sources copy the exact sorted codes, catalog/map revisions, report revision/period and bounded candidate mapping reasons, including no-resource reasons; these are not admitted offers. Historical absent fields remain absent and are never hydrated from mutable sources, catalog or Content. Reassessment composition is the only writer. |
 | `composed_at` | Immutable UTC instant when Care completed local calculation, safe Journal/AI fallback, and snapshot persistence. |
 
 ### `care.intervention_plan`

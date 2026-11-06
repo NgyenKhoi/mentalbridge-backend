@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 
 import com.mentalbridge.care.assessment.SafetyStatus;
 import com.mentalbridge.care.assessment.ScreeningLevel;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Checklist;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.EligibilityRole;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceCategory;
 import com.mentalbridge.care.resourceeligibility.generated.ResourceEligibilityContract.ResourceEligibilityBatchResponse;
@@ -265,6 +267,121 @@ class SupportPlanPolicyTests {
 				new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-09-19T00:00:00Z", results)))
 				.isInstanceOfSatisfying(ApiException.class,
 						exception -> assertThat(exception.code()).isEqualTo("RESOURCE_VERSION_STALE"));
+	}
+
+	@Test
+	void onlySavedApprovedMappingExtendsExactResourceAdmissionAndBindsPublication() {
+		var evaluation = evaluation(ScreeningLevel.MINIMAL, ScreeningLevel.MINIMAL);
+		var resource = UUID.fromString("00000000-0000-4000-8000-000000000211");
+		var publication = UUID.randomUUID();
+		var selected = new SupportPlanPolicy.SelectedResource("anxiety-maintenance", resource, 0);
+		var mapping = new ReassessmentSymptomMapping(UUID.randomUUID(), UUID.randomUUID(), 0,
+				new com.mentalbridge.care.reassessment.ReassessmentSummaryView.Period(Instant.EPOCH, Instant.EPOCH.plusSeconds(14 * 86400)),
+				"reassessment-symptoms-v1", "reassessment-symptom-resource-map-v1", List.of("PERSISTENT_WORRY"),
+				List.of(new ReassessmentSymptomMapping.ResourceReason("PERSISTENT_WORRY", "anxiety-maintenance", resource, "0",
+						publication, "PRIMARY", "content-eligibility-v1", "SELF_REPORTED_SYMPTOM_MATCH")));
+		assertThatThrownBy(() -> policy.revalidationRequest(evaluation, List.of(selected)))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("SUPPORT_PLAN_POLICY_STALE"));
+		var request = policy.revalidationRequest(evaluation, List.of(selected), mapping);
+		var query = request.batch().requests().getFirst();
+		var eligible = new ResourceEligibilityResult(query.requestId(), resource.toString(), "0", ResourceEligibilityOutcome.ELIGIBLE,
+				ResourceEligibilityReasonCode.ELIGIBLE_MATCH, EligibilityRole.PRIMARY, publication.toString(), ResourceCategory.ARTICLE,
+				"Resource", "Summary", null);
+		assertThat(policy.validate(request, new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-11-06T00:00:00Z", List.of(eligible)))).isNotNull();
+		var changed = new ResourceEligibilityResult(query.requestId(), resource.toString(), "0", ResourceEligibilityOutcome.ELIGIBLE,
+				ResourceEligibilityReasonCode.ELIGIBLE_MATCH, EligibilityRole.PRIMARY, UUID.randomUUID().toString(), ResourceCategory.ARTICLE,
+				"Resource", "Summary", null);
+		assertThatThrownBy(() -> policy.validate(request, new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-11-06T00:00:00Z", List.of(changed))))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("RESOURCE_VERSION_STALE"));
+		assertThatThrownBy(() -> policy.revalidationRequest(evaluation,
+				List.of(new SupportPlanPolicy.SelectedResource("anxiety-maintenance", resource, 1)), mapping))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("SUPPORT_PLAN_POLICY_STALE"));
+	}
+
+	@Test
+	void checklistExpansionPreservesEveryFamilySlotAndContentQueryContext() {
+		var checklist = new Checklist(ReassessmentSymptomCatalog.CATALOG_REVISION, ReassessmentSymptomCatalog.MAPPING_REVISION,
+				ReassessmentSymptomCatalog.current().items().stream().map(ReassessmentSymptomCatalog.Item::code).sorted().toList());
+		for (var level : List.of(ScreeningLevel.MINIMAL, ScreeningLevel.MILD, ScreeningLevel.MODERATE)) {
+			var original = policy.template(evaluation(level, level));
+			var expanded = ReassessmentSymptomMappingPolicy.expand(original, checklist);
+			assertThat(expanded.families()).isEqualTo(original.families());
+			assertThat(expanded.slots()).hasSameSizeAs(original.slots());
+			var request = policy.request(expanded, versions(expanded, "3"));
+			for (int index = 0; index < original.slots().size(); index++) {
+				var before = original.slots().get(index);
+				var after = expanded.slots().get(index);
+				assertThat(new SupportPlanPolicy.SlotSpec(after.slotId(), after.kind(), after.targetDomain(), after.purposeCode(),
+						after.requiredRole(), after.instrument(), after.screeningLevel(), after.supportTier(), before.resourceIds())).isEqualTo(before);
+				assertThat(after.resourceIds()).containsAll(before.resourceIds()).doesNotHaveDuplicates();
+				if (after.slotId().endsWith("psychoeducation")) assertThat(after.resourceIds()).isEqualTo(before.resourceIds());
+				assertThat(request.batch().requests()).filteredOn(query -> after.resourceIds().contains(query.resourceId())
+						&& query.targetDomain().name().equals(after.targetDomain())).allSatisfy(query -> {
+					assertThat(query.requiredRole()).isEqualTo(after.requiredRole());
+					assertThat(query.instrument().name()).isEqualTo("PHQ9".equals(after.instrument()) ? "PHQ_9" : "GAD_7");
+					assertThat(query.screeningLevel().name()).isEqualTo(after.screeningLevel());
+					assertThat(query.supportTier().name()).isEqualTo(after.supportTier());
+					assertThat(query.locale()).isEqualTo("vi-VN");
+					assertThat(query.contentVersion()).isEqualTo("3");
+				});
+			}
+		}
+	}
+
+	@Test
+	void mappedCandidateUsesOnlyItsDiscoveredLatestVersionAndDoesNotFallbackWhenIneligibleOrMissing() {
+		var worry = "00000000-0000-4000-8000-000000000211";
+		var checklist = new Checklist(ReassessmentSymptomCatalog.CATALOG_REVISION, ReassessmentSymptomCatalog.MAPPING_REVISION,
+				List.of("PERSISTENT_WORRY"));
+		var template = ReassessmentSymptomMappingPolicy.expand(policy.template(evaluation(ScreeningLevel.MINIMAL, ScreeningLevel.MINIMAL)), checklist);
+		var current = new HashMap<>(versions(template, "0"));
+		current.put(worry, "4");
+		var request = policy.request(template, current);
+		assertThat(request.batch().requests()).filteredOn(query -> worry.equals(query.resourceId()))
+				.singleElement().satisfies(query -> assertThat(query.contentVersion()).isEqualTo("4"));
+		var results = eligible(request).results().stream().map(result -> worry.equals(result.resourceId())
+				? ineligible(result, ResourceEligibilityReasonCode.NO_ELIGIBILITY_PUBLICATION) : result).toList();
+		var proposal = policy.composeNative(request, new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-11-06T00:00:00Z", results), null);
+		assertThat(proposal.slots()).allSatisfy(slot -> {
+			assertThat(slot.selectedResource().resourceId().toString()).isNotEqualTo(worry);
+			assertThat(slot.allowedAlternatives()).noneMatch(resource -> worry.equals(resource.resourceId().toString()));
+		});
+		current.put(worry, null);
+		assertThat(policy.request(template, current).batch().requests()).noneMatch(query -> worry.equals(query.resourceId()));
+		current.remove(worry);
+		assertThatThrownBy(() -> policy.request(template, current)).isInstanceOfSatisfying(ApiException.class,
+				failure -> assertThat(failure.code()).isEqualTo("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+	}
+
+	@Test
+	void savedMappingCannotOverrideCurrentRoleFamilyOrEligibilityPolicyAndUncertainty() {
+		var evaluation = evaluation(ScreeningLevel.MINIMAL, ScreeningLevel.MINIMAL);
+		var resource = UUID.fromString("00000000-0000-4000-8000-000000000211");
+		var publication = UUID.randomUUID();
+		var selected = new SupportPlanPolicy.SelectedResource("anxiety-maintenance", resource, 0);
+		var mapping = new ReassessmentSymptomMapping(UUID.randomUUID(), UUID.randomUUID(), 0,
+				new com.mentalbridge.care.reassessment.ReassessmentSummaryView.Period(Instant.EPOCH, Instant.EPOCH.plusSeconds(14 * 86400)),
+				ReassessmentSymptomCatalog.CATALOG_REVISION, ReassessmentSymptomCatalog.MAPPING_REVISION, List.of("PERSISTENT_WORRY"),
+				List.of(new ReassessmentSymptomMapping.ResourceReason("PERSISTENT_WORRY", "anxiety-maintenance", resource, "0",
+						publication, "PRIMARY", "content-eligibility-v1", "SELF_REPORTED_SYMPTOM_MATCH")));
+		var request = policy.revalidationRequest(evaluation, List.of(selected), mapping);
+		var query = request.batch().requests().getFirst();
+		var adjunct = new ResourceEligibilityResult(query.requestId(), resource.toString(), "0", ResourceEligibilityOutcome.ELIGIBLE,
+				ResourceEligibilityReasonCode.ELIGIBLE_MATCH, EligibilityRole.ADJUNCT, publication.toString(), ResourceCategory.ARTICLE,
+				"Resource", "Summary", null);
+		assertThatThrownBy(() -> policy.validate(request, new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-11-06T00:00:00Z", List.of(adjunct))))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("SUPPORT_PLAN_INVALID_CHOICE"));
+		var primary = new ResourceEligibilityResult(query.requestId(), resource.toString(), "0", ResourceEligibilityOutcome.ELIGIBLE,
+				ResourceEligibilityReasonCode.ELIGIBLE_MATCH, EligibilityRole.PRIMARY, publication.toString(), ResourceCategory.ARTICLE,
+				"Resource", "Summary", null);
+		assertThatThrownBy(() -> policy.validate(request, new ResourceEligibilityBatchResponse("content-eligibility-v2", "2026-11-06T00:00:00Z", List.of(primary))))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("RESOURCE_VERSION_STALE"));
+		assertThatThrownBy(() -> policy.validate(request, new ResourceEligibilityBatchResponse("content-eligibility-v1", "2026-11-06T00:00:00Z", List.of())))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+		assertThatThrownBy(() -> policy.revalidationRequest(evaluation(ScreeningLevel.MINIMAL, ScreeningLevel.MODERATE), List.of(selected), mapping))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("SUPPORT_PLAN_POLICY_STALE"));
+		assertThatThrownBy(() -> policy.revalidationRequest(evaluation, List.of(), mapping))
+				.isInstanceOfSatisfying(ApiException.class, failure -> assertThat(failure.code()).isEqualTo("SUPPORT_PLAN_POLICY_STALE"));
 	}
 
 	private SupportPlanPolicy.ProposalRequest request(EvaluationView evaluation, PersonalizationSnapshot personalization) {

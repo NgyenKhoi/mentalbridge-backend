@@ -28,6 +28,32 @@ class SupportPlanCycleContractTests {
 	}
 
 	@Test
+	void symptomMappingIsOptionalExactProvenanceWithoutChangingCycleIdentity() {
+		var api = contract();
+		var schemas = api.getComponents().getSchemas();
+		Schema<?> plan = schemas.get("SupportPlanV3");
+		Schema<?> option = schemas.get("AdaptiveReviewOption");
+		assertThat(plan.getRequired()).doesNotContain("symptomMapping");
+		assertThat(option.getRequired()).doesNotContain("symptomMapping");
+		assertThat(plan.getProperties().get("symptomMapping").get$ref())
+				.isEqualTo("#/components/schemas/ReassessmentSymptomMapping");
+		assertThat(option.getProperties().get("symptomMapping").get$ref())
+				.isEqualTo("#/components/schemas/ReassessmentSymptomMapping");
+		Schema<?> mapping = schemas.get("ReassessmentSymptomMapping");
+		assertThat(mapping.getRequired()).containsExactlyInAnyOrder("reassessmentSummaryId", "selfReportId",
+				"selfReportRevision", "currentPeriod", "catalogRevision", "mappingRevision", "selectedCodes",
+				"resourceReasons");
+		assertThat(mapping.getProperties().get("resourceReasons").getMinItems()).isEqualTo(1);
+		assertThat(mapping.getProperties().get("resourceReasons").getMaxItems()).isEqualTo(8);
+		Schema<?> reason = schemas.get("ReassessmentSymptomResourceReason");
+		assertThat(reason.getRequired()).containsExactlyInAnyOrder("code", "slotId", "resourceId", "contentVersion",
+				"publicationId", "role", "eligibilityPolicyVersion", "reasonCode");
+		assertThat(reason.getProperties().get("reasonCode").getConst()).isEqualTo("SELF_REPORTED_SYMPTOM_MATCH");
+		assertThat(schemas.get("SupportPlanCycle").getProperties())
+				.doesNotContainKeys("selectedCodes", "symptomMapping", "mappingRevision");
+	}
+
+	@Test
 	void continuationRequiresOwnerAuthenticationConcurrencyAndRetryIdentity() {
 		var operation = contract().getPaths().get("/api/v2/support-plans/{supportPlanId}/cycle-continuation").getPost();
 		assertThat(operation.getSecurity()).anySatisfy(value -> assertThat(value).containsKey("bearerAuth"));

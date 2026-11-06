@@ -51,7 +51,8 @@ class CareLiquibaseChangelogTests {
 					"care-031-support-plan-proposal-cycle",
 					"care-032-resource-completion-evidence",
 					"care-033-ai-voice-processing-consent",
-					"care-034-ai-consent-levels");
+					"care-034-ai-consent-levels",
+					"care-035-reassessment-symptom-checklist");
 		}
 	}
 

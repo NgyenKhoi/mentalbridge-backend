@@ -11,6 +11,14 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-808 extends Care OpenAPI to `1.12.0` with a local USER reassessment symptom
+catalog, optional coded checklist/candidate provenance and optional exact
+`symptomMapping` on native review options/plans. Named examples cover legacy,
+selected/empty, no-resource, validation and admitted-option states. Existing
+source/summary/adaptive schema versions remain readable. ngocquyen owns MB-809
+and synchronizes the consumer contract from the backend story/merged provider
+before its BFF/client validation; no Content contract changes are required.
+
 MB-812 extends Consultation OpenAPI to `1.22.0`: earnings settings carry the
 configured minimum and whole-day hold plus optional exact `settlementHoldSeconds`.
 Only the explicit staging demo gate permits smaller funded PayOS earnings and

@@ -89,6 +89,27 @@ class SupportPlanProposalContractTests {
 	}
 
 	@Test
+	void checklistBoundNativeDraftsRequireExistingAdaptiveConfirmationWithoutChangingLegacyCommands() {
+		var api = parseImplementedContract().getOpenAPI();
+		var activate = api.getPaths().get("/api/v2/support-plans/{supportPlanId}/activate").getPost();
+		var replace = api.getPaths().get("/api/v2/support-plans/{supportPlanId}/replace").getPost();
+		for (var operation : java.util.List.of(activate, replace)) {
+			assertThat(operation.getDescription()).contains("ADAPTIVE_REVIEW_CONFIRM_REQUIRED", "ledger replay");
+			assertThat(operation.getResponses()).containsKeys("409", "412", "503");
+		}
+		assertThat(api.getComponents().getResponses().get("SupportPlanActivationConflictProblem").getDescription())
+				.contains("ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+		assertThat(api.getComponents().getResponses().get("SupportPlanEligibilityProblem").getDescription())
+				.contains("ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+		var confirm = api.getComponents().getSchemas().get("ConfirmAdaptiveReviewOptionRequest");
+		assertThat(confirm.getRequired()).containsExactlyInAnyOrder("reviewFingerprint", "optionId");
+		assertThat(confirm.getProperties()).containsOnlyKeys("reviewFingerprint", "optionId", "reassessmentSummaryId",
+				"proposedPlanId", "proposedVersion");
+		assertThat(api.getPaths().get("/api/v1/support-plans/{supportPlanId}/activate").getPost().getDescription())
+				.doesNotContain("ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+	}
+
+	@Test
 	void implementedInitialDraftRequestContainsOnlyTheOwnedEvaluationReference() {
 		OpenAPI openApi = parseImplementedContract().getOpenAPI();
 		Schema<?> request = openApi.getComponents().getSchemas().get("ProposeSupportPlanDraftRequest");

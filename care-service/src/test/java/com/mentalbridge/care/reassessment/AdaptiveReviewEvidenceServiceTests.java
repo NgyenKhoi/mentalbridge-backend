@@ -37,6 +37,8 @@ import com.mentalbridge.care.reassessment.ReassessmentSummaryView.ScreeningPoint
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.ScreeningTrend;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.SelfReportedExperienceDimension;
 import com.mentalbridge.care.shared.ApiException;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Checklist;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Selection;
 
 class AdaptiveReviewEvidenceServiceTests {
 
@@ -165,6 +167,84 @@ class AdaptiveReviewEvidenceServiceTests {
 	}
 
 	@Test
+	void checklistAndCandidateReasonsBindTheSourceTokenEvenWhenResourceIdsAndRevisionMatch() {
+		var energy = checklist("LOW_ENERGY");
+		var mood = checklist("LOW_MOOD");
+		var original = summaryWithChecklist(energy);
+		stored(original);
+		when(reports.find(USER, REPORT)).thenReturn(Optional.of(report(0, false, energy)));
+		var first = read();
+		assertThat(first.state()).isEqualTo("AVAILABLE");
+		when(reports.find(USER, REPORT)).thenReturn(Optional.of(report(0, false, mood)));
+
+		var changed = read();
+
+		assertThat(changed.state()).isEqualTo("STALE");
+		assertThat(changed.reasonCode()).isEqualTo("SOURCE_REVISION_CHANGED");
+		assertThat(changed.sourceToken()).isNotEqualTo(first.sourceToken());
+		assertThat(service.localToken(USER, first)).isNotEqualTo(first.localToken());
+		assertThat(ReassessmentSymptomCatalog.reasons(energy).getFirst().resourceIds())
+				.isEqualTo(ReassessmentSymptomCatalog.reasons(mood).getFirst().resourceIds());
+		assertThat(original.selfReportedExperience().source().symptomChecklist()).isEqualTo(energy);
+	}
+
+	@Test
+	void deletingChecklistEvidenceMasksCodesAndReasonsFromCurrentReviewWhileSavedSnapshotStaysIntact() {
+		var checklist = checklist("PERSISTENT_WORRY");
+		var original = summaryWithChecklist(checklist);
+		stored(original);
+		when(reports.find(USER, REPORT)).thenReturn(Optional.of(report(1, true, null)));
+
+		var deleted = read();
+
+		assertThat(deleted.state()).isEqualTo("STALE");
+		assertThat(deleted.selfReport().source()).isNull();
+		assertThat(deleted.summary().selfReportedExperience().source()).isNull();
+		assertThat(original.selfReportedExperience().source().symptomChecklist()).isEqualTo(checklist);
+		assertThat(original.selfReportedExperience().source().symptomSelectionReasons()).hasSize(1);
+	}
+
+	@Test
+	void laterExplicitReportDoesNotHydrateAStoredSummaryThatNeverObservedIt() {
+		var original = summary(false);
+		stored(original);
+		when(reports.currentForPeriod(USER, CURRENT)).thenReturn(Optional.of(report(0, false, checklist("LOW_MOOD"))));
+
+		var current = read();
+
+		assertThat(current.selfReport().source().symptomChecklist().selectedCodes()).containsExactly("LOW_MOOD");
+		assertThat(current.summary().selfReportedExperience().source()).isNull();
+		assertThat(original.selfReportedExperience().source()).isNull();
+	}
+
+	@Test
+	void addingChecklistToAHistoricalExplicitSourceDoesNotHydrateItsSummary() {
+		var original = summary(true);
+		stored(original);
+		when(reports.find(USER, REPORT)).thenReturn(Optional.of(report(1, false, checklist("LOW_ENERGY"))));
+
+		var current = read();
+
+		assertThat(current.state()).isEqualTo("STALE");
+		assertThat(current.selfReport().source().symptomChecklist().selectedCodes()).containsExactly("LOW_ENERGY");
+		assertThat(current.summary().selfReportedExperience().source().symptomChecklist()).isNull();
+		assertThat(current.summary().selfReportedExperience().source().symptomSelectionReasons()).isNull();
+		assertThat(current.summary().selfReportedExperience().source().sourceRevision()).isZero();
+	}
+
+	@Test
+	void checklistFingerprintDoesNotIncludeObservationTime() {
+		var original = summaryWithChecklist(checklist("LOW_ENERGY", "LOW_MOOD"));
+		stored(original);
+		when(reports.find(USER, REPORT)).thenReturn(Optional.of(report(0, false,
+				original.selfReportedExperience().source().symptomChecklist())));
+		var first = read();
+		when(clock.instant()).thenReturn(NOW.plusSeconds(120));
+		assertThat(read().localToken()).isEqualTo(first.localToken());
+		assertThat(read().sourceToken()).isEqualTo(first.sourceToken());
+	}
+
+	@Test
 	void masksWithdrawnJournalEvidenceAndKeepsOtherDimensionsUsable() {
 		var original = summary(false);
 		var analysis = UUID.randomUUID();
@@ -262,6 +342,30 @@ class AdaptiveReviewEvidenceServiceTests {
 		return new StoredSelfReport(REPORT, USER, "key", "hash", "reassessment-self-report-v1", CURRENT.startAt(),
 				CURRENT.endAt(), deleted ? null : "MORE_DIFFICULT", deleted ? null : "Helpful context", null,
 				version, NOW.minusSeconds(1000), NOW.minusSeconds(500), deleted ? NOW : null);
+	}
+
+	private StoredSelfReport report(long version, boolean deleted, Checklist checklist) {
+		var source = report(version, deleted);
+		return new StoredSelfReport(source.id(), source.userId(), source.idempotencyKey(), source.requestHash(),
+				source.sourceVersion(), source.periodStart(), source.periodEnd(), source.currentExperience(), source.helpfulContext(),
+				source.difficultContext(), source.version(), source.authoredAt(), source.updatedAt(), source.deletedAt(), checklist);
+	}
+
+	private Checklist checklist(String... codes) {
+		return ReassessmentSymptomCatalog.accept(ReassessmentSymptomCatalog.normalize(new Selection(
+				ReassessmentSymptomCatalog.CATALOG_REVISION, List.of(codes))));
+	}
+
+	private ReassessmentSummaryView summaryWithChecklist(Checklist checklist) {
+		var original = summary(true);
+		var source = original.selfReportedExperience().source();
+		var report = new ExplicitSelfReport(source.selfReportId(), source.sourceVersion(), source.sourceRevision(),
+				source.currentPeriod(), source.currentExperience(), source.helpfulContext(), source.difficultContext(),
+				source.authoredAt(), source.updatedAt(), checklist, ReassessmentSymptomCatalog.reasons(checklist));
+		return new ReassessmentSummaryView(original.summaryId(), original.summaryVersion(), original.composedAt(),
+				original.previousPeriod(), original.currentPeriod(), original.screening(), original.journalContext(),
+				original.supportPlanEngagement(), new SelfReportedExperienceDimension("AVAILABLE", null, report),
+				original.activityReflection(), original.userReflection(), original.disclaimerCode());
 	}
 
 	private EngagementEvidence engagement(UUID id, long version, String barrier) {

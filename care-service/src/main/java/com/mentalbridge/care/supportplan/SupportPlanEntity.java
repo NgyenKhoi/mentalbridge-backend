@@ -4,6 +4,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -29,6 +33,9 @@ class SupportPlanEntity {
 	private UUID personalizationId;
 	private Long personalizationRevision;
 	private String personalizationSchemaVersion;
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "jsonb")
+	private ReassessmentSymptomMapping checklistProvenance;
 	private String entitlementPackage;
 	private String entitlementSource;
 	private String entitlementPolicyVersion;
@@ -147,6 +154,13 @@ class SupportPlanEntity {
 	UUID personalizationId() { return personalizationId; }
 	Long personalizationRevision() { return personalizationRevision; }
 	String personalizationSchemaVersion() { return personalizationSchemaVersion; }
+	ReassessmentSymptomMapping checklistProvenance() { return checklistProvenance; }
+	void snapshotChecklist(ReassessmentSymptomMapping mapping) {
+		if (modelVersion != 3 || !"DRAFT".equals(status) || checklistProvenance != null) {
+			throw new IllegalStateException("Checklist provenance is immutable on a native draft");
+		}
+		checklistProvenance = mapping;
+	}
 	String entitlementPackage() { return entitlementPackage; }
 	String entitlementSource() { return entitlementSource; }
 	String entitlementPolicyVersion() { return entitlementPolicyVersion; }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Care API
-  version: 1.11.0
+  version: 1.12.0
   description: |
     V1 contracts for the Care-owned profile, platform consent, and PHQ-9 foundation.
     Profile, consent, questionnaire, and assessment paths are implemented. Assessment
@@ -909,7 +909,13 @@ paths:
       tags: [Reassessment summary]
       operationId: createOwnReassessmentSelfReport
       summary: Record explicit current-period reassessment experience
-      description: Creates one owner-authored, non-diagnostic self-report for a bounded current comparison period. Optional context is private Care-owned evidence and is never inferred from Journal or SupportPlan activity.
+      description: |
+        Creates one owner-authored, non-diagnostic self-report for a bounded current
+        comparison period. Optional context and checklist are private Care evidence,
+        never inferred from Journal, screening or activity. Omitted symptomChecklist
+        preserves the legacy request identity; explicit selectedCodes [] records an
+        empty selection and never means no symptoms. Reordered code sets replay
+        identically. Exact recorded replay precedes current-catalog validation.
       security:
         - bearerAuth: []
       parameters:
@@ -920,6 +926,9 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ReassessmentSelfReportCreateRequest" }
+            examples:
+              LegacyWithoutChecklist: { $ref: '#/components/examples/LegacySelfReportCreate' }
+              SelectedSymptoms: { $ref: '#/components/examples/SymptomSelfReportCreate' }
       responses:
         "201":
           description: Created self-report or identical idempotent replay
@@ -929,10 +938,33 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReassessmentSelfReport" }
-        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "400": { $ref: "#/components/responses/ReassessmentSymptomValidationProblem" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
-        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "409": { $ref: "#/components/responses/ReassessmentSymptomConflictProblem" }
+  /api/v1/reassessment-self-reports/catalog:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Reassessment summary]
+      operationId: getReassessmentSymptomCatalog
+      summary: Read the approved optional reassessment symptom checklist
+      description: USER-only local immutable catalog. Mapping references are candidates, never an assertion of current Content eligibility or a clinical assessment.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Approved catalog and pinned deterministic mapping revision
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReassessmentSymptomCatalog' }
+              examples:
+                ApprovedCatalog: { $ref: '#/components/examples/ReassessmentSymptomCatalog' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
   /api/v1/reassessment-self-reports/current:
     x-mentalbridge-status: implemented
     get:
@@ -966,6 +998,7 @@ paths:
       tags: [Reassessment summary]
       operationId: replaceOwnReassessmentSelfReport
       summary: Replace the mutable response for one owned self-report
+      description: Omitted symptomChecklist preserves the existing checklist for older clients. A present checklist replaces it atomically with the experience and contexts; selectedCodes [] explicitly clears selections under the submitted catalog revision. Unsupported revisions return REASSESSMENT_SYMPTOM_CATALOG_UNSUPPORTED.
       security:
         - bearerAuth: []
       parameters:
@@ -978,6 +1011,8 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ReassessmentSelfReportReplaceRequest" }
+            examples:
+              ClearSelections: { $ref: '#/components/examples/EmptySymptomSelfReportReplace' }
       responses:
         "200":
           description: Replaced self-report
@@ -986,16 +1021,17 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReassessmentSelfReport" }
-        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "400": { $ref: "#/components/responses/ReassessmentSymptomValidationProblem" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
         "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ReassessmentSymptomConflictProblem" }
         "412": { $ref: "#/components/responses/VersionProblem" }
     delete:
       tags: [Reassessment summary]
       operationId: deleteOwnReassessmentSelfReport
       summary: Delete mutable self-report content
-      description: Clears the categorical response and optional contexts while retaining a minimal owner/version/period tombstone. Existing immutable summary snapshots remain unchanged; the deleted source is unavailable to future composition.
+      description: Clears the categorical response, optional contexts, checklist codes and catalog revision while retaining a minimal owner/version/period tombstone. Existing immutable summary snapshots remain unchanged; the deleted source is unavailable to future composition and cannot be resurrected.
       security:
         - bearerAuth: []
       parameters:
@@ -2206,6 +2242,8 @@ paths:
         locks. The owner transaction rechecks the draft version and preferences,
         activates the plan/actions and cadence atomically, and records retry
         identity in the existing command ledger. No second current plan is allowed.
+        A checklist-bound draft requires adaptive-review/confirm and returns 409
+        ADAPTIVE_REVIEW_CONFIRM_REQUIRED here after exact recorded ledger replay.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/SupportPlanId'
@@ -2345,6 +2383,8 @@ paths:
         Old v2 rows/identities/history are retained, not converted or dual-written.
         An unchanged action intent cannot replace the current valid plan. Identical
         command retries do not create another activation or completion fact.
+        A checklist-bound draft requires adaptive-review/confirm and returns 409
+        ADAPTIVE_REVIEW_CONFIRM_REQUIRED here after exact recorded ledger replay.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/SupportPlanId'
@@ -3205,6 +3245,89 @@ components:
       description: Strong ETag containing the current preference revision; zero means no saved revision
       schema: { type: string, pattern: '^"[0-9]+"$' }
   examples:
+    LegacySelfReportCreate:
+      summary: Legacy client omits checklist and retains its original request identity
+      value:
+        currentPeriod: { startAt: '2026-10-23T00:00:00Z', endAt: '2026-11-06T00:00:00Z' }
+        currentExperience: UNSURE
+    SymptomSelfReportCreate:
+      summary: Explicit self-reported selections in the same bounded period
+      value:
+        currentPeriod: { startAt: '2026-10-23T00:00:00Z', endAt: '2026-11-06T00:00:00Z' }
+        currentExperience: UNSURE
+        symptomChecklist:
+          catalogRevision: reassessment-symptoms-v1
+          selectedCodes: [SLEEP_DIFFICULTY, PERSISTENT_WORRY]
+    EmptySymptomSelfReportReplace:
+      summary: Explicitly clear selections without claiming absence of symptoms
+      value:
+        currentExperience: UNSURE
+        symptomChecklist:
+          catalogRevision: reassessment-symptoms-v1
+          selectedCodes: []
+    ReassessmentSymptomCatalog:
+      summary: Approved immutable Vietnamese catalog, local lookup only
+      value:
+        catalogRevision: reassessment-symptoms-v1
+        mappingRevision: reassessment-symptom-resource-map-v1
+        maxSelections: 8
+        items:
+          - { code: SLEEP_DIFFICULTY, label: Khó ngủ hoặc giấc ngủ bị gián đoạn }
+          - { code: LOW_ENERGY, label: Thiếu năng lượng cho việc thường ngày }
+          - { code: PERSISTENT_WORRY, label: Lo lắng lặp đi lặp lại }
+          - { code: LOW_MOOD, label: Buồn hoặc ít hứng thú với việc thường thích }
+          - { code: CONCENTRATION_DIFFICULTY, label: Khó tập trung vào việc đang làm }
+          - { code: APPETITE_CHANGE, label: Ăn uống thay đổi so với thường ngày }
+          - { code: SOCIAL_WITHDRAWAL, label: Ít muốn gặp gỡ hoặc trò chuyện }
+          - { code: STRESS_OVERLOAD, label: Cảm thấy căng thẳng hoặc quá tải }
+    AdmittedWorryAdaptiveReviewOption:
+      summary: Fixture-only exact admitted worry alternative; no live publication claim
+      value:
+        optionId: symptom-anxiety-maintenance-worry-fixture
+        kind: ALTERNATIVE_ACTION
+        executionKind: PREPARE_REPLACEMENT
+        actionId: 65010000-0000-4000-8000-000000000071
+        focusId: anxiety-focus
+        rationaleCodes: [SELF_REPORTED_SYMPTOM_MATCH]
+        evidenceRefs: [{ source: SELF_REPORTED_EXPERIENCE, refId: 65010000-0000-4000-8000-000000000081 }]
+        conflictingEvidenceRefs: []
+        changes: [{ field: ACTION, before: Current admitted activity, after: Dành một khoảng thời gian riêng cho nỗi lo }]
+        symptomMapping:
+          reassessmentSummaryId: 65010000-0000-4000-8000-000000000001
+          selfReportId: 65010000-0000-4000-8000-000000000081
+          selfReportRevision: 1
+          currentPeriod: { startAt: '2026-10-23T00:00:00Z', endAt: '2026-11-06T00:00:00Z' }
+          catalogRevision: reassessment-symptoms-v1
+          mappingRevision: reassessment-symptom-resource-map-v1
+          selectedCodes: [PERSISTENT_WORRY]
+          resourceReasons:
+            - code: PERSISTENT_WORRY
+              slotId: anxiety-maintenance
+              resourceId: 00000000-0000-4000-8000-000000000211
+              contentVersion: '0'
+              publicationId: 65010000-0000-4000-8000-000000000211
+              role: PRIMARY
+              eligibilityPolicyVersion: content-eligibility-v1
+              reasonCode: SELF_REPORTED_SYMPTOM_MATCH
+    DuplicateSymptomSelectionProblem:
+      summary: Safe duplicate field violation without echoing private selections
+      value:
+        type: /problems/validation-failed
+        title: Request validation failed
+        status: 400
+        code: VALIDATION_FAILED
+        correlationId: 65010000-0000-4000-8000-000000000099
+        violations: [{ field: symptomChecklist.selectedCodes, code: INVALID_VALUE }]
+    UnsupportedSymptomCatalogProblem:
+      summary: Unsupported catalog revision conflicts without changing stored evidence
+      value:
+        type: /problems/reassessment-symptom-catalog-unsupported
+        title: Reassessment symptom catalog unsupported
+        status: 409
+        code: REASSESSMENT_SYMPTOM_CATALOG_UNSUPPORTED
+        correlationId: 65010000-0000-4000-8000-000000000099
+    LegacyReassessmentSummary:
+      $ref: '#/components/examples/ContradictoryReassessmentSummary'
     ContradictoryReassessmentSummary:
       summary: A lower PHQ-9 score coexists with more-frequent journal stress and a reported barrier
       value:
@@ -4297,6 +4420,104 @@ components:
       type: string
       enum: [BETTER, ABOUT_THE_SAME, MORE_DIFFICULT, UNSURE]
       description: Non-diagnostic comparison of how the current period has felt to the user.
+    ReassessmentSymptomCode:
+      type: string
+      enum: [SLEEP_DIFFICULTY, LOW_ENERGY, PERSISTENT_WORRY, LOW_MOOD,
+        CONCENTRATION_DIFFICULTY, APPETITE_CHANGE, SOCIAL_WITHDRAWAL, STRESS_OVERLOAD]
+    ReassessmentSymptomCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [code, label]
+      properties:
+        code: { $ref: '#/components/schemas/ReassessmentSymptomCode' }
+        label: { type: string, minLength: 1, maxLength: 160 }
+    ReassessmentSymptomCatalog:
+      type: object
+      additionalProperties: false
+      description: Immutable eight-item bundle approved 2026-11-06. This local catalog makes no resource eligibility or diagnostic claim.
+      required: [catalogRevision, mappingRevision, maxSelections, items]
+      properties:
+        catalogRevision: { type: string, minLength: 1, maxLength: 128 }
+        mappingRevision: { type: string, minLength: 1, maxLength: 128 }
+        maxSelections: { type: integer, const: 8 }
+        items:
+          type: array
+          minItems: 8
+          maxItems: 8
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ReassessmentSymptomCatalogItem' }
+    ReassessmentSymptomChecklist:
+      type: object
+      additionalProperties: false
+      description: Explicit optional self-report evidence. Empty selections never imply absence of symptoms. The released reassessment-symptoms-v1 bundle pins reassessment-symptom-resource-map-v1; unsupported submitted revisions return 409 rather than schema rejection. Codes are exact and case sensitive; duplicates, unknown or null elements and more than eight selections fail validation before sorting.
+      required: [catalogRevision, selectedCodes]
+      properties:
+        catalogRevision: { type: string, minLength: 1, maxLength: 128, pattern: '\S' }
+        mappingRevision:
+          type: string
+          readOnly: true
+          minLength: 1
+          maxLength: 128
+          description: Care-authored pinned mapping revision, retained even for explicit empty selections. Clients submit only catalogRevision and selectedCodes.
+        selectedCodes:
+          type: array
+          minItems: 0
+          maxItems: 8
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ReassessmentSymptomCode' }
+    ReassessmentSymptomSelectionReason:
+      type: object
+      additionalProperties: false
+      description: One frozen candidate reason per selected code, never an eligible-resource offer. A code without an approved mapping has empty resourceIds.
+      required: [code, resourceIds, reasonCode, mappingRevision]
+      properties:
+        code: { $ref: '#/components/schemas/ReassessmentSymptomCode' }
+        resourceIds:
+          type: array
+          minItems: 0
+          maxItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        reasonCode: { type: string, enum: [SELF_REPORTED_SYMPTOM_MATCH, NO_APPROVED_RESOURCE_MAPPING] }
+        mappingRevision: { type: string, minLength: 1, maxLength: 128 }
+    ReassessmentSymptomResourceReason:
+      type: object
+      additionalProperties: false
+      description: An actually admitted selected resource with the exact Content tuple and Care slot context. Several selected codes may explain one deduplicated resource.
+      required: [code, slotId, resourceId, contentVersion, publicationId, role, eligibilityPolicyVersion, reasonCode]
+      properties:
+        code: { $ref: '#/components/schemas/ReassessmentSymptomCode' }
+        slotId: { type: string, minLength: 1, maxLength: 128 }
+        resourceId: { type: string, format: uuid }
+        contentVersion: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$', maxLength: 19 }
+        publicationId: { type: string, format: uuid }
+        role: { type: string, enum: [PRIMARY, ADJUNCT] }
+        eligibilityPolicyVersion: { type: string, minLength: 1, maxLength: 128 }
+        reasonCode: { type: string, const: SELF_REPORTED_SYMPTOM_MATCH }
+    ReassessmentSymptomMapping:
+      type: object
+      additionalProperties: false
+      description: Owner-only native-v3 mapping provenance. Complete sorted selections and exact admitted reasons bind the review fingerprint and confirmed draft; historical values are never hydrated from mutable sources. Omitted for historical plans, v2 adapters and options without an accepted checklist mapping.
+      required: [reassessmentSummaryId, selfReportId, selfReportRevision, currentPeriod,
+        catalogRevision, mappingRevision, selectedCodes, resourceReasons]
+      properties:
+        reassessmentSummaryId: { type: string, format: uuid }
+        selfReportId: { type: string, format: uuid }
+        selfReportRevision: { type: integer, format: int64, minimum: 0 }
+        currentPeriod: { $ref: '#/components/schemas/ReassessmentPeriod' }
+        catalogRevision: { type: string, minLength: 1, maxLength: 128 }
+        mappingRevision: { type: string, minLength: 1, maxLength: 128 }
+        selectedCodes:
+          type: array
+          minItems: 0
+          maxItems: 8
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ReassessmentSymptomCode' }
+        resourceReasons:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { $ref: '#/components/schemas/ReassessmentSymptomResourceReason' }
     ReassessmentSelfReportCreateRequest:
       type: object
       additionalProperties: false
@@ -4304,6 +4525,9 @@ components:
       properties:
         currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
         currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        symptomChecklist:
+          description: Omission means no checklist; a present empty selection records explicit empty evidence under its catalog revision.
+          allOf: [{ $ref: '#/components/schemas/ReassessmentSymptomChecklist' }]
         helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
         difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
     ReassessmentSelfReportReplaceRequest:
@@ -4312,6 +4536,9 @@ components:
       required: [currentExperience]
       properties:
         currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        symptomChecklist:
+          description: Omission preserves the existing checklist. A present checklist atomically replaces it; selectedCodes [] clears selections. Explicit null is invalid.
+          allOf: [{ $ref: '#/components/schemas/ReassessmentSymptomChecklist' }]
         helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
         difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
     ReassessmentSelfReport:
@@ -4323,6 +4550,12 @@ components:
         sourceVersion: { type: string, const: reassessment-self-report-v1 }
         currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
         currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        symptomChecklist: { $ref: '#/components/schemas/ReassessmentSymptomChecklist' }
+        symptomSelectionReasons:
+          type: array
+          maxItems: 8
+          description: Candidate references only. Both checklist fields are omitted when no checklist was supplied.
+          items: { $ref: '#/components/schemas/ReassessmentSymptomSelectionReason' }
         helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
         difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
         version: { type: integer, format: int64, minimum: 0 }
@@ -4502,6 +4735,12 @@ components:
         sourceRevision: { type: integer, format: int64, minimum: 0 }
         currentPeriod: { $ref: "#/components/schemas/ReassessmentPeriod" }
         currentExperience: { $ref: "#/components/schemas/ReassessmentCurrentExperience" }
+        symptomChecklist: { $ref: '#/components/schemas/ReassessmentSymptomChecklist' }
+        symptomSelectionReasons:
+          type: array
+          maxItems: 8
+          description: Frozen alongside the exact report revision and period; no current catalog, source or Content hydration on historical reads. Omitted with symptomChecklist for old snapshots.
+          items: { $ref: '#/components/schemas/ReassessmentSymptomSelectionReason' }
         helpfulContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
         difficultContext: { type: [string, "null"], minLength: 1, maxLength: 500 }
         authoredAt: { type: string, format: date-time }
@@ -5924,6 +6163,7 @@ components:
         discardedAt, disclaimerCode, disclaimer]
       properties:
         supportPlanId: { type: string, format: uuid }
+        symptomMapping: { $ref: '#/components/schemas/ReassessmentSymptomMapping' }
         modelVersion: { type: integer, const: 3 }
         planPolicyVersion:
           type: string
@@ -6479,6 +6719,7 @@ components:
       required: [optionId, kind, executionKind, actionId, focusId, rationaleCodes, evidenceRefs,
         conflictingEvidenceRefs, changes]
       properties:
+        symptomMapping: { $ref: '#/components/schemas/ReassessmentSymptomMapping' }
         optionId:
           type: string
           minLength: 1
@@ -7102,6 +7343,20 @@ components:
               code: { type: string }
               message: { type: string }
   responses:
+    ReassessmentSymptomValidationProblem:
+      description: VALIDATION_FAILED for invalid shape, explicit null, duplicate, unknown or more than eight symptom codes. Safe field violations never echo private codes or context; nothing is written.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            DuplicateSelection: { $ref: '#/components/examples/DuplicateSymptomSelectionProblem' }
+    ReassessmentSymptomConflictProblem:
+      description: REASSESSMENT_SYMPTOM_CATALOG_UNSUPPORTED for an unsupported/stale submitted catalog or IDEMPOTENCY_KEY_REUSED for different normalized POST content. Exact recorded replay is resolved before current-catalog validation; nothing new is written on conflict.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            UnsupportedCatalog: { $ref: '#/components/examples/UnsupportedSymptomCatalogProblem' }
     "VoiceProblem401":
       "description": "Stable sanitized errors: UNAUTHENTICATED. No downstream payload or private identifiers."
       "headers":
@@ -7305,7 +7560,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanEligibilityProblem:
-      description: Current source facts cannot produce a bounded draft (SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_CORE_UNAVAILABLE, RESOURCE_VERSION_STALE, SUPPORT_PLAN_SAFETY_REVIEW_REQUIRED, SUPPORT_PLAN_TIME_BUDGET_INCOMPATIBLE, or SUPPORT_PLAN_DRAFT_EXISTS); no draft was created
+      description: Current source facts cannot produce a bounded draft (SUPPORT_EVALUATION_STALE, SUPPORT_PLAN_CORE_UNAVAILABLE, RESOURCE_VERSION_STALE, SUPPORT_PLAN_SAFETY_REVIEW_REQUIRED, SUPPORT_PLAN_TIME_BUDGET_INCOMPATIBLE, or SUPPORT_PLAN_DRAFT_EXISTS), or direct native replacement targets a checklist-bound draft (ADAPTIVE_REVIEW_CONFIRM_REQUIRED); no change was applied
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -7340,7 +7595,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanActivationConflictProblem:
-      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, uses a stale personalization revision (SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED), or fails current policy or eligibility
+      description: The activation command reuses a key differently, targets a non-draft, conflicts with another current plan, uses a stale personalization revision (SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED), bypasses mandatory adaptive confirmation of a checklist-bound native draft (ADAPTIVE_REVIEW_CONFIRM_REQUIRED), or fails current policy or eligibility
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
