@@ -8,6 +8,7 @@ import {
   HttpException,
   Inject,
   Injectable,
+  Logger,
   Module,
   NotFoundException,
   Param,
@@ -85,9 +86,43 @@ const CLOCK = "COMPANION_CHAT_CLOCK";
 
 const uuid = z.uuid();
 const idempotencyKey = z.string().min(16).max(128);
+const defaultConversationTitle = "Cuộc trò chuyện mới";
+const conversationTitleSchema = z
+  .string()
+  .trim()
+  .refine((title) => {
+    const length = Array.from(title).length;
+    return length >= 1 && length <= 80;
+  });
 const createConversationSchema = z
-  .object({ title: z.string().trim().min(1).max(80).optional() })
+  .object({ title: conversationTitleSchema.optional() })
   .strict();
+const renameTitleSchema = z.object({ title: conversationTitleSchema }).strict();
+const titleVersionSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
+const renameTitleResultSchema = z
+  .object({
+    conversationId: uuid,
+    title: conversationTitleSchema,
+    titleVersion: titleVersionSchema,
+  })
+  .strict();
+
+export const providerTitleInstruction =
+  "For this first TEXT reply only, include an optional title in the same JSON object: a short Vietnamese topic title, at most six words and 80 Unicode characters. Do not use crisis or diagnosis labels. This is display wording only, never a safety decision. Use null if no suitable title is available.";
+
+const normalizedProviderTitle = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const title = value.trim().replace(/\s+/gu, " ");
+  return conversationTitleSchema.safeParse(title).success &&
+    title.split(" ").length <= 6
+    ? title
+    : undefined;
+};
+
+const canInitializeTitle = (conversation: Conversation): boolean =>
+  conversation.messages.length === 0 &&
+  !Object.hasOwn(conversation, "encryptedTitle") &&
+  conversation.title === defaultConversationTitle;
 const sendMessageSchema = z
   .object({
     message: z.string().trim().min(1).max(2_000),
@@ -180,6 +215,7 @@ export interface Conversation {
   _id: string;
   ownerAccountId: string;
   title: string;
+  encryptedTitle?: EncryptedChatText;
   context: ConversationContext;
   messages: ChatMessage[];
   createdAt: Date;
@@ -206,6 +242,19 @@ export interface SendResult {
   contextKinds: ContextKind[];
   quota: QuotaSnapshot;
   suggestion: CompanionSuggestion | null;
+  title?: string;
+  titleVersion?: string;
+}
+
+export interface RenameTitleResult {
+  conversationId: string;
+  title: string;
+  titleVersion: string;
+}
+
+export interface RenameTitleOutcome {
+  operation: "RENAME_TITLE";
+  encryptedResult: EncryptedChatText;
 }
 
 export interface ChatCommand {
@@ -215,7 +264,7 @@ export interface ChatCommand {
   keyHash: string;
   fingerprint: string;
   state: "RUNNING" | "SUCCEEDED" | "FAILED";
-  response: SendResult | null;
+  response: SendResult | RenameTitleOutcome | null;
   failureCode: string | null;
   failureStatus: number | null;
   failureTitle: string | null;
@@ -242,6 +291,7 @@ export interface ProviderReply {
   outputTokens: number;
   usageSource?: "PROVIDER" | "ESTIMATED";
   suggestion?: ProviderSuggestion | null;
+  title?: string;
 }
 
 export const companionMaxOutputTokens = 2_000;
@@ -372,6 +422,7 @@ export interface ChatProvider {
       textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
       friend?: FriendInput;
+      requestTitle?: boolean;
     },
   ): Promise<ProviderReply>;
 }
@@ -466,6 +517,12 @@ export interface ChatRepository {
     result: SendResult,
     usedTokens: number,
     tokenBudget: number,
+    encryptedTitle?: EncryptedChatText,
+  ): Promise<void>;
+  renameTitle(
+    command: ChatCommand,
+    expected: Conversation,
+    encryptedTitle: EncryptedChatText,
   ): Promise<void>;
   fail(
     command: ChatCommand,
@@ -558,7 +615,103 @@ const nextLocalDay = (instant: Date, timezone: string): Date => {
 
 @Injectable()
 export class ChatCrypto {
+  private readonly logger = new Logger(ChatCrypto.name);
+
   constructor(private readonly configuration: ServiceConfiguration) {}
+
+  encryptTitle(owner: string, conversationId: string, title: string) {
+    return this.seal(`${owner}:${conversationId}:title`, title);
+  }
+
+  decryptTitle(
+    owner: string,
+    conversationId: string,
+    envelope: EncryptedChatText | undefined,
+  ) {
+    if (!envelope) throw new Error("Title encryption metadata is unavailable");
+    z.object({
+      algorithm: z.literal("AES-256-GCM"),
+      keyId: z.literal(this.configuration.JOURNAL_ENCRYPTION_KEY_ID),
+    }).parse(envelope);
+    const title = this.open(`${owner}:${conversationId}:title`, envelope);
+    if (Array.from(title).length > 80)
+      throw new Error("Title bounds are invalid");
+    conversationTitleSchema.parse(title);
+    return title;
+  }
+
+  titleVersion(conversation: ConversationSummary): string {
+    const bytes = (value: unknown): unknown =>
+      Buffer.isBuffer(value) || value instanceof Binary
+        ? buffer(value).toString("base64")
+        : value;
+    const envelope = conversation.encryptedTitle;
+    const state = Object.hasOwn(conversation, "encryptedTitle")
+      ? [
+          "encrypted",
+          envelope
+            ? [
+                envelope.algorithm,
+                envelope.keyId,
+                bytes(envelope.iv),
+                bytes(envelope.tag),
+                bytes(envelope.ciphertext),
+              ]
+            : envelope,
+        ]
+      : ["legacy", conversation.title];
+    return digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify([conversation.ownerAccountId, conversation._id, state]),
+    );
+  }
+
+  title(
+    conversation: ConversationSummary,
+  ): Pick<RenameTitleResult, "title" | "titleVersion"> {
+    let title = conversation.title;
+    if (Object.hasOwn(conversation, "encryptedTitle")) {
+      try {
+        title = this.decryptTitle(
+          conversation.ownerAccountId,
+          conversation._id,
+          conversation.encryptedTitle,
+        );
+      } catch {
+        this.logger.warn("CHAT_TITLE_DECRYPT_FAILED");
+        title = defaultConversationTitle;
+      }
+    }
+    return { title, titleVersion: this.titleVersion(conversation) };
+  }
+
+  encryptRenameResult(
+    owner: string,
+    conversationId: string,
+    commandId: string,
+    result: RenameTitleResult,
+  ) {
+    return this.seal(
+      `${owner}:${conversationId}:${commandId}:rename-title-result`,
+      JSON.stringify(result),
+    );
+  }
+
+  decryptRenameResult(
+    owner: string,
+    conversationId: string,
+    commandId: string,
+    envelope: EncryptedChatText,
+  ): RenameTitleResult {
+    return renameTitleResultSchema.parse(
+      JSON.parse(
+        this.open(
+          `${owner}:${conversationId}:${commandId}:rename-title-result`,
+          envelope,
+        ),
+      ),
+    );
+  }
 
   encrypt(
     owner: string,
@@ -718,6 +871,7 @@ export class MongoChatRepository
             _id: 1,
             ownerAccountId: 1,
             title: 1,
+            encryptedTitle: 1,
             context: 1,
             createdAt: 1,
             updatedAt: 1,
@@ -894,11 +1048,24 @@ export class MongoChatRepository
     result: SendResult,
     usedTokens: number,
     tokenBudget: number,
+    encryptedTitle?: EncryptedChatText,
   ) {
     await this.connect();
     const session = this.client.startSession();
     try {
       await session.withTransaction(async () => {
+        if (encryptedTitle)
+          await this.conversations.updateOne(
+            {
+              _id: command.conversationId,
+              ownerAccountId: command.ownerAccountId,
+              messages: { $size: 0 },
+              encryptedTitle: { $exists: false },
+              title: defaultConversationTitle,
+            },
+            { $set: { encryptedTitle, title: defaultConversationTitle } },
+            { session },
+          );
         const conversation = await this.conversations.updateOne(
           {
             _id: command.conversationId,
@@ -951,6 +1118,63 @@ export class MongoChatRepository
         );
         if (completed.modifiedCount !== 1)
           throw new Error("Atomic chat completion precondition failed");
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async renameTitle(
+    command: ChatCommand,
+    expected: Conversation,
+    encryptedTitle: EncryptedChatText,
+  ) {
+    await this.connect();
+    const expectedTitle = expected.encryptedTitle;
+    const session = this.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const updated = await this.conversations.updateOne(
+          {
+            _id: command.conversationId,
+            ownerAccountId: command.ownerAccountId,
+            expiresAt: { $gt: command.updatedAt },
+            ...(Object.hasOwn(expected, "encryptedTitle") &&
+            expectedTitle !== undefined
+              ? {
+                  encryptedTitle: {
+                    $exists: true,
+                    $eq: expectedTitle,
+                  },
+                }
+              : { encryptedTitle: { $exists: false }, title: expected.title }),
+          },
+          {
+            $set: {
+              encryptedTitle,
+              title: defaultConversationTitle,
+              updatedAt: command.updatedAt,
+            },
+          },
+          { session },
+        );
+        if (updated.matchedCount !== 1) {
+          const live = await this.conversations.findOne(
+            {
+              _id: command.conversationId,
+              ownerAccountId: command.ownerAccountId,
+              expiresAt: { $gt: command.updatedAt },
+            },
+            { session, projection: { _id: 1 } },
+          );
+          if (!live) throw new NotFoundException();
+          throw new ChatProblem(
+            412,
+            "CHAT_TITLE_VERSION_CONFLICT",
+            "Conversation title has changed",
+          );
+        }
+        await this.commands.insertOne(command, { session });
       });
     } finally {
       await session.endSession();
@@ -1380,6 +1604,7 @@ export class RoutedChatProvider implements ChatProvider {
       textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
       friend?: FriendInput;
+      requestTitle?: boolean;
     },
   ) {
     options?.signal?.throwIfAborted();
@@ -1409,14 +1634,29 @@ export class RoutedChatProvider implements ChatProvider {
         : {}),
       ...(friend ? { friend: true } : {}),
     });
+    const requestTitle = options?.requestTitle === true && !options.voice;
+    if (requestTitle) system += `\n${providerTitleInstruction}`;
     const input = companionUserInput({
       message: userMessage,
       context,
       ...(friend ? { friend } : {}),
     });
-    const outputJsonSchema = friend
+    const coreOutputJsonSchema = friend
       ? providerOutputJsonSchemaV2
       : providerOutputJsonSchema;
+    const outputJsonSchema = requestTitle
+      ? {
+          ...coreOutputJsonSchema,
+          required:
+            route.provider === "OPENAI"
+              ? [...coreOutputJsonSchema.required, "title"]
+              : coreOutputJsonSchema.required,
+          properties: {
+            ...coreOutputJsonSchema.properties,
+            title: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+        }
+      : coreOutputJsonSchema;
     const temperature = friend ? 0.7 : 0.2;
     const providerId: string = route.provider;
     let response: Response;
@@ -1668,7 +1908,17 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     }
-    // A malformed suggestion only drops the button; the v1 fields stay strict.
+    let title: string | undefined;
+    if (
+      !options?.voice &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { title: rawTitle, ...rest } = output as Record<string, unknown>;
+      title = normalizedProviderTitle(rawTitle);
+      output = rest;
+    }
     let suggestion: ProviderSuggestion | null = null;
     if (
       friend &&
@@ -1723,6 +1973,7 @@ export class RoutedChatProvider implements ChatProvider {
           }
         : {}),
       ...(friend ? { suggestion } : {}),
+      ...(title === undefined ? {} : { title }),
     };
   }
 }
@@ -1732,7 +1983,7 @@ const publicConversation = (
   conversation: Conversation,
 ) => ({
   conversationId: conversation._id,
-  title: conversation.title,
+  ...crypto.title(conversation),
   context: {
     sources: conversation.context.sources,
     updatedAt: conversation.context.updatedAt.toISOString(),
@@ -1758,9 +2009,12 @@ const publicConversation = (
   })),
 });
 
-const publicConversationSummary = (conversation: ConversationSummary) => ({
+const publicConversationSummary = (
+  crypto: ChatCrypto,
+  conversation: ConversationSummary,
+) => ({
   conversationId: conversation._id,
-  title: conversation.title,
+  ...crypto.title(conversation),
   createdAt: conversation.createdAt.toISOString(),
   updatedAt: conversation.updatedAt.toISOString(),
   expiresAt: conversation.expiresAt.toISOString(),
@@ -1794,7 +2048,7 @@ export class CompanionChatService {
     const conversation: Conversation = {
       _id: randomUUID(),
       ownerAccountId: owner,
-      title: body.data.title ?? "Cuộc trò chuyện mới",
+      title: defaultConversationTitle,
       context: {
         sources: emptySources(),
         updatedAt: now,
@@ -1806,6 +2060,12 @@ export class CompanionChatService {
         now.getTime() + this.configuration.CHAT_RETENTION_DAYS * 86_400_000,
       ),
     };
+    if (body.data.title !== undefined)
+      conversation.encryptedTitle = this.crypto.encryptTitle(
+        owner,
+        conversation._id,
+        body.data.title,
+      );
     await this.repository.createConversation(conversation);
     return publicConversation(this.crypto, conversation);
   }
@@ -1813,7 +2073,9 @@ export class CompanionChatService {
   async list(request: ChatRequest) {
     const owner = requestOwner(request);
     const rows = await this.repository.listConversations(owner);
-    return { items: rows.map(publicConversationSummary) };
+    return {
+      items: rows.map((row) => publicConversationSummary(this.crypto, row)),
+    };
   }
 
   async get(request: ChatRequest, conversationId: string) {
@@ -2013,6 +2275,7 @@ export class CompanionChatService {
       throw error;
     }
 
+    let delivered: SendResult;
     try {
       const correlationId = request.id ?? randomUUID();
       let authorization = await this.consent.snapshot(
@@ -2105,8 +2368,10 @@ export class CompanionChatService {
             ).history,
           };
       }
+      const requestTitle = canInitializeTitle(conversation);
       const estimate = estimateInputTokens(
-        companionGuidanceSystem({ channel: "TEXT", friend: !!friend }),
+        companionGuidanceSystem({ channel: "TEXT", friend: !!friend }) +
+          (requestTitle ? `\n${providerTitleInstruction}` : ""),
         companionUserInput({
           message: parsed.data.message,
           context: minimized,
@@ -2123,7 +2388,12 @@ export class CompanionChatService {
         parsed.data.message,
         minimized,
         route,
-        friend ? { friend } : undefined,
+        friend || requestTitle
+          ? {
+              ...(friend ? { friend } : {}),
+              ...(requestTitle ? { requestTitle: true } : {}),
+            }
+          : undefined,
       );
       const assistant = validatedAssistantMessage(reply.message, {
         rejectLinks: friend !== undefined,
@@ -2205,8 +2475,16 @@ export class CompanionChatService {
         { ...result, suggestion: null },
         tokens,
         tokenBudget,
+        requestTitle
+          ? this.crypto.encryptTitle(
+              owner,
+              conversationId,
+              normalizedProviderTitle(reply.title) ??
+                Array.from(parsed.data.message).slice(0, 40).join(""),
+            )
+          : undefined,
       );
-      return result;
+      delivered = result;
     } catch (error) {
       const failure = this.failure(
         error,
@@ -2227,6 +2505,180 @@ export class CompanionChatService {
           "Consent is unavailable",
         );
       throw new ChatProblem(503, failure.code, failure.title);
+    }
+    return this.withTitle(owner, delivered);
+  }
+
+  async rename(
+    request: ChatRequest,
+    conversationId: string,
+  ): Promise<RenameTitleResult> {
+    const owner = requestOwner(request);
+    const parsed = renameTitleSchema.safeParse(request.body);
+    const rawKey = idempotencyKey.safeParse(request.headers["idempotency-key"]);
+    const ifMatch = request.headers["if-match"];
+    if (
+      !uuid.safeParse(conversationId).success ||
+      !parsed.success ||
+      !rawKey.success ||
+      typeof ifMatch !== "string" ||
+      !/^"[A-Za-z0-9_-]{43}"$/u.test(ifMatch)
+    )
+      throw new BadRequestException();
+    const now = this.clock.now();
+    const keyHash = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      `rename-title:${rawKey.data}`,
+    );
+    const fingerprint = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify({
+        operation: "RENAME_TITLE",
+        conversationId,
+        title: parsed.data.title,
+        ifMatch,
+      }),
+    );
+    try {
+      const conversation = await this.repository.findConversation(
+        owner,
+        conversationId,
+      );
+      if (!conversation || conversation.expiresAt <= now)
+        throw new NotFoundException();
+      const previous = await this.repository.findCommand(owner, keyHash);
+      if (previous) return this.replayRename(previous, fingerprint);
+      if (`"${this.crypto.titleVersion(conversation)}"` !== ifMatch)
+        throw new ChatProblem(
+          412,
+          "CHAT_TITLE_VERSION_CONFLICT",
+          "Conversation title has changed",
+        );
+      const encryptedTitle = this.crypto.encryptTitle(
+        owner,
+        conversationId,
+        parsed.data.title,
+      );
+      const result: RenameTitleResult = {
+        conversationId,
+        title: parsed.data.title,
+        titleVersion: this.crypto.titleVersion({
+          ...conversation,
+          title: defaultConversationTitle,
+          encryptedTitle,
+        }),
+      };
+      const command: ChatCommand = {
+        _id: randomUUID(),
+        ownerAccountId: owner,
+        conversationId,
+        keyHash,
+        fingerprint,
+        state: "SUCCEEDED",
+        response: null,
+        failureCode: null,
+        failureStatus: null,
+        failureTitle: null,
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: conversation.expiresAt,
+      };
+      command.response = {
+        operation: "RENAME_TITLE",
+        encryptedResult: this.crypto.encryptRenameResult(
+          owner,
+          conversationId,
+          command._id,
+          result,
+        ),
+      };
+      await this.repository.renameTitle(command, conversation, encryptedTitle);
+      return result;
+    } catch (error) {
+      let completed: ChatCommand | null;
+      try {
+        completed = await this.repository.findCommand(owner, keyHash);
+        if (completed) {
+          const conversation = await this.repository.findConversation(
+            owner,
+            conversationId,
+          );
+          if (!conversation || conversation.expiresAt <= this.clock.now())
+            throw new NotFoundException();
+        }
+      } catch (recoveryError) {
+        if (recoveryError instanceof NotFoundException) throw recoveryError;
+        throw new ChatProblem(
+          503,
+          "CHAT_TITLE_UNAVAILABLE",
+          "Conversation title is unavailable",
+        );
+      }
+      if (completed) return this.replayRename(completed, fingerprint);
+      if (
+        error instanceof HttpException &&
+        [404, 409, 412].includes(error.getStatus())
+      )
+        throw error;
+      throw new ChatProblem(
+        503,
+        "CHAT_TITLE_UNAVAILABLE",
+        "Conversation title is unavailable",
+      );
+    }
+  }
+
+  private replayRename(
+    command: ChatCommand,
+    fingerprint: string,
+  ): RenameTitleResult {
+    if (command.fingerprint !== fingerprint)
+      throw new ChatProblem(
+        409,
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key was reused",
+      );
+    if (
+      command.state === "SUCCEEDED" &&
+      command.response &&
+      "operation" in command.response
+    ) {
+      try {
+        return this.crypto.decryptRenameResult(
+          command.ownerAccountId,
+          command.conversationId,
+          command._id,
+          command.response.encryptedResult,
+        );
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_TITLE_UNAVAILABLE",
+          "Conversation title is unavailable",
+        );
+      }
+    }
+    throw new ChatProblem(
+      503,
+      "CHAT_TITLE_UNAVAILABLE",
+      "Conversation title is unavailable",
+    );
+  }
+
+  private async withTitle(
+    owner: string,
+    result: SendResult,
+  ): Promise<SendResult> {
+    try {
+      const conversation = await this.repository.findConversation(
+        owner,
+        result.conversationId,
+      );
+      return conversation
+        ? { ...result, ...this.crypto.title(conversation) }
+        : result;
+    } catch {
+      return result;
     }
   }
 
@@ -2251,16 +2703,32 @@ export class CompanionChatService {
         "IDEMPOTENCY_KEY_REUSED",
         "Idempotency key was reused",
       );
-    if (command.state === "SUCCEEDED" && command.response) {
+    if (
+      command.state === "SUCCEEDED" &&
+      command.response &&
+      !("operation" in command.response)
+    ) {
       // The snapshot never holds the suggestion; restore it from the encrypted assistant message.
       const { assistantMessageId } = command.response;
-      const conversation = await this.repository.findConversation(
-        command.ownerAccountId,
-        command.conversationId,
-      );
+      let conversation: Conversation | null;
+      try {
+        conversation = await this.repository.findConversation(
+          command.ownerAccountId,
+          command.conversationId,
+        );
+      } catch {
+        return { ...command.response, suggestion: null };
+      }
       const message = conversation?.messages.find(
         (value) => value.messageId === assistantMessageId,
       );
+      let title: Partial<Pick<RenameTitleResult, "title" | "titleVersion">> =
+        {};
+      try {
+        if (conversation) title = this.crypto.title(conversation);
+      } catch {
+        title = {};
+      }
       return {
         ...command.response,
         suggestion: message
@@ -2270,6 +2738,7 @@ export class CompanionChatService {
               message,
             )
           : null,
+        ...title,
       };
     }
     if (command.state === "FAILED")
@@ -2359,6 +2828,19 @@ export class CompanionChatController {
   ) {
     response.setHeader("Cache-Control", "no-store");
     return this.service.updateContext(request, conversationId);
+  }
+
+  @Put(":conversationId/title")
+  async rename(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    const result = await this.service.rename(request, conversationId);
+    response.setHeader("ETag", `"${result.titleVersion}"`);
+    return result;
   }
 
   @Delete(":conversationId")

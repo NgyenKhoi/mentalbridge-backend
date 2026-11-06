@@ -143,6 +143,23 @@ personal. Memory excludes an entire pair with a disallowed kind before decryptio
 new message labels union actual fetched and retained-history kinds without
 rewriting historical labels or result provenance.
 
+MB-810's [ADR 0021 amendment](../../adr/0021-ai-companion-conversation-and-quota.md#mb-810-title-amendment--owner-decision-2026-11-06)
+adds optional `encryptedTitle`, using the existing AES-256-GCM envelope with
+owner/conversation/title-purpose AAD. Newly explicit, automatic and renamed
+titles are encrypted; mandatory `title` remains the neutral `Cuộc trò chuyện mới`
+on new title writes. Only documents without the envelope use their existing
+plaintext `title` as a legacy read fallback; a corrupt envelope reads neutral.
+The opaque HMAC `titleVersion` is derived from title state, never stored, and
+does not change when messages or context change. First-turn initialization is
+conditional on the persisted empty/default state; any encrypted title blocks it.
+
+The owner decision of 2026-11-06 authorizes migration
+`018_companion_conversation_title.cjs`: one strict/error validator-only `collMod`
+clones 017 and adds only the optional envelope. Existing documents, required
+fields and indexes remain unchanged. Deploy it before title-writing code;
+rollback refuses while any encrypted title exists and otherwise restores 017.
+There is no backfill, startup repair or shared-database execution authorization.
+
 ### AI Companion Command — ACTIVE
 
 Collection: `ai_companion_commands`
@@ -150,6 +167,15 @@ Collection: `ai_companion_commands`
 Key fields: owner and keyed idempotency identity, request fingerprint,
 conversation reference, lifecycle, quota reservation reference, and immutable
 success/failure response snapshot. Raw idempotency keys are not fields.
+
+MB-810 reuses this aggregate for completed title renames. The owner-scoped key
+hash is separated from send keys by the `rename-title:` prefix; its fingerprint
+binds operation, conversation, normalized title and precondition. A rename's
+result title is encrypted with owner/conversation/command/purpose AAD and keeps
+its original title version for exact replay, even after a later rename. The
+title update and completed command commit together. Send snapshots contain no
+new plaintext title copy: title metadata is hydrated from the current owned
+conversation and may be omitted together on read failure after success.
 
 ### AI Companion Daily Quota — ACTIVE
 

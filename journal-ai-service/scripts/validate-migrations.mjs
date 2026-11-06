@@ -252,6 +252,71 @@ assert.deepEqual(
   suggestionMessage.properties.suggestion,
   suggestionMessage.properties.content,
 );
+const titleMigration = require("../migrations/018_companion_conversation_title.cjs");
+assert.equal(typeof titleMigration.up, "function");
+assert.equal(typeof titleMigration.down, "function");
+const titleValidator = titleMigration.conversationValidator;
+assert.equal(
+  titleValidator.$jsonSchema.required.includes("encryptedTitle"),
+  false,
+);
+assert.deepEqual(
+  titleValidator.$jsonSchema.properties.encryptedTitle,
+  suggestionMessage.properties.content,
+);
+const previousValidator = structuredClone(titleValidator);
+delete previousValidator.$jsonSchema.properties.encryptedTitle;
+assert.deepEqual(previousValidator, suggestionMigration.conversationValidator);
+const titleCommands = [];
+const titleDatabase = {
+  command(value) {
+    titleCommands.push(value);
+    return Promise.resolve();
+  },
+  collection(name) {
+    assert.equal(name, "ai_companion_conversations");
+    return {
+      countDocuments(filter) {
+        assert.deepEqual(filter, { encryptedTitle: { $exists: true } });
+        return Promise.resolve(1);
+      },
+    };
+  },
+};
+await titleMigration.up({
+  command: titleDatabase.command,
+});
+assert.deepEqual(titleCommands, [
+  {
+    collMod: "ai_companion_conversations",
+    validator: titleValidator,
+    validationLevel: "strict",
+    validationAction: "error",
+  },
+]);
+titleCommands.length = 0;
+await assert.rejects(titleMigration.down(titleDatabase), /Cannot remove/u);
+assert.equal(titleCommands.length, 0);
+await titleMigration.down({
+  command: titleDatabase.command,
+  collection(name) {
+    assert.equal(name, "ai_companion_conversations");
+    return {
+      countDocuments(filter) {
+        assert.deepEqual(filter, { encryptedTitle: { $exists: true } });
+        return Promise.resolve(0);
+      },
+    };
+  },
+});
+assert.deepEqual(titleCommands, [
+  {
+    collMod: "ai_companion_conversations",
+    validator: suggestionMigration.conversationValidator,
+    validationLevel: "strict",
+    validationAction: "error",
+  },
+]);
 console.log(
-  "Validated Mongo migrations: 001 through 017_companion_message_suggestion.cjs",
+  "Validated Mongo migrations: 001 through 018_companion_conversation_title.cjs",
 );
