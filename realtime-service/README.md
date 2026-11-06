@@ -90,6 +90,10 @@ This setting affects only the disposable test container. It does not bypass
 MongoDB's startup guard, change production configuration, remove readiness
 checks or weaken the real MongoDB/Redis/Socket.IO integration assertions.
 
+The specialist notification integration loads the real Content owner's compiled
+modules. Install and build that sibling service before running integration tests;
+CI performs the same prerequisite in the Realtime job.
+
 ```powershell
 npm ci
 npm run dev
@@ -99,6 +103,8 @@ npm run typecheck
 npm test
 npm run contract:check
 npm run migration:check
+npm --prefix ../content-notification-service ci
+npm --prefix ../content-notification-service run build
 npm run test:integration
 npm run build
 npm start
