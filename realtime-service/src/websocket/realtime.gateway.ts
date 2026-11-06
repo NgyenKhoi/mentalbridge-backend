@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject } from '@nestjs/common';
+import { Inject, Optional } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -22,6 +22,8 @@ import type { AuthenticatedPrincipal } from '../security/principal.js';
 import { SocketCredentialService } from '../security/socket-credential.service.js';
 import { CONFIGURATION_TOKEN, METRICS_TOKEN } from '../shared/tokens.js';
 import { commandSchema, type RealtimeCommand } from './command.schema.js';
+import { SpecialistNotificationDelivery } from '../notifications/specialist-notification-delivery.js';
+import type { NotificationServerEvent } from '../notifications/notification-schema.js';
 
 interface SocketData {
   principal?: AuthenticatedPrincipal;
@@ -35,6 +37,7 @@ interface SocketData {
 interface ServerToClientEvents {
   'realtime.error': (payload: SocketAcknowledgement) => void;
   'realtime.event': (payload: unknown) => void;
+  'notification.created': (payload: NotificationServerEvent) => void;
 }
 
 type RealtimeSocket = Socket<
@@ -81,6 +84,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly messages: MessageService,
     @Inject(CONFIGURATION_TOKEN) private readonly configuration: ServiceConfiguration,
     @Inject(METRICS_TOKEN) private readonly metrics: RealtimeMetrics,
+    @Optional() private readonly notifications?: SpecialistNotificationDelivery,
   ) {}
 
   afterInit(server: Server): void {
@@ -141,9 +145,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         presence: result,
       },
     });
+    if (socket.connected) this.notifications?.add(socket);
   }
 
   async handleDisconnect(socket: RealtimeSocket): Promise<void> {
+    this.notifications?.remove(socket.id);
     this.rateWindows.delete(socket.id);
     if (socket.data.expiryTimer) clearTimeout(socket.data.expiryTimer);
     const principal = socket.data.principal;

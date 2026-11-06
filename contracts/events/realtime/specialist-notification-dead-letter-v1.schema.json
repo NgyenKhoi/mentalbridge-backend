@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/events/realtime/specialist-notification-dead-letter-v1.schema.json",
+  "title": "Realtime specialist notification dead letter v1",
+  "description": "Digest-only poison or retry-exhaustion diagnostics. No raw record, notification content or credential is retained.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "failedAt",
+    "sourceTopic",
+    "sourcePartition",
+    "sourceOffset",
+    "sourceMessageDigest",
+    "attempt",
+    "errorCode"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "failedAt": { "type": "string", "format": "date-time" },
+    "sourceTopic": {
+      "enum": [
+        "mentalbridge.content.notification-created.v1",
+        "mentalbridge.realtime.specialist-notification-retry.v1"
+      ]
+    },
+    "sourcePartition": { "type": "integer", "minimum": 0 },
+    "sourceOffset": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "sourceMessageDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "attempt": { "type": "integer", "minimum": 0, "maximum": 3 },
+    "errorCode": {
+      "enum": [
+        "INVALID_JSON",
+        "INVALID_EVENT",
+        "IDENTITY_MISMATCH",
+        "INVALID_RETRY_METADATA",
+        "TRANSIENT_RETRIES_EXHAUSTED"
+      ]
+    }
+  }
+}

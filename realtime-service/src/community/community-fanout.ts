@@ -111,11 +111,8 @@ export class CommunityFanout implements OnModuleInit, OnApplicationShutdown {
   async onApplicationShutdown(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
-    await Promise.allSettled([
-      this.consumer.disconnect(),
-      this.producer.disconnect(),
-      this.subscriber.isOpen ? this.subscriber.quit() : Promise.resolve(),
-    ]);
+    if (this.subscriber.isOpen) this.subscriber.destroy();
+    await Promise.allSettled([this.consumer.disconnect(), this.producer.disconnect()]);
   }
   private async start(): Promise<void> {
     if (this.starting || this.stopped) return;
