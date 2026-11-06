@@ -11,6 +11,63 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
+MB-800 extends Content OpenAPI to `1.12.0` with implemented
+`GET /internal/v1/notifications/{notificationId}/live-eligibility`. Realtime
+forwards the existing verified socket Identity bearer; Content admits only exact
+SPECIALIST ownership and current eligible inbox/preferences. The strict success
+body is only `{notificationId}`; absent, foreign and suppressed rows share
+`404 NOTIFICATION_NOT_FOUND`. All owner responses are private and not cached.
+Realtime OpenAPI `1.1.0` adds the optional `specialistNotifications` readiness
+property when that feature is enabled; it reports the independent Kafka
+consumer and Redis subscription as `connected` or `degraded` without changing
+MongoDB's durable readiness requirement.
+
+The closed `events/content/notification-created-v1.schema.json` creation fact
+(`schemaVersion: "1.0"`) follows Content's inbox commit through its transactional
+outbox onto `mentalbridge.content.notification-created.v1`, keyed by
+notificationId. Message/outbox id, source correlation/causation, occurrence,
+notification id and inserted aggregate version remain stable on retry; subsequent
+read/delete versions never rewrite creation identity. `payload` includes only
+notificationId, recipientAccountId, exact SPECIALIST recipientRole and expiresAt.
+The independent Realtime group is `realtime-specialist-notifications-v1`; its
+ephemeral Redis fan-out channel is
+`mentalbridge:realtime:specialist-notifications:v1`. Kafka ACK and Redis handoff
+never mean browser receipt; Content's `DELIVERED` remains inbox availability.
+
+Realtime owns `mentalbridge.realtime.specialist-notification-retry.v1` and
+`mentalbridge.realtime.specialist-notification-dead-letter.v1`. Retry body and key
+retain the validated creation event unchanged. UTF-8 `mb-retry-attempt` is decimal
+`1` through `3`; absence on main means `0`. UTF-8 `mb-not-before` is a UTC ISO
+date-time. Attempts 1/2/3 follow 1s/5s/30s delays, with partition pause/heartbeats;
+expiry suppresses instead. Source offset advances only after Redis publication
+or acknowledged retry/DLQ handoff. The closed
+`events/realtime/specialist-notification-dead-letter-v1.schema.json` (`1.0`)
+contains only schemaVersion, failedAt, sourceTopic/Partition/Offset, SHA-256 digest,
+attempt and safe errorCode. It forbids raw records, content and credentials.
+
+`websocket/realtime/notification-server-event-v1.schema.json` separately versions
+the numeric `schemaVersion: 1` event on the existing authenticated `/realtime`
+namespace under Socket.IO event **`notification.created`**. Its exact envelope is
+schemaVersion, eventId, eventType, correlationId, occurredAt and
+`payload: {notificationId}`. It adds no client command or room subscription and
+leaves the closed existing `realtime.event` chat/ready union unchanged. The stable
+eventId equals the outbox messageId. No recipient, role, copy, appointment
+reference, unread count, ACK or replay cursor crosses the socket boundary.
+
+On first `connection.ready` and every reconnect, MB-801 obtains fresh one-use
+credentials as needed and refetches inbox/list plus absolute unreadCount through
+the existing BFF/REST. Signals coalesce REST invalidation; clients deduplicate by
+eventId/notificationId, reset stale pagination and reconcile current read/delete
+state. They never increment counts or resurrect data directly from a signal.
+There is no replay guarantee. ngocquyen owns the MB-801 web consumer, account-switch
+cleanup and consumer tests; after provider merge, run `npm run contracts:sync`
+and `npm run contracts:check` from merged backend contracts before implementing.
+The accepted transport/outbox boundaries remain
+[ADR 0001](../docs/adr/0001-service-stacks-and-integration.md) and
+[ADR 0016](../docs/adr/0016-feature-scoped-kafka-and-opentelemetry.md); no new ADR
+or appointment v1/v2 change is introduced. The 40 legacy payloads without a
+specialist recipient are neither inferred, backfilled nor replayed.
+
 MB-808 extends Care OpenAPI to `1.12.0` with a local USER reassessment symptom
 catalog, optional coded checklist/candidate provenance and optional exact
 `symptomMapping` on native review options/plans. Named examples cover legacy,

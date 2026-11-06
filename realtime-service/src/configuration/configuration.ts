@@ -1,6 +1,10 @@
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 import {
+  specialistLiveConfiguration,
+  type SpecialistLiveConfiguration,
+} from '../notifications/specialist-live.configuration.js';
+import {
   communityConfiguration,
   type CommunityConfiguration,
 } from '../community/community-configuration.js';
@@ -192,6 +196,7 @@ const environmentSchema = z
 
 export type ServiceConfiguration = z.infer<typeof environmentSchema> & {
   readonly COMMUNITY: CommunityConfiguration;
+  readonly SPECIALIST_LIVE: SpecialistLiveConfiguration;
 };
 
 export const loadConfiguration = (
@@ -214,5 +219,6 @@ export const loadConfiguration = (
   return {
     ...environmentSchema.parse({ ...environment, ...localDefaults }),
     COMMUNITY: communityConfiguration(environment),
+    SPECIALIST_LIVE: specialistLiveConfiguration(environment),
   };
 };

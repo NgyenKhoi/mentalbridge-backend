@@ -61,7 +61,7 @@ describe('appointment status consumer', () => {
   });
 
   it('discards malformed and mismatched events without changing reminder state', async () => {
-    const { apply, consumer } = harness();
+    const { apply, materialize, consumer } = harness();
     await consumer.handle(Buffer.from('{'));
     await consumer.handle(Buffer.from(JSON.stringify({ ...event, schemaVersion: '3.0' })));
     await consumer.handle(
@@ -74,7 +74,16 @@ describe('appointment status consumer', () => {
       ),
     );
     await consumer.handle(Buffer.from(JSON.stringify({ ...event, aggregateId: event.messageId })));
+    await consumer.handle(
+      Buffer.from(
+        JSON.stringify({
+          ...event,
+          payload: { ...event.payload, specialistAccountId: 'invalid-specialist-id' },
+        }),
+      ),
+    );
     expect(apply).not.toHaveBeenCalled();
+    expect(materialize).not.toHaveBeenCalled();
   });
 
   it('propagates a temporary persistence failure so the event is not acknowledged', async () => {
@@ -83,5 +92,15 @@ describe('appointment status consumer', () => {
     await expect(consumer.handle(Buffer.from(JSON.stringify(event)))).rejects.toThrow(
       'database unavailable',
     );
+  });
+
+  it('propagates specialist inbox/outbox storage failure for transport retry', async () => {
+    const { apply, materialize, consumer } = harness();
+    materialize.mockRejectedValueOnce(new Error('synthetic live outbox failure'));
+    await expect(consumer.handle(Buffer.from(JSON.stringify(event)))).rejects.toThrow(
+      'synthetic live outbox failure',
+    );
+    expect(apply).toHaveBeenCalledOnce();
+    expect(materialize).toHaveBeenCalledOnce();
   });
 });

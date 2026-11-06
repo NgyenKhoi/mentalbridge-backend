@@ -115,6 +115,7 @@ describe('Database Integration', () => {
       '28_add_native_push_delivery.sql',
       '29_harden_native_push_delivery.sql',
       '30_add_appointment_push_reminders.sql',
+      '31_add_specialist_notification_live_outbox.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(

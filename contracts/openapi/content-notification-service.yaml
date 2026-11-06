@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content-Notification Service API
-  version: 1.11.0
+  version: 1.12.0
   description: >
     MentalBridge Content/Notification bounded context.
     Manages reviewed self-help resources, reviewed Vietnam safety-directory
@@ -1427,6 +1427,61 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /internal/v1/notifications/{notificationId}/live-eligibility:
+    x-mentalbridge-status: implemented
+    get:
+      x-mentalbridge-operation-status: implemented
+      tags: [Notification inbox]
+      summary: Revalidate one currently eligible specialist inbox notification
+      description: >
+        Realtime forwards the socket's existing Identity bearer. Only exact SPECIALIST
+        role is admitted; the owner comes exclusively from verified sub, never from
+        recipient input. The row must be owned by that SPECIALIST, APPOINTMENT kind,
+        CONSULTATION_APPOINTMENT_V1 source, DELIVERED, undeleted and unexpired, with
+        current master, in-app and appointment-group preferences enabled. Absent,
+        foreign or suppressed rows uniformly return 404 NOTIFICATION_NOT_FOUND.
+        Eligibility is authoritative at the owner query; subsequent concurrent changes
+        are reconciled through REST. This read supplies no socket receipt or replay.
+      operationId: getNotificationLiveEligibility
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Exact currently eligible notification pointer
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/NotificationLiveEligibility" }
+              example:
+                notificationId: "44444444-4444-4444-8444-444444444444"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Authenticated actor does not have exact SPECIALIST role
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404":
+          description: Absent, foreign or currently suppressed notification; NOTIFICATION_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+              example:
+                type: https://mentalbridge.io/errors/NOTIFICATION_NOT_FOUND
+                title: Notification not found
+                status: 404
+                code: NOTIFICATION_NOT_FOUND
+                correlationId: "22222222-2222-4222-8222-222222222222"
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503":
+          description: Current notification eligibility storage is unavailable or uncertain
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /api/v1/notifications:
     x-mentalbridge-status: implemented
     get:
@@ -1753,6 +1808,12 @@ components:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   schemas:
+    NotificationLiveEligibility:
+      type: object
+      additionalProperties: false
+      required: [notificationId]
+      properties:
+        notificationId: { type: string, format: uuid }
     NotificationKind:
       type: string
       enum:

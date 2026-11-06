@@ -1,5 +1,6 @@
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
 import { communityConfiguration } from '../../src/community/community-configuration.js';
+import { specialistLiveConfiguration } from '../../src/notifications/specialist-live.configuration.js';
 
 export const encryptionKey = Buffer.alloc(32, 7);
 
@@ -9,6 +10,7 @@ export const testConfiguration = (
 ): ServiceConfiguration => ({
   NODE_ENV: 'test',
   COMMUNITY: communityConfiguration(),
+  SPECIALIST_LIVE: specialistLiveConfiguration(),
   PORT: 3004,
   LOG_LEVEL: 'silent',
   SERVICE_NAME: 'realtime-service',

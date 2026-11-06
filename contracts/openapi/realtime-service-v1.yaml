@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Realtime API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     REST recovery and operational contract for Realtime Service. Socket.IO
     messages use the versioned JSON Schemas under contracts/websocket/realtime
@@ -59,11 +59,11 @@ paths:
     get:
       tags: [Operations]
       operationId: getRealtimeReadiness
-      summary: Check durable storage readiness and ephemeral Redis state
+      summary: Check durable storage readiness and enabled realtime transports
       security: []
       responses:
         "200":
-          description: MongoDB is ready; Redis may be connected or degraded
+          description: MongoDB is ready; Redis and enabled Kafka/Redis fanout transports may be connected or degraded
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Readiness" }
@@ -159,6 +159,7 @@ components:
         mongodb: { const: connected }
         redis: { type: string, enum: [connected, degraded] }
         community: { type: string, enum: [connected, degraded], description: Present only when Community realtime is enabled; includes Kafka and Redis fanout readiness. }
+        specialistNotifications: { type: string, enum: [connected, degraded], description: Present only when specialist live notifications are enabled; includes the independent Kafka consumer and Redis subscription readiness. }
     SocketCredential:
       type: object
       additionalProperties: false

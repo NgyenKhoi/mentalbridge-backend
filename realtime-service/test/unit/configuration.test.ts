@@ -20,6 +20,29 @@ describe('Realtime configuration', () => {
     expect(configuration.MONGODB_DATABASE).toBe('mentalbridge_realtime');
     expect(configuration.MESSAGE_ENCRYPTION_KEY).toHaveLength(32);
     expect(configuration.MESSAGE_DECRYPTION_KEYS['test-v1']).toHaveLength(32);
+    expect(configuration.SPECIALIST_LIVE).toEqual({
+      enabled: false,
+      baseUrl: '',
+      timeoutMs: 2000,
+      brokers: [],
+    });
+  });
+
+  it('enables specialist delivery independently of Community and parses its owner deadline', () => {
+    const configuration = loadConfiguration({
+      ...validEnvironment,
+      REALTIME_SPECIALIST_LIVE_ENABLED: 'true',
+      CONTENT_NOTIFICATION_SERVICE_URL: 'https://content.internal',
+      CONTENT_NOTIFICATION_TIMEOUT_MS: '750',
+      KAFKA_BOOTSTRAP_SERVERS: 'broker-a:9092, broker-b:9092',
+    });
+    expect(configuration.COMMUNITY.enabled).toBe(false);
+    expect(configuration.SPECIALIST_LIVE).toEqual({
+      enabled: true,
+      baseUrl: 'https://content.internal',
+      timeoutMs: 750,
+      brokers: ['broker-a:9092', 'broker-b:9092'],
+    });
   });
 
   it('uses explicit environment values instead of local defaults', () => {

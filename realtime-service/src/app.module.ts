@@ -14,6 +14,7 @@ import { RequestLoggingMiddleware } from './observability/request-logging.middle
 import { OperationsModule } from './operations/operations.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { WebsocketModule } from './websocket/websocket.module.js';
+import { SpecialistNotificationsModule } from './notifications/specialist-notifications.module.js';
 
 export interface ApplicationDependencies {
   readonly mongo?: MongoDatabaseService;
@@ -33,6 +34,7 @@ export class AppModule implements NestModule {
       imports: [
         PlatformModule.register(configuration, dependencies),
         OperationsModule.register(configuration.COMMUNITY.enabled),
+        ...(configuration.SPECIALIST_LIVE.enabled ? [SpecialistNotificationsModule] : []),
         WebsocketModule.register(dependencies.eligibility, dependencies.evidence),
       ],
     };
