@@ -3,7 +3,7 @@ import test from "node:test";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
-import { MongoClient } from "mongodb";
+import { BSON, MongoClient } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 
@@ -12,6 +12,7 @@ import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import { ConsentUnavailableError } from "../analysis/analysis.js";
 import {
   ChatCrypto,
+  MongoChatRepository,
   type ChatProvider,
   type Conversation,
 } from "./companion-chat.js";
@@ -23,6 +24,7 @@ const migrations = [
   require("../../migrations/010_ai_companion_chat_quotas.cjs"),
   require("../../migrations/012_ai_companion_conversation_context.cjs"),
   require("../../migrations/017_companion_message_suggestion.cjs"),
+  require("../../migrations/018_companion_conversation_title.cjs"),
 ] as { up(database: unknown): Promise<void> }[];
 
 void test("persists encrypted quota-governed AI Companion conversations with real MongoDB", async (t) => {
@@ -134,6 +136,8 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
   let providerFails = false;
   let replyOutputTokens = 10;
   let rendezvous: (() => void)[] | null = null;
+  let titleForMessage: ((message: string) => string) | null = null;
+  let pauseProvider: (() => Promise<void>) | null = null;
   const app = await createApplication(configuration, {
     readinessProbe: { check: () => Promise.resolve() },
     companionChat: {
@@ -194,11 +198,13 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
               waiting.push(release);
               if (waiting.length === 2) for (const resume of waiting) resume();
             });
+          if (pauseProvider) await pauseProvider();
           return {
             message: "Phản hồi tổng hợp được giới hạn.",
             inputTokens: 20,
             outputTokens: replyOutputTokens,
             suggestion: { destination: "RESOURCE", resourceRef: "R1" },
+            ...(titleForMessage ? { title: titleForMessage(input[0]) } : {}),
           };
         },
       },
@@ -668,6 +674,679 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
         },
       );
     }
+    await t.test(
+      "MB-810 title races, encrypted replay and lifecycle use real Mongo transactions",
+      async (t) => {
+        now = new Date("2026-11-06T00:00:00Z");
+        consentAuthorized = true;
+        contextAuthorized = true;
+        configuration.CHAT_FREE_DAILY_ANSWERS = 50;
+        configuration.CHAT_RATE_LIMIT_PER_MINUTE = 50;
+        plan = "FREE";
+        const conversations = database.collection<Conversation>(
+          "ai_companion_conversations",
+        );
+        const commands = database.collection<{
+          conversationId: string;
+          response: Record<string, unknown> | null;
+          state: string;
+          expiresAt: Date;
+        }>("ai_companion_commands");
+        const crypto = new ChatCrypto(configuration);
+        const create = async (title?: string) => {
+          const response = await request(server)
+            .post("/api/v1/ai-companion/conversations")
+            .set(authorization)
+            .send(title === undefined ? {} : { title })
+            .expect(201);
+          return response.body as {
+            conversationId: string;
+            title: string;
+            titleVersion: string;
+          };
+        };
+        const rename = (
+          id: string,
+          title: string,
+          version: string,
+          key: string,
+        ) =>
+          request(server)
+            .put(`/api/v1/ai-companion/conversations/${id}/title`)
+            .set(authorization)
+            .set("If-Match", `"${version}"`)
+            .set("Idempotency-Key", key)
+            .send({ title });
+        const send = (id: string, key: string, message: string) =>
+          request(server)
+            .post(`/api/v1/ai-companion/conversations/${id}/messages`)
+            .set(authorization)
+            .set("Idempotency-Key", key)
+            .send({ message });
+        const stored = async (id: string) => {
+          const value = await conversations.findOne({
+            _id: id,
+            ownerAccountId: ownerId,
+          });
+          assert.ok(value);
+          return value;
+        };
+
+        await t.test(
+          "two first sends initialize one encrypted title and settle both answers once",
+          async () => {
+            const created = await create();
+            const id = created.conversationId;
+            titleForMessage = (message) =>
+              `Synthetic topic ${message.slice(-1)}`;
+            const callsBefore = providerInputs.length;
+            rendezvous = [];
+            const results = await Promise.all([
+              send(id, "mb810-first-race-send-a", "Synthetic first turn A"),
+              send(id, "mb810-first-race-send-b", "Synthetic first turn B"),
+            ]);
+            rendezvous = null;
+            assert.deepEqual(
+              results.map((value) => value.status),
+              [201, 201],
+            );
+            assert.equal(providerInputs.length - callsBefore, 2);
+            const conversation = await stored(id);
+            assert.equal(conversation.messages.length, 4);
+            assert.equal(conversation.title, "Cuộc trò chuyện mới");
+            assert.ok(conversation.encryptedTitle);
+            const title = crypto.decryptTitle(
+              ownerId,
+              id,
+              conversation.encryptedTitle,
+            );
+            const firstUser = conversation.messages.find(
+              (message) => message.role === "USER",
+            );
+            assert.ok(firstUser);
+            assert.equal(
+              title,
+              titleForMessage(crypto.decrypt(ownerId, id, firstUser)),
+            );
+            const titleState = BSON.serialize(conversation.encryptedTitle);
+            const commandRows = await commands
+              .find({ conversationId: id })
+              .toArray();
+            assert.equal(commandRows.length, 2);
+            assert.ok(commandRows.every((row) => row.state === "SUCCEEDED"));
+            for (const row of commandRows) {
+              assert.ok(row.response);
+              assert.equal("title" in row.response, false);
+              assert.equal("titleVersion" in row.response, false);
+            }
+            const ledger = await database
+              .collection<{
+                successfulAnswers: number;
+                reservations: string[];
+              }>("ai_companion_quota_ledgers")
+              .findOne({ ownerAccountId: ownerId, localDate: "2026-11-06" });
+            assert.equal(ledger?.successfulAnswers, 2);
+            assert.deepEqual(ledger.reservations, []);
+            titleForMessage = () => "Unwanted later title";
+            await send(
+              id,
+              "mb810-later-send-stable",
+              "Synthetic later turn",
+            ).expect(201);
+            const later = await stored(id);
+            assert.ok(later.encryptedTitle);
+            assert.deepEqual(BSON.serialize(later.encryptedTitle), titleState);
+            assert.equal(
+              crypto.titleVersion(later),
+              crypto.titleVersion(conversation),
+            );
+            const serialized = JSON.stringify({
+              conversation: later,
+              commands: await commands.find({ conversationId: id }).toArray(),
+            });
+            for (const text of [
+              "Synthetic topic A",
+              "Synthetic topic B",
+              "Synthetic first turn",
+              "Unwanted later title",
+            ])
+              assert.equal(serialized.includes(text), false);
+          },
+        );
+
+        await t.test(
+          "manual rename commits while the first send waits and cannot be overwritten",
+          async () => {
+            now = new Date("2026-11-07T00:00:00Z");
+            const created = await create();
+            const id = created.conversationId;
+            titleForMessage = () => "Discarded automatic synthetic title";
+            let entered: () => void = () => undefined;
+            let resume: () => void = () => undefined;
+            const dispatched = new Promise<void>((resolve) => {
+              entered = resolve;
+            });
+            const released = new Promise<void>((resolve) => {
+              resume = resolve;
+            });
+            pauseProvider = () => {
+              entered();
+              return released;
+            };
+            const pending = send(
+              id,
+              "mb810-send-before-manual-rename",
+              "Synthetic held first turn",
+            ).then((response) => response);
+            await dispatched;
+            const before = await stored(id);
+            const ledgerBefore = await database
+              .collection("ai_companion_quota_ledgers")
+              .findOne({ ownerAccountId: ownerId, localDate: "2026-11-07" });
+            const callsBefore = providerInputs.length;
+            const ratesBefore = await database
+              .collection("ai_companion_rate_ledgers")
+              .find({ ownerAccountId: ownerId })
+              .toArray();
+            consentAuthorized = false;
+            let renamed;
+            try {
+              renamed = await rename(
+                id,
+                "Private manual synthetic title",
+                created.titleVersion,
+                "mb810-manual-during-first-send",
+              ).expect(200);
+              assert.equal((await stored(id)).messages.length, 0);
+              assert.deepEqual(
+                await database
+                  .collection("ai_companion_quota_ledgers")
+                  .findOne({
+                    ownerAccountId: ownerId,
+                    localDate: "2026-11-07",
+                  }),
+                ledgerBefore,
+              );
+              assert.deepEqual(
+                await database
+                  .collection("ai_companion_rate_ledgers")
+                  .find({ ownerAccountId: ownerId })
+                  .toArray(),
+                ratesBefore,
+              );
+            } finally {
+              consentAuthorized = true;
+              pauseProvider = null;
+              resume();
+            }
+            assert.equal(providerInputs.length, callsBefore);
+            const response = await pending;
+            assert.equal(response.status, 201);
+            const body = renamed.body as {
+              title: string;
+              titleVersion: string;
+            };
+            assert.equal(body.title, "Private manual synthetic title");
+            assert.equal(
+              (response.body as { title: string }).title,
+              "Private manual synthetic title",
+            );
+            const conversation = await stored(id);
+            assert.equal(conversation.messages.length, 2);
+            assert.deepEqual(conversation.context, before.context);
+            assert.equal(
+              conversation.expiresAt.getTime(),
+              before.expiresAt.getTime(),
+            );
+            assert.equal(crypto.title(conversation).title, body.title);
+            assert.equal(crypto.titleVersion(conversation), body.titleVersion);
+            assert.ok(ledgerBefore);
+            const serialized = JSON.stringify({
+              conversation,
+              commands: await commands.find({ conversationId: id }).toArray(),
+            });
+            assert.equal(
+              serialized.includes("Private manual synthetic title"),
+              false,
+            );
+            assert.equal(
+              serialized.includes("Discarded automatic synthetic title"),
+              false,
+            );
+          },
+        );
+
+        await t.test(
+          "auto commit fences stale rename; duplicate replay remains historical after later rename",
+          async () => {
+            now = new Date("2026-11-08T00:00:00Z");
+            const created = await create();
+            const id = created.conversationId;
+            titleForMessage = () => "Synthetic automatic topic";
+            let renameEntered: () => void = () => undefined;
+            let resumeRename: () => void = () => undefined;
+            const renameDispatched = new Promise<void>((resolve) => {
+              renameEntered = resolve;
+            });
+            const renameReleased = new Promise<void>((resolve) => {
+              resumeRename = resolve;
+            });
+            const originalRename = Reflect.get(
+              MongoChatRepository.prototype,
+              "renameTitle",
+            );
+            MongoChatRepository.prototype.renameTitle = async function (
+              this: MongoChatRepository,
+              ...input: Parameters<MongoChatRepository["renameTitle"]>
+            ) {
+              if (input[0].conversationId === id) {
+                renameEntered();
+                await renameReleased;
+              }
+              return originalRename.call(this, ...input);
+            };
+            const pendingRename = rename(
+              id,
+              "Stale synthetic rename",
+              created.titleVersion,
+              "mb810-stale-after-auto-title",
+            ).then((response) => response);
+            await renameDispatched;
+            let sent;
+            try {
+              sent = await send(
+                id,
+                "mb810-send-replay-after-rename",
+                "Synthetic replay first turn",
+              ).expect(201);
+            } finally {
+              resumeRename();
+              MongoChatRepository.prototype.renameTitle = originalRename;
+            }
+            const sentBody = sent.body as {
+              title: string;
+              titleVersion: string;
+              assistantMessageId: string;
+              quota: unknown;
+            };
+            const stale = await pendingRename;
+            assert.equal(stale.status, 412);
+            assert.equal(
+              await commands.countDocuments({ conversationId: id }),
+              1,
+            );
+            assert.equal(
+              (stale.body as { code: string }).code,
+              "CHAT_TITLE_VERSION_CONFLICT",
+            );
+            const duplicate = await Promise.all([
+              rename(
+                id,
+                "First manual private title",
+                sentBody.titleVersion,
+                "mb810-duplicate-title-rename",
+              ),
+              rename(
+                id,
+                "First manual private title",
+                sentBody.titleVersion,
+                "mb810-duplicate-title-rename",
+              ),
+            ]);
+            assert.deepEqual(
+              duplicate.map((value) => value.status),
+              [200, 200],
+            );
+            assert.deepEqual(duplicate[0].body, duplicate[1].body);
+            const first = duplicate[0];
+            assert.ok(first);
+            const firstBody = first.body as {
+              title: string;
+              titleVersion: string;
+            };
+            const second = await rename(
+              id,
+              "Second manual private title",
+              firstBody.titleVersion,
+              "mb810-second-title-rename",
+            ).expect(200);
+            const secondBody = second.body as {
+              title: string;
+              titleVersion: string;
+            };
+            const replay = await rename(
+              id,
+              "First manual private title",
+              sentBody.titleVersion,
+              "mb810-duplicate-title-rename",
+            ).expect(200);
+            assert.deepEqual(replay.body, first.body);
+            assert.equal(replay.headers.etag, first.headers.etag);
+            assert.equal(replay.headers["cache-control"], "no-store");
+            const changed = await rename(
+              id,
+              "Changed private title",
+              sentBody.titleVersion,
+              "mb810-duplicate-title-rename",
+            ).expect(409);
+            assert.equal(
+              (changed.body as { code: string }).code,
+              "IDEMPOTENCY_KEY_REUSED",
+            );
+            const callsBefore = providerInputs.length;
+            const sendReplay = await send(
+              id,
+              "mb810-send-replay-after-rename",
+              "Synthetic replay first turn",
+            ).expect(201);
+            const replayBody = sendReplay.body as typeof sentBody;
+            assert.equal(providerInputs.length, callsBefore);
+            assert.equal(
+              replayBody.assistantMessageId,
+              sentBody.assistantMessageId,
+            );
+            assert.deepEqual(replayBody.quota, sentBody.quota);
+            assert.equal(replayBody.title, secondBody.title);
+            assert.equal(replayBody.titleVersion, secondBody.titleVersion);
+            assert.equal(
+              (await commands.find({ conversationId: id }).toArray()).length,
+              3,
+            );
+            assert.equal(
+              crypto.title(await stored(id)).title,
+              secondBody.title,
+            );
+            const serialized = JSON.stringify({
+              conversation: await stored(id),
+              commands: await commands.find({ conversationId: id }).toArray(),
+            });
+            for (const title of [
+              sentBody.title,
+              firstBody.title,
+              secondBody.title,
+            ])
+              assert.equal(serialized.includes(title), false);
+          },
+        );
+
+        await t.test(
+          "different rename keys compete on one title token and cannot cross conversation ownership",
+          async () => {
+            const created = await create();
+            const id = created.conversationId;
+            const attempts = await Promise.all([
+              rename(
+                id,
+                "Competing private title A",
+                created.titleVersion,
+                "mb810-competing-rename-a",
+              ),
+              rename(
+                id,
+                "Competing private title B",
+                created.titleVersion,
+                "mb810-competing-rename-b",
+              ),
+            ]);
+            assert.deepEqual(
+              attempts.map((value) => value.status).sort(),
+              [200, 412],
+            );
+            const winningIndex = attempts.findIndex(
+              (value) => value.status === 200,
+            );
+            const winningKey =
+              winningIndex === 0
+                ? "mb810-competing-rename-a"
+                : "mb810-competing-rename-b";
+            assert.equal(
+              (await commands.find({ conversationId: id }).toArray()).length,
+              1,
+            );
+            const other = await create();
+            await rename(
+              other.conversationId,
+              "Another private title",
+              other.titleVersion,
+              winningKey,
+            ).expect(409);
+            await request(server)
+              .put(`/api/v1/ai-companion/conversations/${id}/title`)
+              .set("Authorization", `Bearer ${otherToken}`)
+              .set("If-Match", `"${created.titleVersion}"`)
+              .set("Idempotency-Key", "mb810-foreign-title-rename")
+              .send({ title: "Foreign private title" })
+              .expect(404);
+          },
+        );
+
+        await t.test(
+          "explicit defaults and legacy custom titles survive sends, corrupt envelopes read neutral and remain replaceable",
+          async () => {
+            now = new Date("2026-11-09T00:00:00Z");
+            titleForMessage = () => "Unwanted provider synthetic title";
+            const explicit = await create("Cuộc trò chuyện mới");
+            const initial = await stored(explicit.conversationId);
+            assert.ok(initial.encryptedTitle);
+            await send(
+              explicit.conversationId,
+              "mb810-explicit-default-first",
+              "Synthetic explicit first turn",
+            ).expect(201);
+            assert.equal(
+              crypto.titleVersion(await stored(explicit.conversationId)),
+              explicit.titleVersion,
+            );
+
+            const legacy = await create();
+            await conversations.updateOne(
+              { _id: legacy.conversationId, ownerAccountId: ownerId },
+              { $set: { title: "Legacy custom synthetic title" } },
+            );
+            const legacyDetail = await request(server)
+              .get(
+                `/api/v1/ai-companion/conversations/${legacy.conversationId}`,
+              )
+              .set(authorization)
+              .expect(200);
+            const legacyBody = legacyDetail.body as {
+              title: string;
+              titleVersion: string;
+            };
+            assert.equal(legacyBody.title, "Legacy custom synthetic title");
+            await send(
+              legacy.conversationId,
+              "mb810-legacy-custom-first",
+              "Synthetic legacy first turn",
+            ).expect(201);
+            const persistedLegacy = await stored(legacy.conversationId);
+            assert.equal(persistedLegacy.encryptedTitle, undefined);
+            assert.equal(
+              crypto.titleVersion(persistedLegacy),
+              legacyBody.titleVersion,
+            );
+
+            await conversations.updateOne(
+              { _id: explicit.conversationId, ownerAccountId: ownerId },
+              {
+                $set: {
+                  title: "Sensitive stale legacy title",
+                  "encryptedTitle.tag": Buffer.alloc(16, 99),
+                },
+              },
+            );
+            const corrupt = await request(server)
+              .get(
+                `/api/v1/ai-companion/conversations/${explicit.conversationId}`,
+              )
+              .set(authorization)
+              .expect(200);
+            const corruptBody = corrupt.body as {
+              title: string;
+              titleVersion: string;
+            };
+            assert.equal(corruptBody.title, "Cuộc trò chuyện mới");
+            assert.notEqual(corruptBody.titleVersion, explicit.titleVersion);
+            const history = await request(server)
+              .get("/api/v1/ai-companion/conversations")
+              .set(authorization)
+              .expect(200);
+            const row = (
+              history.body as {
+                items: { conversationId: string; title: string }[];
+              }
+            ).items.find(
+              (item) => item.conversationId === explicit.conversationId,
+            );
+            assert.equal(row?.title, "Cuộc trò chuyện mới");
+            await rename(
+              explicit.conversationId,
+              "Recovered private title",
+              corruptBody.titleVersion,
+              "mb810-replace-corrupt-title",
+            ).expect(200);
+            const repaired = await stored(explicit.conversationId);
+            assert.equal(
+              crypto.title(repaired).title,
+              "Recovered private title",
+            );
+            assert.equal(repaired.title, "Cuộc trò chuyện mới");
+          },
+        );
+
+        await t.test(
+          "failed command persistence aborts the title transaction and exact retry can complete",
+          async () => {
+            const created = await create();
+            const id = created.conversationId;
+            const before = BSON.serialize(await stored(id));
+            const commandMigration =
+              require("../../migrations/010_ai_companion_chat_quotas.cjs") as {
+                commandValidator: Record<string, unknown>;
+              };
+            await database.command({
+              collMod: "ai_companion_commands",
+              validator: {
+                $and: [
+                  commandMigration.commandValidator,
+                  { conversationId: { $ne: id } },
+                ],
+              },
+              validationLevel: "strict",
+              validationAction: "error",
+            });
+            try {
+              const failure = await rename(
+                id,
+                "Transactional private title",
+                created.titleVersion,
+                "mb810-transaction-failure-retry",
+              ).expect(503);
+              assert.equal(
+                (failure.body as { code: string }).code,
+                "CHAT_TITLE_UNAVAILABLE",
+              );
+              assert.deepEqual(BSON.serialize(await stored(id)), before);
+              assert.equal(
+                await commands.countDocuments({ conversationId: id }),
+                0,
+              );
+            } finally {
+              await database.command({
+                collMod: "ai_companion_commands",
+                validator: commandMigration.commandValidator,
+                validationLevel: "strict",
+                validationAction: "error",
+              });
+            }
+            const retry = await rename(
+              id,
+              "Transactional private title",
+              created.titleVersion,
+              "mb810-transaction-failure-retry",
+            ).expect(200);
+            assert.equal(
+              (retry.body as { title: string }).title,
+              "Transactional private title",
+            );
+            assert.equal(
+              await commands.countDocuments({ conversationId: id }),
+              1,
+            );
+          },
+        );
+
+        await t.test(
+          "expired or deleted conversations cannot rename or replay and deletion removes encrypted commands",
+          async () => {
+            const expired = await create();
+            await conversations.updateOne(
+              { _id: expired.conversationId, ownerAccountId: ownerId },
+              { $set: { expiresAt: new Date(now.getTime() - 1) } },
+            );
+            const expiredResponse = await rename(
+              expired.conversationId,
+              "Expired private title",
+              expired.titleVersion,
+              "mb810-expired-title-command",
+            ).expect(404);
+            assert.equal(
+              (expiredResponse.body as { code: string }).code,
+              "RESOURCE_NOT_FOUND",
+            );
+            assert.equal(
+              await commands.countDocuments({
+                conversationId: expired.conversationId,
+              }),
+              0,
+            );
+
+            const created = await create();
+            await rename(
+              created.conversationId,
+              "Deleted private title",
+              created.titleVersion,
+              "mb810-deleted-title-command",
+            ).expect(200);
+            const conversation = await stored(created.conversationId);
+            const command = await commands.findOne({
+              conversationId: created.conversationId,
+            });
+            assert.ok(command);
+            assert.ok(
+              command.expiresAt.getTime() <= conversation.expiresAt.getTime(),
+            );
+            await request(server)
+              .delete(
+                `/api/v1/ai-companion/conversations/${created.conversationId}`,
+              )
+              .set(authorization)
+              .expect(204);
+            assert.equal(
+              await commands.countDocuments({
+                conversationId: created.conversationId,
+              }),
+              0,
+            );
+            await rename(
+              created.conversationId,
+              "Deleted private title",
+              created.titleVersion,
+              "mb810-deleted-title-command",
+            ).expect(404);
+            assert.equal(
+              await conversations.countDocuments({
+                _id: created.conversationId,
+                ownerAccountId: ownerId,
+              }),
+              0,
+            );
+          },
+        );
+
+        titleForMessage = null;
+      },
+    );
   } finally {
     await app.close();
     if (externalUri) await database.dropDatabase();
@@ -695,7 +1374,8 @@ void test("migration 017 accepts an encrypted suggestion, rejects a plaintext on
       : "companion_suggestion_integration",
   );
   try {
-    for (const migration of migrations) await migration.up(database);
+    for (const migration of migrations.slice(0, -1))
+      await migration.up(database);
     const envelope = () => ({
       ciphertext: Buffer.from("sealed"),
       iv: Buffer.alloc(12, 1),
@@ -765,5 +1445,109 @@ void test("migration 017 accepts an encrypted suggestion, rejects a plaintext on
     if (externalUri) await database.dropDatabase();
     await client.close();
     await mongo?.stop();
+  }
+});
+
+void test("migration 018 changes only the validator, preserves legacy bytes and guards encrypted-title rollback", async () => {
+  const titleMigration =
+    require("../../migrations/018_companion_conversation_title.cjs") as {
+      up(database: unknown): Promise<void>;
+      down(database: unknown): Promise<void>;
+    };
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  const client = new MongoClient(mongo.getUri());
+  const database = client.db("companion_title_migration_integration");
+  try {
+    for (const migration of migrations.slice(0, -1))
+      await migration.up(database);
+    const envelope = () => ({
+      ciphertext: Buffer.from("sealed"),
+      iv: Buffer.alloc(12, 1),
+      tag: Buffer.alloc(16, 2),
+      algorithm: "AES-256-GCM",
+      keyId: "single-key",
+    });
+    const now = new Date();
+    const conversation = (id: string) => ({
+      _id: id,
+      ownerAccountId: "11111111-1111-4111-8111-111111111111",
+      title: "Legacy private synthetic title",
+      context: {
+        sources: {
+          plan: false,
+          diary: false,
+          screening: false,
+          resourceIds: [],
+        },
+        updatedAt: now,
+      },
+      messages: [
+        {
+          messageId: "44444444-4444-4444-8444-444444444444",
+          role: "ASSISTANT",
+          content: envelope(),
+          suggestion: envelope(),
+          createdAt: now,
+          route: null,
+          contextKinds: [],
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(now.getTime() + 86_400_000),
+    });
+    const conversations = database.collection("ai_companion_conversations");
+    const legacyId = "55555555-5555-4555-8555-555555555555";
+    const encryptedId = "66666666-6666-4666-8666-666666666666";
+    await conversations.insertOne(conversation(legacyId) as never);
+    const before = await conversations.findOne({ _id: legacyId } as never);
+    assert.ok(before);
+    const legacyBytes = BSON.serialize(before);
+    const indexes = await conversations.listIndexes().toArray();
+    await titleMigration.up(database);
+    const after = await conversations.findOne({ _id: legacyId } as never);
+    assert.ok(after);
+    assert.deepEqual(BSON.serialize(after), legacyBytes);
+    assert.deepEqual(await conversations.listIndexes().toArray(), indexes);
+    assert.equal("encryptedTitle" in after, false);
+    await conversations.insertOne({
+      ...conversation(encryptedId),
+      encryptedTitle: envelope(),
+    } as never);
+    for (const encryptedTitle of [
+      "Plaintext synthetic title",
+      null,
+      { ...envelope(), ciphertext: "plaintext" },
+      { ...envelope(), iv: undefined },
+      { ...envelope(), algorithm: "AES-CBC" },
+      { ...envelope(), title: "Unexpected plaintext" },
+    ])
+      await assert.rejects(
+        conversations.insertOne({
+          ...conversation("77777777-7777-4777-8777-777777777777"),
+          encryptedTitle,
+        } as never),
+        /validation/u,
+      );
+    await assert.rejects(titleMigration.down(database), /Cannot remove/u);
+    await conversations.deleteOne({ _id: encryptedId } as never);
+    await titleMigration.down(database);
+    const restored = await conversations.findOne({ _id: legacyId } as never);
+    assert.ok(restored);
+    assert.deepEqual(BSON.serialize(restored), legacyBytes);
+    assert.deepEqual(await conversations.listIndexes().toArray(), indexes);
+    await assert.rejects(
+      conversations.insertOne({
+        ...conversation(encryptedId),
+        encryptedTitle: envelope(),
+      } as never),
+      /validation/u,
+    );
+    await conversations.insertOne(
+      conversation("88888888-8888-4888-8888-888888888888") as never,
+    );
+  } finally {
+    await client.close();
+    await mongo.stop();
   }
 });

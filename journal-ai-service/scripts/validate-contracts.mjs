@@ -175,6 +175,7 @@ const implementedOperations = new Set([
   "GET /api/v1/ai-companion/conversations/{conversationId}",
   "DELETE /api/v1/ai-companion/conversations/{conversationId}",
   "POST /api/v1/ai-companion/conversations/{conversationId}/messages",
+  "PUT /api/v1/ai-companion/conversations/{conversationId}/title",
   "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
@@ -320,6 +321,10 @@ const implementedResponses = new Map([
   [
     "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
     new Set(["200", "400", "401", "403", "404", "503"]),
+  ],
+  [
+    "PUT /api/v1/ai-companion/conversations/{conversationId}/title",
+    new Set(["200", "400", "401", "404", "409", "412", "503"]),
   ],
 ]);
 const plannedOperations = new Set();
@@ -519,7 +524,7 @@ const careContractPath = fileURLToPath(
 const care = await SwaggerParser.validate(careContractPath);
 const careSchemas = care.components.schemas;
 assert.equal(care.info.version, "1.11.0");
-assert.equal(contract.info.version, "1.18.0");
+assert.equal(contract.info.version, "1.19.0");
 assert.deepEqual(careSchemas.ConsentType.enum, [
   "PRIVACY_POLICY",
   "AI_PROCESSING",
@@ -657,7 +662,11 @@ const Ajv2020 = createRequire(require.resolve("@apidevtools/swagger-parser"))(
   "ajv/dist/2020.js",
 ).default;
 const { z } = require("zod");
-const exampleValidator = new Ajv2020({ strict: true, allErrors: true });
+const exampleValidator = new Ajv2020({
+  strict: true,
+  allErrors: true,
+  unicodeRegExp: true,
+});
 exampleValidator.addFormat(
   "uuid",
   /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i,
@@ -679,6 +688,9 @@ const chatResponse = chatOperation.responses["201"].content["application/json"];
 assert.deepEqual(Object.keys(chatResponse.examples), [
   "l1OnlyPlainChat",
   "bothLevelsActualContext",
+  "firstReplyTopicTitle",
+  "invalidTitleFirstMessageFallback",
+  "retainedNeutralDatedTitle",
 ]);
 const validateChatResponse = exampleValidator.compile(chatResponse.schema);
 for (const [name, { value }] of Object.entries(chatResponse.examples)) {
@@ -692,6 +704,218 @@ assert.deepEqual(chatResponse.examples.l1OnlyPlainChat.value.contextKinds, []);
 assert.deepEqual(
   chatResponse.examples.bothLevelsActualContext.value.contextKinds,
   ["JOURNAL"],
+);
+const titleTokenPattern = "^[A-Za-z0-9_-]{43}$";
+const quotedTitleTokenPattern = '^"[A-Za-z0-9_-]{43}"$';
+assert.deepEqual(schemas.AiConversationTitleVersion.type, "string");
+assert.equal(schemas.AiConversationTitleVersion.pattern, titleTokenPattern);
+for (const schemaName of ["AiConversation", "AiConversationSummary"]) {
+  assert.deepEqual(
+    schemas[schemaName].properties.titleVersion,
+    schemas.AiConversationTitleVersion,
+  );
+  assert.equal(schemas[schemaName].required.includes("titleVersion"), false);
+}
+for (const field of ["title", "titleVersion"]) {
+  assert.equal(schemas.SendAiMessageResponse.required.includes(field), false);
+  assert.ok(schemas.SendAiMessageResponse.properties[field]);
+  assert.equal(
+    Object.hasOwn(chatResponse.examples.l1OnlyPlainChat.value, field),
+    false,
+  );
+}
+assert.equal(
+  chatResponse.examples.firstReplyTopicTitle.value.title,
+  "Áp lực công việc",
+);
+const fallbackSource =
+  "Hôm nay tôi muốn kể về công việc và những điều đang khiến tôi lo lắng.";
+assert.equal(
+  chatResponse.examples.invalidTitleFirstMessageFallback.value.title,
+  [...fallbackSource].slice(0, 40).join(""),
+);
+assert.equal(
+  chatResponse.examples.retainedNeutralDatedTitle.value.title,
+  "Trò chuyện 2026-11-06",
+);
+assert.match(chatOperation.description, /deferred to MB-810-CARE-SAFETY-TITLE/);
+const renameOperation =
+  contract.paths["/api/v1/ai-companion/conversations/{conversationId}/title"]
+    .put;
+assert.equal(renameOperation.operationId, "renameAiCompanionConversation");
+assert.deepEqual(renameOperation.security, [{ bearerAuth: [] }]);
+assert.deepEqual(
+  renameOperation.parameters.map(({ name, in: location, required }) => ({
+    name,
+    in: location,
+    required,
+  })),
+  [
+    { name: "conversationId", in: "path", required: true },
+    { name: "Idempotency-Key", in: "header", required: true },
+    { name: "If-Match", in: "header", required: true },
+    { name: "x-correlation-id", in: "header", required: false },
+  ],
+);
+const titlePrecondition =
+  contract.components.parameters.IfMatchAiConversationTitle;
+assert.equal(titlePrecondition.schema.pattern, quotedTitleTokenPattern);
+const validTitlePrecondition = '"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"';
+assert.match(validTitlePrecondition, new RegExp(quotedTitleTokenPattern));
+for (const invalid of [
+  "*",
+  `W/${validTitlePrecondition}`,
+  `${validTitlePrecondition}, ${validTitlePrecondition}`,
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  '"short"',
+]) {
+  assert.doesNotMatch(invalid, new RegExp(quotedTitleTokenPattern));
+}
+assert.equal(
+  renameOperation.responses["200"].headers.ETag.schema.pattern,
+  quotedTitleTokenPattern,
+);
+assert.equal(
+  renameOperation.responses["200"].headers["Cache-Control"].schema.const,
+  "no-store",
+);
+assert.equal(
+  schemas.RenameAiConversationTitleRequest.additionalProperties,
+  false,
+);
+assert.deepEqual(schemas.RenameAiConversationTitleRequest.required, ["title"]);
+assert.deepEqual(
+  Object.keys(schemas.RenameAiConversationTitleRequest.properties),
+  ["title"],
+);
+assert.equal(schemas.AiConversationTitle.additionalProperties, false);
+assert.deepEqual(schemas.AiConversationTitle.required, [
+  "conversationId",
+  "title",
+  "titleVersion",
+]);
+assert.deepEqual(Object.keys(schemas.AiConversationTitle.properties), [
+  "conversationId",
+  "title",
+  "titleVersion",
+]);
+for (const titleSchema of [
+  schemas.CreateAiConversationRequest.properties.title,
+  schemas.RenameAiConversationTitleRequest.properties.title,
+]) {
+  assert.equal(titleSchema.minLength, 1);
+  assert.equal(titleSchema.maxLength, undefined);
+  assert.equal(titleSchema.pattern, "^\\s*(?:\\S|\\S[\\s\\S]{0,78}\\S)\\s*$");
+  assert.match(titleSchema.description, /Unicode code points after outer trim/);
+}
+const validateRename = exampleValidator.compile(
+  schemas.RenameAiConversationTitleRequest,
+);
+const validateCreate = exampleValidator.compile(
+  schemas.CreateAiConversationRequest,
+);
+const paddedTitle = (count) => ` \n${"😀".repeat(count)}\t `;
+for (const { value } of Object.values(
+  renameOperation.requestBody.content["application/json"].examples,
+)) {
+  assert.equal(
+    validateRename(value),
+    true,
+    JSON.stringify(validateRename.errors),
+  );
+}
+for (const title of [
+  "Một hai ba bốn năm sáu bảy tám",
+  "😀".repeat(80),
+  paddedTitle(80),
+]) {
+  assert.equal(
+    validateRename({ title }),
+    true,
+    JSON.stringify(validateRename.errors),
+  );
+  assert.equal(
+    validateCreate({ title }),
+    true,
+    JSON.stringify(validateCreate.errors),
+  );
+}
+for (const title of ["😀".repeat(81), paddedTitle(81), "   "]) {
+  assert.equal(validateCreate({ title }), false);
+}
+for (const value of [
+  {},
+  { title: "" },
+  { title: "   " },
+  { title: null },
+  { title: "😀".repeat(81) },
+  { title: paddedTitle(81) },
+  { title: "Hôm nay", ownerAccountId: "other" },
+]) {
+  assert.equal(validateRename(value), false);
+}
+const titleErrorCodes = {
+  400: "VALIDATION_FAILED",
+  401: "AUTHENTICATION_REQUIRED",
+  404: "RESOURCE_NOT_FOUND",
+  409: "IDEMPOTENCY_KEY_REUSED",
+  412: "CHAT_TITLE_VERSION_CONFLICT",
+  503: "CHAT_TITLE_UNAVAILABLE",
+};
+let titleExampleCount = 0;
+for (const [status, response] of Object.entries(renameOperation.responses)) {
+  const mediaType =
+    status === "200" ? "application/json" : "application/problem+json";
+  const media = response.content[mediaType];
+  const validate = exampleValidator.compile(media.schema);
+  for (const [name, { value }] of Object.entries(media.examples)) {
+    assert.equal(
+      validate(value),
+      true,
+      `${name}: ${JSON.stringify(validate.errors)}`,
+    );
+    if (status !== "200") {
+      assert.equal(value.status, Number(status));
+      assert.equal(value.code, titleErrorCodes[status]);
+      assert.match(response.description, new RegExp(titleErrorCodes[status]));
+    }
+    titleExampleCount += 1;
+  }
+}
+const renameExamples =
+  renameOperation.responses["200"].content["application/json"].examples;
+assert.deepEqual(
+  renameExamples.renamedTitle.value,
+  renameExamples.identicalReplay.value,
+);
+assert.equal(
+  renameOperation.responses["200"].headers.ETag.example,
+  `"${renameExamples.renamedTitle.value.titleVersion}"`,
+);
+assert.deepEqual(
+  renameOperation.responses["404"].content["application/problem+json"].examples
+    .foreignConversation.value,
+  renameOperation.responses["404"].content["application/problem+json"].examples
+    .missingConversation.value,
+);
+for (const [path, status] of [
+  ["/api/v1/ai-companion/conversations", "200"],
+  ["/api/v1/ai-companion/conversations/{conversationId}", "200"],
+]) {
+  const media =
+    contract.paths[path].get.responses[status].content["application/json"];
+  const validate = exampleValidator.compile(media.schema);
+  for (const [name, { value }] of Object.entries(media.examples)) {
+    assert.equal(
+      validate(value),
+      true,
+      `${name}: ${JSON.stringify(validate.errors)}`,
+    );
+    titleExampleCount += 1;
+  }
+}
+console.log(
+  `Validated MB-810 title contract: ${titleExampleCount} rename/legacy examples, 5 send examples, optional metadata compatibility, Unicode bounds and strong title preconditions`,
 );
 const chatUnavailable =
   chatOperation.responses["503"].content["application/problem+json"];

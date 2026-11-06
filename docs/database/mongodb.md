@@ -158,10 +158,27 @@ indexes for four Journal/AI collections:
   `suggestion` envelope on assistant messages: the resolved destination,
   Resource ID and title, encrypted with the same key and an AAD that ends in
   `:suggestion`.
+  Migration `018_companion_conversation_title.cjs` adds optional `encryptedTitle`
+  using the same envelope and key with AAD `${owner}:${conversationId}:title`.
+  New explicit-create, automatic and manual titles are encrypted; required
+  `title` remains the neutral `Cuộc trò chuyện mới` on every new title write.
+  Absence of the envelope alone allows an old document's plaintext `title`
+  fallback. A present unreadable envelope yields the neutral display title,
+  never a legacy value. The public `titleVersion` is a derived title-state HMAC,
+  not a persisted field or message/context activity version. Atomic first-turn
+  initialization checks empty messages, absent envelope and neutral legacy title;
+  manual or explicitly created titles cannot be overwritten by a send.
 - `ai_companion_commands` stores the keyed idempotency hash and fingerprint plus
   an immutable success or failure snapshot. The unique owner/key index makes an
   exact retry stable and rejects a key reused with different input. Deleting a
   conversation removes its commands in the same transaction.
+  MB-810 rename keys use the existing hash with a `rename-title:` namespace and
+  fingerprints of operation/conversation/normalized title/If-Match. Completed
+  rename responses store an encrypted title result bound by
+  owner/conversation/command/purpose AAD plus its original version. Exact retry
+  returns that historical result without updating the current conversation.
+  Send snapshots never copy new plaintext title metadata; sends and send replays
+  hydrate current-at-read title metadata separately from durable answer success.
 - `ai_companion_quota_ledgers` stores one `(owner, localDate, timezone)` ledger
   with successful-answer and in-flight reservation counts. The server derives
   the local day and reset instant from its configured IANA timezone. It never
@@ -193,6 +210,16 @@ revalidated before use. Resource IDs remain bounded by the owner's recent Conten
 progress. Complete message pairs with any disallowed personal kind are filtered
 before decryption. New provenance unions actual fetched and retained-history kinds,
 while old labels and results are never rewritten. No Mongo migration is needed.
+
+The MB-810 owner decision of 2026-11-06 specifically authorizes one additive
+validator-only migration 018. Its `up` runs one strict/error `collMod`, retaining
+017's complete validator and adding only optional `encryptedTitle`. It changes
+no existing document bytes, required field, index or command validator. There is
+no backfill or startup schema repair. Deploy 018 before encrypted-title writes;
+its `down` refuses if any `encryptedTitle` exists and otherwise restores 017
+without deleting data. Application rollback must preserve encrypted-title read
+compatibility. Applying it to shared dev/staging Mongo needs separate owner
+authorization.
 
 ## AI Companion Voice admission and usage collections
 

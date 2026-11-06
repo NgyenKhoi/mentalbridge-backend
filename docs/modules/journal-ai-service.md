@@ -32,6 +32,49 @@ source checks, while clearing stays available. Existing history remains readable
 and immutable. Deterministic Guide/plan fallbacks stay available without consent.
 Voice remains L1 plus separate Voice v2 with unchanged empty-kind handoff limits.
 
+## MB-810 encrypted TEXT conversation titles
+
+The [ADR 0021 title amendment](../adr/0021-ai-companion-conversation-and-quota.md#mb-810-title-amendment--owner-decision-2026-11-06)
+records the owner's 2026-11-06 decisions. The first committed reply may initialize
+an empty/default TEXT conversation from the same v1/v2 structured output, with
+no second provider call. A usable topic title has at most six words and 80
+Unicode code points after whitespace normalization; missing or invalid titles
+fall back to the first 40 code points of the outer-trimmed first user message.
+Manual and explicit-create titles allow 1–80 code points after outer trim,
+without the six-word limit. Existing custom titles and populated legacy history
+are preserved.
+
+Prompt guidance forbids crisis/diagnosis labels and grants no safety authority;
+provider `NONE` is not proof of safety. The owner accepted that a risky first
+message may appear through the fallback. `MB-810-CARE-SAFETY-TITLE` defers a
+neutral dated override until a trusted current-turn Care safety source exists.
+No detector or inferred safety flag is introduced.
+
+Titles use optional `encryptedTitle` with existing AES-GCM keys and a distinct
+title AAD; the required legacy `title` remains neutral on new writes. Only absent
+envelopes fall back to legacy plaintext. Corrupt envelopes display neutral and
+remain replaceable using their derived opaque `titleVersion`. Owner-filtered
+list/detail and successful sends expose title metadata; post-success hydration
+failure omits both send metadata fields without losing the answer or quota.
+
+Owner-only `PUT /api/v1/ai-companion/conversations/{conversationId}/title`
+requires `Idempotency-Key` and a strong quoted title-state `If-Match`. A title CAS
+and completed encrypted rename result share the existing Mongo transaction and
+command collection. Exact retries return the original title/version; changed
+input yields `409 IDEMPOTENCY_KEY_REUSED`, stale state yields
+`412 CHAT_TITLE_VERSION_CONFLICT`, and uncertain persistence yields
+`503 CHAT_TITLE_UNAVAILABLE`. Rename requires no consent, entitlement, provider,
+quota or rate work. Manual rename permanently prevents auto initialization.
+
+Migration 018 is the sole additive strict/error validator-only `collMod`, as
+authorized on 2026-11-06. Deploy it before title-writing code; it rewrites no
+documents and changes no index or required field. Down refuses while encrypted
+titles exist and otherwise restores 017; retain compatible readers on rollback.
+No shared Mongo execution is authorized. OpenAPI `1.19.0` is additive on `/api/v1`;
+MB-811 consumer ngocquyen synchronizes contracts and revalidates overlapping
+send/rename responses because send metadata is current-at-read while rename
+retry metadata is historical.
+
 ## Use cases and acceptance
 
 | Capability             | Main behavior                                                                                                                                | Acceptance                                                                                                                                                                                              |

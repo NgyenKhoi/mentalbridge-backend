@@ -34,6 +34,55 @@ authority. Its explicit bounded Text handoff still accepts only empty-kind pairs
 L2 does not expand Voice sources. Existing encrypted shapes and validators are
 unchanged, so this story adds no Mongo migration or provider rollout.
 
+## MB-810 encrypted TEXT conversation titles
+
+The [ADR 0021 title amendment](../docs/adr/0021-ai-companion-conversation-and-quota.md#mb-810-title-amendment--owner-decision-2026-11-06)
+records the owner decisions of 2026-11-06. An empty/default conversation's first
+committed TEXT answer can initialize a short title from its existing v1/v2
+structured output. No extra provider attempt is made. Missing/invalid titles
+fall back to the first 40 Unicode code points of the outer-trimmed user message;
+provider titles are whitespace-normalized and bounded to six words/80 code
+points. Explicit create and manual rename titles allow 1–80 code points after
+outer trim, with no word limit. Populated old history and custom titles stay intact.
+
+The prompt forbids crisis/diagnosis labels as guidance only. No trusted per-turn
+safety source exists, provider `NONE` is not safe, and no text/context detector
+is added. The owner accepted risky-message exposure through the 40-code-point
+fallback until `MB-810-CARE-SAFETY-TITLE` can use a Care-owned trusted current-turn
+source for the deferred neutral dated override.
+
+Deploy migration `018_companion_conversation_title.cjs` before title-writing
+code. It clones 017's full validator and performs exactly one strict/error
+`collMod`, adding only optional `encryptedTitle`; no document, required field
+or index changes. This single validator-only migration is owner-authorized;
+shared-database execution needs separate authorization. There is no backfill or
+startup repair. Down refuses while any encrypted title exists and otherwise
+restores 017; an application rollback must keep compatible title readers.
+
+Explicit, automatic and renamed titles use the existing AES-GCM envelope/key
+with `${owner}:${conversationId}:title` AAD. Required `title` remains neutral on
+new writes. Only an absent envelope allows the old plaintext title fallback;
+a corrupt envelope displays `Cuộc trò chuyện mới`. Derived HMAC `titleVersion`
+changes with title state only. Title initialization is checked inside the answer
+transaction against still-empty messages, absent envelope and default title.
+
+Owner-only `PUT /api/v1/ai-companion/conversations/{conversationId}/title` uses
+`Idempotency-Key` plus a strong quoted `If-Match` title token. It changes no
+message, consent, entitlement, provider, quota or rate state. Title CAS and a
+completed command commit atomically; the command stores an encrypted historical
+result with owner/conversation/command/purpose AAD. Exact retry returns its
+original title/version even after a later rename, and manual rename blocks
+automatic overwrite. Changed input conflicts with `409 IDEMPOTENCY_KEY_REUSED`;
+a stale token yields `412 CHAT_TITLE_VERSION_CONFLICT`; unknown persistence
+yields `503 CHAT_TITLE_UNAVAILABLE`, permitting an exact retry.
+
+OpenAPI `1.19.0` adds optional title tokens to list/detail and optional paired
+title/token metadata to sends. Send snapshots contain no new plaintext title;
+success/replay metadata is hydrated from current owned title state. Hydration
+failure after success omits both metadata fields without altering answer or
+quota success. MB-811 consumer ngocquyen runs `npm run contracts:sync` and
+revalidates overlapping send/rename responses; rename retries may be historical.
+
 ## MB-789 shared Text and Voice guidance
 
 Both real-provider paths use `companion-guidance-v1` and the reviewed,
@@ -638,6 +687,8 @@ SupportPlan Companion v1 has no separate persisted owner quota ledger. Care owns
 - AI Companion conversation, command, quota, rate, and TTL indexes: `migrations/010_ai_companion_chat_quotas.cjs`
 - Bedrock provider provenance and three-candidate benchmark validation: `migrations/011_bedrock_provider.cjs`
 - Persisted AI Companion source selection and RESOURCE provenance: `migrations/012_ai_companion_conversation_context.cjs`
+- Optional encrypted assistant suggestion: `migrations/017_companion_message_suggestion.cjs`
+- Optional encrypted conversation title, validator only: `migrations/018_companion_conversation_title.cjs`
 
 AI Companion chat follows ADR 0021. List responses contain metadata-only
 summaries; full bounded message history is returned only by the owner-scoped
