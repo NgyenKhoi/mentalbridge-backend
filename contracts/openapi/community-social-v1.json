@@ -11,7 +11,7 @@
         "operationId": "listCommunityFriends",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -130,7 +130,7 @@
         "operationId": "requestCommunityFriendship",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -237,7 +237,7 @@
         "operationId": "acceptCommunityFriendship",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -344,7 +344,7 @@
         "operationId": "removeCommunityFriendship",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -431,7 +431,7 @@
         "operationId": "searchCommunityMembers",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -546,7 +546,7 @@
         "operationId": "getCommunityMemberProfile",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -810,7 +810,7 @@
       }
     },
     "securitySchemes": {
-      "bearerAuth": {
+      "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"

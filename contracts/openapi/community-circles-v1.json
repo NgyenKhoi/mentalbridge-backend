@@ -13,7 +13,7 @@
         "operationId": "listCommunityCircles",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -124,7 +124,7 @@
         "operationId": "createCommunityCircle",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -239,7 +239,7 @@
         "operationId": "getCommunityCircle",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -341,7 +341,7 @@
         "operationId": "archiveCommunityCircle",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -439,7 +439,7 @@
         "operationId": "inviteCommunityCircleMember",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -547,7 +547,7 @@
         "operationId": "decideCommunityCircleInvitation",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -655,7 +655,7 @@
         "operationId": "removeCommunityCircleMember",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -762,7 +762,7 @@
         "operationId": "listCommunityCirclePosts",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -882,7 +882,7 @@
         "operationId": "createCommunityCirclePost",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -1006,7 +1006,7 @@
         "operationId": "deleteCommunityCirclePost",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -1113,7 +1113,7 @@
         "operationId": "listCommunityCircleComments",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -1242,7 +1242,7 @@
         "operationId": "createCommunityCircleComment",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -1375,7 +1375,7 @@
         "operationId": "deleteCommunityCircleComment",
         "security": [
           {
-            "bearerAuth": []
+            "BearerAuth": []
           }
         ],
         "parameters": [
@@ -1478,7 +1478,7 @@
   },
   "components": {
     "securitySchemes": {
-      "bearerAuth": {
+      "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
