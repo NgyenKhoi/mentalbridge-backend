@@ -23,6 +23,7 @@ class ChatBodyFilter extends OncePerRequestFilter {
     ChatBodyFilter(ObjectMapper mapper) { this.mapper = mapper; }
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         return !request.getRequestURI().startsWith("/api/v1/community/chat/")
+                && !request.getRequestURI().startsWith("/api/v1/community/circles")
                 && !request.getRequestURI().startsWith("/internal/v1/community/chat/");
     }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -61,7 +62,19 @@ class ChatBodyFilter extends OncePerRequestFilter {
     }
     private void validate(String path, JsonNode body) {
         if (body == null || !body.isObject()) throw ChatException.invalid();
-        if (path.equals("/internal/v1/community/chat/message-projections")) {
+        if (path.equals("/api/v1/community/circles")) {
+            exact(body, Set.of("name", "description", "invitees"));
+            if (!body.get("name").isTextual() || !body.get("description").isTextual() || !body.get("invitees").isArray() || body.get("invitees").size() > 19) throw ChatException.invalid();
+            for (var id : body.get("invitees")) { if (!id.isTextual()) throw ChatException.invalid(); ChatModels.uuid(id.textValue()); }
+        } else if (path.matches("/api/v1/community/circles/[^/]+/invitations")) {
+            exact(body, Set.of("profileId")); uuid(body, "profileId");
+        } else if (path.matches("/api/v1/community/circles/[^/]+/decision")) {
+            exact(body, Set.of("decision")); if (!body.get("decision").isTextual()) throw ChatException.invalid();
+        } else if (path.startsWith("/api/v1/community/circles/")) {
+            exact(body, Set.of("text")); if (!body.get("text").isTextual()) throw ChatException.invalid();
+        } else if (path.matches("/api/v1/community/chat/friends/[^/]+") || path.matches("/api/v1/community/chat/friendships/[^/]+/accept")) {
+            exact(body, Set.of());
+        } else if (path.equals("/internal/v1/community/chat/message-projections")) {
             exact(body, Set.of("conversationId", "messageId")); uuid(body, "conversationId"); uuid(body, "messageId");
         } else if (path.equals("/internal/v1/community/chat/realtime-authorizations")) {
             exact(body, Set.of("conversationId", "action")); uuid(body, "conversationId");

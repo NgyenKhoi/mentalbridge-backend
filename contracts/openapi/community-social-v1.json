@@ -1,0 +1,820 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Community friendships and member profiles",
+    "version": "1.0.0",
+    "description": "Opt-in reciprocal friendships. COMMUNITY_FRIENDS_ENABLED requires friendship for new direct conversations and group invitations. Existing active conversations remain usable. Public member pages contain named Community posts only."
+  },
+  "paths": {
+    "/api/v1/community/chat/friends": {
+      "get": {
+        "operationId": "listCommunityFriends",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "incoming",
+                "outgoing"
+              ],
+              "default": "accepted"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful owner-authorized response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityFriendshipPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-mentalbridge-status": "implemented"
+    },
+    "/api/v1/community/chat/friends/{profileId}": {
+      "put": {
+        "operationId": "requestCommunityFriendship",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful owner-authorized response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityFriendship"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        }
+      },
+      "x-mentalbridge-status": "implemented"
+    },
+    "/api/v1/community/chat/friendships/{friendshipId}/accept": {
+      "post": {
+        "operationId": "acceptCommunityFriendship",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "friendshipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful owner-authorized response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityFriendship"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        }
+      },
+      "x-mentalbridge-status": "implemented"
+    },
+    "/api/v1/community/chat/friendships/{friendshipId}": {
+      "delete": {
+        "operationId": "removeCommunityFriendship",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "friendshipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful owner-authorized response"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-mentalbridge-status": "implemented"
+    },
+    "/api/v1/community/members": {
+      "get": {
+        "operationId": "searchCommunityMembers",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 80
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful owner-authorized response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityMemberPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-mentalbridge-status": "implemented"
+    },
+    "/api/v1/community/members/{profileId}": {
+      "get": {
+        "operationId": "getCommunityMemberProfile",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful owner-authorized response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityMemberProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-mentalbridge-status": "implemented"
+    }
+  },
+  "components": {
+    "schemas": {
+      "CommunityFriendshipState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "friendshipId"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "SELF",
+              "NONE",
+              "OUTGOING",
+              "INCOMING",
+              "FRIENDS"
+            ]
+          },
+          "friendshipId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CommunityFriendship": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "friendshipId",
+          "peer",
+          "state",
+          "createdAt"
+        ],
+        "properties": {
+          "friendshipId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "peer": {
+            "$ref": "#/components/schemas/CommunityMemberIdentity"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "OUTGOING",
+              "INCOMING",
+              "FRIENDS"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CommunityFriendshipPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunityFriendship"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CommunityMemberProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "member",
+          "friendship",
+          "posts"
+        ],
+        "properties": {
+          "member": {
+            "$ref": "#/components/schemas/CommunityMemberIdentity"
+          },
+          "friendship": {
+            "$ref": "#/components/schemas/CommunityFriendshipState"
+          },
+          "posts": {
+            "$ref": "./community-service-v1.yaml#/components/schemas/CommunityFeedPage"
+          }
+        }
+      },
+      "CommunityMemberPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunityMemberIdentity"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CommunityMemberIdentity": {
+        "allOf": [
+          {
+            "$ref": "./community-service-v1.yaml#/components/schemas/CommunityAuthor"
+          },
+          {
+            "type": "object",
+            "required": [
+              "communityProfileId",
+              "state"
+            ],
+            "properties": {
+              "communityProfileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

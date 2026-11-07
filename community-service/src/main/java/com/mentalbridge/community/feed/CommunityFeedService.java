@@ -59,7 +59,7 @@ public class CommunityFeedService {
 		var viewerProfileId = profiles.findIdByAccountSubject(accountSubject).orElse(null);
 		var topicCodes = selectedTopics.isEmpty() ? List.of(CommunityTopic.MY_STORY.name())
 				: selectedTopics.stream().map(Enum::name).toList();
-		var page = posts.findFeed(!selectedTopics.isEmpty(), topicCodes, viewerProfileId,
+		var page = posts.findFeed(!selectedTopics.isEmpty(), topicCodes, viewerProfileId, null,
 				cursor == null ? null : cursor.publishedAt(), cursor == null ? null : cursor.postId(),
 				PageRequest.of(0, limit + 1));
 		var hasMore = page.size() > limit;
@@ -104,6 +104,19 @@ public class CommunityFeedService {
 		var last = pageReferences.getLast();
 		var nextCursor = hasMore ? encodeSavedCursor(last.getSavedAt(), last.getPostId()) : null;
 		return new Feed(items, nextCursor, hasMore);
+	}
+
+	@Transactional(readOnly = true)
+	public Feed memberPosts(UUID accountSubject, UUID authorProfileId, String cursorValue, int limit) {
+		var cursor = decode(cursorValue);
+		var viewerProfileId = profiles.findIdByAccountSubject(accountSubject).orElse(null);
+		var page = posts.findFeed(false, List.of(CommunityTopic.MY_STORY.name()), viewerProfileId, authorProfileId,
+				cursor == null ? null : cursor.publishedAt(), cursor == null ? null : cursor.postId(), PageRequest.of(0, limit + 1));
+		var hasMore = page.size() > limit;
+		var visible = page.stream().limit(limit).toList();
+		var states = viewerStates(visible, viewerProfileId);
+		return new Feed(visible.stream().map(post -> summary(post, states.get(post.id()))).toList(),
+				hasMore ? encode(visible.getLast().publishedAt(), visible.getLast().id()) : null, hasMore);
 	}
 
 	@Transactional(readOnly = true)

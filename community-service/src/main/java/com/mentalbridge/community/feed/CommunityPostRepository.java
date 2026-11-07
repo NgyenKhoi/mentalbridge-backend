@@ -19,6 +19,7 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 			SELECT post.*
 			FROM community_post post
 			WHERE post.state = 'ACTIVE'
+			  AND (CAST(:authorProfileId AS uuid) IS NULL OR (post.author_profile_id = :authorProfileId AND post.author_mode = 'PROFILE'))
 			  AND (:filterByTopics = false OR EXISTS (
 			      SELECT 1 FROM community_post_topic topic
 			      WHERE topic.post_id = post.id AND topic.topic_code IN (:topicCodes)
@@ -41,6 +42,7 @@ interface CommunityPostRepository extends JpaRepository<CommunityPostEntity, UUI
 	List<CommunityPostEntity> findFeed(@Param("filterByTopics") boolean filterByTopics,
 			@Param("topicCodes") List<String> topicCodes,
 			@Param("viewerProfileId") UUID viewerProfileId,
+			@Param("authorProfileId") UUID authorProfileId,
 			@Param("cursorPublishedAt") Instant cursorPublishedAt,
 			@Param("cursorPostId") UUID cursorPostId,
 			Pageable pageable);

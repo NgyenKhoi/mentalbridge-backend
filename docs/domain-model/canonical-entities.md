@@ -232,3 +232,20 @@ the active model.
 All physical relationships remain inside Community PostgreSQL. Migration 0019 is runtime truth; logical SQL is never executed.
 
 - MB-687 `community_chat_report_case` — ACTIVE: exact actor/message OPEN intake, encrypted isolated message/details snapshot, safe reason/priority and bounded unresolved-review deadline. No ADMIN transcript access or resolution workflow is activated. Owner migration 0020; REPORT_MESSAGE command identities reuse the Community command table.
+
+## Community friendship extension
+
+`community_friendship` is ACTIVE under owner migration 0024. It is an unordered
+pair of Community profiles with one requester and PENDING/ACCEPTED state.
+Deletion cancels, declines or unfriends without deleting the separate chat.
+The [Community logical model](relational/community-service.sql) and
+[owner dictionary](../database/postgresql/community-service.md) define its fields.
+
+## Private Community publication groups (ADR 0052)
+
+CommunityCircle is the owner-controlled invitation-only publication space.
+CommunityCircleMember is a unique local profile/group relationship with explicit
+PENDING -> ACTIVE/DECLINED and ACTIVE -> REMOVED transitions. CommunityCircleEntry
+is a private text post or one-level comment, with author/group/parent references,
+encrypted body and actor-scoped retry identity. These entities belong solely to
+Community; no Care/Journal/AI profile relation or shared clinical meaning exists.
