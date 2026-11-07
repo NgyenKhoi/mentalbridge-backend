@@ -1,8 +1,12 @@
 # MentalBridge ADR register
 
+- [0052 — Private Community sharing groups](0052-private-community-sharing-groups.md), owner-approved 2026-11-07.
+
 Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference could be ambiguous.
 
 ## Current product-scope chain
+
+- [0051 — Community friendships and member pages](0051-community-friendships-and-member-pages.md), accepted owner amendment on 2026-11-06.
 
 MB-684 accepted [0042-community-chat-contract.md](0042-community-chat-contract.md)
 (`MB-COMMUNITY-CHAT-001`) in merged PR #206. It scopes Community-owned private

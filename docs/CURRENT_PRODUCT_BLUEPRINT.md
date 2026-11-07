@@ -4,6 +4,13 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+The owner additionally approved [private Community sharing groups](adr/0052-private-community-sharing-groups.md), invitation-only text feeds separate from chat groups.
+
+The owner's accepted [Community friendship amendment](adr/0051-community-friendships-and-member-pages.md)
+adds opt-in reciprocal friendships and Community-only member pages. When enabled,
+new direct conversations and group invitations require accepted friendship.
+Existing active conversations and memberships remain usable.
+
 MB-806's accepted [two-level AI consent amendment / MB-TWO-LEVEL-AI-CONSENT-001](adr/0050-two-level-ai-consent.md)
 and [Care consent policy 1.2-capstone](policies/care-consent-and-retention-policy.md)
 are current for AI authorization. Existing current `AI_PROCESSING` v2 grants

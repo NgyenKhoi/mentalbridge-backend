@@ -1,0 +1,1741 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Private Community sharing groups",
+    "version": "1.0.0",
+    "description": "Invitation-only groups distinct from chat. Accepted current members read and publish text posts/comments. Owner invitations require accepted friendship, current eligibility and no bilateral block. Declined invitations cannot be resent. Text encrypted at rest. No public feed, search, media, health-data or realtime fan-out."
+  },
+  "paths": {
+    "/api/v1/community/circles": {
+      "x-mentalbridge-status": "implemented",
+      "get": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "listCommunityCircles",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCirclePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "createCommunityCircle",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCircle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommunityCircle"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}": {
+      "x-mentalbridge-status": "implemented",
+      "get": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "getCommunityCircle",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCircleDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "archiveCommunityCircle",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/invitations": {
+      "x-mentalbridge-status": "implemented",
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "inviteCommunityCircleMember",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteCommunityCircleMember"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/decision": {
+      "x-mentalbridge-status": "implemented",
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "decideCommunityCircleInvitation",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideCommunityCircleInvitation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/members/{profileId}": {
+      "x-mentalbridge-status": "implemented",
+      "delete": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "removeCommunityCircleMember",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/posts": {
+      "x-mentalbridge-status": "implemented",
+      "get": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "listCommunityCirclePosts",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCircleEntryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "createCommunityCirclePost",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCircleEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteCommunityCircleEntry"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/posts/{entryId}": {
+      "x-mentalbridge-status": "implemented",
+      "delete": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "deleteCommunityCirclePost",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/posts/{entryId}/comments": {
+      "x-mentalbridge-status": "implemented",
+      "get": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "listCommunityCircleComments",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCircleEntryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "createCommunityCircleComment",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityCircleEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteCommunityCircleEntry"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/community/circles/{circleId}/comments/{entryId}": {
+      "x-mentalbridge-status": "implemented",
+      "delete": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "deleteCommunityCircleComment",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "circleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Completed"
+          },
+          "400": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invalid, unauthorized, inaccessible, conflicting, rate-limited or unavailable request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "./community-service-v1.yaml#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "CommunityCircle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "description",
+          "membership",
+          "role",
+          "memberCount",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "membership": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "PENDING"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "OWNER",
+              "MEMBER"
+            ]
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CommunityCircleMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "profile",
+          "role",
+          "joinedAt"
+        ],
+        "properties": {
+          "profile": {
+            "$ref": "./community-service-v1.yaml#/components/schemas/CommunityAuthor"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "OWNER",
+              "MEMBER"
+            ]
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CommunityCircleDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "members"
+        ],
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/CommunityCircle"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunityCircleMember"
+            }
+          }
+        }
+      },
+      "CommunityCircleEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "author",
+          "text",
+          "createdAt",
+          "canDelete"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "author": {
+            "oneOf": [
+              {
+                "$ref": "./community-service-v1.yaml#/components/schemas/CommunityAuthor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canDelete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CommunityCircleEntryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunityCircleEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CommunityCirclePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunityCircle"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CreateCommunityCircle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description",
+          "invitees"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "invitees": {
+            "type": "array",
+            "maxItems": 19,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "WriteCommunityCircleEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        }
+      },
+      "InviteCommunityCircleMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "profileId"
+        ],
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DecideCommunityCircleInvitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ACCEPT",
+              "DECLINE"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

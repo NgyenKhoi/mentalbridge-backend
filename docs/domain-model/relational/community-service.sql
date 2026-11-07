@@ -391,3 +391,53 @@ CREATE TABLE community.community_chat_report_case (
   review_due_at timestamptz NOT NULL CHECK (review_due_at > created_at),
   UNIQUE (reporter_profile_id, message_id)
 );
+
+CREATE TABLE community.community_friendship (
+  id uuid PRIMARY KEY,
+  first_profile_id uuid NOT NULL REFERENCES community.community_profile(id) ON DELETE CASCADE,
+  second_profile_id uuid NOT NULL REFERENCES community.community_profile(id) ON DELETE CASCADE,
+  requester_profile_id uuid NOT NULL REFERENCES community.community_profile(id) ON DELETE CASCADE,
+  state varchar(16) NOT NULL CHECK (state IN ('PENDING', 'ACCEPTED')),
+  created_at timestamptz NOT NULL,
+  accepted_at timestamptz,
+  UNIQUE (first_profile_id, second_profile_id),
+  CHECK (first_profile_id < second_profile_id),
+  CHECK (requester_profile_id IN (first_profile_id, second_profile_id)),
+  CHECK ((state = 'ACCEPTED') = (accepted_at IS NOT NULL))
+);
+
+-- ADR 0052 / migration 0025: private publication groups, documentation only.
+CREATE TABLE community.community_circle (
+  id uuid PRIMARY KEY,
+  owner_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  name_ciphertext text NOT NULL,
+  description_ciphertext text NOT NULL,
+  state varchar(16) NOT NULL CHECK (state IN ('ACTIVE','ARCHIVED')),
+  idempotency_key uuid NOT NULL,
+  request_fingerprint varchar(200) NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE (owner_profile_id, idempotency_key)
+);
+CREATE TABLE community.community_circle_member (
+  circle_id uuid NOT NULL REFERENCES community.community_circle(id),
+  profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  inviter_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  role varchar(16) NOT NULL CHECK (role IN ('OWNER','MEMBER')),
+  state varchar(16) NOT NULL CHECK (state IN ('PENDING','ACTIVE','DECLINED','REMOVED')),
+  created_at timestamptz NOT NULL,
+  joined_at timestamptz,
+  PRIMARY KEY (circle_id, profile_id),
+  CHECK ((state = 'ACTIVE') = (joined_at IS NOT NULL))
+);
+CREATE TABLE community.community_circle_entry (
+  id uuid PRIMARY KEY,
+  circle_id uuid NOT NULL REFERENCES community.community_circle(id),
+  parent_id uuid REFERENCES community.community_circle_entry(id),
+  author_profile_id uuid NOT NULL REFERENCES community.community_profile(id),
+  content_ciphertext text NOT NULL,
+  state varchar(16) NOT NULL CHECK (state IN ('ACTIVE','DELETED')),
+  idempotency_key uuid NOT NULL,
+  request_fingerprint varchar(200) NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE (author_profile_id, idempotency_key)
+);

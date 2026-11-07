@@ -154,6 +154,9 @@ Copy `.env.example` to `.env` for local development. Real environment variables 
 
 Do not commit `.env`, credentials, private keys, media signatures, or delivery URLs.
 
+Video finalization requests Cloudinary `media_metadata` so the Admin API returns
+the verified duration required by the existing 60-second upload limit.
+
 ## Verify
 
 ```powershell
@@ -273,3 +276,26 @@ AES-GCM binds each ciphertext to its exact message/conversation/sender. Retain o
 Publishing is at-least-once: a crash or timeout around ACK can replay the same envelope ID. Consumers must dedupe stable/logical identities and reauthorize each current recipient rather than treating a fact as a permission grant. No consumer, socket delivery, presence projection or notification materialization is installed by this story. Existing interaction publishing uses its own producer configuration. The chat producer disables payload-printing error listeners and logs only safe event ID/attempt metadata.
 
 Apply owner Liquibase migrations 0017/0018 before enabling the feature; canonical SQL is documentation only. Deploy Identity's dedicated eligibility provider first, provision the topic and install externally managed keys/credentials, then opt in the Community API and relay. Compose passes the eligibility credential only to Identity and Community, and encryption keys only to Community. Use TLS or a trusted private service network for the credential-bearing Identity call. A rollback disables API/relay flags and retains additive tables, ciphertext and key versions; do not drop durable messages or rewrite applied migrations. This change does not deploy to shared environments or invoke paid/external providers.
+
+## Reciprocal friendships and member pages
+
+Owner approval and rollout are recorded in [ADR 0051](../docs/adr/0051-community-friendships-and-member-pages.md).
+Set `COMMUNITY_FRIENDS_ENABLED=true` after migration 0024 and the compatible web
+consumer. The default false preserves prior chat admission. Accepted friendship
+admits new direct conversations and group invitations. Existing active threads
+and memberships continue independently of friendship removal. Member pages show
+only visible named Community publications. Search uses chosen Community names.
+
+The new six paths are in `contracts/openapi/community-social-v1.json`, referenced
+by canonical Community OpenAPI v1.16. Web consumers run
+`COMMUNITY_OPENAPI_SOURCE=<provider path> node scripts/community-contract.mjs --sync`
+and copy the adjacent social fragment before generation. No new Kafka fact,
+consumer, notification claim or provider credential is introduced by friendships.
+
+Private sharing groups are documented in ADR 0052 and the circles v1 OpenAPI
+sidecar. They are separate from chat groups and public posts, with invitation-
+only membership, member-only text publication/comments, owner management and
+archival. Deployment requires additive owner migration 0025 and the existing
+Community chat encryption key ring plus friendship/chat feature flags; no new
+provider credentials. Pages are bounded to 10 results. Web consumer:
+frontend/mentalbridge/ features/community, `/community/groups`.
