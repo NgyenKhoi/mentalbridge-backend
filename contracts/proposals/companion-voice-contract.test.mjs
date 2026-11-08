@@ -560,6 +560,34 @@ test("retryable owner commands and model turns require UUID idempotency keys", (
   }
 });
 
+test("MB-820 expression is negotiated by an optional exact capability header and closed to neutral or comfort", () => {
+  const operation =
+    api.paths["/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns"]
+      .post;
+  const capability = operation.parameters.find(
+    (item) =>
+      item.in === "header" && item.name === "X-MentalBridge-Voice-Capabilities",
+  );
+  assert.ok(capability);
+  assert.equal(capability.required, false);
+  const validateHeader = compile(capability.schema);
+  assertValid(validateHeader, "expression", "capability");
+  for (const value of ["", "EXPRESSION", "expression,warm"])
+    assert.equal(validateHeader(value), false, value);
+  const reply = api.components.schemas.VoiceReply;
+  assert.deepEqual(reply.properties.expression.enum, ["neutral", "comfort"]);
+  assert.equal(reply.required.includes("expression"), false);
+  assert.equal(reply.additionalProperties, false);
+  const validate = component("VoiceReply");
+  const value = positiveExample("VoiceReply");
+  for (const expression of ["neutral", "comfort"])
+    assertValid(validate, { ...value, expression }, expression);
+  for (const expression of ["warm", "encourage", "excited", ""])
+    assert.equal(validate({ ...value, expression }), false, expression);
+  const { expression: _omitted, ...legacy } = value;
+  assertValid(validate, legacy, "pre-MB-820 reply");
+});
+
 test("worker reporting endpoint rejects owner-to-worker dispatch, stop and lease commands", () => {
   const operation =
     api.paths[

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.19.0
+  version: 1.20.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -62,6 +62,14 @@ paths:
             Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent
             returns409. Replays of live access still reauthorize; expired tokens are never replayed as
             authority. Store HMAC key+safe intent hash/metadata only, never transcript.
+        - in: header
+          name: X-MentalBridge-Voice-Capabilities
+          required: false
+          schema:
+            const: expression
+          description: >-
+            MB-820 negotiated reply capability. Only the exact value expression adds VoiceReply.expression;
+            absent or any other value returns the pre-MB-820 VoiceReply unchanged.
       requestBody:
         required: true
         content:
@@ -1954,6 +1962,13 @@ components:
           minLength: 1
           maxLength: 1000
           pattern: \S
+        expression:
+          type: string
+          enum: [neutral, comfort]
+          description: >-
+            Display-only Mầm tag, present only when the caller sent X-MentalBridge-Voice-Capabilities: expression.
+            Text handoff and missing or unknown model output are neutral. warm and encourage wait for a Care-owned
+            trusted safety source.
         expiresAt:
           type: string
           format: date-time

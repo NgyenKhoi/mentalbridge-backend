@@ -538,6 +538,66 @@
   ],
   "openapiExamples": [
     {
+      "name": "voice-reply-comfort",
+      "schema": "VoiceReply",
+      "valid": true,
+      "value": {
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "replyId": "75500000-0000-4000-8000-000000000006",
+        "language": "vi-VN",
+        "spokenText": "Mình đang lắng nghe.",
+        "expression": "comfort",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "policyVersion": "companion-voice-policy-v1"
+      }
+    },
+    {
+      "name": "voice-reply-reject-warm-until-trusted-safety-source",
+      "schema": "VoiceReply",
+      "valid": false,
+      "value": {
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "replyId": "75500000-0000-4000-8000-000000000006",
+        "language": "vi-VN",
+        "spokenText": "Mình đang lắng nghe.",
+        "expression": "warm",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "policyVersion": "companion-voice-policy-v1"
+      }
+    },
+    {
+      "name": "voice-reply-reject-encourage-until-trusted-safety-source",
+      "schema": "VoiceReply",
+      "valid": false,
+      "value": {
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "replyId": "75500000-0000-4000-8000-000000000006",
+        "language": "vi-VN",
+        "spokenText": "Mình đang lắng nghe.",
+        "expression": "encourage",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "policyVersion": "companion-voice-policy-v1"
+      }
+    },
+    {
+      "name": "voice-reply-reject-unknown-expression",
+      "schema": "VoiceReply",
+      "valid": false,
+      "value": {
+        "voiceSessionId": "75500000-0000-4000-8000-000000000001",
+        "turnId": "75500000-0000-4000-8000-000000000005",
+        "replyId": "75500000-0000-4000-8000-000000000006",
+        "language": "vi-VN",
+        "spokenText": "Mình đang lắng nghe.",
+        "expression": "excited",
+        "expiresAt": "2026-10-23T14:00:10Z",
+        "policyVersion": "companion-voice-policy-v1"
+      }
+    },
+    {
       "name": "eligible-plus",
       "schema": "Eligibility",
       "valid": true,

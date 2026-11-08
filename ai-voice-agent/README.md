@@ -42,6 +42,15 @@ avoid competing SDK writes; no content enters attributes. See the
 [Web consumer handoff](../docs/story-mb-782-voice-web-prerequisite.md)
 for transitions, exact identity/room filtering and bounded stale-state fallback.
 
+MB-820 sends `X-MentalBridge-Voice-Capabilities: expression` on turn calls and
+pairs `mb.mam.expression` with `lk.agent.state` in the same serialized
+admitted-Agent attribute write. `neutral` or `comfort` appears only when first
+audio playout is authorized and speaking begins. While still admitted, every
+non-speaking write clears expression with `""`; failed writes are isolated and
+trigger a best-effort clear. A reconnecting or disconnected room cannot be
+written, so Web resets on reconnect/disconnect/`speaking` end without relying
+on the clear and treats missing, stale or unknown values as neutral.
+
 MB-760 adds [speech QA tooling](qa/README.md) for a scripted matrix, Unicode
 WER/CER, aggregate-only reports and a mock pilot. The first live benchmark remains
 `BLOCKED_ALLOWANCE`; no live provider or microphone command is added. QA source

@@ -360,10 +360,15 @@ void test("Journal consumer authenticates purpose, validates bindings/expiry and
   let failure = false;
   let invalid = false;
   let noStore = true;
+  let replyExpression: string | undefined;
   const server = createServer((req, res) => {
     void (async () => {
       calls++;
       assert.equal(req.headers.authorization, undefined);
+      assert.equal(
+        req.headers["x-mentalbridge-voice-capabilities"],
+        req.url?.endsWith("/turns") ? "expression" : undefined,
+      );
       assert.equal(
         req.headers["x-mentalbridge-voice-worker-token"],
         configuration().journalToken,
@@ -426,6 +431,7 @@ void test("Journal consumer authenticates purpose, validates bindings/expiry and
           replyId: randomUUID(),
           language: "vi-VN",
           spokenText: "Mình đang lắng nghe.",
+          ...(replyExpression ? { expression: replyExpression } : {}),
           expiresAt: validUntil,
           policyVersion,
         }),
@@ -480,6 +486,24 @@ void test("Journal consumer authenticates purpose, validates bindings/expiry and
       ).language,
       "vi-VN",
     );
+    replyExpression = "comfort";
+    assert.equal(
+      (
+        await client.turn(
+          dispatch,
+          input,
+          randomUUID(),
+          new AbortController().signal,
+        )
+      ).expression,
+      "comfort",
+    );
+    replyExpression = "warm";
+    await assert.rejects(
+      client.turn(dispatch, input, randomUUID(), new AbortController().signal),
+      AgentFailure,
+    );
+    replyExpression = undefined;
     invalid = true;
     await assert.rejects(client.claim(dispatch), AgentFailure);
     invalid = false;

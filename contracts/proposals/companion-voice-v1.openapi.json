@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MentalBridge AI Voice Companion approved target",
-    "version": "1.1.0",
-    "description": "MB-755 contract-first only. All operations planned. Journal/AI owns voice; Care owns independent dual consent; Consultation remains entitlement authority. Does not activate runtime, replace text APIs or authorize joining specialist rooms. MB-782 additive Web preview and exact admitted Agent identity amendment; existing policy unchanged."
+    "version": "1.2.0",
+    "description": "MB-755 contract-first only. All operations planned. Journal/AI owns voice; Care owns independent dual consent; Consultation remains entitlement authority. Does not activate runtime, replace text APIs or authorize joining specialist rooms. MB-782 additive Web preview and exact admitted Agent identity amendment; MB-820 negotiated optional expression amendment; existing policy unchanged."
   },
   "servers": [
     {
@@ -830,6 +830,15 @@
               "format": "uuid"
             },
             "description": "Scoped to authenticated owner+operation. Exact replay never reserves again; changed intent returns409. Replays of live access still reauthorize; expired tokens are never replayed as authority. Store HMAC key+safe intent hash/metadata only, never transcript."
+          },
+          {
+            "in": "header",
+            "name": "X-MentalBridge-Voice-Capabilities",
+            "required": false,
+            "schema": {
+              "const": "expression"
+            },
+            "description": "MB-820 negotiated reply capability. Only the exact value expression adds VoiceReply.expression; absent or any other value returns the pre-MB-820 VoiceReply unchanged."
           }
         ],
         "requestBody": {
@@ -2588,6 +2597,11 @@
             "minLength": 1,
             "maxLength": 1000,
             "pattern": "\\S"
+          },
+          "expression": {
+            "type": "string",
+            "enum": ["neutral", "comfort"],
+            "description": "Display-only Mầm tag, present only when the caller sent X-MentalBridge-Voice-Capabilities: expression. Text handoff and missing or unknown model output are neutral. warm and encourage wait for a Care-owned trusted safety source."
           },
           "expiresAt": {
             "type": "string",

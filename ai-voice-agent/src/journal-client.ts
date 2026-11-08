@@ -47,6 +47,9 @@ export class JournalClient {
             "X-MentalBridge-Voice-Worker-Token":
               this.configuration.journalToken,
             ...(key ? { "Idempotency-Key": key } : {}),
+            ...(path === "turns"
+              ? { "X-MentalBridge-Voice-Capabilities": "expression" }
+              : {}),
           },
           body: JSON.stringify(body),
           signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),

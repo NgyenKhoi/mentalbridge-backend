@@ -109,6 +109,17 @@ Sonnet, input counting, quota, deadlines and teardown remain authoritative.
 See the [MB-789 evidence and provenance audit](../docs/story-mb-789-unified-companion-guidance.md)
 for source limits and the separately authorized real-provider comparison rubric.
 
+## MB-820 per-reply Voice expression
+
+MB-820 adds optional `VoiceReply.expression` (`neutral` or `comfort`) for the
+existing Voice call only, returned only when the worker sends
+`X-MentalBridge-Voice-Capabilities: expression`; other callers get the unchanged
+reply. The strict Voice provider schema accepts a nullable expression. Missing,
+invalid or unknown tags (including `warm`/`encourage`) and selected Text handoff
+are neutral; no keyword detection is used. The same expression is returned on
+live-lease replay. The Voice friend persona names itself Mầm.
+Text chat schema, safety authority, consent, quota and persistence are unchanged.
+
 ## MB-791 Text friend voice and suggestions
 
 `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED` (default false) switches TEXT chat to
