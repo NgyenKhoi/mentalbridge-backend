@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p qa/tsconfig.json --noEmit",
     "lint": "eslint src qa",
-    "format:check": "prettier --check \"*.{json,js,md}\" \"src/**/*.ts\" \"scripts/**/*.mjs\" \"qa/**/*.{ts,json,md}\"",
+    "format:check": "prettier --end-of-line auto --check \"*.{json,js,md}\" \"src/**/*.ts\" \"scripts/**/*.mjs\" \"qa/**/*.{ts,json,md}\"",
     "test": "npm run build && npm run qa:build && node --test dist/*.test.js dist-qa/*.test.js",
     "qa:build": "tsc -p qa/tsconfig.json",
     "speech:plan": "npm run qa:build && node dist-qa/score.js plan",

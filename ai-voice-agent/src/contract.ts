@@ -84,6 +84,7 @@ export const replySchema = z
     replyId: uuid,
     language: z.literal("vi-VN"),
     spokenText: z.string().trim().min(1).max(1000),
+    expression: z.enum(["neutral", "comfort"]).optional(),
     expiresAt: z.iso.datetime({ offset: true }),
     policyVersion: z.literal(policyVersion),
   })

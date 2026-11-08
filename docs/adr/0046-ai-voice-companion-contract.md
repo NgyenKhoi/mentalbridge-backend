@@ -281,3 +281,36 @@ The expanded closed DTOs require consumer regeneration. Attribute failure or
 staleness only changes presentation; a consumer must bound its hint age and
 fall back on disconnect/unknown state. No live provider usage or enablement is
 approved by this amendment. MB-782 merges before the MB-761 consumer PR.
+
+## MB-820 per-reply expression amendment — 2026-11-09
+
+The Voice reply may carry an optional server-validated `expression` from
+`neutral` or `comfort` only. Journal adds the field only when the turn request
+carries the exact header `X-MentalBridge-Voice-Capabilities: expression`;
+without it, the reply is byte-identical to the pre-MB-820 shape, so Agents that
+parse `VoiceReply` strictly keep working during a rolling release. The current
+Agent always declares the capability. A future value set needs a new capability
+token, never a silent enum widening.
+
+Text handoff turns and missing, invalid or unknown model output (including
+`warm` and `encourage`) are `neutral`. No keyword or transcript detection
+chooses or suppresses the tag; the model may only pick `neutral` or `comfort`,
+neither a smiling pose. The tag never authorizes a safety or business action.
+The spoken reply and its tag share the existing live-lease replay snapshot.
+Voice names itself Mầm. Follow-up: `warm` and `encourage` wait for a
+Care-owned trusted per-turn safety source.
+
+The admitted Agent participant publishes `mb.mam.expression` with the official
+`lk.agent.state` in one serialized attribute update at first audio playout,
+after authority checks. Its value while speaking is `neutral` or `comfort`; a
+missing reply tag becomes `neutral`. While the Agent is still connected and
+admitted, every non-speaking state, interruption, mute, cancel, failed or
+expired reply, stop, or new turn sets `mb.mam.expression` to the empty string
+on a best-effort basis. On room reconnect or disconnect the Agent can no longer
+write, so the clear is not guaranteed: the Web consumer must reset expression
+to neutral on leaving `speaking`, agent disconnect, room reconnect or
+disconnect, freshness timeout, dialog close or session epoch change, without
+relying on the clear write. A consumer reads both keys from the same
+admitted-participant snapshot and accepts a non-neutral value only with a
+fresh `speaking` state. Attributes contain no transcript, identifier, or safety
+metadata. Failed display writes do not block the call.

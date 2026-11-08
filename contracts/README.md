@@ -101,6 +101,15 @@ room/Agent connection bindings. The [Web handoff](../docs/story-mb-782-voice-web
 defines official `lk.agent.state` hints and consumer fallback. Existing Voice
 policy, worker control envelope and business lifecycle versions remain unchanged.
 
+MB-820 advances the active Journal OpenAPI to `1.20.0` and the approved Voice
+target to `1.2.0` with optional `VoiceReply.expression`, closed to `neutral` and
+`comfort`. Journal adds it only when the turn request sends
+`X-MentalBridge-Voice-Capabilities: expression`; otherwise the reply is unchanged.
+`warm` and `encourage` wait for a Care-owned trusted safety source. Worker
+commands and the policy schema are unchanged. The [ADR amendment](../docs/adr/0046-ai-voice-companion-contract.md#mb-820-per-reply-expression-amendment--2026-11-09)
+defines the paired LiveKit attribute and clearing rule. Web regenerates its
+consumer after the backend provider lands.
+
 MB-755 freezes the accepted [AI Voice target](proposals/companion-voice-v1.openapi.json)
 under [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md). Journal/AI voice,
 Care's separate voice consent and narrow owner authorization reads are all

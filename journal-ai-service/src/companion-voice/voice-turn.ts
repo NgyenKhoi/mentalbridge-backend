@@ -43,9 +43,12 @@ export interface VoiceReply {
   replyId: string;
   language: "vi-VN";
   spokenText: string;
+  expression?: "neutral" | "comfort";
   expiresAt: string;
   policyVersion: "companion-voice-policy-v1";
 }
+const expressionSchema = z.enum(["neutral", "comfort"]);
+export const voiceExpressionCapability = "expression";
 interface Pair {
   user: string;
   assistant: string;
@@ -427,6 +430,9 @@ export class VoiceTurnService {
       }
       const spokenText = validatedAssistantMessage(reply.message);
       if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
+      const expression = session.contextHandoffHash
+        ? "neutral"
+        : (expressionSchema.safeParse(reply.expression).data ?? "neutral");
       stage("output_validated");
       const publication = await this.sessions.authorizeTurn(
         id,
@@ -475,6 +481,7 @@ export class VoiceTurnService {
         replyId,
         language: "vi-VN",
         spokenText,
+        expression,
         expiresAt: expiresAt.toISOString(),
         policyVersion: "companion-voice-policy-v1",
       };

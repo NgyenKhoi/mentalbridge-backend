@@ -59,6 +59,7 @@ void test("friend Voice is compact, speech-only and separate from every Text/leg
         voiceFriend: true,
       });
       assert.match(friend, /Comfort first/u);
+      assert.match(friend, /You are Mầm/u);
       assert.match(friend, /only when asked for advice/u);
       assert.match(friend, /Most replies end with a statement/u);
       assert.match(friend, /at most 500 characters/u);

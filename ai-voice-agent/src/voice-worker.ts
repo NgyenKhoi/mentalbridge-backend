@@ -34,7 +34,7 @@ export interface MediaCallbacks {
   failed: (failure?: MediaFailure) => void;
 }
 export interface MediaPort {
-  state(state: AgentState): void;
+  state(state: AgentState, expression?: Reply["expression"]): void;
   start(callbacks: MediaCallbacks): Promise<void>;
   input(enabled: boolean): void;
   speak(
@@ -98,10 +98,10 @@ export class VoiceWorker {
       this.finish = resolve;
     });
   }
-  private setState(state: AgentState) {
+  private setState(state: AgentState, expression?: Reply["expression"]) {
     this.state = state;
     try {
-      this.media.state(state);
+      this.media.state(state, expression);
     } catch {
       this.outcome(state);
       return;
@@ -422,7 +422,7 @@ export class VoiceWorker {
               turnId: reply.turnId,
               replyId: reply.replyId,
             });
-          } else this.setState("SPEAKING");
+          } else this.setState("SPEAKING", reply.expression);
         },
         AbortSignal.any([this.life.signal, this.playback.signal]),
       );

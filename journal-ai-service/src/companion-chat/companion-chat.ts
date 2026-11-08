@@ -287,6 +287,7 @@ export interface MinimizedContext {
 
 export interface ProviderReply {
   message: string;
+  expression?: "neutral" | "comfort";
   inputTokens: number;
   outputTokens: number;
   usageSource?: "PROVIDER" | "ESTIMATED";
@@ -320,6 +321,21 @@ export const providerOutputJsonSchema = {
     thirdPartyAction: { type: "string", enum: ["NONE"] },
   },
 } as const;
+
+export const voiceProviderOutputJsonSchema = {
+  ...providerOutputJsonSchema,
+  properties: {
+    ...providerOutputJsonSchema.properties,
+    expression: {
+      anyOf: [
+        { type: "string", enum: ["neutral", "comfort"] },
+        { type: "null" },
+      ],
+    },
+  },
+} as const;
+
+const voiceExpressionSchema = z.enum(["neutral", "comfort"]);
 
 const providerOutputSchema = z
   .object({
@@ -1641,9 +1657,11 @@ export class RoutedChatProvider implements ChatProvider {
       context,
       ...(friend ? { friend } : {}),
     });
-    const coreOutputJsonSchema = friend
-      ? providerOutputJsonSchemaV2
-      : providerOutputJsonSchema;
+    const coreOutputJsonSchema = options?.voice
+      ? voiceProviderOutputJsonSchema
+      : friend
+        ? providerOutputJsonSchemaV2
+        : providerOutputJsonSchema;
     const outputJsonSchema = requestTitle
       ? {
           ...coreOutputJsonSchema,
@@ -1656,7 +1674,12 @@ export class RoutedChatProvider implements ChatProvider {
             title: { anyOf: [{ type: "string" }, { type: "null" }] },
           },
         }
-      : coreOutputJsonSchema;
+      : options?.voice && route.provider === "OPENAI"
+        ? {
+            ...coreOutputJsonSchema,
+            required: [...coreOutputJsonSchema.required, "expression"],
+          }
+        : coreOutputJsonSchema;
     const temperature = friend ? 0.7 : 0.2;
     const providerId: string = route.provider;
     let response: Response;
@@ -1741,7 +1764,7 @@ export class RoutedChatProvider implements ChatProvider {
         if (boundedVoice) {
           if (route.model !== "global.anthropic.claude-sonnet-4-6")
             throw new Error("Voice pilot route unavailable");
-          system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(providerOutputJsonSchema)}`;
+          system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
           await authorizeVoiceInput(
             this.configuration.BEDROCK_API_KEY,
             system,
@@ -1908,6 +1931,21 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     }
+    let expression: ProviderReply["expression"];
+    if (
+      options?.voice &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { expression: rawExpression, ...rest } = output as Record<
+        string,
+        unknown
+      >;
+      expression =
+        voiceExpressionSchema.safeParse(rawExpression).data ?? "neutral";
+      output = rest;
+    }
     let title: string | undefined;
     if (
       !options?.voice &&
@@ -1962,6 +2000,7 @@ export class RoutedChatProvider implements ChatProvider {
       options.voiceObserver?.({ phase: "bedrock_response_validated" });
     return {
       message: friend ? withoutCutOffTail(normalized) : normalized,
+      ...(options?.voice ? { expression: expression ?? "neutral" } : {}),
       inputTokens: inputTokens ?? Math.ceil((system.length + input.length) / 4),
       outputTokens: outputTokens ?? Math.ceil(normalized.length / 4),
       ...(options?.voice
