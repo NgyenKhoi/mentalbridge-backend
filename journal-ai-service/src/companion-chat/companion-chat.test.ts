@@ -1614,10 +1614,28 @@ void test("the real context assembler reauthorizes L2 after each paused Care/Con
           if (kind === "plan")
             return Response.json({
               supportPlanId: breathing.resourceId,
+              modelVersion: 3,
+              representationMode: "NATIVE_V3",
               status: "ACTIVE",
               version: 1,
-              rationale: { text: "SYNTHETIC_PRIVATE_PLAN" },
-              slots: [],
+              focuses: [
+                {
+                  title: "SYNTHETIC_PRIVATE_PLAN",
+                  rationale: null,
+                  ordinal: 1,
+                  actions: [
+                    {
+                      actionType: "JOURNAL",
+                      status: "ACTIVE",
+                      ordinal: 1,
+                      presentation: {
+                        title: "SYNTHETIC_PRIVATE_ACTION",
+                        summary: null,
+                      },
+                    },
+                  ],
+                },
+              ],
             });
           return Response.json({
             id: breathing.resourceId,
@@ -1689,6 +1707,172 @@ void test("the real context assembler reauthorizes L2 after each paused Care/Con
     }
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+void test("the real assembler reads bounded ordered native and adapted SupportPlan presentation", async () => {
+  const originalFetch = globalThis.fetch;
+  const selection = {
+    plan: true,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  };
+  const action = (ordinal: number, status: "ACTIVE" | "ENDED" = "ACTIVE") => ({
+    actionType: "JOURNAL",
+    status,
+    ordinal,
+    presentation: {
+      title: `Action ${String(ordinal)}`,
+      summary: `Summary ${String(ordinal)}`,
+    },
+    source: { sourceId: "PRIVATE_SOURCE_ID" },
+  });
+  try {
+    for (const representationMode of [
+      "NATIVE_V3",
+      "V2_RESOURCE_ADAPTER",
+    ] as const) {
+      globalThis.fetch = (input, init) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        assert.equal(new URL(url).pathname, "/api/v2/support-plans/current");
+        assert.equal(
+          init?.headers &&
+            (init.headers as Record<string, string>).authorization,
+          "Bearer synthetic-owner-token",
+        );
+        assert.equal(
+          init?.headers &&
+            (init.headers as Record<string, string>)["x-correlation-id"],
+          "synthetic-correlation",
+        );
+        return Promise.resolve(
+          Response.json({
+            supportPlanId: breathing.resourceId,
+            modelVersion: 3,
+            representationMode,
+            status: "PAUSED",
+            version: 4,
+            safety: { guidance: "PRIVATE_SAFETY" },
+            focuses: [
+              {
+                title: "Second",
+                rationale: null,
+                ordinal: 2,
+                // Six ACTIVE actions in total: the sixth (Second/3) must be cut by the five-action cap.
+                actions: [action(3), action(2), action(1)],
+              },
+              {
+                title: "First",
+                rationale: "Approved focus",
+                ordinal: 1,
+                actions: [action(4), action(3), action(2, "ENDED"), action(1)],
+              },
+            ],
+          }),
+        );
+      };
+      const assembler = new OwnerVerifiedContextAssembler(
+        configuration,
+        granted,
+      );
+      try {
+        const result = await assembler.assemble(
+          ownerId,
+          "synthetic-owner-token",
+          "synthetic-correlation",
+          selection,
+        );
+        assert.deepEqual(result.kinds, ["SUPPORT_PLAN"]);
+        const projected = JSON.parse(
+          result.prompt.replace(/^Current SupportPlan: /u, ""),
+        ) as {
+          status: string;
+          version: number;
+          focuses: { title: string; actions: { title: string }[] }[];
+        };
+        assert.deepEqual(
+          projected.focuses.map((focus: { title: string }) => focus.title),
+          ["First", "Second"],
+        );
+        assert.deepEqual(
+          projected.focuses.flatMap((focus: { actions: { title: string }[] }) =>
+            focus.actions.map((value) => value.title),
+          ),
+          ["Action 1", "Action 3", "Action 4", "Action 1", "Action 2"],
+        );
+        assert.equal(projected.status, "PAUSED");
+        assert.equal(projected.version, 4);
+        assert.doesNotMatch(
+          result.prompt,
+          /PRIVATE_|supportPlanId|sourceId|actionId/u,
+        );
+      } finally {
+        await assembler.onApplicationShutdown();
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("the real assembler omits absent plans and fails closed for bad Care responses", async () => {
+  const originalFetch = globalThis.fetch;
+  const selection = {
+    plan: true,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  };
+  const assembler = new OwnerVerifiedContextAssembler(configuration, granted);
+  try {
+    globalThis.fetch = () =>
+      Promise.resolve(new Response(null, { status: 404 }));
+    assert.deepEqual(
+      await assembler.assemble(ownerId, "token", "corr", selection),
+      { kinds: [], prompt: "" },
+    );
+    const failures: (() => Promise<Response>)[] = [
+      () => Promise.reject(new Error("synthetic timeout")),
+      () => Promise.resolve(new Response(null, { status: 409 })),
+      () => Promise.resolve(new Response(null, { status: 503 })),
+      () => Promise.resolve(new Response("{", { status: 200 })),
+      () =>
+        Promise.resolve(
+          Response.json({
+            supportPlanId: breathing.resourceId,
+            modelVersion: 2,
+          }),
+        ),
+      () =>
+        Promise.resolve(
+          Response.json({
+            supportPlanId: breathing.resourceId,
+            modelVersion: 3,
+            representationMode: "NATIVE_V3",
+            status: "ACTIVE",
+            version: 1,
+            focuses: [
+              { title: "Bad", rationale: null, ordinal: 1, actions: [] },
+            ],
+          }),
+        ),
+    ];
+    for (const failure of failures) {
+      globalThis.fetch = failure;
+      await assert.rejects(
+        assembler.assemble(ownerId, "token", "corr", selection),
+        chatProblem(503, "CHAT_CONTEXT_UNAVAILABLE"),
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    await assembler.onApplicationShutdown();
   }
 });
 

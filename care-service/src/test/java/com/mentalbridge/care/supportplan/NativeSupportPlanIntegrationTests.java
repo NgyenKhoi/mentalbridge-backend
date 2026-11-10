@@ -1,6 +1,7 @@
 package com.mentalbridge.care.supportplan;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -44,6 +45,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
+import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.entitlement.CurrentEntitlementResponse;
 import com.mentalbridge.care.entitlement.CurrentEntitlementResponse.EntitlementSource;
 import com.mentalbridge.care.entitlement.CurrentEntitlementResponse.ServicePackage;
@@ -67,6 +69,7 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper mapper;
+	@Autowired SupportPlanActivityOccurrenceService activityOccurrences;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
 	@MockitoBean EmotionCheckInEvidenceClient emotions;
@@ -78,6 +81,45 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 			return paid(call.getArgument(0), ServicePackage.PLUS);
 		}).when(entitlements).current(any(), anyString(), any());
 		eligible(ResourceEligibilityOutcome.ELIGIBLE, ResourceEligibilityReasonCode.ELIGIBLE_MATCH);
+	}
+
+	@Test
+	void analyticsReadsPersistedNativeOutcomesWithoutGeneratingOccurrences() throws Exception {
+		UUID user = profile();
+		var active = activeAdaptivePlan(user);
+		UUID plan = UUID.fromString(active.path("supportPlanId").asText());
+		var ids = jdbc.sql("select id from support_plan_activity_occurrence where support_plan_id=:plan and state='SCHEDULED' order by local_date,id limit 2")
+				.param("plan", plan).query(UUID.class).list();
+		assertThat(ids).hasSize(2);
+		Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+		Instant old = now.minus(80, ChronoUnit.DAYS);
+		jdbc.sql("update support_plan_activity_occurrence set state='SKIPPED', skipped_at=:time, updated_at=:time where id=:id")
+				.param("time", java.sql.Timestamp.from(old)).param("id", ids.get(0)).update();
+		jdbc.sql("update support_plan_activity_occurrence set state='SKIPPED', skipped_at=:time, updated_at=:time, local_date=:day where id=:id")
+				.param("time", java.sql.Timestamp.from(now)).param("day", LocalDate.now().minusDays(5)).param("id", ids.get(1)).update();
+		long rowsBefore = rows("support_plan_activity_occurrence", plan);
+
+		var recent = activityOccurrences.outcomes(user, now.minus(7, ChronoUnit.DAYS), now.plusSeconds(1));
+		var wide = activityOccurrences.outcomes(user, now.minus(90, ChronoUnit.DAYS), now.plusSeconds(1));
+
+		assertThat(recent).extracting(SupportPlanActivityOccurrenceService.Outcome::recordedAt).containsExactly(now);
+		assertThat(wide).extracting(SupportPlanActivityOccurrenceService.Outcome::recordedAt).containsExactlyInAnyOrder(old, now);
+		// Half-open [from, to) at the database boundary: from is inclusive, to is exclusive.
+		assertThat(activityOccurrences.outcomes(user, old, now))
+				.extracting(SupportPlanActivityOccurrenceService.Outcome::recordedAt).containsExactly(old);
+		assertThat(activityOccurrences.outcomes(user, now, now.plus(1, ChronoUnit.MICROS)))
+				.extracting(SupportPlanActivityOccurrenceService.Outcome::recordedAt).containsExactly(now);
+		assertThat(activityOccurrences.outcomes(user, old.plus(1, ChronoUnit.MICROS), now)).isEmpty();
+		assertThat(rows("support_plan_activity_occurrence", plan)).isEqualTo(rowsBefore);
+
+		UUID otherOwner = profile();
+		activeAdaptivePlan(otherOwner);
+		assertThat(activityOccurrences.outcomes(otherOwner, now.minus(90, ChronoUnit.DAYS), now.plusSeconds(1))).isEmpty();
+		assertThatThrownBy(() -> activityOccurrences.outcomes(UUID.randomUUID(),
+				now.minus(90, ChronoUnit.DAYS), now.plusSeconds(1))).isInstanceOfSatisfying(ApiException.class, error -> {
+					assertThat(error.status().value()).isEqualTo(404);
+					assertThat(error.code()).isEqualTo("SUPPORT_PLAN_CURRENT_NOT_FOUND");
+				});
 	}
 
 	@Test

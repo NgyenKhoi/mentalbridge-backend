@@ -21,6 +21,17 @@ interface SupportPlanActivityOccurrenceRepository
 	List<SupportPlanActivityOccurrenceEntity> findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(
 			UUID supportPlanId, UUID userId, LocalDate from, LocalDate through);
 
+	@Query("""
+			select occurrence.state as state, occurrence.completedAt as completedAt,
+			       occurrence.skippedAt as skippedAt
+			from SupportPlanActivityOccurrenceEntity occurrence
+			where occurrence.supportPlanId = :planId and occurrence.userId = :userId
+			  and ((occurrence.state = 'COMPLETED' and occurrence.completedAt >= :from and occurrence.completedAt < :to)
+			    or (occurrence.state = 'SKIPPED' and occurrence.skippedAt >= :from and occurrence.skippedAt < :to))
+			""")
+	List<OutcomeTimestamp> findOutcomes(@Param("planId") UUID planId, @Param("userId") UUID userId,
+			@Param("from") Instant from, @Param("to") Instant to);
+
 	Optional<SupportPlanActivityOccurrenceEntity> findByIdAndUserId(UUID id, UUID userId);
 
 	@Query(value = """
@@ -196,5 +207,11 @@ interface SupportPlanActivityOccurrenceRepository
 	interface OccurrenceAuthorityLink {
 		UUID getSupportPlanId();
 		UUID getSourceActionId();
+	}
+
+	interface OutcomeTimestamp {
+		String getState();
+		Instant getCompletedAt();
+		Instant getSkippedAt();
 	}
 }

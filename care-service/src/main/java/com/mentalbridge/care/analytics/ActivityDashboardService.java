@@ -66,7 +66,8 @@ public class ActivityDashboardService {
 		var appointments = CompletableFuture.supplyAsync(() -> loadAppointments(bearerToken, correlationId));
 
 		loadAssessments(userId, facts, sources, correlationId);
-		loadSupportPlan(userId, start, asOf, facts, sources, correlationId);
+		loadSupportPlan(userId, start.atStartOfDay(timezone).toInstant(),
+				asOf.plusDays(1).atStartOfDay(timezone).toInstant(), facts, sources, correlationId);
 		merge("journals", journals.join(), facts, sources, correlationId);
 		merge("emotions", emotions.join(), facts, sources, correlationId);
 		merge("appointments", appointments.join(), facts, sources, correlationId);
@@ -107,22 +108,19 @@ public class ActivityDashboardService {
 		}
 	}
 
-	private void loadSupportPlan(UUID userId, LocalDate start, LocalDate asOf, List<Fact> facts,
+	private void loadSupportPlan(UUID userId, Instant from, Instant to, List<Fact> facts,
 			Map<String, String> sources, UUID correlationId) {
 		try {
-			var page = occurrences.list(userId, start, asOf);
-			int count = 0;
-			for (var occurrence : page.occurrences()) {
-				if ("COMPLETED".equals(occurrence.state()) && occurrence.completedAt() != null) {
-					facts.add(new Fact(Metric.SUPPORT_COMPLETED, occurrence.completedAt(), null, null));
-					count++;
-				}
-				else if ("SKIPPED".equals(occurrence.state()) && occurrence.skippedAt() != null) {
-					facts.add(new Fact(Metric.SUPPORT_SKIPPED, occurrence.skippedAt(), null, null));
-					count++;
-				}
+			var outcomes = occurrences.outcomes(userId, from, to);
+			List<Fact> outcomeFacts = new ArrayList<>();
+			for (var outcome : outcomes) {
+				if (outcome.recordedAt() == null || (!"COMPLETED".equals(outcome.state())
+						&& !"SKIPPED".equals(outcome.state()))) throw malformed("supportPlans");
+				outcomeFacts.add(new Fact("COMPLETED".equals(outcome.state()) ? Metric.SUPPORT_COMPLETED
+						: Metric.SUPPORT_SKIPPED, outcome.recordedAt(), null, null));
 			}
-			sources.put("supportPlans", state(count, false));
+			facts.addAll(outcomeFacts);
+			sources.put("supportPlans", state(outcomes.size(), false));
 		}
 		catch (ApiException exception) {
 			if (exception.status() == HttpStatus.NOT_FOUND) sources.put("supportPlans", "empty");
