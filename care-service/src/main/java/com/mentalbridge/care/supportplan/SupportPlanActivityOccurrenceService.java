@@ -71,6 +71,19 @@ public class SupportPlanActivityOccurrenceService {
 						new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
 	}
 
+	@Transactional(readOnly = true)
+	public List<Outcome> outcomes(UUID userId, Instant from, Instant to) {
+		var plan = plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED")).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
+						"Current SupportPlan was not found"));
+		return occurrences.findOutcomes(plan.id(), userId, from, to).stream()
+				.map(value -> new Outcome(value.getState(), "COMPLETED".equals(value.getState())
+						? value.getCompletedAt() : value.getSkippedAt()))
+				.toList();
+	}
+
+	public record Outcome(String state, Instant recordedAt) { }
+
 	@Transactional
 	void activateUserDraft(SupportPlanEntity plan, Instant now) {
 		assertCurrentPersonalization(plan);

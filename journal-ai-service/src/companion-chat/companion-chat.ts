@@ -1225,22 +1225,42 @@ export class MongoChatRepository
 
 const supportPlanSchema = z.looseObject({
   supportPlanId: uuid,
+  modelVersion: z.literal(3),
+  representationMode: z.enum(["NATIVE_V3", "V2_RESOURCE_ADAPTER"]),
   status: z.enum(["ACTIVE", "PAUSED"]),
   version: z.number().int().min(0),
-  rationale: z.looseObject({ text: z.string().max(2_048) }),
-  slots: z
+  focuses: z
     .array(
       z.looseObject({
-        purposeCode: z.string().max(64),
-        selectedResource: z
-          .looseObject({
-            title: z.string().max(255),
-            summary: z.string().max(4_096),
-          })
-          .nullable(),
+        title: z.string().trim().min(1).max(255),
+        rationale: z.string().trim().min(1).max(2_048).nullable(),
+        ordinal: z.number().int().min(1).max(20),
+        actions: z
+          .array(
+            z.looseObject({
+              actionType: z.enum([
+                "RESOURCE",
+                "JOURNAL",
+                "EMOTION_CHECK_IN",
+                "ROUTINE_SELF_MANAGEMENT",
+                "PROFESSIONAL_SUPPORT",
+                "REASSESSMENT_SCREENING",
+                "SELF_REPORT_REVIEW",
+              ]),
+              status: z.enum(["DRAFT", "ACTIVE", "ENDED"]),
+              ordinal: z.number().int().min(1).max(20),
+              presentation: z.looseObject({
+                title: z.string().trim().min(1).max(255),
+                summary: z.string().trim().min(1).max(4_096).nullable(),
+              }),
+            }),
+          )
+          .min(1)
+          .max(20),
       }),
     )
-    .max(5),
+    .min(1)
+    .max(20),
 });
 
 const assessmentHistorySchema = z.looseObject({
@@ -1432,7 +1452,7 @@ export class OwnerVerifiedContextAssembler
       try {
         response = await fetch(
           new URL(
-            "/api/v1/support-plans/current",
+            "/api/v2/support-plans/current",
             this.configuration.CARE_BASE_URL,
           ),
           {
@@ -1457,7 +1477,17 @@ export class OwnerVerifiedContextAssembler
             "CHAT_CONTEXT_UNAVAILABLE",
             "Care context is unavailable",
           );
-        const parsed = supportPlanSchema.safeParse(await response.json());
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          throw new ChatProblem(
+            503,
+            "CHAT_CONTEXT_UNAVAILABLE",
+            "Care context is invalid",
+          );
+        }
+        const parsed = supportPlanSchema.safeParse(body);
         if (!parsed.success)
           throw new ChatProblem(
             503,
@@ -1469,20 +1499,36 @@ export class OwnerVerifiedContextAssembler
           authorization,
           correlationId,
         );
+        let remaining = 5;
+        const focuses = parsed.data.focuses
+          .toSorted((left, right) => left.ordinal - right.ordinal)
+          .flatMap((focus) => {
+            if (remaining === 0) return [];
+            const actions = focus.actions
+              .toSorted((left, right) => left.ordinal - right.ordinal)
+              .filter((action) => action.status === "ACTIVE")
+              .slice(0, remaining)
+              .map((action) => ({
+                type: action.actionType,
+                title: action.presentation.title,
+                summary: action.presentation.summary,
+              }));
+            remaining -= actions.length;
+            return actions.length === 0
+              ? []
+              : [
+                  {
+                    title: focus.title,
+                    rationale: focus.rationale,
+                    actions,
+                  },
+                ];
+          });
         sections.push(
           `Current SupportPlan: ${JSON.stringify({
             status: parsed.data.status,
             version: parsed.data.version,
-            summary: parsed.data.rationale.text,
-            activities: parsed.data.slots.map((slot) => ({
-              purposeCode: slot.purposeCode,
-              resource: slot.selectedResource
-                ? {
-                    title: slot.selectedResource.title,
-                    summary: slot.selectedResource.summary,
-                  }
-                : null,
-            })),
+            focuses,
           })}`,
         );
         kinds.add("SUPPORT_PLAN");
