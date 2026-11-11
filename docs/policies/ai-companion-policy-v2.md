@@ -28,6 +28,19 @@ The v1 exact-source consent, one-provider-per-run, bounded retry, normalized
 result, provenance, deletion coupling, and no-hidden-reasoning rules remain in
 force.
 
+For synchronous TEXT companion sends only, at most two calls to the same pinned
+provider/model are permitted. The second call may retry HTTP 429, provider 5xx,
+or transport/timeout, or repair output that fails parsing, schema, or existing
+message validation. These share one extra attempt; no rule is relaxed and no
+cross-provider fallback occurs. Each call is capped at 10,000 ms and the whole
+send at 24,000 ms; the second call is skipped when less than 3,000 ms remain.
+Attempted token use is charged to the daily ledger as reported by the provider.
+When no object response body is parsed, only the attempted input estimate is
+charged; a parsed object without usage is charged estimated input and output,
+including rejected output. Only a committed assistant reply consumes an answer
+slot.
+Voice and analysis are unchanged.
+
 ## Governing invariant
 
 ```text

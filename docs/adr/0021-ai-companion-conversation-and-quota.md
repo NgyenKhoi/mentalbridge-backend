@@ -44,8 +44,8 @@ request and daily token guards. The quota policy is `companion-quota-v1`.
 A command first creates an HMAC-protected idempotency record and atomically
 reserves one daily answer slot. Provider or context failure releases that slot;
 only a persisted assistant response increments the successful-answer count.
-Conversation append, quota consumption, and command completion share one Mongo
-transaction. Exact replay returns the original response and conflicting reuse
+Conversation append, successful-answer count, and command completion share one
+Mongo transaction. Exact replay returns the original response and conflicting reuse
 is rejected. The stable reset instant is derived from the configured IANA
 timezone, not a browser claim.
 
@@ -71,6 +71,22 @@ mutation, reminder scheduling, or third-party contact. No chain-of-thought,
 raw provider response, bearer token, API key, or assembled prompt is persisted
 or logged. Care-owned safety and the deterministic “Cần trợ giúp ngay” entry
 remain available when AI fails.
+
+## MB-829 synchronous TEXT reliability amendment — owner decision 2026-11-11
+
+For synchronous TEXT companion sends only, at most two calls to the same pinned
+provider/model are permitted. The second call may retry HTTP 429, provider 5xx,
+or transport/timeout, or repair output that fails parsing, schema, or existing
+message validation. These share one extra attempt; no rule is relaxed and no
+cross-provider fallback occurs. Each call is capped at 10,000 ms and the whole
+send at 24,000 ms; the second call is skipped when less than 3,000 ms remain.
+Before each call, Journal/AI atomically reserves its input token estimate against
+the daily budget and settles the difference after the attempt. Attempted token
+use is charged to the daily ledger as reported by the provider. When no object
+response body is parsed, only the attempted input estimate is charged; a parsed
+object without usage is charged estimated input and output, including rejected
+output. Only a committed assistant reply consumes an answer slot. Voice and
+analysis are unchanged.
 
 ## Consequences
 
