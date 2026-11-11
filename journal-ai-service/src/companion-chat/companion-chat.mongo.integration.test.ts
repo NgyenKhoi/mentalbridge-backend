@@ -189,7 +189,15 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
       },
       provider: {
         reply: async (...input) => {
-          providerInputs.push(structuredClone(input));
+          providerInputs.push([
+            input[0],
+            structuredClone(input[1]),
+            structuredClone(input[2]),
+            {
+              ...(input[3]?.friend ? { friend: input[3].friend } : {}),
+              ...(input[3]?.requestTitle ? { requestTitle: true } : {}),
+            },
+          ]);
           if (providerFails) throw new Error("synthetic provider timeout");
           // Holds concurrent sends inside provider work until both arrive.
           const waiting = rendezvous;
@@ -242,6 +250,34 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
       .set("Idempotency-Key", "companion-provider-failure")
       .send({ message: "This must not consume quota" })
       .expect(503);
+    const failedLedger = await database
+      .collection<{
+        ownerAccountId: string;
+        usedTokens: number;
+        successfulAnswers: number;
+        reservations: string[];
+      }>("ai_companion_quota_ledgers")
+      .findOne({ ownerAccountId: ownerId });
+    assert.ok(failedLedger);
+    assert.ok(failedLedger.usedTokens > 0);
+    assert.equal(failedLedger.successfulAnswers, 0);
+    assert.deepEqual(failedLedger.reservations, []);
+    assert.equal(providerInputs.length, 2);
+    await request(server)
+      .post(`/api/v1/ai-companion/conversations/${conversationId}/messages`)
+      .set(authorization)
+      .set("Idempotency-Key", "companion-provider-failure")
+      .send({ message: "This must not consume quota" })
+      .expect(503);
+    assert.equal(providerInputs.length, 2);
+    assert.equal(
+      (
+        await database
+          .collection<{ usedTokens: number }>("ai_companion_quota_ledgers")
+          .findOne({ ownerAccountId: ownerId })
+      )?.usedTokens,
+      failedLedger.usedTokens,
+    );
     providerFails = false;
 
     const initialSuccess = await request(server)
@@ -284,6 +320,14 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     assert.equal(
       replayBody.assistantMessageId,
       initialSuccessBody.assistantMessageId,
+    );
+    assert.equal(
+      (
+        await database
+          .collection<{ usedTokens: number }>("ai_companion_quota_ledgers")
+          .findOne({ ownerAccountId: ownerId })
+      )?.usedTokens,
+      failedLedger.usedTokens + 5 * 30,
     );
 
     const stored = await database
@@ -433,7 +477,7 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
         reservations: string[];
       }>("ai_companion_quota_ledgers")
       .findOne({ ownerAccountId: otherOwnerId });
-    assert.equal(premiumLedger?.usedTokens, premiumUsed + 20_020);
+    assert.equal(premiumLedger?.usedTokens, premiumUsed + 40_040);
     assert.deepEqual(premiumLedger.reservations, []);
 
     (

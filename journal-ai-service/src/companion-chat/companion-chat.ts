@@ -33,6 +33,7 @@ import {
   randomUUID,
 } from "node:crypto";
 import { z } from "zod";
+import { ProviderFailure } from "../llm-providers/llm-providers.js";
 import {
   VoiceProviderFailure,
   providerUsage,
@@ -439,6 +440,7 @@ export interface ChatProvider {
       voiceObserver?: VoiceObserver;
       friend?: FriendInput;
       requestTitle?: boolean;
+      onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
   ): Promise<ProviderReply>;
 }
@@ -526,13 +528,18 @@ export interface ChatRepository {
     tokenBudget: number,
     expiresAt: Date,
   ): Promise<{ successfulAnswers: number; usedTokens: number }>;
+  reserveAttempt(
+    command: ChatCommand,
+    estimate: number,
+    budget: number,
+  ): Promise<void>;
+  settleAttempt(command: ChatCommand, difference: number): Promise<number>;
   complete(
     command: ChatCommand,
     userMessage: ChatMessage,
     assistantMessage: ChatMessage,
     result: SendResult,
-    usedTokens: number,
-    tokenBudget: number,
+    deadline: number,
     encryptedTitle?: EncryptedChatText,
   ): Promise<void>;
   renameTitle(
@@ -1062,14 +1069,19 @@ export class MongoChatRepository
     userMessage: ChatMessage,
     assistantMessage: ChatMessage,
     result: SendResult,
-    usedTokens: number,
-    tokenBudget: number,
+    deadline: number,
     encryptedTitle?: EncryptedChatText,
   ) {
     await this.connect();
     const session = this.client.startSession();
     try {
       await session.withTransaction(async () => {
+        if (Date.now() >= deadline)
+          throw new ChatProblem(
+            503,
+            "CHAT_PROVIDER_UNAVAILABLE",
+            "AI provider is unavailable",
+          );
         if (encryptedTitle)
           await this.conversations.updateOne(
             {
@@ -1105,13 +1117,10 @@ export class MongoChatRepository
           {
             ownerAccountId: command.ownerAccountId,
             reservations: command._id,
-            usedTokens: {
-              $lte: Math.max(0, tokenBudget - usedTokens),
-            },
           },
           {
             $pull: { reservations: command._id },
-            $inc: { successfulAnswers: 1, usedTokens },
+            $inc: { successfulAnswers: 1 },
           },
           { session },
         );
@@ -1134,10 +1143,46 @@ export class MongoChatRepository
         );
         if (completed.modifiedCount !== 1)
           throw new Error("Atomic chat completion precondition failed");
+        if (Date.now() >= deadline)
+          throw new ChatProblem(
+            503,
+            "CHAT_PROVIDER_UNAVAILABLE",
+            "AI provider is unavailable",
+          );
       });
     } finally {
       await session.endSession();
     }
+  }
+
+  async reserveAttempt(command: ChatCommand, estimate: number, budget: number) {
+    await this.connect();
+    const charged = await this.quotas.updateOne(
+      {
+        ownerAccountId: command.ownerAccountId,
+        reservations: command._id,
+        usedTokens: { $lte: budget - estimate },
+      },
+      { $inc: { usedTokens: estimate } },
+    );
+    if (charged.modifiedCount !== 1)
+      throw new ChatProblem(
+        429,
+        "CHAT_TOKEN_BUDGET_EXHAUSTED",
+        "AI token budget is exhausted",
+      );
+  }
+
+  async settleAttempt(command: ChatCommand, difference: number) {
+    if (difference === 0) return 0;
+    await this.connect();
+    const charged = await this.quotas.findOneAndUpdate(
+      { ownerAccountId: command.ownerAccountId, reservations: command._id },
+      { $inc: { usedTokens: difference } },
+      { returnDocument: "after" },
+    );
+    if (!charged) throw new Error("Chat attempt settlement failed");
+    return charged.usedTokens;
   }
 
   async renameTitle(
@@ -1667,6 +1712,7 @@ export class RoutedChatProvider implements ChatProvider {
       voiceObserver?: VoiceObserver;
       friend?: FriendInput;
       requestTitle?: boolean;
+      onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
   ) {
     options?.signal?.throwIfAborted();
@@ -1728,6 +1774,25 @@ export class RoutedChatProvider implements ChatProvider {
         : coreOutputJsonSchema;
     const temperature = friend ? 0.7 : 0.2;
     const providerId: string = route.provider;
+    if (
+      !options?.voice &&
+      !["GEMINI", "OPENAI", "BEDROCK"].includes(providerId)
+    )
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
+    if (
+      !options?.voice &&
+      providerId === "BEDROCK" &&
+      !this.configuration.BEDROCK_API_KEY
+    )
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
     let response: Response;
     try {
       if (providerId === "GEMINI") {
@@ -1857,10 +1922,14 @@ export class RoutedChatProvider implements ChatProvider {
                   ? "TIMEOUT"
                   : "TRANSPORT",
             );
-      throw new ChatProblem(
-        503,
-        "CHAT_PROVIDER_UNAVAILABLE",
-        "AI provider is unavailable",
+      throw new ProviderFailure(
+        "RETRYABLE",
+        error instanceof Error &&
+          (error.name === "TimeoutError" || error.name === "AbortError")
+          ? "TIMEOUT"
+          : "UNAVAILABLE",
+        {},
+        { cause: error },
       );
     }
     if (!response.ok && options?.voice)
@@ -1868,10 +1937,12 @@ export class RoutedChatProvider implements ChatProvider {
         response.status >= 500 ? "HTTP_5XX" : "HTTP_4XX",
       );
     if (!response.ok)
-      throw new ChatProblem(
-        503,
-        "CHAT_PROVIDER_UNAVAILABLE",
-        "AI provider is unavailable",
+      throw new ProviderFailure(
+        response.status === 429 || response.status >= 500
+          ? "RETRYABLE"
+          : "PERMANENT",
+        "UNAVAILABLE",
+        { httpStatus: response.status },
       );
     if (options?.voice && route.provider === "BEDROCK")
       options.voiceObserver?.({ phase: "bedrock_response_received" });
@@ -1886,6 +1957,50 @@ export class RoutedChatProvider implements ChatProvider {
         "CHAT_PROVIDER_INVALID_RESPONSE",
         "AI response is invalid",
       );
+    }
+    if (
+      !options?.voice &&
+      options?.onUsage &&
+      body &&
+      typeof body === "object"
+    ) {
+      const raw = body as Record<string, unknown>;
+      const usage =
+        raw[route.provider === "GEMINI" ? "usageMetadata" : "usage"];
+      const reported =
+        usage && typeof usage === "object"
+          ? (usage as Record<string, unknown>)
+          : {};
+      const reportedInput =
+        reported[
+          route.provider === "GEMINI"
+            ? "promptTokenCount"
+            : route.provider === "OPENAI"
+              ? "input_tokens"
+              : "inputTokens"
+        ];
+      const reportedOutput =
+        reported[
+          route.provider === "GEMINI"
+            ? "candidatesTokenCount"
+            : route.provider === "OPENAI"
+              ? "output_tokens"
+              : "outputTokens"
+        ];
+      if (
+        typeof reportedInput === "number" &&
+        Number.isSafeInteger(reportedInput) &&
+        reportedInput >= 0 &&
+        typeof reportedOutput === "number" &&
+        Number.isSafeInteger(reportedOutput) &&
+        reportedOutput >= 0
+      )
+        options.onUsage(reportedInput, reportedOutput);
+      else
+        options.onUsage(
+          Math.ceil((system.length + input.length) / 4),
+          Math.ceil(JSON.stringify(body).length / 4),
+        );
     }
     if (options?.voice && route.provider === "BEDROCK") {
       options.voiceObserver?.({
@@ -2253,6 +2368,7 @@ export class CompanionChatService {
     if (replay) return this.replay(replay, fingerprint);
 
     const now = this.clock.now();
+    const sendDeadline = Date.now() + 24_000;
     const command: ChatCommand = {
       _id: randomUUID(),
       ownerAccountId: owner,
@@ -2463,36 +2579,90 @@ export class CompanionChatService {
           ...(friend ? { friend } : {}),
         }),
       );
-      if (reserved.usedTokens + estimate > tokenBudget)
-        throw new ChatProblem(
-          429,
-          "CHAT_TOKEN_BUDGET_EXHAUSTED",
-          "AI token budget is exhausted",
+      const deadlineFailure = () =>
+        new ChatProblem(
+          503,
+          "CHAT_PROVIDER_UNAVAILABLE",
+          "AI provider is unavailable",
         );
-      const reply = await this.provider.reply(
-        parsed.data.message,
-        minimized,
-        route,
-        friend || requestTitle
-          ? {
+      let reply: ProviderReply | undefined;
+      let assistant: string | undefined;
+      let firstFailure: ChatProblem | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const remainingMs = sendDeadline - Date.now();
+        if (attempt === 1 && remainingMs < 3_000)
+          throw firstFailure ?? deadlineFailure();
+        if (remainingMs <= 0) throw deadlineFailure();
+        await this.repository.reserveAttempt(command, estimate, tokenBudget);
+        const signal = AbortSignal.timeout(Math.min(10_000, remainingMs));
+        let usage: { input: number; output: number } | undefined;
+        let attemptedReply: ProviderReply | undefined;
+        let attemptError: unknown;
+        try {
+          attemptedReply = await Promise.race([
+            this.provider.reply(parsed.data.message, minimized, route, {
               ...(friend ? { friend } : {}),
               ...(requestTitle ? { requestTitle: true } : {}),
-            }
-          : undefined,
-      );
-      const assistant = validatedAssistantMessage(reply.message, {
-        rejectLinks: friend !== undefined,
-      });
+              signal,
+              onUsage: (input, output) => {
+                usage = { input, output };
+              },
+            }),
+            new Promise<never>((_resolve, reject) => {
+              const timeout = () => {
+                reject(new ProviderFailure("RETRYABLE", "TIMEOUT"));
+              };
+              if (signal.aborted) timeout();
+              else signal.addEventListener("abort", timeout, { once: true });
+            }),
+          ]);
+          assistant = validatedAssistantMessage(attemptedReply.message, {
+            rejectLinks: friend !== undefined,
+          });
+        } catch (error) {
+          attemptError = error;
+        }
+        const actual = usage
+          ? usage.input + usage.output
+          : attemptedReply
+            ? attemptedReply.inputTokens + attemptedReply.outputTokens
+            : estimate;
+        const usedTokens = await this.repository.settleAttempt(
+          command,
+          actual - estimate,
+        );
+        if (usedTokens > tokenBudget)
+          throw new ChatProblem(
+            429,
+            "CHAT_TOKEN_BUDGET_EXHAUSTED",
+            "AI token budget is exhausted",
+          );
+        if (Date.now() >= sendDeadline) throw deadlineFailure();
+        if (!attemptError && attemptedReply && assistant) {
+          reply = attemptedReply;
+          break;
+        }
+        const retryable =
+          attemptError instanceof ProviderFailure
+            ? attemptError.kind === "RETRYABLE"
+            : attemptError instanceof ChatProblem
+              ? attemptError.code === "CHAT_PROVIDER_INVALID_RESPONSE"
+              : true;
+        const terminalFailure =
+          attemptError instanceof ChatProblem
+            ? attemptError
+            : new ChatProblem(
+                503,
+                "CHAT_PROVIDER_UNAVAILABLE",
+                "AI provider is unavailable",
+              );
+        if (attempt === 1 || !retryable) throw terminalFailure;
+        firstFailure = terminalFailure;
+      }
+      if (!reply || !assistant) throw deadlineFailure();
       const suggestion = friend
         ? resolveSuggestion(reply.suggestion, friend.catalog)
         : null;
-      const tokens = reply.inputTokens + reply.outputTokens;
-      if (reserved.usedTokens + tokens > tokenBudget)
-        throw new ChatProblem(
-          429,
-          "CHAT_TOKEN_BUDGET_EXHAUSTED",
-          "AI token budget is exhausted",
-        );
       const createdAt = this.clock.now();
       const userMessageId = randomUUID();
       const assistantMessageId = randomUUID();
@@ -2553,13 +2723,13 @@ export class CompanionChatService {
         suggestion,
       };
       // The replay snapshot is plaintext; the suggestion lives only on the encrypted message.
+      if (Date.now() >= sendDeadline) throw deadlineFailure();
       await this.repository.complete(
         command,
         userMessage,
         assistantMessage,
         { ...result, suggestion: null },
-        tokens,
-        tokenBudget,
+        sendDeadline,
         requestTitle
           ? this.crypto.encryptTitle(
               owner,
@@ -2591,7 +2761,21 @@ export class CompanionChatService {
         );
       throw new ChatProblem(503, failure.code, failure.title);
     }
-    return this.withTitle(owner, delivered);
+    const titleRemainingMs = sendDeadline - Date.now();
+    if (titleRemainingMs <= 0) return delivered;
+    let titleTimeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.withTitle(owner, delivered),
+        new Promise<SendResult>((resolve) => {
+          titleTimeout = setTimeout(() => {
+            resolve(delivered);
+          }, titleRemainingMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(titleTimeout);
+    }
   }
 
   async rename(

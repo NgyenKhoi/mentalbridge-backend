@@ -16,6 +16,7 @@ import { pausedRead } from "../analysis/consent.fixture.js";
 import { loadConfiguration } from "../configuration/configuration.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { EntitlementDecision } from "../model-routing/model-routing.js";
+import { ProviderFailure } from "../llm-providers/llm-providers.js";
 import {
   CompanionChatService,
   ChatCrypto,
@@ -212,10 +213,11 @@ class MemoryRepository implements ChatRepository {
     userMessage: ChatMessage,
     assistantMessage: ChatMessage,
     result: SendResult,
-    usedTokens: number,
-    _tokenBudget: number,
+    deadline: number,
     encryptedTitle?: EncryptedChatText,
   ) {
+    if (Date.now() >= deadline)
+      throw new HttpException({ code: "CHAT_PROVIDER_UNAVAILABLE" }, 503);
     const conversation = this.conversations.find(
       (row) => row._id === command.conversationId,
     );
@@ -235,10 +237,26 @@ class MemoryRepository implements ChatRepository {
     if (!quota) throw new Error("missing reservation");
     quota.reservations.delete(command._id);
     quota.successes += 1;
-    quota.tokens += usedTokens;
     command.state = "SUCCEEDED";
     command.response = result;
     return Promise.resolve();
+  }
+  reserveAttempt(command: ChatCommand, estimate: number, budget: number) {
+    const quota = [...this.quota.values()].find((row) =>
+      row.reservations.has(command._id),
+    );
+    if (!quota || quota.tokens + estimate > budget)
+      throw new HttpException({ code: "CHAT_TOKEN_BUDGET_EXHAUSTED" }, 429);
+    quota.tokens += estimate;
+    return Promise.resolve();
+  }
+  settleAttempt(command: ChatCommand, difference: number) {
+    const quota = [...this.quota.values()].find((row) =>
+      row.reservations.has(command._id),
+    );
+    if (!quota) throw new Error("missing reservation");
+    quota.tokens += difference;
+    return Promise.resolve(quota.tokens);
   }
   renameTitle(
     command: ChatCommand,
@@ -1118,9 +1136,287 @@ void test("does not consume a successful answer when provider execution fails", 
   await assert.rejects(() =>
     service.send(request({ message: "Timeout" }), conversation.conversationId),
   );
-  assert.equal(attempts, 1);
+  assert.equal(attempts, 2);
   assert.equal([...repository.quota.values()][0]?.successes, 0);
   assert.equal([...repository.quota.values()][0]?.reservations.size, 0);
+});
+
+void test("MB-829 retries eligible provider failures once on the pinned route and exact key", async () => {
+  for (const reason of ["TIMEOUT", "UNAVAILABLE"] as const) {
+    let calls = 0;
+    const routes: string[] = [];
+    const { repository, service } = subject("FREE", {
+      provider: {
+        reply: (_message, _context, route, options) => {
+          calls += 1;
+          routes.push(
+            `${route.provider}:${route.model}:${String(options?.requestTitle)}`,
+          );
+          assert.ok(options?.signal);
+          if (calls === 1)
+            throw new ProviderFailure("RETRYABLE", reason, { httpStatus: 429 });
+          return Promise.resolve({
+            message: "Mình đang lắng nghe bạn.",
+            inputTokens: 20,
+            outputTokens: 10,
+          });
+        },
+      },
+    });
+    const conversation = await create(service);
+    const sendRequest = request(
+      { message: "Mình cần hỗ trợ" },
+      `mb829-retry-${reason}-key`,
+    );
+    const sent = await service.send(sendRequest, conversation.conversationId);
+    const replay = await service.send(sendRequest, conversation.conversationId);
+    assert.equal(replay.assistantMessageId, sent.assistantMessageId);
+    assert.deepEqual(routes, [routes[0], routes[0]]);
+    assert.equal(calls, 2);
+    assert.equal([...repository.quota.values()][0]?.successes, 1);
+    assert.ok(([...repository.quota.values()][0]?.tokens ?? 0) > 30);
+  }
+});
+
+void test("MB-829 terminal HTTP failures use one call, while two retryable failures charge both attempts", async () => {
+  for (const kind of ["PERMANENT", "RETRYABLE"] as const) {
+    let calls = 0;
+    const { repository, service } = subject("FREE", {
+      provider: {
+        reply: () => {
+          calls += 1;
+          throw new ProviderFailure(kind, "UNAVAILABLE", {
+            httpStatus: kind === "PERMANENT" ? 400 : 503,
+          });
+        },
+      },
+    });
+    const conversation = await create(service);
+    await assert.rejects(
+      () =>
+        service.send(
+          request({ message: "Chào bạn" }),
+          conversation.conversationId,
+        ),
+      chatProblem(503, "CHAT_PROVIDER_UNAVAILABLE"),
+    );
+    assert.equal(calls, kind === "PERMANENT" ? 1 : 2);
+    const quota = [...repository.quota.values()][0];
+    assert.ok(quota);
+    assert.equal(quota.successes, 0);
+    assert.equal(quota.reservations.size, 0);
+    assert.ok(quota.tokens > 0);
+  }
+});
+
+void test("MB-829 skips a second attempt when less than 3 seconds remain", async () => {
+  const originalNow = Date.now;
+  let calls = 0;
+  let reservations = 0;
+  let estimatedInput = 0;
+  const { repository, service } = subject("FREE", {
+    provider: {
+      reply: () => {
+        calls += 1;
+        Date.now = () => originalNow() + 21_500;
+        throw new ProviderFailure("RETRYABLE", "UNAVAILABLE", {
+          httpStatus: 503,
+        });
+      },
+    },
+  });
+  const reserveAttempt = repository.reserveAttempt.bind(repository);
+  repository.reserveAttempt = (command, estimate, budget) => {
+    reservations += 1;
+    estimatedInput = estimate;
+    return reserveAttempt(command, estimate, budget);
+  };
+  try {
+    const conversation = await create(service);
+    await assert.rejects(
+      () =>
+        service.send(
+          request({ message: "Chào bạn" }),
+          conversation.conversationId,
+        ),
+      chatProblem(503, "CHAT_PROVIDER_UNAVAILABLE"),
+    );
+    assert.equal(calls, 1);
+    assert.equal(reservations, 1);
+    assert.ok(estimatedInput > 0);
+    assert.equal([...repository.quota.values()][0]?.tokens, estimatedInput);
+    assert.equal(repository.conversations[0]?.messages.length, 0);
+    assert.equal(repository.commands[0]?.state, "FAILED");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+void test("MB-829 repairs existing message rejection once without showing the first output", async () => {
+  const rejected = [
+    "   ",
+    "plain english",
+    "Mình đã cập nhật support plan.",
+    "Mình nghĩ bạn bị trầm cảm.",
+    "Bạn đang an toàn.",
+    "Mình xem https://example.test nhé.",
+    "Mình " + "á".repeat(501),
+  ];
+  for (const first of rejected) {
+    let calls = 0;
+    const { repository, service } = subject(
+      "FREE",
+      {
+        provider: {
+          reply: () => {
+            calls += 1;
+            return Promise.resolve({
+              message: calls === 1 ? first : "Mình đang lắng nghe bạn.",
+              inputTokens: 20,
+              outputTokens: 10,
+            });
+          },
+        },
+      },
+      friendConfiguration,
+    );
+    const conversation = await create(service);
+    const sent = await service.send(
+      request({ message: "Mình cần hỗ trợ" }),
+      conversation.conversationId,
+    );
+    assert.equal(calls, 2);
+    assert.equal(sent.assistant, "Mình đang lắng nghe bạn.");
+    assert.equal(repository.conversations[0]?.messages.length, 2);
+    assert.equal([...repository.quota.values()][0]?.tokens, 60);
+  }
+});
+
+void test("MB-829 checks the second estimate atomically and retains the first charge", async () => {
+  let calls = 0;
+  const budget = 5_000;
+  const { repository, service } = subject(
+    "FREE",
+    {
+      provider: {
+        reply: () => {
+          calls += 1;
+          return Promise.resolve({
+            message: "invalid",
+            inputTokens: 4_900,
+            outputTokens: 0,
+          });
+        },
+      },
+    },
+    { ...friendConfiguration, CHAT_FREE_DAILY_TOKEN_BUDGET: budget },
+  );
+  const conversation = await create(service);
+  await assert.rejects(
+    () =>
+      service.send(
+        request({ message: "Mình cần hỗ trợ" }),
+        conversation.conversationId,
+      ),
+    chatProblem(429, "CHAT_TOKEN_BUDGET_EXHAUSTED"),
+  );
+  assert.equal(calls, 1);
+  const quota = [...repository.quota.values()][0];
+  assert.ok(quota);
+  assert.equal(quota.tokens, 4_900);
+  assert.equal(quota.successes, 0);
+  assert.equal(quota.reservations.size, 0);
+});
+
+void test("MB-829 expires the overall send before a late reply can commit", async () => {
+  const originalNow = Date.now;
+  let calls = 0;
+  const { repository, service } = subject("FREE", {
+    provider: {
+      reply: () => {
+        calls += 1;
+        Date.now = () => originalNow() + 24_001;
+        return Promise.resolve({
+          message: "Mình đang lắng nghe bạn.",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  try {
+    const conversation = await create(service);
+    await assert.rejects(
+      () =>
+        service.send(
+          request({ message: "Chào bạn" }),
+          conversation.conversationId,
+        ),
+      chatProblem(503, "CHAT_PROVIDER_UNAVAILABLE"),
+    );
+    assert.equal(calls, 1);
+    assert.equal([...repository.quota.values()][0]?.successes, 0);
+    assert.equal([...repository.quota.values()][0]?.tokens, 30);
+    assert.equal(repository.conversations[0]?.messages.length, 0);
+    assert.equal(repository.commands[0]?.state, "FAILED");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+void test("MB-829 rechecks the deadline at terminal completion", async () => {
+  const originalNow = Date.now;
+  const { repository, service } = subject();
+  const originalComplete = repository.complete.bind(repository);
+  repository.complete = (...args) => {
+    Date.now = () => originalNow() + 24_001;
+    return originalComplete(...args);
+  };
+  try {
+    const conversation = await create(service);
+    await assert.rejects(
+      () =>
+        service.send(
+          request({ message: "Chào bạn" }),
+          conversation.conversationId,
+        ),
+      chatProblem(503, "CHAT_PROVIDER_UNAVAILABLE"),
+    );
+    assert.equal(repository.conversations[0]?.messages.length, 0);
+    assert.equal([...repository.quota.values()][0]?.tokens, 30);
+    assert.equal([...repository.quota.values()][0]?.reservations.size, 0);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+void test("MB-829 bounds optional title hydration after a committed answer", async () => {
+  const originalNow = Date.now;
+  const { repository, service } = subject();
+  const originalComplete = repository.complete.bind(repository);
+  const originalFind = repository.findConversation.bind(repository);
+  let reads = 0;
+  repository.complete = async (...args) => {
+    await originalComplete(...args);
+    Date.now = () => originalNow() + 23_990;
+  };
+  repository.findConversation = (owner, id) => {
+    reads += 1;
+    return reads === 1
+      ? originalFind(owner, id)
+      : new Promise<Conversation | null>(() => undefined);
+  };
+  try {
+    const conversation = await create(service);
+    const sent = await service.send(
+      request({ message: "Chào bạn" }),
+      conversation.conversationId,
+    );
+    assert.equal(sent.assistant, "Một phản hồi hỗ trợ đã chuẩn hóa.");
+    assert.equal([...repository.quota.values()][0]?.successes, 1);
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 void test("fails closed for withdrawn consent and unsupported reminder context", async () => {
@@ -1338,7 +1634,12 @@ void test("L2 loss during assembly discards all personal input and keeps only or
       },
       provider: {
         reply: (message, minimized, route, options) => {
-          outgoing.push({ message, minimized, route, options });
+          outgoing.push({
+            message,
+            minimized,
+            route,
+            options: { friend: options?.friend },
+          });
           return provider.reply(message, minimized, route, options);
         },
       },
@@ -2752,7 +3053,7 @@ void test("MB-810 a rename during the first provider call wins and send replay r
   assert.equal([...repository.quota.values()][0]?.successes, 1);
 });
 
-void test("MB-810 precommit failures leave titles and quotas untouched, while postcommit title hydration cannot fail a delivered send", async () => {
+void test("MB-810 precommit failures leave titles and answer counts untouched, while postcommit title hydration cannot fail a delivered send", async () => {
   const unavailable = subject("FREE", {
     provider: {
       reply: () => Promise.reject(new Error("synthetic provider timeout")),
@@ -3171,6 +3472,116 @@ void test("requests strict structured output from Gemini and OpenAI", async () =
       ).format?.strict,
       true,
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("MB-829 real provider classifies HTTP errors and repairs malformed envelopes and schema", async () => {
+  const originalFetch = globalThis.fetch;
+  const realConfiguration: ServiceConfiguration = {
+    ...friendConfiguration,
+    PROVIDER_MODE: "APPROVED_REAL",
+    PROVIDER_APPROVAL_VERSION: "reviewed-provider-v1",
+    FREE_PLUS_ROUTE: {
+      provider: "OPENAI",
+      model: "synthetic-model",
+      inputCostMicroUsdPerMillionTokens: 1,
+      outputCostMicroUsdPerMillionTokens: 1,
+    },
+    OPENAI_API_KEY: "synthetic-key",
+  };
+  const providerClient = new RoutedChatProvider(realConfiguration);
+  const valid = {
+    message: "Mình đang lắng nghe bạn.",
+    language: "vi",
+    authority: "SUPPORT_ONLY",
+    clinicalAssessment: "NONE",
+    safetyDecision: "NONE",
+    eligibilityDecision: "NONE",
+    businessAction: "NONE",
+    thirdPartyAction: "NONE",
+  };
+  try {
+    for (const [status, kind] of [
+      [429, "RETRYABLE"],
+      [503, "RETRYABLE"],
+      [400, "PERMANENT"],
+    ] as const) {
+      globalThis.fetch = () => Promise.resolve(new Response("", { status }));
+      await assert.rejects(
+        () =>
+          providerClient.reply(
+            "Chào bạn",
+            { kinds: [], prompt: "" },
+            chatRoute("OPENAI"),
+          ),
+        (error: unknown) =>
+          error instanceof ProviderFailure && error.kind === kind,
+      );
+    }
+    for (const first of [
+      {},
+      { output: [{ content: [{ type: "output_text", text: "not-json" }] }] },
+      {
+        output: [
+          {
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({ ...valid, authority: "DECIDES" }),
+              },
+            ],
+          },
+        ],
+      },
+      {
+        output: [
+          {
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({ ...valid, extra: "unsafe" }),
+              },
+            ],
+          },
+        ],
+      },
+    ]) {
+      let calls = 0;
+      globalThis.fetch = () => {
+        calls += 1;
+        return Promise.resolve(
+          Response.json({
+            ...(calls === 1
+              ? first
+              : {
+                  output: [
+                    {
+                      content: [
+                        { type: "output_text", text: JSON.stringify(valid) },
+                      ],
+                    },
+                  ],
+                }),
+            usage: { input_tokens: 21, output_tokens: 9 },
+          }),
+        );
+      };
+      const { service, repository } = subject(
+        "FREE",
+        { provider: providerClient },
+        realConfiguration,
+      );
+      const conversation = await create(service);
+      const sent = await service.send(
+        request({ message: "Chào bạn" }),
+        conversation.conversationId,
+      );
+      assert.equal(sent.assistant, valid.message);
+      assert.equal(calls, 2);
+      assert.equal([...repository.quota.values()][0]?.tokens, 60);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
