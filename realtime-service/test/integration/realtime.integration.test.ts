@@ -27,6 +27,9 @@ const require = createRequire(import.meta.url);
 const migration = require('../../migrations/001_realtime_message_foundation.cjs') as {
   up(database: ReturnType<MongoClient['db']>): Promise<void>;
 };
+const moderationMigration = require('../../migrations/002_appointment_message_moderation.cjs') as {
+  up(database: ReturnType<MongoClient['db']>): Promise<void>;
+};
 
 const accountId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
@@ -103,6 +106,7 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     mongoClient = new MongoClient(mongoUri);
     await mongoClient.connect();
     await migration.up(mongoClient.db(databaseName));
+    await moderationMigration.up(mongoClient.db(databaseName));
 
     app = await createApplication(configuration, { eligibility, evidence });
     await app.listen(0);
@@ -216,6 +220,91 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
         'messages_id_unique_idx',
         'messages_conversation_cursor_idx',
         'messages_sender_client_unique_idx',
+      ]),
+    );
+  });
+
+  it('applies idempotent appointment moderation collections, validators and indexes', async () => {
+    const database = mongoClient.db(configuration.MONGODB_DATABASE);
+    await expect(moderationMigration.up(database)).resolves.toBeUndefined();
+
+    const collectionNames = (await database.listCollections({}, { nameOnly: true }).toArray()).map(
+      ({ name }) => name,
+    );
+    expect(collectionNames).toEqual(
+      expect.arrayContaining([
+        'appointment_message_reports',
+        'appointment_moderation_commands',
+        'appointment_moderation_audit',
+      ]),
+    );
+
+    const reportId = randomUUID();
+    const reporterId = randomUUID();
+    const reportedMessageId = randomUUID();
+    const now = new Date('2026-11-12T00:00:00.000Z');
+    const report = {
+      _id: new ObjectId(),
+      reportId,
+      conversationId: randomUUID(),
+      messageId: reportedMessageId,
+      reporterId,
+      reason: 'HARASSMENT',
+      context: null,
+      state: 'OPEN',
+      resolution: null,
+      resolvedBy: null,
+      resolvedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: 1,
+    };
+    await expect(
+      database.collection('appointment_message_reports').insertOne(report),
+    ).resolves.toBeDefined();
+    await expect(
+      database.collection('appointment_message_reports').insertOne({
+        ...report,
+        _id: new ObjectId(),
+        reportId: randomUUID(),
+      }),
+    ).rejects.toMatchObject({ code: 11000 });
+    await expect(
+      database.collection('appointment_moderation_commands').insertOne({
+        _id: new ObjectId(),
+        actorId: reporterId,
+        idempotencyKey: 'short',
+        action: 'REPORT_MESSAGE',
+        fingerprint: 'a'.repeat(64),
+        targetId: reportedMessageId,
+        resultId: reportId,
+        createdAt: now,
+        schemaVersion: 1,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      database.collection('appointment_moderation_audit').insertOne({
+        _id: new ObjectId(),
+        auditId: randomUUID(),
+        actorId: reporterId,
+        actorRole: 'USER',
+        action: 'REPORT_MESSAGE',
+        targetType: 'MESSAGE',
+        targetId: reportedMessageId,
+        reason: 'HARASSMENT',
+        outcome: 'SUCCEEDED',
+        correlationId: randomUUID(),
+        occurredAt: now,
+        schemaVersion: 1,
+      }),
+    ).resolves.toBeDefined();
+
+    const reportIndexes = await database.collection('appointment_message_reports').indexes();
+    expect(reportIndexes.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        'appointment_reports_id_unique_idx',
+        'appointment_reports_reporter_message_unique_idx',
+        'appointment_reports_review_idx',
       ]),
     );
   });
