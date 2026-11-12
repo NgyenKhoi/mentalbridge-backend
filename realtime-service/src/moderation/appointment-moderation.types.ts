@@ -35,6 +35,8 @@ export interface StoredModerationCommand {
   readonly fingerprint: string;
   readonly targetId: string;
   readonly resultId: string;
+  readonly resultState: 'DELETED' | 'OPEN' | 'RESOLVED' | null;
+  readonly resultTimestamp: Date | null;
   readonly createdAt: Date;
   readonly schemaVersion: 1;
 }

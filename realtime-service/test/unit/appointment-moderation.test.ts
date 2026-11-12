@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb';
+import { MongoServerError, ObjectId } from 'mongodb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AppointmentModerationService } from '../../src/moderation/appointment-moderation.service.js';
@@ -63,8 +63,10 @@ function report(overrides: Partial<StoredAppointmentReport> = {}): StoredAppoint
 
 function setup() {
   const repository = {
+    withTransaction: vi.fn(async (work: (session: object) => Promise<unknown>) => await work({})),
     findCommand: vi.fn().mockResolvedValue(null),
-    insertCommand: vi.fn().mockResolvedValue(true),
+    insertCommand: vi.fn().mockResolvedValue(undefined),
+    completeCommand: vi.fn().mockResolvedValue(undefined),
     findReport: vi.fn().mockResolvedValue(null),
     findReporterTarget: vi.fn().mockResolvedValue(null),
     insertReport: vi.fn().mockResolvedValue(true),
@@ -74,6 +76,7 @@ function setup() {
   };
   const messages = {
     find: vi.fn().mockResolvedValue(storedMessage()),
+    findInSession: vi.fn().mockResolvedValue(storedMessage()),
     tombstone: vi
       .fn()
       .mockImplementation((_conversation, _message, _sender, at) =>
@@ -128,15 +131,17 @@ describe('appointment message moderation', () => {
       messageId,
       actor,
       expect.any(Date),
+      expect.anything(),
     );
     expect(value.repository.insertAudit).toHaveBeenCalledWith(
       expect.objectContaining({ actorId: actor, targetId: messageId, action: 'DELETE_MESSAGE' }),
+      expect.anything(),
     );
   });
 
   it('fails closed when a participant attempts to delete a peer message', async () => {
     const value = setup();
-    value.messages.find.mockResolvedValue(storedMessage({ senderId: peer }));
+    value.messages.findInSession.mockResolvedValue(storedMessage({ senderId: peer }));
     await expect(
       value.service.removeOwn('bearer', principal, conversationId, messageId, key, 'correlation'),
     ).rejects.toMatchObject({ status: 404 });
@@ -164,15 +169,20 @@ describe('appointment message moderation', () => {
       'correlation',
     );
     expect(value.encryption.encrypt).toHaveBeenCalledWith('private context');
-    expect(value.messages.holdForModeration).toHaveBeenCalledWith(conversationId, messageId);
+    expect(value.messages.holdForModeration).toHaveBeenCalledWith(
+      conversationId,
+      messageId,
+      expect.anything(),
+    );
     expect(value.repository.insertAudit).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'HARASSMENT', outcome: 'SUCCEEDED' }),
+      expect.anything(),
     );
   });
 
   it('rejects report attempts against a deleted message', async () => {
     const value = setup();
-    value.messages.find.mockResolvedValue(storedMessage({ deletedAt: new Date() }));
+    value.messages.findInSession.mockResolvedValue(storedMessage({ deletedAt: new Date() }));
     await expect(
       value.service.report(
         'bearer',
@@ -198,10 +208,15 @@ describe('appointment message moderation', () => {
 
   it('rejects conflicting reuse of an idempotency key', async () => {
     const value = setup();
+    value.repository.insertCommand.mockRejectedValue(
+      new MongoServerError({ errmsg: 'duplicate key', code: 11000 }),
+    );
     value.repository.findCommand.mockResolvedValue({
       action: 'REPORT_MESSAGE',
       fingerprint: 'different',
       resultId: reportId,
+      resultState: 'OPEN',
+      resultTimestamp: new Date(),
       createdAt: new Date(),
     });
     await expect(

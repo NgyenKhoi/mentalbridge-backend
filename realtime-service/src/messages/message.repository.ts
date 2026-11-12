@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { MongoServerError, ObjectId } from 'mongodb';
+import { type ClientSession, MongoServerError, ObjectId } from 'mongodb';
 
 import { MongoDatabaseService } from '../database/mongo-database.service.js';
 import type { StoredMessage } from './message.types.js';
@@ -46,11 +46,22 @@ export class MessageRepository {
       .findOne({ conversationId, messageId });
   }
 
+  findInSession(
+    conversationId: string,
+    messageId: string,
+    session: ClientSession,
+  ): Promise<StoredMessage | null> {
+    return this.database
+      .collection<StoredMessage>('messages')
+      .findOne({ conversationId, messageId }, { session });
+  }
+
   async tombstone(
     conversationId: string,
     messageId: string,
     senderId: string | undefined,
     deletedAt: Date,
+    session?: ClientSession,
   ): Promise<StoredMessage | null> {
     const result = await this.database.collection<StoredMessage>('messages').findOneAndUpdate(
       {
@@ -60,18 +71,25 @@ export class MessageRepository {
         deletedAt: null,
       },
       { $set: { deletedAt } },
-      { returnDocument: 'after' },
+      { returnDocument: 'after', ...(session ? { session } : {}) },
     );
     if (result) return result;
-    return this.find(conversationId, messageId);
+    return session
+      ? this.findInSession(conversationId, messageId, session)
+      : this.find(conversationId, messageId);
   }
 
-  async holdForModeration(conversationId: string, messageId: string): Promise<boolean> {
+  async holdForModeration(
+    conversationId: string,
+    messageId: string,
+    session?: ClientSession,
+  ): Promise<boolean> {
     const result = await this.database
       .collection<StoredMessage>('messages')
       .updateOne(
         { conversationId, messageId, deletedAt: null },
         { $set: { moderationHold: true } },
+        session ? { session } : {},
       );
     return result.matchedCount === 1;
   }

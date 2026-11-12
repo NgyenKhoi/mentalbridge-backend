@@ -19,7 +19,9 @@ import type {
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
 import { RedisService } from '../../src/database/redis.service.js';
 import { MessageEncryptionService } from '../../src/messages/message-encryption.service.js';
+import { AppointmentModerationService } from '../../src/moderation/appointment-moderation.service.js';
 import { PresenceService } from '../../src/presence/presence.service.js';
+import type { AuthenticatedPrincipal } from '../../src/security/principal.js';
 import { testConfiguration } from '../fixtures/test-configuration.js';
 import { issueToken } from '../fixtures/token.js';
 
@@ -80,7 +82,13 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     [mongoContainer, redisContainer] = await Promise.all([
       new GenericContainer('mongo:8.0')
         .withEnvironment({ GLIBC_TUNABLES: 'glibc.pthread.rseq=1' })
-        .withCommand(['--setParameter', 'enableTestCommands=1'])
+        .withCommand([
+          '--replSet',
+          'rs0',
+          '--bind_ip_all',
+          '--setParameter',
+          'enableTestCommands=1',
+        ])
         .withExposedPorts(27017)
         .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
         .start(),
@@ -90,7 +98,13 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
         .start(),
     ]);
 
-    const mongoUri = `mongodb://${mongoContainer.getHost()}:${String(mongoContainer.getMappedPort(27017))}`;
+    await mongoContainer.exec([
+      'mongosh',
+      '--quiet',
+      '--eval',
+      'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})',
+    ]);
+    const mongoUri = `mongodb://${mongoContainer.getHost()}:${String(mongoContainer.getMappedPort(27017))}/?directConnection=true&replicaSet=rs0`;
     const redisUrl = `redis://${redisContainer.getHost()}:${String(redisContainer.getMappedPort(6379))}`;
     const databaseName = `mentalbridge_realtime_${randomUUID().replaceAll('-', '')}`;
     const keys = await generateKeyPair('RS256', { extractable: true });
@@ -105,6 +119,12 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
     token = await issueToken(keys.privateKey, configuration, accountId);
     mongoClient = new MongoClient(mongoUri);
     await mongoClient.connect();
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const hello = await mongoClient.db('admin').command({ hello: 1 });
+      if (hello.isWritablePrimary === true) break;
+      if (attempt === 49) throw new Error('MongoDB test replica set did not elect a primary');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     await migration.up(mongoClient.db(databaseName));
     await moderationMigration.up(mongoClient.db(databaseName));
 
@@ -307,6 +327,246 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
         'appointment_reports_review_idx',
       ]),
     );
+  });
+
+  it('atomically rejects concurrent conflicting uses of one moderation key', async () => {
+    const service = app.get(AppointmentModerationService);
+    const targetConversationId = randomUUID();
+    const targetMessageId = randomUUID();
+    const key = `mb-694-collision-${randomUUID()}`;
+    await storeModerationMessage(targetConversationId, targetMessageId);
+
+    const outcomes = await Promise.allSettled([
+      service.report(
+        'bearer',
+        userPrincipal(accountId),
+        targetConversationId,
+        targetMessageId,
+        key,
+        'SPAM',
+        undefined,
+        randomUUID(),
+      ),
+      service.report(
+        'bearer',
+        userPrincipal(accountId),
+        targetConversationId,
+        targetMessageId,
+        key,
+        'HARASSMENT',
+        undefined,
+        randomUUID(),
+      ),
+    ]);
+
+    expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    const rejected = outcomes.find(({ status }) => status === 'rejected');
+    expect(rejected).toMatchObject({
+      status: 'rejected',
+      reason: { status: 409, code: 'IDEMPOTENCY_CONFLICT' },
+    });
+    const database = mongoClient.db(configuration.MONGODB_DATABASE);
+    expect(
+      await database
+        .collection('appointment_moderation_commands')
+        .countDocuments({ actorId: accountId, idempotencyKey: key }),
+    ).toBe(1);
+    expect(
+      await database
+        .collection('appointment_message_reports')
+        .countDocuments({ messageId: targetMessageId }),
+    ).toBe(1);
+    expect(
+      await database
+        .collection('appointment_moderation_audit')
+        .countDocuments({ targetId: targetMessageId, action: 'REPORT_MESSAGE' }),
+    ).toBe(1);
+  });
+
+  it('returns the one persisted tombstone timestamp to concurrent delete callers', async () => {
+    const service = app.get(AppointmentModerationService);
+    const targetConversationId = randomUUID();
+    const targetMessageId = randomUUID();
+    await storeModerationMessage(targetConversationId, targetMessageId);
+
+    const [first, second] = await Promise.all([
+      service.removeOwn(
+        'bearer',
+        userPrincipal(accountId),
+        targetConversationId,
+        targetMessageId,
+        `mb-694-delete-${randomUUID()}`,
+        randomUUID(),
+      ),
+      service.removeOwn(
+        'bearer',
+        userPrincipal(accountId),
+        targetConversationId,
+        targetMessageId,
+        `mb-694-delete-${randomUUID()}`,
+        randomUUID(),
+      ),
+    ]);
+
+    const stored = await mongoClient
+      .db(configuration.MONGODB_DATABASE)
+      .collection<{ deletedAt: Date | null }>('messages')
+      .findOne({ messageId: targetMessageId });
+    expect(stored?.deletedAt).toBeInstanceOf(Date);
+    expect(first.deletedAt).toBe(stored?.deletedAt.toISOString());
+    expect(second.deletedAt).toBe(stored?.deletedAt.toISOString());
+  });
+
+  it('rolls back a moderation state change when mandatory audit persistence fails', async () => {
+    const service = app.get(AppointmentModerationService);
+    const targetConversationId = randomUUID();
+    const targetMessageId = randomUUID();
+    const key = `mb-694-audit-failure-${randomUUID()}`;
+    const database = mongoClient.db(configuration.MONGODB_DATABASE);
+    await storeModerationMessage(targetConversationId, targetMessageId);
+    await mongoClient.db('admin').command({
+      configureFailPoint: 'failCommand',
+      mode: { times: 1 },
+      data: {
+        failCommands: ['insert'],
+        namespace: `${configuration.MONGODB_DATABASE}.appointment_moderation_audit`,
+        errorCode: 121,
+      },
+    });
+    try {
+      await expect(
+        service.removeOwn(
+          'bearer',
+          userPrincipal(accountId),
+          targetConversationId,
+          targetMessageId,
+          key,
+          randomUUID(),
+        ),
+      ).rejects.toBeDefined();
+    } finally {
+      await mongoClient.db('admin').command({ configureFailPoint: 'failCommand', mode: 'off' });
+    }
+    expect(
+      await database.collection('messages').findOne({ messageId: targetMessageId }),
+    ).toMatchObject({ deletedAt: null });
+    expect(
+      await database
+        .collection('appointment_moderation_commands')
+        .countDocuments({ actorId: accountId, idempotencyKey: key }),
+    ).toBe(0);
+    expect(
+      await database
+        .collection('appointment_moderation_audit')
+        .countDocuments({ targetId: targetMessageId }),
+    ).toBe(0);
+  });
+
+  it('keeps report resolution and message removal consistent under conflicting admin races', async () => {
+    const service = app.get(AppointmentModerationService);
+    const database = mongoClient.db(configuration.MONGODB_DATABASE);
+    const targetConversationId = randomUUID();
+    const targetMessageId = randomUUID();
+    const targetReportId = randomUUID();
+    const now = new Date();
+    await storeModerationMessage(targetConversationId, targetMessageId);
+    await database.collection('appointment_message_reports').insertOne({
+      _id: new ObjectId(),
+      reportId: targetReportId,
+      conversationId: targetConversationId,
+      messageId: targetMessageId,
+      reporterId: accountId,
+      reason: 'SPAM',
+      context: null,
+      state: 'OPEN',
+      resolution: null,
+      resolvedBy: null,
+      resolvedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      schemaVersion: 1,
+    });
+    const firstAdmin = userPrincipal('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'ADMIN');
+    const secondAdmin = userPrincipal('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'ADMIN');
+
+    const outcomes = await Promise.allSettled([
+      service.resolve(
+        firstAdmin,
+        targetReportId,
+        `mb-694-resolve-${randomUUID()}`,
+        'NO_ACTION',
+        'No policy violation',
+        randomUUID(),
+      ),
+      service.resolve(
+        secondAdmin,
+        targetReportId,
+        `mb-694-resolve-${randomUUID()}`,
+        'MESSAGE_REMOVED',
+        'Confirmed policy violation',
+        randomUUID(),
+      ),
+    ]);
+
+    expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    const persistedReport = await database
+      .collection('appointment_message_reports')
+      .findOne({ reportId: targetReportId });
+    const persistedMessage = await database
+      .collection('messages')
+      .findOne({ messageId: targetMessageId });
+    expect(persistedReport?.state).toBe('RESOLVED');
+    if (persistedReport?.resolution === 'MESSAGE_REMOVED')
+      expect(persistedMessage?.deletedAt).toBeInstanceOf(Date);
+    else {
+      expect(persistedReport?.resolution).toBe('NO_ACTION');
+      expect(persistedMessage?.deletedAt).toBeNull();
+    }
+  });
+
+  it('returns the current resolved report state on an idempotent report replay', async () => {
+    const service = app.get(AppointmentModerationService);
+    const database = mongoClient.db(configuration.MONGODB_DATABASE);
+    const targetConversationId = randomUUID();
+    const targetMessageId = randomUUID();
+    const key = `mb-694-report-replay-${randomUUID()}`;
+    await storeModerationMessage(targetConversationId, targetMessageId);
+    const first = await service.report(
+      'bearer',
+      userPrincipal(accountId),
+      targetConversationId,
+      targetMessageId,
+      key,
+      'SPAM',
+      undefined,
+      randomUUID(),
+    );
+    await database.collection('appointment_message_reports').updateOne(
+      { reportId: first.reportId },
+      {
+        $set: {
+          state: 'RESOLVED',
+          resolution: 'NO_ACTION',
+          resolvedBy: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          resolvedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    await expect(
+      service.report(
+        'bearer',
+        userPrincipal(accountId),
+        targetConversationId,
+        targetMessageId,
+        key,
+        'SPAM',
+        undefined,
+        randomUUID(),
+      ),
+    ).resolves.toMatchObject({ reportId: first.reportId, state: 'RESOLVED', duplicate: true });
   });
 
   it('rejects a missing Socket.IO credential', async () => {
@@ -812,6 +1072,44 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
       socket.close();
     }
   });
+
+  async function storeModerationMessage(
+    targetConversationId: string,
+    targetMessageId: string,
+  ): Promise<void> {
+    const encryption = app.get(MessageEncryptionService);
+    const content = `moderation target ${targetMessageId}`;
+    await mongoClient
+      .db(configuration.MONGODB_DATABASE)
+      .collection('messages')
+      .insertOne({
+        _id: new ObjectId(),
+        messageId: targetMessageId,
+        conversationId: targetConversationId,
+        senderId: accountId,
+        clientMessageId: randomUUID(),
+        type: 'TEXT',
+        ...encryption.encrypt(content),
+        commandFingerprint: encryption.fingerprint(targetConversationId, 'TEXT', content),
+        sentAt: new Date(),
+        editedAt: null,
+        deletedAt: null,
+        moderationHold: false,
+        schemaVersion: 1,
+      });
+  }
+
+  function userPrincipal(
+    requestedAccountId: string,
+    role: AuthenticatedPrincipal['role'] = 'USER',
+  ): AuthenticatedPrincipal {
+    return {
+      accountId: requestedAccountId,
+      role,
+      tokenId: randomUUID(),
+      expiresAtEpochSeconds: 4_000_000_000,
+    };
+  }
 
   async function connectClient(accessToken = token): Promise<Socket> {
     const credential = await socketCredential(accessToken);

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { MongoServerError } from 'mongodb';
+import type { ClientSession, ObjectId } from 'mongodb';
 
 import { MongoDatabaseService } from '../database/mongo-database.service.js';
 import type {
@@ -12,46 +12,55 @@ import type {
 export class AppointmentModerationRepository {
   constructor(private readonly database: MongoDatabaseService) {}
 
-  findCommand(actorId: string, idempotencyKey: string) {
+  withTransaction<T>(work: (session: ClientSession) => Promise<T>) {
+    return this.database.withTransaction(work);
+  }
+
+  findCommand(actorId: string, idempotencyKey: string, session?: ClientSession) {
     return this.database
       .collection<StoredModerationCommand>('appointment_moderation_commands')
-      .findOne({ actorId, idempotencyKey });
+      .findOne({ actorId, idempotencyKey }, session ? { session } : {});
   }
 
-  async insertCommand(command: StoredModerationCommand): Promise<boolean> {
-    try {
-      await this.database
-        .collection<StoredModerationCommand>('appointment_moderation_commands')
-        .insertOne(command);
-      return true;
-    } catch (error) {
-      if (error instanceof MongoServerError && error.code === 11000) return false;
-      throw error;
-    }
+  async insertCommand(command: StoredModerationCommand, session: ClientSession): Promise<void> {
+    await this.database
+      .collection<StoredModerationCommand>('appointment_moderation_commands')
+      .insertOne(command, { session });
   }
 
-  findReport(reportId: string) {
+  async completeCommand(
+    id: ObjectId,
+    resultId: string,
+    resultState: NonNullable<StoredModerationCommand['resultState']>,
+    resultTimestamp: Date | null,
+    session: ClientSession,
+  ): Promise<void> {
+    const result = await this.database
+      .collection<StoredModerationCommand>('appointment_moderation_commands')
+      .updateOne(
+        { _id: id, resultState: null },
+        { $set: { resultId, resultState, resultTimestamp } },
+        { session },
+      );
+    if (result.modifiedCount !== 1) throw new Error('Moderation command completion was not stored');
+  }
+
+  findReport(reportId: string, session?: ClientSession) {
     return this.database
       .collection<StoredAppointmentReport>('appointment_message_reports')
-      .findOne({ reportId });
+      .findOne({ reportId }, session ? { session } : {});
   }
 
-  findReporterTarget(reporterId: string, messageId: string) {
+  findReporterTarget(reporterId: string, messageId: string, session?: ClientSession) {
     return this.database
       .collection<StoredAppointmentReport>('appointment_message_reports')
-      .findOne({ reporterId, messageId });
+      .findOne({ reporterId, messageId }, session ? { session } : {});
   }
 
-  async insertReport(report: StoredAppointmentReport): Promise<boolean> {
-    try {
-      await this.database
-        .collection<StoredAppointmentReport>('appointment_message_reports')
-        .insertOne(report);
-      return true;
-    } catch (error) {
-      if (error instanceof MongoServerError && error.code === 11000) return false;
-      throw error;
-    }
+  async insertReport(report: StoredAppointmentReport, session: ClientSession): Promise<void> {
+    await this.database
+      .collection<StoredAppointmentReport>('appointment_message_reports')
+      .insertOne(report, { session });
   }
 
   async listReports(state: 'OPEN' | 'RESOLVED' | undefined, limit: number) {
@@ -68,6 +77,7 @@ export class AppointmentModerationRepository {
     actorId: string,
     resolution: 'NO_ACTION' | 'MESSAGE_REMOVED',
     resolvedAt: Date,
+    session: ClientSession,
   ) {
     const result = await this.database
       .collection<StoredAppointmentReport>('appointment_message_reports')
@@ -82,14 +92,14 @@ export class AppointmentModerationRepository {
             updatedAt: resolvedAt,
           },
         },
-        { returnDocument: 'after' },
+        { returnDocument: 'after', session },
       );
-    return result ?? this.findReport(reportId);
+    return result ?? this.findReport(reportId, session);
   }
 
-  insertAudit(audit: StoredModerationAudit) {
+  insertAudit(audit: StoredModerationAudit, session: ClientSession) {
     return this.database
       .collection<StoredModerationAudit>('appointment_moderation_audit')
-      .insertOne(audit);
+      .insertOne(audit, { session });
   }
 }
