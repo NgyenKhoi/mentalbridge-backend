@@ -412,9 +412,9 @@ describe('Realtime MongoDB, Redis and Socket.IO integration', { concurrent: fals
       .db(configuration.MONGODB_DATABASE)
       .collection<{ deletedAt: Date | null }>('messages')
       .findOne({ messageId: targetMessageId });
-    expect(stored?.deletedAt).toBeInstanceOf(Date);
-    expect(first.deletedAt).toBe(stored?.deletedAt.toISOString());
-    expect(second.deletedAt).toBe(stored?.deletedAt.toISOString());
+    if (!stored?.deletedAt) throw new Error('Expected the message tombstone to be persisted');
+    expect(first.deletedAt).toBe(stored.deletedAt.toISOString());
+    expect(second.deletedAt).toBe(stored.deletedAt.toISOString());
   });
 
   it('rolls back a moderation state change when mandatory audit persistence fails', async () => {
