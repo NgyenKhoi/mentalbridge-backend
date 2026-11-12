@@ -70,9 +70,23 @@ exact event/query may bind that ID under the same lock; a known ID must match.
 Exact redelivery acknowledges the prior result without a second grant. Signed
 unknown confirmation samples, mismatches, reused references and success after
 a committed terminal state are `VERIFIED_UNMATCHED` for admin review and never
-activate a subscription. A success after page return may settle only while the
-payment is still pending and unexpired. Reconcile pending attempts with bounded
-cadence/backoff, including before expiry; provider outages preserve uncertainty.
+activate a subscription. Exactly matched verified `PAID` evidence may settle a
+still-pending payment after its local checkout expiry: PayOS enforces the payment
+link deadline, while webhook delivery and authenticated status observation may
+arrive later. Local processing time alone cannot reject that proof. A provider
+status query that fails, or returns `PAID` without exact matching evidence,
+cannot itself cause local expiry. During retry backoff or an in-flight query,
+another owner read or scheduler tick preserves the `PENDING` payment. A later
+successful non-`PAID` provider answer may trigger ordinary local expiry.
+At 24 hours after `expires_at`, any still-`PENDING` PayOS payment closes as
+`FAILED` with `terminalReason=EXPIRED` and reconciliation failure code
+`PAYOS_REVIEW_DEADLINE`, even when retry backoff remains. This restores
+upgrade-held credits, attempts provider-link cancellation, and lists the
+payment as `PAYMENT_REVIEW` in admin commercial discrepancies. A later verified
+`PAID` receipt for that terminal payment is `VERIFIED_UNMATCHED` with
+`PAYMENT_ALREADY_FINAL`; it grants no entitlement or automatic refund.
+Reconcile pending attempts with bounded cadence/backoff; provider outages
+preserve uncertainty until the hard cap. An admin close endpoint is a follow-up.
 Cancel expired provider links while preserving local locked finality and exact
 upgrade-held credit restoration. No transaction spans a provider network call.
 Persist only minimized sanitized receipt evidence; discard signatures, raw

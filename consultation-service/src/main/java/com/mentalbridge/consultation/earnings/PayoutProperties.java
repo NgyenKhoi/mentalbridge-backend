@@ -13,7 +13,7 @@ import org.springframework.core.env.Profiles;
 @ConfigurationProperties("mentalbridge.consultation.payout")
 public class PayoutProperties implements EnvironmentAware {
 
-	private String mode = "FAKE";
+	private String mode = "DISABLED";
 	private Duration settlementHold = Duration.ofDays(7);
 	private long minimumWithdrawalVnd = 100_000;
 	private boolean stagingDemoEnabled;
@@ -106,7 +106,7 @@ public class PayoutProperties implements EnvironmentAware {
 	boolean verificationReady(String provider) {
 		if (provider == null) return false;
 		return switch (provider) {
-			case "FAKE" -> true;
+			case "FAKE" -> "FAKE".equals(mode);
 			case "MOMO" -> momoVerificationReady();
 			case "PAYOS" -> payosVerificationReady();
 			default -> false;
