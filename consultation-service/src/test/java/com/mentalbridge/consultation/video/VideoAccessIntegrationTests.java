@@ -119,7 +119,7 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 	void demoOptInCannotExtendScheduledEndOrReviveExpiredDemoEntitlement() throws Exception {
 		properties.setDemoImmediateAccessEnabled(true);
 		var fixture = fixture(Instant.now().plusSeconds(1800), true, true);
-		jdbc.sql("update current_service_entitlement set effective_until=now()-interval '1 second',effective_from=now()-interval '1 day' where account_id=:user")
+		jdbc.sql("update current_service_entitlement set effective_until=now()-interval '10 seconds',effective_from=now()-interval '1 day' where account_id=:user")
 				.param("user", fixture.user).update();
 		mvc.perform(post("/api/v1/appointments/{id}/video-access", fixture.id).with(actor(fixture.user, "USER")))
 				.andExpect(status().isConflict());

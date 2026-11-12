@@ -520,7 +520,7 @@ paid row means `FREE` entitlement. MB-515 exposes new purchase and
 | `status` | Current lifecycle state: `PENDING_PAYMENT`, `ACTIVE`, or terminal `ENDED`. |
 | `current_period_start` | UTC start of the active provider billing period; null while initial payment is pending. |
 | `current_period_end` | UTC exclusive end of the current billing period used for benefit/credit expiry and exact upgrade seconds. |
-| `ended_at` | UTC instant the paid subscription ceased being current; null while active/pending. |
+| `ended_at` | UTC instant the paid subscription ceased being current: the period end when an elapsed `ACTIVE` row is closed on checkout, or the failure instant for a pending purchase; null while active/pending. |
 | `idempotency_key` | User-scoped creation retry key returning the original subscription outcome. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest lifecycle, period, or plan change. |
@@ -573,9 +573,9 @@ nullable QR/link metadata and cannot authorize another charge attempt.
 | `idempotency_key` | Subscription-scoped payment retry key preventing duplicate attempts. |
 | `momo_response_time_epoch_ms` | Exact verified MoMo millisecond timestamp retained for signature/reconciliation evidence. |
 | `provider_occurred_at` | UTC occurrence instant parsed from verified provider evidence; null while checkout is pending or no provider instant was supplied. |
-| `paid_at` | Provider-confirmed UTC success instant; null until successful. |
+| `paid_at` | UTC instant Consultation accepted verified provider success and settled the payment; null until successful. It is not necessarily the provider's original transfer time. |
 | `failed_at` | UTC terminal failure instant; null unless failed. |
-| `expires_at` | UTC deadline after which the pending attempt can no longer activate rights. |
+| `expires_at` | Local UTC checkout/link deadline. It stops unverified attempts and non-PayOS settlement; an exactly matched verified PayOS `PAID` result can still settle a `PENDING` payment when evidence arrives after this deadline. |
 | `checkout_url` | Nullable safe provider redirect. Null while durable checkout preparation is awaiting an unconfirmed provider response (including timeout); no redirect or automatic charge resend. Verified callback may finalize the payment even when null. Historical URLs are unchanged. Never authorization evidence. |
 | `qr_code_url` | Optional safe MoMo QR URL returned with checkout. |
 | `qr_code` | Nullable provider VietQR payload, or deterministic FAKE payload, rendered inside the application; never treated as a hosted URL. Missing for legacy/non-QR/unconfirmed attempts. |

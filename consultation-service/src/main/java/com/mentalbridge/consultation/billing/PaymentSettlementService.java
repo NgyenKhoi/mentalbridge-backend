@@ -43,10 +43,12 @@ class PaymentSettlementService {
     }
 
     boolean succeed(Payment payment, Instant now) {
-        if (payment == null || !"PENDING".equals(payment.status()) || !payment.expiresAt().isAfter(now)) return false;
+        if (payment == null || !"PENDING".equals(payment.status())
+                || (!"PAYOS".equals(payment.provider()) && !payment.expiresAt().isAfter(now))) return false;
         var changed = jdbc.sql("""
                 update payment_transaction set status='SUCCEEDED', terminal_reason=null, paid_at=:now,
-                 updated_at=:now, version=version+1 where id=:id and status='PENDING' and expires_at>:now
+                  updated_at=:now, version=version+1 where id=:id and status='PENDING'
+                   and (payment_provider='PAYOS' or expires_at>:now)
                 """).param("now", databaseInstant(now)).param("id", payment.id()).update();
         if (changed == 0) return false;
 		if ("UPGRADE".equals(payment.purpose())) {
