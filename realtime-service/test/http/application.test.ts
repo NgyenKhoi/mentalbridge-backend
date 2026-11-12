@@ -159,6 +159,43 @@ describe('Realtime HTTP boundary', () => {
     }
   });
 
+  it('fails owner deletion closed when Consultation eligibility is unavailable', async () => {
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .delete(
+          '/api/v1/conversations/22222222-2222-4222-8222-222222222222/messages/33333333-3333-4333-8333-333333333333',
+        )
+        .set('authorization', `Bearer ${token}`)
+        .set('idempotency-key', 'mb-694-http-delete-0001')
+        .expect(503)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('CHAT_ELIGIBILITY_UNAVAILABLE');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('hides appointment report administration from non-admin actors', async () => {
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .get('/api/v1/admin/appointment-chat/reports')
+        .set('authorization', `Bearer ${token}`)
+        .expect(403)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('ACCESS_DENIED');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('issues a bounded one-use socket credential for a chat participant', async () => {
     const credentialRedis = {
       ping: () => Promise.resolve(true),

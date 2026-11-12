@@ -841,7 +841,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [SUBSCRIBE, SEND, HISTORY, CHECK_IN]
+            enum: [SUBSCRIBE, SEND, HISTORY, CHECK_IN, DELETE, REPORT]
       responses:
         '200':
           description: Current appointment-scoped chat decision

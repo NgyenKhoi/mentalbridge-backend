@@ -334,15 +334,15 @@ One document per server-generated `voiceSessionId`, also used as `_id`. Its
 idempotency keys are not stored. Exact accepted retries reuse the same session
 and reservation.
 
-| Fields | Purpose |
-| --- | --- |
-| `state`, `policyVersion`, `terminalReason`, `settledAt` | Closed lifecycle, approved policy, and idempotent terminal outcome. |
-| `entitlement` | Frozen admission-time Consultation package, source, version, checked time, and validity snapshot; renewal never rewrites provenance or authorizes a future turn from this snapshot alone. |
-| `quotaDay`, `admittedSeconds`, `authorizedAt`, `hardStopAt` | Frozen server-derived Vietnam quota day and wall-clock admission deadline. |
-| `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence` | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing. |
-| `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts. |
-| `createdAt`, `updatedAt`, `expiresAt` | Metadata lifecycle; `expiresAt` is exactly creation plus 30 days and is never extended by activity or settlement. |
-| `contextHandoffHash` (optional) | Migration 016: 43-character HMAC of an owner-bound Text-context ticket. Unique across sessions, including terminal rows; never contains the ticket, conversation ID, content or summary. Absent on voice-only sessions. |
+| Fields                                                                                                                                  | Purpose                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`, `policyVersion`, `terminalReason`, `settledAt`                                                                                 | Closed lifecycle, approved policy, and idempotent terminal outcome.                                                                                                                                                     |
+| `entitlement`                                                                                                                           | Frozen admission-time Consultation package, source, version, checked time, and validity snapshot; renewal never rewrites provenance or authorizes a future turn from this snapshot alone.                               |
+| `quotaDay`, `admittedSeconds`, `authorizedAt`, `hardStopAt`                                                                             | Frozen server-derived Vietnam quota day and wall-clock admission deadline.                                                                                                                                              |
+| `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence`                   | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing.                                                                                                                             |
+| `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts.                                                                                                                       |
+| `createdAt`, `updatedAt`, `expiresAt`                                                                                                   | Metadata lifecycle; `expiresAt` is exactly creation plus 30 days and is never extended by activity or settlement.                                                                                                       |
+| `contextHandoffHash` (optional)                                                                                                         | Migration 016: 43-character HMAC of an owner-bound Text-context ticket. Unique across sessions, including terminal rows; never contains the ticket, conversation ID, content or summary. Absent on voice-only sessions. |
 
 Indexes are `uq_ai_voice_owner_key` (unique owner/key),
 `idx_ai_voice_retention_sweep` (`expiresAt`), and
@@ -766,6 +766,27 @@ db.messages.createIndex({ senderId: 1, clientMessageId: 1 }, { unique: true });
 Use cursor pagination. A deletion replaces display content with a tombstone while retention/moderation rules decide encrypted-body removal. Do not put large attachments in MongoDB; store private object keys and validated metadata in a separate `message_attachments` collection or relational metadata.
 
 `bodyCiphertext`, `bodyIv`, and `bodyTag` are the AES-256-GCM envelope persisted by Realtime; plaintext is returned only after current authorization. `keyVersion` resolves against the configured decryption keyring so a controlled key rotation preserves history. Operators deploy old and new keys together before selecting a new active key and retain every version still referenced by stored messages. `commandFingerprint` is a keyed digest over the logical conversation, type, and content so a repeated sender-scoped `clientMessageId` can distinguish a safe retry from conflicting content without storing a raw plaintext hash. Migration `realtime-service/migrations/001_realtime_message_foundation.cjs` is the executable validator and index baseline.
+
+## Appointment message moderation collections
+
+Migration `realtime-service/migrations/002_appointment_message_moderation.cjs`
+activates three bounded Realtime-owned collections:
+
+- `appointment_message_reports` binds one reporter and target message, stores a
+  stable reason plus optional AES-256-GCM encrypted context, and records only
+  the bounded `OPEN`/`RESOLVED` review lifecycle;
+- `appointment_moderation_commands` fences delete, report, and resolution
+  retries by actor plus idempotency key and rejects a conflicting fingerprint;
+- `appointment_moderation_audit` records actor, role, action, target, safe
+  reason, outcome, correlation ID, and timestamp without message content.
+
+Report list responses omit reporter identity and message content. Only an
+authorized `ADMIN` detail read may decrypt the retained target content and
+report context. Participant delete/report commands reauthorize the exact
+appointment through Consultation and fail closed for cross-appointment,
+non-owner, missing, or already deleted targets. A tombstone retains the
+encrypted body for the approved moderation/retention path while every normal
+history response exposes `content: null` and server-owned `DELETED` state.
 
 ## `message_receipts` — PROPOSED
 

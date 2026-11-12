@@ -40,6 +40,42 @@ export class MessageRepository {
     });
   }
 
+  find(conversationId: string, messageId: string): Promise<StoredMessage | null> {
+    return this.database
+      .collection<StoredMessage>('messages')
+      .findOne({ conversationId, messageId });
+  }
+
+  async tombstone(
+    conversationId: string,
+    messageId: string,
+    senderId: string | undefined,
+    deletedAt: Date,
+  ): Promise<StoredMessage | null> {
+    const result = await this.database.collection<StoredMessage>('messages').findOneAndUpdate(
+      {
+        conversationId,
+        messageId,
+        ...(senderId ? { senderId } : {}),
+        deletedAt: null,
+      },
+      { $set: { deletedAt } },
+      { returnDocument: 'after' },
+    );
+    if (result) return result;
+    return this.find(conversationId, messageId);
+  }
+
+  async holdForModeration(conversationId: string, messageId: string): Promise<boolean> {
+    const result = await this.database
+      .collection<StoredMessage>('messages')
+      .updateOne(
+        { conversationId, messageId, deletedAt: null },
+        { $set: { moderationHold: true } },
+      );
+    return result.matchedCount === 1;
+  }
+
   async list(
     conversationId: string,
     limit: number,

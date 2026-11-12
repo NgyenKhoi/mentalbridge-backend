@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Realtime API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     REST recovery and operational contract for Realtime Service. Socket.IO
     messages use the versioned JSON Schemas under contracts/websocket/realtime
@@ -17,13 +17,14 @@ tags:
   - name: Operations
   - name: Socket credentials
   - name: Message history
+  - name: Appointment message moderation
 paths:
   /api/v1/community/socket-credentials:
     x-mentalbridge-status: implemented
-    $ref: './community-realtime-v1.json#/paths/~1api~1v1~1community~1socket-credentials'
+    $ref: "./community-realtime-v1.json#/paths/~1api~1v1~1community~1socket-credentials"
   /internal/v1/community/socket-credentials:
     x-mentalbridge-status: implemented
-    $ref: './community-realtime-v1.json#/paths/~1internal~1v1~1community~1socket-credentials'
+    $ref: "./community-realtime-v1.json#/paths/~1internal~1v1~1community~1socket-credentials"
   /internal/v1/socket-credentials:
     x-mentalbridge-status: implemented
     post:
@@ -116,12 +117,135 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundProblem" }
         "429": { $ref: "#/components/responses/RateLimitProblem" }
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/conversations/{conversationId}/messages/{messageId}:
+    x-mentalbridge-status: implemented
+    delete:
+      tags: [Appointment message moderation]
+      operationId: deleteOwnAppointmentMessage
+      summary: Replace an authorized participant's own appointment message with a tombstone
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/MessageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Authoritative idempotent tombstone state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageTombstone" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/AuthenticationProblem" }
+        "403": { $ref: "#/components/responses/AccessProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/conversations/{conversationId}/messages/{messageId}/reports:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Appointment message moderation]
+      operationId: reportAppointmentMessage
+      summary: Report an existing appointment message as an eligible participant
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - $ref: "#/components/parameters/MessageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MessageReportInput" }
+      responses:
+        "201":
+          description: Authoritative report receipt
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageReportReceipt" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/AuthenticationProblem" }
+        "403": { $ref: "#/components/responses/AccessProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/admin/appointment-chat/reports:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Appointment message moderation]
+      operationId: listAppointmentMessageReports
+      summary: List bounded appointment-message reports for an authorized administrator
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {
+            name: state,
+            in: query,
+            schema: { type: string, enum: [OPEN, RESOLVED] },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 50 },
+          }
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Bounded report summaries without message content or reporter identity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageReportPage" }
+        "401": { $ref: "#/components/responses/AuthenticationProblem" }
+        "403": { $ref: "#/components/responses/AccessProblem" }
+  /api/v1/admin/appointment-chat/reports/{reportId}:
+    x-mentalbridge-status: implemented
+    parameters:
+      - $ref: "#/components/parameters/ReportId"
+      - $ref: "#/components/parameters/CorrelationId"
+    get:
+      tags: [Appointment message moderation]
+      operationId: getAppointmentMessageReport
+      summary: Inspect approved report context and retained message evidence
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Bounded moderation detail for an approved administrator
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageReportDetail" }
+        "401": { $ref: "#/components/responses/AuthenticationProblem" }
+        "403": { $ref: "#/components/responses/AccessProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+    patch:
+      tags: [Appointment message moderation]
+      operationId: resolveAppointmentMessageReport
+      summary: Resolve a report with an audited bounded outcome
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/MessageReportResolutionInput" }
+      responses:
+        "200":
+          description: Authoritative report resolution
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageReportResolution" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/AuthenticationProblem" }
+        "403": { $ref: "#/components/responses/AccessProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
 components:
   securitySchemes:
     IdentityBearerAuth:
-      $ref: './community-realtime-v1.json#/components/securitySchemes/IdentityBearerAuth'
+      $ref: "./community-realtime-v1.json#/components/securitySchemes/IdentityBearerAuth"
     RealtimeDelegation:
-      $ref: './community-realtime-v1.json#/components/securitySchemes/RealtimeDelegation'
+      $ref: "./community-realtime-v1.json#/components/securitySchemes/RealtimeDelegation"
     bearerAuth:
       type: http
       scheme: bearer
@@ -141,6 +265,22 @@ components:
         minLength: 1
         maxLength: 128
         pattern: "^[A-Za-z0-9._:-]+$"
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReportId:
+      name: reportId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        { type: string, minLength: 16, maxLength: 128, pattern: "^[!-~]+$" }
   schemas:
     Liveness:
       type: object
@@ -158,8 +298,18 @@ components:
         service: { const: realtime-service }
         mongodb: { const: connected }
         redis: { type: string, enum: [connected, degraded] }
-        community: { type: string, enum: [connected, degraded], description: Present only when Community realtime is enabled; includes Kafka and Redis fanout readiness. }
-        specialistNotifications: { type: string, enum: [connected, degraded], description: Present only when specialist live notifications are enabled; includes the independent Kafka consumer and Redis subscription readiness. }
+        community:
+          {
+            type: string,
+            enum: [connected, degraded],
+            description: Present only when Community realtime is enabled; includes Kafka and Redis fanout readiness.,
+          }
+        specialistNotifications:
+          {
+            type: string,
+            enum: [connected, degraded],
+            description: Present only when specialist live notifications are enabled; includes the independent Kafka consumer and Redis subscription readiness.,
+          }
     SocketCredential:
       type: object
       additionalProperties: false
@@ -179,6 +329,8 @@ components:
           type,
           content,
           sentAt,
+          state,
+          deletedAt,
           schemaVersion,
         ]
       properties:
@@ -187,9 +339,122 @@ components:
         senderId: { type: string, format: uuid }
         clientMessageId: { type: string, format: uuid }
         type: { const: TEXT }
-        content: { type: string, minLength: 1, maxLength: 4000 }
+        content:
+          {
+            type: [string, "null"],
+            minLength: 1,
+            maxLength: 4000,
+            description: Null for an authoritative tombstone.,
+          }
         sentAt: { type: string, format: date-time }
+        state: { type: string, enum: [VISIBLE, DELETED] }
+        deletedAt: { type: [string, "null"], format: date-time }
         schemaVersion: { const: 1 }
+    MessageTombstone:
+      type: object
+      additionalProperties: false
+      required: [messageId, state, deletedAt, duplicate]
+      properties:
+        messageId: { type: string, format: uuid }
+        state: { const: DELETED }
+        deletedAt: { type: string, format: date-time }
+        duplicate: { type: boolean }
+    ReportReason:
+      type: string
+      enum:
+        [
+          HARASSMENT,
+          PRIVACY_CONCERN,
+          SELF_HARM_OR_CRISIS_CONCERN,
+          SPAM,
+          SEXUAL_OR_VIOLENT_CONTENT,
+          OTHER,
+        ]
+    MessageReportInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { $ref: "#/components/schemas/ReportReason" }
+        context: { type: string, minLength: 1, maxLength: 1000 }
+    MessageReportReceipt:
+      type: object
+      additionalProperties: false
+      required: [reportId, state, duplicate]
+      properties:
+        reportId: { type: string, format: uuid }
+        state: { const: OPEN }
+        duplicate: { type: boolean }
+    MessageReportSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          reportId,
+          conversationId,
+          messageId,
+          reason,
+          state,
+          resolution,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        reportId: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        messageId: { type: string, format: uuid }
+        reason: { $ref: "#/components/schemas/ReportReason" }
+        state: { type: string, enum: [OPEN, RESOLVED] }
+        resolution:
+          { type: [string, "null"], enum: [NO_ACTION, MESSAGE_REMOVED, null] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MessageReportPage:
+      type: object
+      additionalProperties: false
+      required: [items, count]
+      properties:
+        items:
+          {
+            type: array,
+            maxItems: 100,
+            items: { $ref: "#/components/schemas/MessageReportSummary" },
+          }
+        count: { type: integer, minimum: 0, maximum: 100 }
+    MessageReportDetail:
+      allOf:
+        - $ref: "#/components/schemas/MessageReportSummary"
+        - type: object
+          required: [context, message]
+          properties:
+            context: { type: [string, "null"], maxLength: 1000 }
+            message:
+              type: [object, "null"]
+              additionalProperties: false
+              required: [messageId, senderId, content, sentAt, state, deletedAt]
+              properties:
+                messageId: { type: string, format: uuid }
+                senderId: { type: string, format: uuid }
+                content: { type: string, minLength: 1, maxLength: 4000 }
+                sentAt: { type: string, format: date-time }
+                state: { type: string, enum: [VISIBLE, DELETED] }
+                deletedAt: { type: [string, "null"], format: date-time }
+    MessageReportResolutionInput:
+      type: object
+      additionalProperties: false
+      required: [resolution, reason]
+      properties:
+        resolution: { type: string, enum: [NO_ACTION, MESSAGE_REMOVED] }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    MessageReportResolution:
+      type: object
+      additionalProperties: false
+      required: [reportId, state, resolution, duplicate]
+      properties:
+        reportId: { type: string, format: uuid }
+        state: { const: RESOLVED }
+        resolution: { type: string, enum: [NO_ACTION, MESSAGE_REMOVED] }
+        duplicate: { type: boolean }
     MessageHistoryPage:
       type: object
       additionalProperties: false
@@ -235,6 +500,11 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     AccessProblem:
       description: The actor is not eligible for this conversation
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ConflictProblem:
+      description: The idempotency key or moderation state conflicts with an existing command
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
