@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 
 import com.cloudinary.Cloudinary;
+import com.zaxxer.hikari.HikariDataSource;
 import com.mentalbridge.community.configuration.CloudinaryProperties;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -38,6 +39,9 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 
 	@Autowired
 	private JdbcClient jdbc;
+	@Autowired
+	private HikariDataSource dataSource;
+
 
 	@Autowired
 	private MockMvc mvc;
@@ -55,6 +59,13 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 	void contextLoadsWithTypedCloudinaryConfiguration() {
 		assertThat(cloudinary).isNotNull();
 		assertThat(cloudinaryProperties.cloudName()).isEqualTo("test-cloud");
+	}
+
+	@Test
+	void postgresConnectionsBoundIdleTransactionsAndKeepAlive() {
+		assertThat(jdbc.sql("select current_setting('idle_in_transaction_session_timeout')")
+				.query(String.class).single()).isEqualTo("30s");
+		assertThat(dataSource.getDataSourceProperties().getProperty("tcpKeepAlive")).isEqualTo("true");
 	}
 
 	@Test
