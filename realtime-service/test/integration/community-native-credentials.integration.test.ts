@@ -70,7 +70,6 @@ describe('Native Community HTTP exchange with signed owner reads and real Redis'
       REDIS_URL: `redis://${container.getHost()}:${String(container.getMappedPort(6379))}`,
       COMMUNITY: {
         ...base.COMMUNITY,
-        enabled: true,
         baseUrl: owner.url,
         privateKey: await exportPKCS8(realtime.privateKey),
         keyId: 'realtime-test',

@@ -3,7 +3,6 @@ import { z } from 'zod';
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    REALTIME_COMMUNITY_ENABLED: z.enum(['true', 'false']).default('false'),
     REALTIME_COMMUNITY_BASE_URL: z.url().default('http://localhost:8084'),
     REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: z.string().default(''),
     REALTIME_COMMUNITY_DELEGATION_KEY_ID: z.string().default(''),
@@ -18,7 +17,6 @@ const schema = z
       .default('mentalbridge:community:v1:fanout'),
   })
   .superRefine((value, context) => {
-    if (value.REALTIME_COMMUNITY_ENABLED === 'true') {
       if (
         value.NODE_ENV === 'production' &&
         ['localhost', '127.0.0.1', '[::1]'].includes(
@@ -44,10 +42,8 @@ const schema = z
             message: 'Required for Community realtime',
           });
       }
-    }
   })
   .transform((value) => ({
-    enabled: value.REALTIME_COMMUNITY_ENABLED === 'true',
     baseUrl: value.REALTIME_COMMUNITY_BASE_URL,
     privateKey: value.REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY.replaceAll('\\n', '\n'),
     keyId: value.REALTIME_COMMUNITY_DELEGATION_KEY_ID,

@@ -33,7 +33,7 @@ export class AppModule implements NestModule {
       module: AppModule,
       imports: [
         PlatformModule.register(configuration, dependencies),
-        OperationsModule.register(configuration.COMMUNITY.enabled),
+        OperationsModule.register(),
         ...(configuration.SPECIALIST_LIVE.enabled ? [SpecialistNotificationsModule] : []),
         WebsocketModule.register(dependencies.eligibility, dependencies.evidence),
       ],

@@ -13,19 +13,11 @@ import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.ResultActions;
 
 class CommunityChatPresenceIntegrationTests extends ChatGroupIntegrationSupport {
-    static final KeyPair KEYS = CommunityChatRealtimeIntegrationTests.keys();
+    static final KeyPair KEYS = jwtKeyPair();
     static final String PATH = "/internal/v1/community/chat/presence-projections";
-    @DynamicPropertySource static void realtime(DynamicPropertyRegistry registry) {
-        registry.add("mentalbridge.community.chat-realtime.enabled", () -> true);
-        registry.add("mentalbridge.community.chat-realtime.key-id", () -> "realtime-test");
-        registry.add("mentalbridge.community.chat-realtime.public-key", () -> "-----BEGIN PUBLIC KEY-----\n"
-                + Base64.getEncoder().encodeToString(KEYS.getPublic().getEncoded()) + "\n-----END PUBLIC KEY-----");
-    }
 
     @Test void directPresenceDefaultsOffAndHonorsOptInInvisibleAndBothBlockDirections() throws Exception {
         var direct = direct();
@@ -127,7 +119,7 @@ class CommunityChatPresenceIntegrationTests extends ChatGroupIntegrationSupport 
         var claims = new JWTClaimsSet.Builder().issuer("realtime-service").audience(audience).subject(subject.toString())
                 .jwtID(UUID.randomUUID().toString()).issueTime(Date.from(clock.instant())).expirationTime(Date.from(clock.instant().plusSeconds(30)))
                 .claim("act", Map.of("sub", "realtime-service")).claim("scope", scope).claim("conversationId", conversation.toString()).build();
-        var signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("realtime-test").build(), claims);
+        var signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("community-test-key").build(), claims);
         signed.sign(new RSASSASigner((RSAPrivateKey) KEYS.getPrivate())); return signed.serialize();
     }
 }

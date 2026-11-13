@@ -1,5 +1,6 @@
 package com.mentalbridge.community.chat;
 
+import org.springframework.beans.factory.annotation.Value;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.X509EncodedKeySpec;
@@ -23,9 +24,12 @@ class ChatRealtimeSecurity {
     @Bean
     @Order(1)
     SecurityFilterChain communityRealtimeSecurity(HttpSecurity http, ChatRealtimeProperties properties,
-            SecurityProblemSupport problems, Clock clock) throws Exception {
-        JwtDecoder decoder = token -> { throw new BadJwtException("Community realtime is disabled"); };
-        if (properties.enabled()) {
+            SecurityProblemSupport problems, Clock clock,
+            @Value("${mentalbridge.community.chat.enabled:false}") boolean chatEnabled) throws Exception {
+        JwtDecoder decoder = token -> { throw new BadJwtException("Community chat is disabled"); };
+        if (chatEnabled) {
+            if (properties.publicKey().isBlank() || properties.keyId().isBlank())
+                throw new IllegalArgumentException("Community chat requires a trusted Realtime verification key");
             var pem = properties.publicKey().replace("\\n", "\n").replace("-----BEGIN PUBLIC KEY-----", "")
                     .replace("-----END PUBLIC KEY-----", "").replaceAll("\\s", "");
             RSAPublicKey key;

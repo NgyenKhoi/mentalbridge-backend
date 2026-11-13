@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadConfiguration } from '../../src/configuration/configuration.js';
+import { CommunityModule } from '../../src/community/community.module.js';
+import { OperationsModule } from '../../src/operations/operations.module.js';
+import { communityTestEnvironment } from '../fixtures/test-configuration.js';
 
 const validEnvironment = {
+  ...communityTestEnvironment,
   NODE_ENV: 'test',
   REALTIME_MESSAGE_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
   REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: 'test-v1',
@@ -14,6 +18,9 @@ const validEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('Realtime configuration', () => {
+  it('always registers Community delivery routes and namespace', () => {
+    expect(OperationsModule.register().imports).toContain(CommunityModule);
+  });
   it('loads safe test defaults and typed values', () => {
     const configuration = loadConfiguration(validEnvironment);
     expect(configuration.PORT).toBe(3004);
@@ -24,7 +31,7 @@ describe('Realtime configuration', () => {
       enabled: false,
       baseUrl: '',
       timeoutMs: 2000,
-      brokers: [],
+      brokers: ['localhost:9092'],
     });
   });
 
@@ -36,7 +43,7 @@ describe('Realtime configuration', () => {
       CONTENT_NOTIFICATION_TIMEOUT_MS: '750',
       KAFKA_BOOTSTRAP_SERVERS: 'broker-a:9092, broker-b:9092',
     });
-    expect(configuration.COMMUNITY.enabled).toBe(false);
+    expect(configuration.COMMUNITY.baseUrl).toBe('http://localhost:8084');
     expect(configuration.SPECIALIST_LIVE).toEqual({
       enabled: true,
       baseUrl: 'https://content.internal',

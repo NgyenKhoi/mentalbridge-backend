@@ -17,6 +17,12 @@ spring:
       # Same as main: entity mappings must match the Liquibase schema.
       ddl-auto: validate
 
+mentalbridge:
+  community:
+    chat-realtime:
+      public-key: ${REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY:}
+      key-id: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:}
+
 eureka:
   client:
     enabled: false

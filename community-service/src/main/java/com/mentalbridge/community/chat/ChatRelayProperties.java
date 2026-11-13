@@ -5,8 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties("mentalbridge.community.chat-relay")
-public record ChatRelayProperties(@DefaultValue("false") boolean enabled,
-        @DefaultValue("100") int batchSize, @DefaultValue("PT5S") Duration interval) {
+public record ChatRelayProperties(@DefaultValue("100") int batchSize, @DefaultValue("PT5S") Duration interval) {
     static final String TOPIC = "mentalbridge.community.chat.v1";
     public ChatRelayProperties {
         if (batchSize < 1 || batchSize > 500 || interval == null
