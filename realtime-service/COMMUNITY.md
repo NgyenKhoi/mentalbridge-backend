@@ -18,7 +18,7 @@ before enabling chat on a consuming client.
 | `REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY` | Realtime-only PKCS#8 RSA private PEM; literal escaped newlines supported                                                    |
 | `REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY`  | Community-only matching X.509 public PEM                                                                                    |
 | `REALTIME_COMMUNITY_DELEGATION_KEY_ID`      | Both owner services; exact trusted signing-key ID                                                                           |
-| `REALTIME_COMMUNITY_BFF_PRIVATE_KEY`        | Web-container server-only PKCS#8 signing key for the BFF delegation path                                                     |
+| `REALTIME_COMMUNITY_BFF_PRIVATE_KEY`        | Web-container server-only PKCS#8 signing key for the BFF delegation path                                                    |
 | `REALTIME_COMMUNITY_BFF_PUBLIC_KEY`         | Realtime-only trusted BFF X.509 public PEM                                                                                  |
 | `REALTIME_COMMUNITY_BFF_KEY_ID`             | Exact trusted BFF signing-key ID                                                                                            |
 | `KAFKA_BOOTSTRAP_SERVERS`                   | Realtime broker addresses, required at boot                                                                                 |

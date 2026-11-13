@@ -17,31 +17,31 @@ const schema = z
       .default('mentalbridge:community:v1:fanout'),
   })
   .superRefine((value, context) => {
-      if (
-        value.NODE_ENV === 'production' &&
-        ['localhost', '127.0.0.1', '[::1]'].includes(
-          new URL(value.REALTIME_COMMUNITY_BASE_URL).hostname,
-        )
+    if (
+      value.NODE_ENV === 'production' &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(
+        new URL(value.REALTIME_COMMUNITY_BASE_URL).hostname,
       )
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['REALTIME_COMMUNITY_BASE_URL'],
+        message: 'Production Community owner cannot use localhost',
+      });
+    for (const key of [
+      'REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY',
+      'REALTIME_COMMUNITY_DELEGATION_KEY_ID',
+      'REALTIME_COMMUNITY_BFF_PUBLIC_KEY',
+      'REALTIME_COMMUNITY_BFF_KEY_ID',
+      'KAFKA_BOOTSTRAP_SERVERS',
+    ] as const) {
+      if (!value[key].trim())
         context.addIssue({
           code: 'custom',
-          path: ['REALTIME_COMMUNITY_BASE_URL'],
-          message: 'Production Community owner cannot use localhost',
+          path: [key],
+          message: 'Required for Community realtime',
         });
-      for (const key of [
-        'REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY',
-        'REALTIME_COMMUNITY_DELEGATION_KEY_ID',
-        'REALTIME_COMMUNITY_BFF_PUBLIC_KEY',
-        'REALTIME_COMMUNITY_BFF_KEY_ID',
-        'KAFKA_BOOTSTRAP_SERVERS',
-      ] as const) {
-        if (!value[key].trim())
-          context.addIssue({
-            code: 'custom',
-            path: [key],
-            message: 'Required for Community realtime',
-          });
-      }
+    }
   })
   .transform((value) => ({
     baseUrl: value.REALTIME_COMMUNITY_BASE_URL,
