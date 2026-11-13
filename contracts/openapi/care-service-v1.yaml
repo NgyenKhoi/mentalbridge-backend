@@ -6811,6 +6811,14 @@ components:
           minLength: 1
           maxLength: 64
           description: Plan time zone used for weekly board boundaries.
+        targetDomains:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          description: Screening domains of the plan template families, in family order. Content uses them to pick daily resources. Omitted when the plan has no template family; consumers then cannot build a daily journey.
+          items: { type: string, enum: [DEPRESSIVE_SYMPTOMS, ANXIETY_SYMPTOMS] }
+        activatedAt: { type: string, format: date-time }
         localDate: { type: string, format: date }
         actions:
           type: array
@@ -6819,7 +6827,7 @@ components:
       allOf:
         - if: { properties: { planState: { enum: [ACTIVE, PAUSED] } }, required: [planState] }
           then:
-            required: [supportPlanId, supportPlanVersion, representationMode, timeZone]
+            required: [supportPlanId, supportPlanVersion, representationMode, timeZone, activatedAt]
         - if: { properties: { planState: { const: NONE } }, required: [planState] }
           then:
             properties:
