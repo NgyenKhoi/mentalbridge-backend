@@ -51,7 +51,7 @@ export class CareResourceActionsClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();
-    }, this.configuration.CONTENT_CARE_TIMEOUT_MS ?? 2_000);
+    }, this.configuration.CONTENT_CARE_TIMEOUT_MS ?? 5_000);
     try {
       const url = new URL(
         '/api/v2/support-plans/current/resource-actions',
