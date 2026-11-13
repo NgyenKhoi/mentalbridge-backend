@@ -855,6 +855,11 @@ CREATE TABLE care.support_plan_activity_occurrence (
                 AND length(btrim(evidence_id)) BETWEEN 1 AND 255
                 AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
                 AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'REASSESSMENT_SCREENING' AND evidence_owner = 'CARE'
+                AND evidence_kind = 'OWNER_REVIEW_DECISION' AND evidence_id IS NOT NULL
+                AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND evidence_revision IS NULL
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
         ))) IS TRUE
         AND (evidence_verified_at IS NULL OR evidence_verified_at >= evidence_occurred_at)
     )

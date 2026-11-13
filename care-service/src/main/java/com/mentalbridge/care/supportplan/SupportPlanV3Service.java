@@ -64,7 +64,7 @@ public class SupportPlanV3Service {
 	@Transactional
 	public PlanResourceActionsView resourceActions(UUID userId, LocalDate localDate) {
 		var current = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"));
-		if (current.isEmpty()) return new PlanResourceActionsView("NONE", null, null, null, null, localDate, List.of());
+		if (current.isEmpty()) return new PlanResourceActionsView("NONE", null, null, null, null, null, null, localDate, List.of());
 		var plan = current.get();
 		Map<String, SupportPlanActivityOccurrenceEntity> today = new java.util.HashMap<>();
 		if (plan.modelVersion() == 3) {
@@ -86,8 +86,10 @@ public class SupportPlanV3Service {
 							new PlanResourceReferenceView(UUID.fromString(source.sourceId()), source.sourceRevision(), source.publicationId()),
 							scheduled, occurrence == null ? null : resourceToday(occurrence));
 				}).toList();
+		var targetDomains = families.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.map(SupportPlanTemplateFamilyEntity::targetDomain).distinct().toList();
 		return new PlanResourceActionsView(plan.status(), plan.id(), plan.version(), representation(plan),
-				activities.planTimezone(plan), localDate, values);
+				activities.planTimezone(plan), targetDomains.isEmpty() ? null : targetDomains, plan.activatedAt(), localDate, values);
 	}
 
 	private PlanResourceTodayView resourceToday(SupportPlanActivityOccurrenceEntity occurrence) {
@@ -391,6 +393,8 @@ public class SupportPlanV3Service {
 			@JsonInclude(JsonInclude.Include.NON_NULL) Long supportPlanVersion,
 			@JsonInclude(JsonInclude.Include.NON_NULL) String representationMode,
 			@JsonInclude(JsonInclude.Include.NON_NULL) String timeZone,
+			@JsonInclude(JsonInclude.Include.NON_NULL) List<String> targetDomains,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Instant activatedAt,
 			LocalDate localDate, List<PlanResourceActionView> actions) { }
 	public record PlanResourceActionView(String actionId, long actionVersion, String title,
 			PlanResourceReferenceView resource, ActionScheduleView schedule, PlanResourceTodayView today) { }

@@ -57,10 +57,10 @@ Realtime delegations; a public Identity USER bearer and unsigned actor headers
 cannot substitute. Results are no-store and current Identity eligibility is
 queried before local locking. See [Realtime Community integration](../realtime-service/COMMUNITY.md).
 
-Set `COMMUNITY_CHAT_REALTIME_ENABLED=true` only with the matching
+When `COMMUNITY_CHAT_ENABLED=true`, the internal Realtime JWT chain requires the matching
 `REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY` X.509 RSA PEM and
 `REALTIME_COMMUNITY_DELEGATION_KEY_ID`. The private signing key belongs only to
-Realtime. Disabled is the default; existing public chat APIs retain their normal
+Realtime. Existing public chat APIs retain their normal
 Identity USER authentication. There is no new database migration: the existing
 read watermark transaction adds a recipient-self `READ_STATE_CHANGED` outbox
 fact only on a real advance. Retry/out-of-order read acknowledgements add no fact.
@@ -253,7 +253,7 @@ rolls back capability while preserving purpose-bound evidence and encryption key
 | `COMMUNITY_CHAT_ENCRYPTION_KEY` | Required base64 32-byte AES-GCM/HMAC secret when enabled; supplied externally. |
 | `COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION` | Stable non-secret key identifier, default v1; never reuse a version with another key. |
 | `COMMUNITY_CHAT_DECRYPTION_KEYS` | JSON object of retained version→base64 keys for ciphertext/cursor/retry rotation, default {} (at most ten prior versions). |
-| `COMMUNITY_CHAT_RELAY_ENABLED` | Independent opt-in publisher, default false; requires chat enabled and the provisioned topic. |
+| Chat outbox relay | Runs whenever `COMMUNITY_CHAT_ENABLED=true`; the provisioned topic carries live chat facts to Realtime. |
 | `COMMUNITY_CHAT_RELAY_BATCH_SIZE` | Maximum sequential claims per run, default 100, valid 1–500. |
 | `COMMUNITY_CHAT_RELAY_INTERVAL` | Fixed delay, default PT5S, valid 100 ms–1 hour. |
 
@@ -271,7 +271,7 @@ AES-GCM binds each ciphertext to its exact message/conversation/sender. Retain o
 
 ### Minimized fact relay and rollout
 
-`mentalbridge.community.chat.v1` is provisioned explicitly by Compose with three partitions and seven-day delete retention. Production provisioning must match the accepted schema and conversation UUID key before enabling `COMMUNITY_CHAT_RELAY_ENABLED`; broker auto-creation is not a rollout strategy. The relay claims one due row at a time with `SKIP LOCKED`, a ten-second lease and stale-attempt protection. Kafka calls run outside the database transaction, with `acks=all`, producer idempotence, 500 ms metadata blocking, one-second broker request timeout, three-second delivery timeout and four-second ACK wait. Failed attempts back off from one to thirty seconds. A broker outage never changes a successful owner save into a delivery claim.
+`mentalbridge.community.chat.v1` is provisioned explicitly by Compose with three partitions and seven-day delete retention. Production provisioning must match the accepted schema and conversation UUID key before enabling `COMMUNITY_CHAT_ENABLED`; broker auto-creation is not a rollout strategy. The relay claims one due row at a time with `SKIP LOCKED`, a ten-second lease and stale-attempt protection. Kafka calls run outside the database transaction, with `acks=all`, producer idempotence, 500 ms metadata blocking, one-second broker request timeout, three-second delivery timeout and four-second ACK wait. Failed attempts back off from one to thirty seconds. A broker outage never changes a successful owner save into a delivery claim.
 
 Publishing is at-least-once: a crash or timeout around ACK can replay the same envelope ID. Consumers must dedupe stable/logical identities and reauthorize each current recipient rather than treating a fact as a permission grant. No consumer, socket delivery, presence projection or notification materialization is installed by this story. Existing interaction publishing uses its own producer configuration. The chat producer disables payload-printing error listeners and logs only safe event ID/attempt metadata.
 

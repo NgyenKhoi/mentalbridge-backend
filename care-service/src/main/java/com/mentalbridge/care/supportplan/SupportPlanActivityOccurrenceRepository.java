@@ -173,6 +173,19 @@ interface SupportPlanActivityOccurrenceRepository
 	@Modifying(flushAutomatically = true)
 	@Query(value = """
 			update support_plan_activity_occurrence
+			set state = 'COMPLETED', state_reason = null, completed_at = :now,
+			    cancelled_at = null, evidence_owner = 'CARE', evidence_kind = 'OWNER_REVIEW_DECISION',
+			    evidence_id = :evidenceId, evidence_occurred_at = :now, evidence_verified_at = :now,
+			    updated_at = :now, version = version + 1
+			where activity_schedule_id = :scheduleId
+			  and (state = 'SCHEDULED' or (state = 'CANCELLED' and state_reason = 'PLAN_PAUSED'))
+			""", nativeQuery = true)
+	int fulfillOpenCycleReview(@Param("scheduleId") UUID scheduleId,
+			@Param("evidenceId") String evidenceId, @Param("now") Instant now);
+
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			update support_plan_activity_occurrence
 			set state = 'SCHEDULED', state_reason = null, cancelled_at = null,
 			    updated_at = :now, version = version + 1
 			where support_plan_id = :planId and state = 'CANCELLED'

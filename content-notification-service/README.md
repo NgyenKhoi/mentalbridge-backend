@@ -254,7 +254,7 @@ provider/storage unavailability returns 503. Progress PUT accepts an optional
 unavailable version. These Content facts do not directly mutate Care state.
 
 Configure the Care query with `CONTENT_CARE_BASE_URL` (default
-`http://localhost:8081`) and `CONTENT_CARE_TIMEOUT_MS` (default 2000 ms, allowed
+`http://localhost:8081`) and `CONTENT_CARE_TIMEOUT_MS` (default 5000 ms, allowed
 100–5000 ms). The forwarded owner JWT authorizes the read; this query has no
 service credential. Care errors leave the stored board unchanged.
 

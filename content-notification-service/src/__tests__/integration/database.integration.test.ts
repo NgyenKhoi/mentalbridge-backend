@@ -1990,7 +1990,7 @@ describe('Database Integration', () => {
   });
 
   describe('resource reward read model', () => {
-    it('only awards otherwise eligible practice evidence when it is plan-bound', async () => {
+    it('awards otherwise eligible practice evidence with or without a plan link', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
       } as unknown as DatabaseService;
@@ -2030,13 +2030,12 @@ describe('Database Integration', () => {
       );
 
       const source = await repository.read(owner);
-      expect(source.facts).toHaveLength(1);
-      expect(source.facts[0]).toMatchObject({
-        kind: 'VERIFIED_PRACTICE',
-        resourceId,
-        occurredAt: '2026-10-11T05:05:00.000Z',
-      });
-      expect(calculateResourceRewards(source.facts, owner).totalXp).toBe(5);
+      expect(source.facts).toHaveLength(2);
+      expect(source.facts.map((fact) => fact.occurredAt)).toEqual([
+        '2026-10-10T04:05:00.000Z',
+        '2026-10-11T05:05:00.000Z',
+      ]);
+      expect(calculateResourceRewards(source.facts, owner).totalXp).toBe(10);
     });
 
     it('derives bounded owner-scoped rewards from exact reviewed evidence and corrections', async () => {
@@ -2155,8 +2154,22 @@ describe('Database Integration', () => {
         [owner, resourceId],
       );
 
+      await pool.query(
+        `INSERT INTO resource_practice_session
+           (id, owner_id, resource_id, resource_version, support_plan_id, local_date,
+            completed_at, started_at, duration_seconds)
+         VALUES ('12710000-0000-4000-8000-000000000010', $1, $2, 0, NULL,
+           '2026-10-13', '2026-10-13T04:05:00Z', '2026-10-13T04:00:00Z', 300)`,
+        [owner, resourceId],
+      );
+
       const source = await repository.read(owner);
       expect(source.preference).toEqual({ visibilityState: 'VISIBLE', version: '0' });
+      expect(
+        calculateAchievements({ activity: null, resourceFacts: source.facts }).find(
+          ({ definitionId }) => definitionId === 'resource.practice-3-days',
+        ),
+      ).toMatchObject({ status: 'UNEARNED', progress: { current: 1, target: 3 } });
       expect(
         calculateAchievements({ activity: null, resourceFacts: source.facts }).find(
           ({ definitionId }) => definitionId === 'resource.first-completion',

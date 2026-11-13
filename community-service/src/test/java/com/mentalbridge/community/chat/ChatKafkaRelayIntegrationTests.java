@@ -35,7 +35,6 @@ class ChatKafkaRelayIntegrationTests extends ChatIntegrationSupport {
     @DynamicPropertySource
     static void broker(DynamicPropertyRegistry properties) {
         properties.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
-        properties.add("mentalbridge.community.chat-relay.enabled", () -> "true");
         properties.add("logging.level.org.apache.kafka", () -> "WARN");
     }
 
@@ -70,7 +69,7 @@ class ChatKafkaRelayIntegrationTests extends ChatIntegrationSupport {
         messages.send(a, group.conversationId(), UUID.randomUUID(), new ChatModels.SendMessage(UUID.randomUUID(), "Tin nhóm không vào Kafka"), UUID.randomUUID());
         var ids = jdbc.sql("select id from community_chat_outbox where event_payload->'payload'->>'kind' in ('GROUP_INVITED','MESSAGE_RECEIVED')").query(UUID.class).list();
         assertThat(ids).hasSize(2);
-        new ChatOutboxRelay(persistence, sink, new ChatRelayProperties(true, 100, Duration.ofSeconds(5))).publishDue();
+        new ChatOutboxRelay(persistence, sink, new ChatRelayProperties(100, Duration.ofSeconds(5))).publishDue();
         for (var id : ids) {
             var records = received(id, 1); assertThat(records).hasSize(1);
             assertThat(ChatWireContracts.validFact(records.getFirst().value())).isTrue();
@@ -109,7 +108,7 @@ class ChatKafkaRelayIntegrationTests extends ChatIntegrationSupport {
         sink.publish(warmup); persistence.published(warmup);
         pending(a, profile(outsider));
         var original = jdbc.sql("select id from community_chat_outbox where published_at is null").query(UUID.class).single();
-        var relay = new ChatOutboxRelay(persistence, sink, new ChatRelayProperties(true, 100, Duration.ofSeconds(5)));
+        var relay = new ChatOutboxRelay(persistence, sink, new ChatRelayProperties(100, Duration.ofSeconds(5)));
         KAFKA.getDockerClient().pauseContainerCmd(KAFKA.getContainerId()).exec();
         try {
             var started = System.nanoTime();

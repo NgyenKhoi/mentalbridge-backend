@@ -286,6 +286,7 @@ class NativeSupportPlanWriter {
 			throw conflict("SUPPORT_PLAN_TRANSITION_INVALID", "Replacement requires the current active or paused plan");
 		}
 		if (guard != null) guard.run();
+		if (reviewed) activities.fulfillDueCycleReview(current, now);
 		current.supersede(now);
 		activities.end(current.id(), "PLAN_REPLACED", now);
 		plans.saveAndFlush(current);

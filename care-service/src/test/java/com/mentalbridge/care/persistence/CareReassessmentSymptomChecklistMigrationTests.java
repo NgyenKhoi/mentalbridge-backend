@@ -56,7 +56,7 @@ class CareReassessmentSymptomChecklistMigrationTests {
 				.isEqualTo(reportsBefore);
 		assertThat(scalar("select row_to_json(s)::text from reassessment_summary s where id='%s'".formatted(summary)))
 				.isEqualTo(snapshotBefore);
-		assertThat(scalar("select string_agg(id || ':' || md5sum,',' order by orderexecuted) from databasechangelog where id <> 'care-035-reassessment-symptom-checklist'"))
+		assertThat(scalar("select string_agg(id || ':' || md5sum,',' order by orderexecuted) from databasechangelog where id not in ('care-035-reassessment-symptom-checklist','care-036-owner-cycle-review-evidence')"))
 				.isEqualTo(checksumsBefore);
 		assertThat(scalar("select count(*) from reassessment_self_report where symptom_catalog_revision is null and cardinality(symptom_codes)=0")).isEqualTo("2");
 		assertThat(scalar("select count(*) from support_plan where checklist_provenance is null")).isEqualTo("2");

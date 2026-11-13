@@ -126,7 +126,6 @@ describe('Community two-replica Kafka, Redis and Socket.IO delivery', { concurre
         'redis://' + redisContainer.getHost() + ':' + String(redisContainer.getMappedPort(6379)),
       COMMUNITY: {
         ...base.COMMUNITY,
-        enabled: true,
         baseUrl: owner.url,
         privateKey: await exportPKCS8(realtime.privateKey),
         keyId: 'realtime-test',

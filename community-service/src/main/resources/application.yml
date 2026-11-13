@@ -9,6 +9,10 @@ spring:
     url: ${COMMUNITY_DB_URL}
     username: ${COMMUNITY_DB_USERNAME}
     password: ${COMMUNITY_DB_PASSWORD}
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   jpa:
     hibernate:
       ddl-auto: validate
@@ -45,13 +49,11 @@ mentalbridge:
       public-key: ${CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY:}
       key-id: ${CONTENT_COMMUNITY_NOTIFICATION_KEY_ID:}
     chat-realtime:
-      enabled: ${COMMUNITY_CHAT_REALTIME_ENABLED:false}
       public-key: ${REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY:}
       key-id: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:}
     chat-group:
       member-limit: ${COMMUNITY_CHAT_GROUP_MEMBER_LIMIT:30}
     chat-relay:
-      enabled: ${COMMUNITY_CHAT_RELAY_ENABLED:false}
       batch-size: ${COMMUNITY_CHAT_RELAY_BATCH_SIZE:100}
       interval: ${COMMUNITY_CHAT_RELAY_INTERVAL:PT5S}
     friends:
