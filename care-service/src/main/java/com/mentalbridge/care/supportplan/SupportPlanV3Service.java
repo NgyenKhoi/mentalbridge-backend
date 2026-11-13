@@ -88,8 +88,15 @@ public class SupportPlanV3Service {
 				}).toList();
 		var targetDomains = families.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
 				.map(SupportPlanTemplateFamilyEntity::targetDomain).distinct().toList();
+		String timeZone = activities.planTimezone(plan);
 		return new PlanResourceActionsView(plan.status(), plan.id(), plan.version(), representation(plan),
-				activities.planTimezone(plan), targetDomains.isEmpty() ? null : targetDomains, plan.activatedAt(), localDate, values);
+				timeZone, targetDomains.isEmpty() ? null : targetDomains, periodStartedAt(plan, timeZone), localDate, values);
+	}
+
+	private static Instant periodStartedAt(SupportPlanEntity plan, String timeZone) {
+		if (plan.activatedAt() == null || plan.cycleStartedOn() == null) return plan.activatedAt();
+		Instant cycleStart = plan.cycleStartedOn().atStartOfDay(ZoneId.of(timeZone)).toInstant();
+		return cycleStart.isAfter(plan.activatedAt()) ? cycleStart : plan.activatedAt();
 	}
 
 	private PlanResourceTodayView resourceToday(SupportPlanActivityOccurrenceEntity occurrence) {
