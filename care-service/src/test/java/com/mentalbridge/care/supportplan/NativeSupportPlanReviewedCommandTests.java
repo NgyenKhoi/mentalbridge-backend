@@ -103,7 +103,9 @@ class NativeSupportPlanReviewedCommandTests {
 					"CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE", key, hash, evidence, UUID.randomUUID(), NOW, guard);
 			var order = inOrder(guard, current, activities);
 			order.verify(guard).run();
+			order.verify(activities).fulfillDueCycleReview(current, NOW);
 			order.verify(current).supersede(NOW);
+			order.verify(activities).end(planId, "PLAN_REPLACED", NOW);
 			order.verify(activities).activateReviewedDraft(draft, NOW);
 			verify(activities, never()).activateUserDraft(any(), any());
 		}
@@ -112,6 +114,7 @@ class NativeSupportPlanReviewedCommandTests {
 					"CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE", key, hash, evidence, UUID.randomUUID(), NOW);
 			verify(activities).activateUserDraft(draft, NOW);
 			verify(activities, never()).activateReviewedDraft(any(), any());
+			verify(activities, never()).fulfillDueCycleReview(any(), any());
 			verifyNoInteractions(guard);
 		}
 	}

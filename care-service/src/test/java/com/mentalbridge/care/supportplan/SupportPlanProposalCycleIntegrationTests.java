@@ -63,6 +63,8 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper mapper;
+	@Autowired SupportPlanRepository plans;
+	@Autowired SupportPlanActivityOccurrenceService activities;
 	@MockitoBean Clock clock;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
@@ -167,6 +169,9 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		assertThat(continued.path("status").asText()).isEqualTo("ACTIVE");
 		assertThat(continuation(user, plan, 1, "cycle-continuation-command-0001")).isEqualTo(continued);
 		assertThat(reviewDates(plan, "SCHEDULED")).containsExactly("2026-10-27");
+		assertThat(reviewDates(plan, "COMPLETED")).containsExactly("2026-10-14");
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where support_plan_id=:id and source_action_type='REASSESSMENT_SCREENING' and state='COMPLETED' and completed_at is not null and cancelled_at is null")
+				.param("id", plan).query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_plan_command where support_plan_id=:id and command_type='CYCLE_CONTINUE'")
 				.param("id", plan).query(Long.class).single()).isEqualTo(1);
 	}
@@ -313,6 +318,27 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		transition(user, plan, 2, "ACTIVE");
 		assertThat(reviewDates(plan, "SKIPPED")).containsExactly("2026-10-14");
 		assertThat(reviewDates(plan, "SCHEDULED")).containsExactly("2026-10-16");
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = {"2026-10-14T04:00:00Z", "2026-10-14T13:00:00Z"})
+	void explicitChangeAtReviewDueFulfilsTheReminderBeforeOrAfterItsTime(String decidedAt) throws Exception {
+		UUID user = profile();
+		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
+		activate(user, plan);
+		at("2026-10-13T04:00:00Z");
+		activities.fulfillDueCycleReview(plans.findById(plan).orElseThrow(), now);
+		assertThat(reviewDates(plan, "COMPLETED")).isEmpty();
+		at(decidedAt);
+		var entity = plans.findById(plan).orElseThrow();
+		activities.fulfillDueCycleReview(entity, now);
+		activities.fulfillDueCycleReview(entity, now);
+		activities.end(plan, "PLAN_REPLACED", now);
+		assertThat(reviewDates(plan, "COMPLETED")).containsExactly("2026-10-14");
+		assertThat(reviewDates(plan, "SCHEDULED")).isEmpty();
+		assertThat(reviewDates(plan, "CANCELLED")).isEmpty();
+		assertThat(jdbc.sql("select evidence_kind || ':' || evidence_id from support_plan_activity_occurrence where support_plan_id=:id and source_action_type='REASSESSMENT_SCREENING' and state='COMPLETED'")
+				.param("id", plan).query(String.class).single()).isEqualTo("OWNER_REVIEW_DECISION:" + plan + ":1");
 	}
 
 	private void at(String instant) {
