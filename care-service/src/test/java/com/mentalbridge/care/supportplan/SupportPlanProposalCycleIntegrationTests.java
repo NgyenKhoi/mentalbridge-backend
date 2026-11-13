@@ -158,9 +158,12 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	void continuationStartsNextCycleAndIdempotentReplayKeepsOneNewReviewOccurrence() throws Exception {
 		UUID user = profile();
 		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
-		activate(user, plan);
+		var activated = activate(user, plan);
 		at("2026-10-14T04:00:00Z");
+		assertThat(periodStartedAt(user)).isEqualTo(Instant.parse(activated.path("activatedAt").asText()));
 		var continued = continuation(user, plan, 1, "cycle-continuation-command-0001");
+		assertThat(periodStartedAt(user)).isEqualTo(java.time.LocalDate.parse("2026-10-14")
+				.atStartOfDay(java.time.ZoneId.of(continued.path("cycle").path("timezone").asText())).toInstant());
 		assertThat(continued.path("cycle").path("cycleNumber").asInt()).isEqualTo(2);
 		assertThat(continued.path("cycle").path("startedOn").asText()).isEqualTo("2026-10-14");
 		assertThat(continued.path("cycle").path("reviewDueOn").asText()).isEqualTo("2026-10-27");
@@ -386,6 +389,12 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	private JsonNode detail(UUID user, UUID plan) throws Exception {
 		return readPlanResponse(mvc.perform(get("/api/v2/support-plans/{id}", plan).with(user(user))).andExpect(status().isOk())
 				.andReturn().getResponse());
+	}
+
+	private Instant periodStartedAt(UUID user) throws Exception {
+		var body = mvc.perform(get("/api/v2/support-plans/current/resource-actions").with(user(user))
+				.param("localDate", "2026-10-14")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		return Instant.parse(mapper.readTree(body).path("activatedAt").asText());
 	}
 
 	private JsonNode activate(UUID user, UUID plan) throws Exception {
