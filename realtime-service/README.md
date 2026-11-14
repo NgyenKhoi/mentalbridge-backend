@@ -16,6 +16,8 @@ MB-749 adds the Identity-authenticated native Community ticket exchange at
 `POST /api/v1/community/socket-credentials`; the existing BFF exchange remains
 unchanged. See [ADR 0043](../docs/adr/0043-native-community-credential-exchange.md)
 and the native handoff in [COMMUNITY.md](COMMUNITY.md#native-mobile-exchange-mb-749).
+The service `.env.example` lists active Community settings without the retired
+`REALTIME_COMMUNITY_ENABLED` switch.
 
 - Socket.IO `/realtime` namespace with one-use, 30-second browser credentials bound to Identity-issued RS256 JWTs
 - strict versioned command, acknowledgement, error and server-event envelopes
