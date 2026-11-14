@@ -25,10 +25,12 @@ The service `.env.example` lists active Community settings without the retired
 - encrypted MongoDB message persistence before acknowledgement
 - sender-scoped `clientMessageId` idempotency
 - implemented, owner-authorized cursor-based REST message history
+- idempotent owner-only message tombstones, participant-scoped reporting, and ADMIN-only report review
+- encrypted report context and content-free durable moderation audit records
 - liveness, readiness, Prometheus metrics, safe structured logs and correlation IDs
 - disposable MongoDB/Redis chat regression and Content HTTP/PostgreSQL/Kafka/Redis notification integration tests
 
-Consultation is authoritative for appointment participants, status and server-time chat windows. Realtime checks its eligibility projection for every subscribe, send and history operation and fails closed when Consultation is unavailable. Sending is restricted to confirmed `IN_APP_CHAT` appointments in `[scheduledStartAt, scheduledEndAt)`; the ten-minute waiting window is subscribe-only, and terminal history is read-only. Cross-instance Redis fan-out, Kafka publication, receipts, moderation, attachments, and tombstone policy remain outside the appointment chat baseline.
+Consultation is authoritative for appointment participants, status and server-time chat windows. Realtime checks its eligibility projection for every subscribe, send, history, delete, and report operation and fails closed when Consultation is unavailable. Sending is restricted to confirmed `IN_APP_CHAT` appointments in `[scheduledStartAt, scheduledEndAt)`; the ten-minute waiting window is subscribe-only, and terminal history is read-only. MB-694 adds owner-only tombstones, participant reports, and ADMIN-only report review without granting transcript access to participant report commands. Cross-instance Redis fan-out, Kafka publication, receipts, attachments, and physical ciphertext retention remain outside this story.
 
 The browser exchanges its server-owned Identity session through a same-origin BFF for a random one-use ticket. Realtime stores a hashed ticket key and AES-GCM encrypted bearer in Redis, atomically consumes it with `GETDEL`, then retains the bearer only in socket memory through the original JWT expiry boundary. The gateway rejects commands at or after expiry, emits `AUTHENTICATION_EXPIRED`, and disconnects the socket. Revocation before expiry is deferred to a separately contracted Identity integration.
 
@@ -74,7 +76,7 @@ specialist remain unsupported and are never inferred or replayed.
 
 - REST: `../contracts/openapi/realtime-service-v1.yaml`
 - WebSocket: `../contracts/websocket/realtime/`
-- MongoDB migration: `migrations/001_realtime_message_foundation.cjs`
+- MongoDB migrations: `migrations/001_realtime_message_foundation.cjs`, `migrations/002_appointment_message_moderation.cjs`
 
 MongoDB is durable truth. Redis contains only expiring socket routing and presence metadata. Message bodies are encrypted with AES-256-GCM and are never written to logs, metrics, Redis or cross-service events.
 

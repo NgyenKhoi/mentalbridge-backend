@@ -338,13 +338,21 @@ Key fields: message/conversation/sender/client IDs, type, AES-256-GCM envelope,
 key version, command fingerprint, lifecycle timestamps, moderation hold, and
 schema version.
 
+### Appointment Message Report — ACTIVE
+
+Collection: `appointment_message_reports`
+
+Key fields: report/conversation/message/reporter IDs, bounded reason, optional
+encrypted context, review state/resolution, resolver, timestamps, and schema
+version. `appointment_moderation_commands` owns actor-scoped retry fences and
+`appointment_moderation_audit` owns content-free action evidence.
+
 ## Proposed model
 
-| Entity              | Status   | Evidence and boundary                                                                             |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------- |
-| Message Receipt     | PROPOSED | Realtime module documentation defers high-water delivered/read persistence; no collection exists. |
-| Message Attachment  | PROPOSED | Deferred until object-storage, authorization, and retention contracts are accepted.               |
-| Moderation evidence | PROPOSED | No owner migration exists; `moderationHold` on Message is not a moderation-case aggregate.        |
+| Entity             | Status   | Evidence and boundary                                                                             |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------- |
+| Message Receipt    | PROPOSED | Realtime module documentation defers high-water delivered/read persistence; no collection exists. |
+| Message Attachment | PROPOSED | Deferred until object-storage, authorization, and retention contracts are accepted.               |
 
 Do not create SQL tables for these document models. Do not mark a proposed
 collection active until an owner migration, validator, implementation, and

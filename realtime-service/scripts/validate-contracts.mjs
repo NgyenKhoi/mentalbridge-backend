@@ -21,6 +21,11 @@ const expectedAvailability = new Map([
   ['POST /internal/v1/community/socket-credentials', 'implemented'],
   ['POST /api/v1/community/socket-credentials', 'implemented'],
   ['GET /api/v1/conversations/{conversationId}/messages', 'implemented'],
+  ['DELETE /api/v1/conversations/{conversationId}/messages/{messageId}', 'implemented'],
+  ['POST /api/v1/conversations/{conversationId}/messages/{messageId}/reports', 'implemented'],
+  ['GET /api/v1/admin/appointment-chat/reports', 'implemented'],
+  ['GET /api/v1/admin/appointment-chat/reports/{reportId}', 'implemented'],
+  ['PATCH /api/v1/admin/appointment-chat/reports/{reportId}', 'implemented'],
 ]);
 const actualAvailability = new Map();
 for (const [path, pathItem] of Object.entries(openApi.paths ?? {})) {

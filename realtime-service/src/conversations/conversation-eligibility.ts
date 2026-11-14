@@ -5,7 +5,8 @@ import type { ServiceConfiguration } from '../configuration/configuration.js';
 import { ApplicationException } from '../http/application.exception.js';
 import { CONFIGURATION_TOKEN } from '../shared/tokens.js';
 
-export type ConversationOperation = 'subscribe' | 'send' | 'history' | 'check-in';
+export type ConversationOperation =
+  'subscribe' | 'send' | 'history' | 'check-in' | 'delete' | 'report';
 
 const eligibilitySchema = z
   .object({
@@ -121,7 +122,9 @@ export class ConsultationConversationEligibility implements ConversationEligibil
           ? parsed.data.sendAllowed
           : operation === 'history'
             ? parsed.data.historyAllowed
-            : parsed.data.checkInAllowed;
+            : operation === 'check-in'
+              ? parsed.data.checkInAllowed
+              : parsed.data.historyAllowed;
     if (!allowed) throw denied(parsed.data.reasonCode);
     return parsed.data;
   }
