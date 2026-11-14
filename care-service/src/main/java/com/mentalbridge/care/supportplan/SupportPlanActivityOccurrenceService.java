@@ -289,7 +289,7 @@ public class SupportPlanActivityOccurrenceService {
 		prepareDraft(plan, now);
 	}
 
-	private void assertCurrentPersonalization(SupportPlanEntity plan) {
+	void assertCurrentPersonalization(SupportPlanEntity plan) {
 		var current = personalizations.currentSnapshot(plan.userId()).orElse(null);
 		boolean changed = plan.personalizationId() == null
 				? current != null && current.provided()

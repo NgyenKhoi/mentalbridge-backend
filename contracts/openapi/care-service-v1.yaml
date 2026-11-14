@@ -2193,6 +2193,51 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '409': { $ref: '#/components/responses/SupportPlanEligibilityProblem' }
         '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
+  /api/v2/support-plans/initial-proposal:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [SupportPlan v3]
+      operationId: ensureInitialSupportPlanProposal
+      summary: Ensure an initial proposal without replacing a current plan
+      description: |
+        Returns an existing current plan or a revalidated draft, or creates an
+        initial native draft after Care admission. The owner lock serializes the
+        final current/draft check with activation. Concurrent state changes may
+        return 409 and require an authoritative reload. No activation, replacement
+        or renewal is performed. A terminal plan history is not eligible for
+        automatic initial creation; explicit continuation or review is separate.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sourceSupportEvaluationId]
+              properties:
+                sourceSupportEvaluationId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current plan or admitted initial draft
+          headers:
+            ETag: { $ref: '#/components/headers/SupportPlanETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanV3' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409':
+          description: Initial state changed or a previous plan prevents initial creation (SUPPORT_PLAN_INITIAL_CHANGED or SUPPORT_PLAN_INITIAL_NOT_ELIGIBLE); also covers Care eligibility, stale evidence and idempotency conflicts.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503': { $ref: '#/components/responses/SupportPlanDependencyProblem' }
   /api/v2/support-plans/history:
     x-mentalbridge-status: implemented
     get:
