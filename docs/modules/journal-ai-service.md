@@ -238,6 +238,21 @@ Source/fixture checks do not establish real-model tone quality; activation needs
 an approved live listening/evaluation window. Details are in
 [ADR 0049](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
 
+## Companion conversation eval (MB-845)
+
+The TEXT companion eval replays synthetic CC0 dataset v2 (core, crisis,
+hard-negative, suggestion and multi-turn venting scenarios) on the real route
+under owner-approved request and USD caps. It reports per-check pass rates,
+latency p50/p95 against the 10 s target, tokens, estimated cost, errors and
+run-to-run consistency, plus two labelled views with confusion matrix,
+precision, recall and F1: the crisis pointer (reply sends the user to Cần trợ
+giúp ngay and sets no suggestion) and resource suggestion, with destination
+accuracy. Deterministic follow-up-arc checks gate the caring-question arc; a
+same-model LLM judge scores it but never gates. The metric measures reply
+behaviour only; no runtime crisis classifier is added and AI still decides
+nothing about safety. Method, thresholds and before/after results:
+[MB-845 evidence](../story-mb-845-companion-eval.md).
+
 ## Story 6201 authoring decision
 
 Journal authoring remains bounded plain text. The approved mood vocabulary is
