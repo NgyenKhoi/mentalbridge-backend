@@ -61,6 +61,15 @@ public class NativeSupportPlanController {
 				jwt.getTokenValue(), key, correlation(correlation)));
 	}
 
+	@PostMapping("/initial-proposal")
+	ResponseEntity<SupportPlanV3Service.SupportPlanV3View> ensureInitial(@AuthenticationPrincipal Jwt jwt,
+			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String key,
+			@RequestHeader(value = "X-Correlation-Id", required = false) UUID correlation,
+			@Valid @RequestBody ProposalRequest request) {
+		return response(HttpStatus.OK, plans.ensureInitial(subject(jwt), request.sourceSupportEvaluationId(),
+				jwt.getTokenValue(), key, correlation(correlation)));
+	}
+
 	@PostMapping("/{supportPlanId}/cycle-continuation")
 	ResponseEntity<SupportPlanV3Service.SupportPlanV3View> continueCycle(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID supportPlanId,

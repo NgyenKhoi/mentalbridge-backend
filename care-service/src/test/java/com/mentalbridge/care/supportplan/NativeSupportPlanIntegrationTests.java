@@ -84,6 +84,188 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void ensureInitialCreatesAndReusesDraftWithIdempotentReplay() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		var first = ensureInitial(userId, evaluationId, "initial-proposal-create-0001");
+		var replay = ensureInitial(userId, evaluationId, "initial-proposal-create-0001");
+		var reused = ensureInitial(userId, evaluationId, "initial-proposal-reuse-0001");
+		assertThat(first.path("status").asText()).isEqualTo("DRAFT");
+		assertThat(replay.path("supportPlanId")).isEqualTo(first.path("supportPlanId"));
+		assertThat(reused.path("supportPlanId")).isEqualTo(first.path("supportPlanId"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user and status='DRAFT'")
+				.param("user", userId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@ParameterizedTest
+	@CsvSource({"ACTIVE", "PAUSED"})
+	void ensureInitialReturnsCurrentWithoutCreatingDraft(String state) throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		var draft = propose(userId, evaluationId, "initial-existing-propose-0001");
+		UUID id = UUID.fromString(draft.path("supportPlanId").asText());
+		var active = activate(userId, id, draft.path("version").asLong(), "initial-existing-activate-0001");
+		if ("PAUSED".equals(state)) mvc.perform(put("/api/v2/support-plans/{id}/status", id).with(user(userId))
+				.header("If-Match", "\"" + active.path("version").asLong() + "\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"PAUSED\"}"))
+				.andExpect(status().isOk());
+		var result = ensureInitial(userId, evaluationId, "initial-existing-current-0001");
+		assertThat(result.path("supportPlanId").asText()).isEqualTo(id.toString());
+		assertThat(result.path("status").asText()).isEqualTo(state);
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user and status='DRAFT'")
+				.param("user", userId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void concurrentInitialRequestsNeverCreateMultipleDrafts() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		var start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(() -> { start.await(); return initialStatus(userId, evaluationId, "initial-concurrent-request-01"); });
+			var second = executor.submit(() -> { start.await(); return initialStatus(userId, evaluationId, "initial-concurrent-request-02"); });
+			start.countDown();
+			assertThat(List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS))).allMatch(code -> code == 200 || code == 409);
+		}
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user and status='DRAFT'")
+				.param("user", userId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void initialRequestReturnsPlanActivatedAfterInitialRead() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		var inspected = new CountDownLatch(1);
+		var resume = new CountDownLatch(1);
+		doAnswer(call -> {
+			if (Thread.currentThread().getName().startsWith("pool-")) {
+				inspected.countDown();
+				if (!resume.await(30, TimeUnit.SECONDS)) throw new IllegalStateException("Timed out waiting for activation");
+			}
+			return paid(call.getArgument(0), ServicePackage.PLUS);
+		}).when(entitlements).current(any(), anyString(), any());
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			var pending = executor.submit(() -> ensureInitial(userId, evaluationId, "initial-activation-race-0001"));
+			try {
+				assertThat(inspected.await(30, TimeUnit.SECONDS)).isTrue();
+				var draft = propose(userId, evaluationId, "initial-race-other-draft-001");
+				UUID id = UUID.fromString(draft.path("supportPlanId").asText());
+				activate(userId, id, draft.path("version").asLong(), "initial-race-other-activate-01");
+				resume.countDown();
+				assertThat(pending.get(30, TimeUnit.SECONDS).path("supportPlanId").asText()).isEqualTo(id.toString());
+			} finally { resume.countDown(); }
+		}
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user and status='DRAFT'")
+				.param("user", userId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void initialProposalRejectsFreeAndDoesNotCreatePlan() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		doAnswer(call -> paid(call.getArgument(0), ServicePackage.FREE)).when(entitlements).current(any(), anyString(), any());
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-free-proposal-0001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_ENTITLEMENT_REQUIRED"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user").param("user", userId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void initialProposalDoesNotReuseDraftAfterEntitlementRevocation() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		propose(userId, evaluationId, "initial-before-revocation-0001");
+		doAnswer(call -> paid(call.getArgument(0), ServicePackage.FREE)).when(entitlements).current(any(), anyString(), any());
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-revoked-request-0001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_ENTITLEMENT_REQUIRED"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user and status='DRAFT'")
+				.param("user", userId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void initialProposalRejectsDraftWithChangedPreferences() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		propose(userId, evaluationId, "initial-old-preferences-0001");
+		preferences(userId, "READING", 10, "ACTIVE", 0);
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-changed-preferences-01").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_PERSONALIZATION_REVIEW_REQUIRED"));
+	}
+
+	@Test
+	void initialProposalRejectsIdempotencyKeyWithDifferentSource() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		ensureInitial(userId, evaluationId, "initial-same-key-source-0001");
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-same-key-source-0001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + UUID.randomUUID() + "\"}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+	}
+
+	@Test
+	void initialProposalRejectsStaleScreeningWithoutCreatingDraft() throws Exception {
+		UUID userId = profile();
+		UUID oldEvaluation = evaluation(userId, false);
+		evaluation(userId, false);
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-stale-source-000001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + oldEvaluation + "\"}"))
+				.andExpect(status().isConflict());
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user").param("user", userId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void initialProposalRespectsPositiveSafetyScreen() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		jdbc.sql("update support_evaluation_v2_safety set safety_status='POSITIVE_SAFETY_SCREEN', reason_code='PHQ9_ITEM9_POSITIVE' where support_evaluation_id=:id")
+				.param("id", evaluationId).update();
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-safety-restricted-001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_SAFETY_REVIEW_REQUIRED"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user").param("user", userId).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void initialProposalDoesNotRenewACompletedPlan() throws Exception {
+		UUID userId = profile();
+		UUID evaluationId = evaluation(userId, false);
+		var draft = ensureInitial(userId, evaluationId, "initial-no-renew-first-0001");
+		UUID id = UUID.fromString(draft.path("supportPlanId").asText());
+		var active = activate(userId, id, draft.path("version").asLong(), "initial-no-renew-activate-01");
+		mvc.perform(put("/api/v2/support-plans/{id}/status", id).with(user(userId))
+				.header("If-Match", "\"" + active.path("version").asLong() + "\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"COMPLETED\",\"completionReason\":\"USER_DECISION\"}"))
+				.andExpect(status().isOk());
+		mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", "initial-no-renew-second-001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_INITIAL_NOT_ELIGIBLE"));
+		assertThat(jdbc.sql("select count(*) from support_plan where user_id=:user").param("user", userId).query(Long.class).single()).isEqualTo(1);
+	}
+
+	private int initialStatus(UUID userId, UUID evaluationId, String key) throws Exception {
+		return mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andReturn().getResponse().getStatus();
+	}
+
+	private JsonNode ensureInitial(UUID userId, UUID evaluationId, String key) throws Exception {
+		return response(mvc.perform(post("/api/v2/support-plans/initial-proposal").with(user(userId))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sourceSupportEvaluationId\":\"" + evaluationId + "\"}"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+	}
+
+	@Test
 	void analyticsReadsPersistedNativeOutcomesWithoutGeneratingOccurrences() throws Exception {
 		UUID user = profile();
 		var active = activeAdaptivePlan(user);
