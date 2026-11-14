@@ -600,7 +600,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 		var schedule=jdbc.sql("select next_reconciliation_at,updated_at from specialist_payout_attempt where id=:id").param("id",prepared.attemptId()).query().singleRow();
 		var gap=java.time.Duration.between(((java.sql.Timestamp)schedule.get("updated_at")).toInstant(),((java.sql.Timestamp)schedule.get("next_reconciliation_at")).toInstant());
 		assertThat(gap).isEqualTo(java.time.Duration.ofSeconds(30));
-		jdbc.sql("update specialist_payout_attempt set reconciliation_started_at=now()-interval '25 hours',reconciliation_deadline_at=now()-interval '1 hour',next_reconciliation_at=now()-interval '1 second' where id=:id")
+		jdbc.sql("update specialist_payout_attempt set reconciliation_started_at=now()-interval '25 hours',reconciliation_deadline_at=now()-interval '1 hour',next_reconciliation_at=now()-interval '10 seconds' where id=:id")
 				.param("id",prepared.attemptId()).update();
 		assertThat(transactions.claimPoll().query()).isNull();
 		var attempt=jdbc.sql("select status,reconciliation_status,failure_code,next_reconciliation_at,review_required_at from specialist_payout_attempt where id=:id").param("id",prepared.attemptId()).query().singleRow();
@@ -740,7 +740,7 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	private void makeDue(UUID attemptId) {
-		jdbc.sql("update specialist_payout_attempt set next_reconciliation_at=now()-interval '1 second',reconciliation_lease_until=null where id=:id").param("id",attemptId).update();
+		jdbc.sql("update specialist_payout_attempt set next_reconciliation_at=now()-interval '10 seconds',reconciliation_lease_until=null where id=:id").param("id",attemptId).update();
 	}
 
 	private MomoPayoutIpnRequest momoCallback(PayoutTransactions.PreparedPayout payout, String requestId,

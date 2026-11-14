@@ -711,6 +711,12 @@ generation idempotent.
 | `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
 | `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
 
+For a proposal-cycle `REASSESSMENT_SCREENING` reminder, an explicit owner keep/change
+may complete the open occurrence with Care `OWNER_REVIEW_DECISION` evidence. Its
+`evidence_id` is `<supportPlanId>:<reviewedCycleNumber>` (one decision per cycle),
+`evidence_revision` is null, and both evidence instants are the accepted command
+time. This is plan-review provenance, not an assessment-history claim.
+
 ### `public.reassessment_self_report`
 
 Versioned Care-owned source for the user's explicit, non-diagnostic account of

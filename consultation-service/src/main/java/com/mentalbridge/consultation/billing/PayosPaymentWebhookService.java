@@ -3,6 +3,7 @@ package com.mentalbridge.consultation.billing;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -23,6 +24,8 @@ class PayosPaymentWebhookService {
 
     private static final String CONTRACT_VERSION = "payos-collect-v1";
     private static final int CANCEL_ATTEMPT_LIMIT = 6;
+    static final Duration PENDING_REVIEW_LIMIT = Duration.ofHours(24);
+    private static final String REVIEW_DEADLINE = "PAYOS_REVIEW_DEADLINE";
     private final JdbcClient jdbc;
     private final Clock clock;
     private final PayosCheckoutGateway gateway;
@@ -49,34 +52,60 @@ class PayosPaymentWebhookService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reconcile(UUID paymentId) {
         var now = clock.instant();
+        if (closeAfterReviewHorizon(paymentId, now)) {
+            retryCancellation(paymentId);
+            return;
+        }
         var claimed = jdbc.sql("""
                 update payment_transaction set reconciliation_next_at=:next
                 where id=:id and payment_provider='PAYOS' and status='PENDING'
+                 and expires_at > :reviewCutoff
                  and (reconciliation_next_at is null or reconciliation_next_at<=:now)
                 returning order_code
                 """).param("next", databaseInstant(now.plusSeconds(30))).param("now", databaseInstant(now))
+                .param("reviewCutoff", databaseInstant(now.minus(PENDING_REVIEW_LIMIT)))
                 .param("id", paymentId).query(Long.class).optional().orElse(null);
-        if (claimed != null) {
-            try {
-                var status = gateway.query(claimed);
-                transactions.executeWithoutResult(ignored -> applyStatus(paymentId, status));
-                jdbc.sql("""
-                        update payment_transaction set reconciliation_failures=0, reconciliation_failure_code=null
-                        where id=:id and (reconciliation_failure_code is null
-                         or reconciliation_failure_code='PAYOS_STATUS_UNAVAILABLE')
-                        """).param("id", paymentId).update();
-            }
-            catch (ApiException exception) {
-                jdbc.sql("""
-                        update payment_transaction set reconciliation_failures=least(reconciliation_failures+1,10),
-                         reconciliation_failure_code='PAYOS_STATUS_UNAVAILABLE',
-                         reconciliation_next_at=:now + make_interval(secs => least(300,30*power(2,least(reconciliation_failures+1,4)))::int)
-                        where id=:id and status='PENDING'
-                        """).param("now", databaseInstant(clock.instant())).param("id", paymentId).update();
-            }
+        if (claimed == null) {
+            retryCancellation(paymentId);
+            return;
+        }
+        boolean paidStatus;
+        try {
+            var status = gateway.query(claimed);
+            paidStatus = "PAID".equals(status.status());
+            transactions.executeWithoutResult(ignored -> applyStatus(paymentId, status));
+            jdbc.sql("""
+                    update payment_transaction set reconciliation_failures=0, reconciliation_failure_code=null
+                    where id=:id and (reconciliation_failure_code is null
+                     or reconciliation_failure_code='PAYOS_STATUS_UNAVAILABLE')
+                    """).param("id", paymentId).update();
+        }
+        catch (ApiException exception) {
+            jdbc.sql("""
+                    update payment_transaction set reconciliation_failures=least(reconciliation_failures+1,10),
+                     reconciliation_failure_code='PAYOS_STATUS_UNAVAILABLE',
+                     reconciliation_next_at=:now + make_interval(secs => least(300,30*power(2,least(reconciliation_failures+1,4)))::int)
+                    where id=:id and status='PENDING'
+                    """).param("now", databaseInstant(clock.instant())).param("id", paymentId).update();
+            closeAfterReviewHorizon(paymentId, clock.instant());
+            return;
+        }
+        if (paidStatus) {
+            closeAfterReviewHorizon(paymentId, clock.instant());
+            return;
         }
         expire(paymentId);
         retryCancellation(paymentId);
+    }
+
+    private boolean closeAfterReviewHorizon(UUID paymentId, Instant now) {
+        var overdue = jdbc.sql("""
+                select exists(select 1 from payment_transaction where id=:id and payment_provider='PAYOS'
+                 and status='PENDING' and expires_at<=:reviewCutoff)
+                """).param("id", paymentId).param("reviewCutoff", databaseInstant(now.minus(PENDING_REVIEW_LIMIT)))
+                .query(Boolean.class).single();
+        if (overdue) expire(paymentId);
+        return overdue;
     }
 
     private void applyStatus(UUID paymentId, PayosCheckoutGateway.Status status) {
@@ -131,6 +160,19 @@ class PayosPaymentWebhookService {
         var payment = expectedPaymentId == null ? settlement.lockPayos(evidence.orderCode()) : settlement.lock(expectedPaymentId);
         now = clock.instant();
         var mismatch = mismatch(payment, evidence, now);
+        if (payment != null && "PAYOS".equals(payment.provider()) && "PENDING".equals(payment.status())
+                && !payment.expiresAt().plus(PENDING_REVIEW_LIMIT).isAfter(now)) {
+            settlement.fail(payment, now, "EXPIRED");
+            jdbc.sql("""
+                    update payment_transaction set reconciliation_failures=0,
+                     reconciliation_failure_code=:failureCode, reconciliation_next_at=:now
+                    where id=:id
+                    """).param("failureCode", REVIEW_DEADLINE).param("now", databaseInstant(now))
+                    .param("id", payment.id()).update();
+            correlate(receiptId, payment.id());
+            finish(receiptId, "VERIFIED_UNMATCHED", mismatch == null ? "PAYMENT_ALREADY_FINAL" : mismatch, now);
+            return;
+        }
         if (payment != null) correlate(receiptId, payment.id());
         if (mismatch != null) {
             finish(receiptId, "VERIFIED_UNMATCHED", mismatch, now);
@@ -177,9 +219,12 @@ class PayosPaymentWebhookService {
         if (identityFailure != null) return identityFailure;
         if (evidence.reference() == null || evidence.reference().isBlank()) return "REFERENCE_INVALID";
         if (!"PENDING".equals(payment.status())) return "PAYMENT_ALREADY_FINAL";
-        if (!payment.expiresAt().isAfter(now)) return "PAYMENT_EXPIRED";
         if (jdbc.sql("select count(*) from payment_transaction where payos_reference=:reference and id<>:id")
                 .param("reference", evidence.reference()).param("id", payment.id()).query(Long.class).single() > 0) return "REFERENCE_CONFLICT";
+        if ("UPGRADE".equals(payment.purpose()) && !jdbc.sql("""
+                select status='ACTIVE' and current_period_end>:now from user_subscription where id=:id for update
+                """).param("id", payment.subscriptionId()).param("now", databaseInstant(now))
+                .query(Boolean.class).single()) return "SUBSCRIPTION_NOT_CURRENT";
         return null;
     }
 
@@ -211,11 +256,14 @@ class PayosPaymentWebhookService {
         var orderCode = transactions.execute(ignored -> {
             var payment = settlement.lock(paymentId);
             if (payment == null || !"PAYOS".equals(payment.provider()) || payment.expiresAt().isAfter(clock.instant())) return null;
-            if (!settlement.fail(payment, clock.instant(), "EXPIRED")) return null;
+            var now = clock.instant();
+            if (!settlement.fail(payment, now, "EXPIRED")) return null;
+            var reviewDeadlinePassed = !payment.expiresAt().plus(PENDING_REVIEW_LIMIT).isAfter(now);
             jdbc.sql("""
-                    update payment_transaction set reconciliation_failures=0,reconciliation_failure_code='PAYOS_CANCEL_PENDING',
+                    update payment_transaction set reconciliation_failures=0,reconciliation_failure_code=:failureCode,
                      reconciliation_next_at=:next where id=:id
-                    """).param("next", databaseInstant(clock.instant().plusSeconds(30))).param("id", paymentId).update();
+                    """).param("failureCode", reviewDeadlinePassed ? REVIEW_DEADLINE : "PAYOS_CANCEL_PENDING")
+                    .param("next", databaseInstant(now.plusSeconds(30))).param("id", paymentId).update();
             return payment.orderCode();
         });
         if (orderCode != null) cancelExpired(paymentId, orderCode);
@@ -226,7 +274,7 @@ class PayosPaymentWebhookService {
         var orderCode = jdbc.sql("""
                 update payment_transaction set reconciliation_next_at=:next
                 where id=:id and payment_provider='PAYOS' and status='FAILED' and terminal_reason='EXPIRED'
-                 and reconciliation_failure_code in ('PAYOS_CANCEL_PENDING','PAYOS_CANCEL_UNAVAILABLE')
+                 and reconciliation_failure_code in ('PAYOS_CANCEL_PENDING','PAYOS_CANCEL_UNAVAILABLE','PAYOS_REVIEW_DEADLINE')
                  and reconciliation_failures<:limit and reconciliation_next_at<=:now
                 returning order_code
                 """).param("next", databaseInstant(now.plusSeconds(30))).param("now", databaseInstant(now))
@@ -238,18 +286,21 @@ class PayosPaymentWebhookService {
         try {
             gateway.cancel(orderCode);
             jdbc.sql("""
-                    update payment_transaction set reconciliation_failures=0,reconciliation_failure_code=null,
+                    update payment_transaction set reconciliation_failures=0,
+                     reconciliation_failure_code=case when reconciliation_failure_code=:reviewDeadline then :reviewDeadline else null end,
                      reconciliation_next_at=null where id=:id
-                    """).param("id", paymentId).update();
+                    """).param("reviewDeadline", REVIEW_DEADLINE).param("id", paymentId).update();
         }
         catch (ApiException exception) {
             jdbc.sql("""
                     update payment_transaction set reconciliation_failures=least(reconciliation_failures+1,:limit),
-                     reconciliation_failure_code=case when reconciliation_failures+1>=:limit
+                     reconciliation_failure_code=case when reconciliation_failure_code=:reviewDeadline then :reviewDeadline
+                     when reconciliation_failures+1>=:limit
                      then 'PAYOS_CANCEL_REQUIRES_REVIEW' else 'PAYOS_CANCEL_UNAVAILABLE' end,
                      reconciliation_next_at=:now + make_interval(secs => least(300,30*power(2,least(reconciliation_failures+1,4)))::int)
                     where id=:id
-                    """).param("limit", CANCEL_ATTEMPT_LIMIT).param("now", databaseInstant(clock.instant()))
+                    """).param("limit", CANCEL_ATTEMPT_LIMIT).param("reviewDeadline", REVIEW_DEADLINE)
+                    .param("now", databaseInstant(clock.instant()))
                     .param("id", paymentId).update();
         }
     }

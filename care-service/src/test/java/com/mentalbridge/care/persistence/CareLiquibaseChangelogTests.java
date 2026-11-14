@@ -52,7 +52,8 @@ class CareLiquibaseChangelogTests {
 					"care-032-resource-completion-evidence",
 					"care-033-ai-voice-processing-consent",
 					"care-034-ai-consent-levels",
-					"care-035-reassessment-symptom-checklist");
+					"care-035-reassessment-symptom-checklist",
+					"care-036-owner-cycle-review-evidence");
 		}
 	}
 

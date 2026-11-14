@@ -5,27 +5,35 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import java.security.*;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.util.*;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.ResultActions;
 
+// Stale per-feature switches from before MB-842 must not turn chat realtime or its relay off.
+@org.springframework.test.context.TestPropertySource(properties = {
+    "mentalbridge.community.chat-realtime.enabled=false",
+    "mentalbridge.community.chat-relay.enabled=false"
+})
 class CommunityChatRealtimeIntegrationTests extends ChatGroupIntegrationSupport {
-    static final String INTERNAL = "/internal/v1/community/chat/";
-    static final KeyPair KEYS = keys();
-    @DynamicPropertySource static void realtime(DynamicPropertyRegistry registry) {
-        registry.add("mentalbridge.community.chat-realtime.enabled", () -> true);
-        registry.add("mentalbridge.community.chat-realtime.key-id", () -> "realtime-test");
-        registry.add("mentalbridge.community.chat-realtime.public-key", () -> "-----BEGIN PUBLIC KEY-----\n"
-                + Base64.getEncoder().encodeToString(KEYS.getPublic().getEncoded()) + "\n-----END PUBLIC KEY-----");
+    @Autowired ChatRealtimeProperties realtimeProperties;
+    @Autowired org.springframework.context.ApplicationContext context;
+
+    @Test void chatFlagAloneEnablesRealtimeDelegationAndOutboxRelay() {
+        assertThat(context.getBeansOfType(ChatOutboxRelay.class)).hasSize(1);
+        assertThat(context.getBeansOfType(ChatKafkaSink.class)).hasSize(1);
+        assertThat(realtimeProperties.keyId()).isEqualTo("community-test-key");
     }
+
+    static final String INTERNAL = "/internal/v1/community/chat/";
+    static final KeyPair KEYS = jwtKeyPair();
     @Test void exactProjectionRequiresTrustedSignatureAudienceScopeAndTargetWithoutUserSelectors() throws Exception {
         var group = group(); join(b, group, bp); var message = saved(a, group);
         project(b, group, message).andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
@@ -136,7 +144,7 @@ class CommunityChatRealtimeIntegrationTests extends ChatGroupIntegrationSupport 
                 .issueTime(Date.from(clock.instant())).expirationTime(Date.from(clock.instant().plusSeconds(lifetime)))
                 .claim("act",Map.of("sub","realtime-service")).claim("scope",scope);
         if(conversation!=null) claims.claim("conversationId",conversation.toString());if(message!=null) claims.claim("messageId",message.toString());
-        var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("realtime-test").build(),claims.build());
+        var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("community-test-key").build(),claims.build());
         jwt.sign(new RSASSASigner((RSAPrivateKey)KEYS.getPrivate()));return jwt.serialize();
     }
     static KeyPair keys() {try {var generator=KeyPairGenerator.getInstance("RSA");generator.initialize(2048);return generator.generateKeyPair();}

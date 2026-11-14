@@ -11,7 +11,7 @@ import { RequestLoggingMiddleware } from '../observability/request-logging.middl
   exports: [RequestLoggingMiddleware],
 })
 export class OperationsModule {
-  static register(communityEnabled: boolean): DynamicModule {
-    return { module: OperationsModule, imports: communityEnabled ? [CommunityModule] : [] };
+  static register(): DynamicModule {
+    return { module: OperationsModule, imports: [CommunityModule] };
   }
 }

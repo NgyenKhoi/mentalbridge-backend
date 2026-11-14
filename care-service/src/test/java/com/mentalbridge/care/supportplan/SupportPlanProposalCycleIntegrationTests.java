@@ -63,6 +63,8 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcClient jdbc;
 	@Autowired ObjectMapper mapper;
+	@Autowired SupportPlanRepository plans;
+	@Autowired SupportPlanActivityOccurrenceService activities;
 	@MockitoBean Clock clock;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
@@ -156,9 +158,12 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	void continuationStartsNextCycleAndIdempotentReplayKeepsOneNewReviewOccurrence() throws Exception {
 		UUID user = profile();
 		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
-		activate(user, plan);
+		var activated = activate(user, plan);
 		at("2026-10-14T04:00:00Z");
+		assertThat(periodStartedAt(user)).isEqualTo(Instant.parse(activated.path("activatedAt").asText()));
 		var continued = continuation(user, plan, 1, "cycle-continuation-command-0001");
+		assertThat(periodStartedAt(user)).isEqualTo(java.time.LocalDate.parse("2026-10-14")
+				.atStartOfDay(java.time.ZoneId.of(continued.path("cycle").path("timezone").asText())).toInstant());
 		assertThat(continued.path("cycle").path("cycleNumber").asInt()).isEqualTo(2);
 		assertThat(continued.path("cycle").path("startedOn").asText()).isEqualTo("2026-10-14");
 		assertThat(continued.path("cycle").path("reviewDueOn").asText()).isEqualTo("2026-10-27");
@@ -167,6 +172,9 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		assertThat(continued.path("status").asText()).isEqualTo("ACTIVE");
 		assertThat(continuation(user, plan, 1, "cycle-continuation-command-0001")).isEqualTo(continued);
 		assertThat(reviewDates(plan, "SCHEDULED")).containsExactly("2026-10-27");
+		assertThat(reviewDates(plan, "COMPLETED")).containsExactly("2026-10-14");
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where support_plan_id=:id and source_action_type='REASSESSMENT_SCREENING' and state='COMPLETED' and completed_at is not null and cancelled_at is null")
+				.param("id", plan).query(Long.class).single()).isEqualTo(1);
 		assertThat(jdbc.sql("select count(*) from support_plan_command where support_plan_id=:id and command_type='CYCLE_CONTINUE'")
 				.param("id", plan).query(Long.class).single()).isEqualTo(1);
 	}
@@ -315,6 +323,27 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		assertThat(reviewDates(plan, "SCHEDULED")).containsExactly("2026-10-16");
 	}
 
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = {"2026-10-14T04:00:00Z", "2026-10-14T13:00:00Z"})
+	void explicitChangeAtReviewDueFulfilsTheReminderBeforeOrAfterItsTime(String decidedAt) throws Exception {
+		UUID user = profile();
+		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
+		activate(user, plan);
+		at("2026-10-13T04:00:00Z");
+		activities.fulfillDueCycleReview(plans.findById(plan).orElseThrow(), now);
+		assertThat(reviewDates(plan, "COMPLETED")).isEmpty();
+		at(decidedAt);
+		var entity = plans.findById(plan).orElseThrow();
+		activities.fulfillDueCycleReview(entity, now);
+		activities.fulfillDueCycleReview(entity, now);
+		activities.end(plan, "PLAN_REPLACED", now);
+		assertThat(reviewDates(plan, "COMPLETED")).containsExactly("2026-10-14");
+		assertThat(reviewDates(plan, "SCHEDULED")).isEmpty();
+		assertThat(reviewDates(plan, "CANCELLED")).isEmpty();
+		assertThat(jdbc.sql("select evidence_kind || ':' || evidence_id from support_plan_activity_occurrence where support_plan_id=:id and source_action_type='REASSESSMENT_SCREENING' and state='COMPLETED'")
+				.param("id", plan).query(String.class).single()).isEqualTo("OWNER_REVIEW_DECISION:" + plan + ":1");
+	}
+
 	private void at(String instant) {
 		now = Instant.parse(instant);
 		when(clock.instant()).thenAnswer(call -> now);
@@ -360,6 +389,12 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	private JsonNode detail(UUID user, UUID plan) throws Exception {
 		return readPlanResponse(mvc.perform(get("/api/v2/support-plans/{id}", plan).with(user(user))).andExpect(status().isOk())
 				.andReturn().getResponse());
+	}
+
+	private Instant periodStartedAt(UUID user) throws Exception {
+		var body = mvc.perform(get("/api/v2/support-plans/current/resource-actions").with(user(user))
+				.param("localDate", "2026-10-14")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		return Instant.parse(mapper.readTree(body).path("activatedAt").asText());
 	}
 
 	private JsonNode activate(UUID user, UUID plan) throws Exception {

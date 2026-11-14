@@ -61,6 +61,13 @@ public class AdminCommercialReconciliationController {
 				      else 'DISCREPANCY' end as discrepancy_type
 				from payos_payment_webhook p1
 				where p1.processing_status in ('RECEIVED', 'VERIFIED_UNMATCHED', 'PROCESSING_FAILED')
+				union all
+				select p.id, p.order_code::text as order_id, 'PAYOS' as provider, null::bigint as trans_id,
+				 'PAYMENT_REVIEW' as processing_status, p.reconciliation_failure_code as failure_code,
+				 p.failed_at as received_at, 'PAYMENT_REVIEW' as discrepancy_type
+				from payment_transaction p
+				where p.payment_provider='PAYOS' and p.status='FAILED'
+				 and p.reconciliation_failure_code='PAYOS_REVIEW_DEADLINE'
 				) receipts order by received_at desc, id desc limit 50
 				""").query((row, ignored) -> new AdminCommercialDiscrepancyResponse.WebhookDiscrepancy(
 						row.getObject("id", UUID.class),
@@ -373,10 +380,12 @@ public class AdminCommercialReconciliationController {
 			var inClause = inClause(subscriptionIds);
 			subscriptions = jdbc.sql("""
 					select s.id, s.user_id, s.plan_version_id, v.plan_code, v.pricing_policy_version,
-					 s.status, s.current_period_start, s.current_period_end, s.created_at
+					 case when s.status='ACTIVE' and s.current_period_end<=:now then 'ENDED' else s.status end as status,
+					 s.current_period_start, s.current_period_end, s.created_at
 					from user_subscription s
 					join subscription_plan_version v on v.id=s.plan_version_id
 					where s.id in (""" + inClause + ") order by s.created_at desc, s.id desc limit " + (FETCH_LIMIT + 1))
+					.param("now", java.sql.Timestamp.from(clock.instant()))
 					.query((row, ignored) -> new AdminCommercialProvenanceResponse.AdminSubscriptionSummary(
 							row.getObject("id", UUID.class),
 							row.getObject("user_id", UUID.class),

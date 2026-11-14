@@ -62,7 +62,7 @@ describe('Realtime HTTP boundary', () => {
     }
   });
 
-  it('reports connected dependencies and correlation ID', async () => {
+  it('reports Community transport degradation and correlation ID', async () => {
     const app = await createApplication(configuration, { mongo, redis });
     await app.init();
     try {
@@ -72,10 +72,11 @@ describe('Realtime HTTP boundary', () => {
         .expect('x-correlation-id', 'health-test')
         .expect(200)
         .expect({
-          status: 'ok',
+          status: 'degraded',
           service: 'realtime-service',
           mongodb: 'connected',
           redis: 'connected',
+          community: 'degraded',
         });
     } finally {
       await app.close();

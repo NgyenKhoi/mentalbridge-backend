@@ -27,6 +27,7 @@
 Streak achievements recognize a historical bounded fact and never require the
 current streak to continue. Missing a day cannot revoke, penalize, or reduce
 access. Resource practice windows are distinct days and are not streaks.
+Verified Resource practice counts with or without a SupportPlan link.
 
 ## State, correction, and privacy
 

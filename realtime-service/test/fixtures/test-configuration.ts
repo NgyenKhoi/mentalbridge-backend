@@ -1,15 +1,30 @@
+import { generateKeyPairSync } from 'node:crypto';
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
 import { communityConfiguration } from '../../src/community/community-configuration.js';
 import { specialistLiveConfiguration } from '../../src/notifications/specialist-live.configuration.js';
 
 export const encryptionKey = Buffer.alloc(32, 7);
 
+const communityKeys = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+});
+
+export const communityTestEnvironment = {
+  REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: communityKeys.privateKey,
+  REALTIME_COMMUNITY_DELEGATION_KEY_ID: 'test-delegation',
+  REALTIME_COMMUNITY_BFF_PUBLIC_KEY: communityKeys.publicKey,
+  REALTIME_COMMUNITY_BFF_KEY_ID: 'test-bff',
+  KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+};
+
 export const testConfiguration = (
   publicKey: string,
   overrides: Partial<ServiceConfiguration> = {},
 ): ServiceConfiguration => ({
   NODE_ENV: 'test',
-  COMMUNITY: communityConfiguration(),
+  COMMUNITY: communityConfiguration(communityTestEnvironment),
   SPECIALIST_LIVE: specialistLiveConfiguration(),
   PORT: 3004,
   LOG_LEVEL: 'silent',

@@ -9,6 +9,10 @@ spring:
     url: ${CONSULTATION_DB_URL}
     username: ${CONSULTATION_DB_USERNAME}
     password: ${CONSULTATION_DB_PASSWORD}
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   jpa:
     hibernate:
       ddl-auto: validate
@@ -88,7 +92,7 @@ mentalbridge:
       retry-base: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_BASE:PT5S}
       retry-maximum: ${CONSULTATION_APPOINTMENT_OUTBOX_RETRY_MAXIMUM:PT5M}
     payout:
-      mode: ${CONSULTATION_PAYOUT_MODE:FAKE}
+      mode: ${CONSULTATION_PAYOUT_MODE:DISABLED}
       staging-demo-enabled: ${CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED:false}
       settlement-hold: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:P7D}
       minimum-withdrawal-vnd: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:100000}

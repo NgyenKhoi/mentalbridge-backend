@@ -349,8 +349,25 @@ authenticated signed-response-verified PayOS reconciliation through the same
 atomic settlement path. Purchase/upgrade, no refunds, immutable history and
 per-credit earning semantics remain unchanged. Bank revisions and payout
 provider/destination/items remain immutable. Only matched authenticated child
-transaction proof pays; outer batch approval or elapsed time never pays. After
-24 hours unresolved funds stay reserved with UNKNOWN/NEEDS_REVIEW. Specialist
+transaction proof pays; outer batch approval or elapsed time never pays.
+
+Exactly matched verified PayOS `PAID` evidence settles a still-pending payment
+even when observed after local checkout expiry. A failed provider status query
+or a `PAID` status without exact matching evidence cannot itself cause local
+expiry. During retry backoff or an in-flight query, a second owner read or
+scheduler tick preserves the `PENDING` payment. A later successful non-`PAID`
+provider answer may trigger ordinary local expiry. At 24 hours after
+`expires_at`, any still-`PENDING` PayOS payment closes as `FAILED` with
+`terminalReason=EXPIRED` and reconciliation failure code
+`PAYOS_REVIEW_DEADLINE`, even when retry backoff remains. The close restores
+upgrade-held credits, attempts provider-link cancellation, and lists the payment
+as `PAYMENT_REVIEW` in admin commercial discrepancies. A verified `PAID`
+receipt after terminal close remains `VERIFIED_UNMATCHED:PAYMENT_ALREADY_FINAL`
+without automatic entitlement or refund. An admin close endpoint is a follow-up.
+Unset payout mode is `DISABLED`; `FAKE` requires explicit local/test
+configuration.
+
+After 24 hours unresolved funds stay reserved with UNKNOWN/NEEDS_REVIEW. Specialist
 replay only observes; an explicit provider-affine ADMIN retry requires definite
 FAILED and revalidated original eligibility. Linked failed-payout earnings are
 excluded from new withdrawals and shown separately as retryPendingVnd.

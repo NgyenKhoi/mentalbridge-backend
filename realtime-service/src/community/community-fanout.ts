@@ -60,6 +60,7 @@ export class CommunityFanout implements OnModuleInit, OnApplicationShutdown {
     this.consumer = kafka.consumer({
       groupId: configuration.COMMUNITY.groupId,
       allowAutoTopicCreation: false,
+      maxWaitTimeInMs: 1000,
       maxBytesPerPartition: 262_144,
     });
     this.producer = kafka.producer({
