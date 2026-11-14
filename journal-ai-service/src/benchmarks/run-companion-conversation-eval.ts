@@ -238,6 +238,10 @@ run: for (let repeat = 1; repeat <= repeats; repeat += 1)
       process.stdout.write(
         `${JSON.stringify({ id: scenario.id, repeat, error: error instanceof Error ? error.message : "unknown error", code: (error as { code?: unknown }).code })}\n`,
       );
+      if (realSpend) {
+        stoppedBy = "paid provider error with uncertain usage";
+        break run;
+      }
       if (consecutiveErrors >= 3) {
         stoppedBy = "three consecutive provider errors";
         break run;
