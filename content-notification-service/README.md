@@ -257,6 +257,8 @@ Configure the Care query with `CONTENT_CARE_BASE_URL` (default
 `http://localhost:8081`) and `CONTENT_CARE_TIMEOUT_MS` (default 5000 ms, allowed
 100–5000 ms). The forwarded owner JWT authorizes the read; this query has no
 service credential. Care errors leave the stored board unchanged.
+The service `.env.example` sets the same 5000 ms timeout as the validated
+maximum and the client fallback.
 
 ## Stack
 

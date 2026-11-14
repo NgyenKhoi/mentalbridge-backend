@@ -64,6 +64,8 @@ Realtime. Existing public chat APIs retain their normal
 Identity USER authentication. There is no new database migration: the existing
 read watermark transaction adds a recipient-self `READ_STATE_CHANGED` outbox
 fact only on a real advance. Retry/out-of-order read acknowledgements add no fact.
+The service `.env.example` lists the public key and key ID; the retired
+`COMMUNITY_CHAT_RELAY_ENABLED` switch is no longer part of this configuration.
 
 MB-690 adds `POST /internal/v1/community/chat/presence-projections` under the
 conversation-bound `community:presence:project` scope. Its closed body contains
