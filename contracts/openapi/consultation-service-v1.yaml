@@ -4983,7 +4983,7 @@ components:
       enum: [DEFAULT_FREE, DEMO, PAID]
     CreditLedgerEventType:
       type: string
-      enum: [PROVISIONED, HELD, CONSUMED, RELEASED, FORFEITED]
+      enum: [PROVISIONED, HELD, CONSUMED, RELEASED, FORFEITED, ADJUSTED_RELEASED, REVOKED]
     ConsultationCreditPolicyVersion:
       type: string
       enum: [consultation-credit-v1, consultation-credit-v2]
@@ -6938,7 +6938,7 @@ components:
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         sessionOutcome: { type: [string, 'null'], enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null] }
         sessionOutcomeReasonCode: { type: [string, 'null'], minLength: 1, maxLength: 64 }
-        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED] }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
     AdminAppointmentPage:
@@ -6959,7 +6959,7 @@ components:
         nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 512 }
     AppointmentCancellationCreditOutcome:
       type: string
-      enum: [RELEASED, FORFEITED, TRANSFERRED_TO_REPLACEMENT]
+      enum: [RELEASED, FORFEITED, TRANSFERRED_TO_REPLACEMENT, REVOKED]
     AppointmentHistoryEntry:
       type: object
       additionalProperties: false
@@ -6974,7 +6974,7 @@ components:
         actorId: { type: [string, 'null'], format: uuid }
         reason:
           type: string
-          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED, SESSION_ACTIVITY_OBSERVED, SCHEDULED_WINDOW_ENDED, EVIDENCE_REQUIREMENTS_MET, SPECIALIST_VIDEO_END_CONFIRMED, VIDEO_MANUAL_REVIEW_REQUIRED]
+          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, OWNER_SUBSCRIPTION_CANCELLED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED, SESSION_ACTIVITY_OBSERVED, SCHEDULED_WINDOW_ENDED, EVIDENCE_REQUIREMENTS_MET, SPECIALIST_VIDEO_END_CONFIRMED, VIDEO_MANUAL_REVIEW_REQUIRED]
         creditOutcome:
           oneOf:
             - { $ref: '#/components/schemas/AppointmentCancellationCreditOutcome' }
@@ -7027,7 +7027,7 @@ components:
         sessionOutcome:
           type: [string, 'null']
           enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null]
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED] }
         scheduledStartAt: { type: string, format: date-time }
         scheduledEndAt: { type: string, format: date-time }
         serverTime: { type: string, format: date-time }
@@ -7204,7 +7204,7 @@ components:
         cancelledAt: { type: [string, 'null'], format: date-time }
         cancellationReason:
           type: [string, 'null']
-          enum: [USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_SUSPENDED, null]
+          enum: [USER_CANCELLED, USER_RESCHEDULED, OWNER_SUBSCRIPTION_CANCELLED, SPECIALIST_SUSPENDED, null]
         cancellationActor:
           type: [string, 'null']
           enum: [USER, ADMIN, null]
@@ -7220,7 +7220,7 @@ components:
         sessionEndedAt: { type: [string, 'null'], format: date-time }
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         completionFactId: { type: [string, 'null'], format: uuid }
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED] }
         history:
           type: array
           maxItems: 20

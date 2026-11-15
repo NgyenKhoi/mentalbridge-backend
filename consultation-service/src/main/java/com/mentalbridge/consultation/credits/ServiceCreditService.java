@@ -53,7 +53,8 @@ public class ServiceCreditService {
 	@Transactional
 	public void transition(UUID accountId, UUID creditId, UUID appointmentId, CreditEventType eventType,
 			String idempotencyKey) {
-		if (eventType == CreditEventType.PROVISIONED || eventType == CreditEventType.ADJUSTED_RELEASED || idempotencyKey == null
+		if (eventType == CreditEventType.PROVISIONED || eventType == CreditEventType.ADJUSTED_RELEASED
+				|| eventType == CreditEventType.REVOKED || idempotencyKey == null
 				|| idempotencyKey.length() < 16 || idempotencyKey.length() > 128) {
 			throw new IllegalArgumentException("A valid transition and idempotency key are required");
 		}
@@ -159,7 +160,7 @@ public class ServiceCreditService {
 				assertHeldBy(credit, appointmentId);
 				yield "FORFEITED";
 			}
-			case PROVISIONED, ADJUSTED_RELEASED -> throw new IllegalArgumentException("Transition is not available here");
+			case PROVISIONED, ADJUSTED_RELEASED, REVOKED -> throw new IllegalArgumentException("Transition is not available here");
 		};
 	}
 

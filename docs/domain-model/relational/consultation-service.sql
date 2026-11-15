@@ -173,7 +173,7 @@ CREATE TABLE consultation.user_subscription (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL, -- external -> identity.account.id
     plan_version_id uuid NOT NULL REFERENCES consultation.subscription_plan_version(id),
-    status varchar(24) NOT NULL,
+    status varchar(32) NOT NULL,
     current_period_start timestamptz,
     current_period_end timestamptz,
     ended_at timestamptz,
@@ -190,8 +190,8 @@ CREATE TABLE consultation.user_subscription (
 CREATE TABLE consultation.subscription_status_history (
     id uuid PRIMARY KEY,
     subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
-    from_status varchar(24),
-    to_status varchar(24) NOT NULL,
+    from_status varchar(32),
+    to_status varchar(32) NOT NULL,
     reason_code varchar(64) NOT NULL,
     changed_by uuid, -- external -> identity.account.id
     outcome_code varchar(64),

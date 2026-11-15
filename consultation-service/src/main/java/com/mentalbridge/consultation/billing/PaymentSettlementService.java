@@ -22,25 +22,40 @@ class PaymentSettlementService {
             """;
     private final JdbcClient jdbc;
     private final ServiceCreditService credits;
+    private final CommercialAccountLock accountLock;
 
-    PaymentSettlementService(JdbcClient jdbc, ServiceCreditService credits) {
+    PaymentSettlementService(JdbcClient jdbc, ServiceCreditService credits, CommercialAccountLock accountLock) {
         this.jdbc = jdbc;
         this.credits = credits;
+        this.accountLock = accountLock;
     }
 
     Payment lock(UUID paymentId) {
+        if (!lockOwner("pt.id=:id", "id", paymentId)) return null;
         return jdbc.sql(PAYMENT_SELECT + " where pt.id=:id for update of pt")
                 .param("id", paymentId).query(this::payment).optional().orElse(null);
     }
 
     Payment lockPayos(long orderCode) {
+        if (!lockOwner("pt.payment_provider='PAYOS' and pt.order_code=:code", "code", orderCode)) return null;
         return jdbc.sql(PAYMENT_SELECT + " where pt.payment_provider='PAYOS' and pt.order_code=:code for update of pt")
                 .param("code", orderCode).query(this::payment).optional().orElse(null);
     }
 
     Payment lockMomo(String orderId) {
+        if (!lockOwner("pt.payment_provider in ('MOMO','FAKE') and pt.momo_order_id=:id", "id", orderId)) return null;
         return jdbc.sql(PAYMENT_SELECT + " where pt.payment_provider in ('MOMO','FAKE') and pt.momo_order_id=:id for update of pt")
                 .param("id", orderId).query(this::payment).optional().orElse(null);
+    }
+
+    private boolean lockOwner(String predicate, String parameter, Object value) {
+        var owner = jdbc.sql("""
+                select s.user_id from payment_transaction pt
+                join user_subscription s on s.id=pt.subscription_id where
+                """ + predicate).param(parameter, value).query(UUID.class).optional();
+        if (owner.isEmpty()) return false;
+        accountLock.lock(owner.orElseThrow());
+        return true;
     }
 
     boolean succeed(Payment payment, Instant now) {

@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -26,6 +27,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.mentalbridge.consultation.ConsultationTestProperties;
 import com.mentalbridge.consultation.TestcontainersConfiguration;
+import com.mentalbridge.consultation.appointment.AppointmentModality;
+import com.mentalbridge.consultation.appointment.AppointmentService;
 import com.mentalbridge.consultation.shared.ApiException;
 
 @Import(TestcontainersConfiguration.class)
@@ -36,6 +39,7 @@ class SubscriptionCancellationIntegrationTests extends ConsultationTestPropertie
 	private static final UUID PLUS = UUID.fromString("62200000-0000-4000-8000-000000000002");
 
 	@Autowired SubscriptionCancellationService cancellations;
+	@Autowired AppointmentService appointments;
 	@Autowired JdbcClient jdbc;
 	@Autowired MockMvc mvc;
 
@@ -70,6 +74,91 @@ class SubscriptionCancellationIntegrationTests extends ConsultationTestPropertie
 		mvc.perform(get("/api/v1/subscriptions/current").with(user(owner)))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"))
 				.andExpect(jsonPath("$.subscriptionId").value(subscription.toString()));
+		mvc.perform(get("/api/v1/service-credits").with(user(owner)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.history[0].eventType").value("REVOKED"));
+		mvc.perform(get("/api/v1/appointments").with(user(owner)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].cancellationReason").value("OWNER_SUBSCRIPTION_CANCELLED"))
+				.andExpect(jsonPath("$.items[0].cancellationActor").value("USER"))
+				.andExpect(jsonPath("$.items[0].cancellationCreditOutcome").value("REVOKED"))
+				.andExpect(jsonPath("$.items[0].creditState").value("REVOKED"))
+				.andExpect(jsonPath("$.items[0].history[0].reason").value("OWNER_SUBSCRIPTION_CANCELLED"));
+	}
+
+	@Test
+	void liveSessionIsPreservedAndAutomaticCompletionUsesSystemActor() {
+		var owner = UUID.randomUUID();
+		var subscription = activeSubscription(owner, 1);
+		var appointment = futureAppointment(owner, subscription);
+		var now = Instant.now();
+		jdbc.sql("""
+				update appointment set status='IN_PROGRESS', decided_at=:now,
+				 decision_reason='SPECIALIST_ACCEPTED', requested_at=:requested,
+				 decision_deadline_at=:deadline, scheduled_start_at=:start, scheduled_end_at=:end
+				 where id=:id
+				""").param("now", database(now.minusSeconds(120)))
+				.param("requested", database(now.minusSeconds(3_600)))
+				.param("deadline", database(now.minusSeconds(120))).param("start", database(now.minusSeconds(60)))
+				.param("end", database(now.plusSeconds(3_540))).param("id", appointment).update();
+
+		var accepted = cancellations.cancel(owner, subscription, "live-cancel-" + UUID.randomUUID());
+		assertThat(accepted.status()).isEqualTo("CANCEL_PENDING_SESSION_END");
+		assertThat(jdbc.sql("select status from appointment where id=:id").param("id", appointment)
+				.query(String.class).single()).isEqualTo("IN_PROGRESS");
+		assertThat(jdbc.sql("select state from service_credit where appointment_id=:id").param("id", appointment)
+				.query(String.class).single()).isEqualTo("HELD");
+
+		jdbc.sql("""
+				update appointment set requested_at=:requested, decision_deadline_at=:deadline,
+				 scheduled_start_at=:start, scheduled_end_at=:end where id=:id
+				""").param("requested", database(now.minusSeconds(7_200)))
+				.param("deadline", database(now.minusSeconds(4_000)))
+				.param("start", database(now.minusSeconds(3_700)))
+				.param("end", database(now.minusSeconds(100))).param("id", appointment).update();
+		assertThat(cancellations.current(owner).status()).isEqualTo("CANCELLED");
+		var audit = jdbc.sql("""
+				select changed_by, reason_code from subscription_status_history
+				 where subscription_id=:id and from_status='CANCEL_PENDING_SESSION_END'
+				""").param("id", subscription).query((row, ignored) -> java.util.Map.entry(
+				row.getObject("changed_by", UUID.class), row.getString("reason_code"))).single();
+		assertThat(audit.getKey()).isEqualTo(new UUID(0, 0));
+		assertThat(audit.getValue()).isEqualTo("LIVE_SESSION_ENDED");
+	}
+
+	@Test
+	void bookingAndCancellationShareOwnerSerializationFence() throws Exception {
+		var owner = UUID.randomUUID();
+		var subscription = activeSubscription(owner, 2);
+		var slot = bookableSlot();
+		var start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var booking = executor.submit(() -> {
+				start.await();
+				try {
+					return appointments.request(owner, "booking-race-" + UUID.randomUUID(), slot,
+							AppointmentModality.IN_APP_CHAT, null, null);
+				}
+				catch (ApiException rejectedAfterCancellation) {
+					return null;
+				}
+			});
+			var cancellation = executor.submit(() -> {
+				start.await();
+				return cancellations.cancel(owner, subscription, "cancel-race-" + UUID.randomUUID());
+			});
+			start.countDown();
+			assertThat(cancellation.get(30, TimeUnit.SECONDS).status()).isEqualTo("CANCELLED");
+			booking.get(30, TimeUnit.SECONDS);
+		}
+		assertThat(jdbc.sql("""
+				select count(*) from appointment where user_account_id=:owner
+				 and status in ('REQUESTED','CONFIRMED','IN_PROGRESS')
+				""").param("owner", owner).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit c join service_credit_period p on p.id=c.period_id
+				 where p.account_id=:owner and c.state in ('AVAILABLE','HELD','UPGRADE_HELD')
+				""").param("owner", owner).query(Long.class).single()).isZero();
 	}
 
 	@Test
@@ -135,6 +224,17 @@ class SubscriptionCancellationIntegrationTests extends ConsultationTestPropertie
 				 effective_until,policy_version,created_at,updated_at) values(:owner,'PLUS','PAID',:source,:start,:end,
 				 'service-entitlement-v1',:start,:start)
 				""").param("owner", owner).param("source", id.toString()).param("start", start).param("end", end).update();
+		var payment = UUID.randomUUID();
+		jdbc.sql("""
+				insert into payment_transaction(id,subscription_id,target_plan_version_id,payment_provider,momo_order_id,
+				 momo_request_id,amount_minor,currency,status,purpose,idempotency_key,paid_at,expires_at,checkout_url,
+				 created_at,updated_at)
+				 values(:id,:subscription,:plan,'FAKE',:orderId,:requestId,100000,'VND','SUCCEEDED','PURCHASE',:key,
+				 :start,:expires,'https://test-payment.momo.vn/subscription-cancellation',:start,:start)
+				""").param("id", payment).param("subscription", id).param("plan", PLUS)
+				.param("orderId", "cancel-order-" + payment).param("requestId", "cancel-request-" + payment)
+				.param("key", "cancel-payment-" + payment).param("start", start)
+				.param("expires", OffsetDateTime.ofInstant(now.plusSeconds(1_200), ZoneOffset.UTC)).update();
 		if (creditCount > 0) {
 			jdbc.sql("""
 					insert into service_credit_period(id,account_id,plan_version,credit_policy_version,package_code,source,
@@ -151,6 +251,24 @@ class SubscriptionCancellationIntegrationTests extends ConsultationTestPropertie
 			}
 		}
 		return id;
+	}
+
+	private UUID bookableSlot() {
+		var specialist = UUID.randomUUID();
+		var slot = UUID.randomUUID();
+		var start = Instant.now().plusSeconds(7_200);
+		jdbc.sql("""
+				insert into specialist_profile(account_id,display_name,biography,years_experience,timezone,
+				 approval_status,submitted_at,reviewed_at,reviewed_by)
+				 values(:id,'Race Specialist','Booking cancellation race',5,'Asia/Ho_Chi_Minh','APPROVED',now(),now(),:admin)
+				""").param("id", specialist).param("admin", UUID.randomUUID()).update();
+		jdbc.sql("""
+				insert into availability_slot(id,specialist_account_id,start_at,end_at,timezone,modality,
+				 idempotency_key,created_at,updated_at)
+				 values(:id,:specialist,:start,:end,'Asia/Ho_Chi_Minh','IN_APP_CHAT',:key,now(),now())
+				""").param("id", slot).param("specialist", specialist).param("start", database(start))
+				.param("end", database(start.plusSeconds(3_600))).param("key", "race-slot-" + slot).update();
+		return slot;
 	}
 
 	private UUID futureAppointment(UUID owner, UUID subscriptionId) {

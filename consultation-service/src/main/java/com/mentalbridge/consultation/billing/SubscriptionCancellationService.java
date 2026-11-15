@@ -24,14 +24,18 @@ import com.mentalbridge.consultation.shared.ApiException;
 public class SubscriptionCancellationService {
 
 	private static final String REASON = "OWNER_SUBSCRIPTION_CANCELLED";
+	private static final UUID SYSTEM_ACTOR_ID = new UUID(0, 0);
 	private final JdbcClient jdbc;
 	private final Clock clock;
 	private final AppointmentStatusOutbox outbox;
+	private final CommercialAccountLock accountLock;
 
-	public SubscriptionCancellationService(JdbcClient jdbc, Clock clock, AppointmentStatusOutbox outbox) {
+	public SubscriptionCancellationService(JdbcClient jdbc, Clock clock, AppointmentStatusOutbox outbox,
+			CommercialAccountLock accountLock) {
 		this.jdbc = jdbc;
 		this.clock = clock;
 		this.outbox = outbox;
+		this.accountLock = accountLock;
 	}
 
 	@Transactional
@@ -49,6 +53,7 @@ public class SubscriptionCancellationService {
 					replay.revokedCredits());
 		}
 
+		accountLock.lock(actorId);
 		lock("subscription-cancel:" + subscriptionId);
 		var subscription = owned(actorId, subscriptionId, true);
 		if (!"ACTIVE".equals(subscription.status())) {
@@ -100,7 +105,7 @@ public class SubscriptionCancellationService {
 
 	@Transactional
 	public OwnSubscriptionResponse current(UUID actorId) {
-		finalizePending(actorId, clock.instant());
+		finalizePending(actorId, SYSTEM_ACTOR_ID, clock.instant());
 		return jdbc.sql("""
 				select s.id, v.plan_code, s.status, s.current_period_start, s.current_period_end,
 				 s.cancellation_requested_at, s.cancellation_effective_at, s.cancellation_live_appointment_id,
@@ -122,17 +127,17 @@ public class SubscriptionCancellationService {
 		var now = clock.instant();
 		var owners = jdbc.sql("select user_id from user_subscription where status='CANCEL_PENDING_SESSION_END' limit 100")
 				.query(UUID.class).list();
-		owners.forEach(owner -> finalizePending(owner, now));
+		owners.forEach(owner -> finalizePending(owner, SYSTEM_ACTOR_ID, now));
 	}
 
-	private void finalizePending(UUID actorId, Instant now) {
+	private void finalizePending(UUID ownerId, UUID actorId, Instant now) {
 		var pending = jdbc.sql("""
 				select s.id, s.cancellation_live_appointment_id from user_subscription s
 				 left join appointment a on a.id=s.cancellation_live_appointment_id
-				 where s.user_id=:actorId and s.status='CANCEL_PENDING_SESSION_END'
+				 where s.user_id=:ownerId and s.status='CANCEL_PENDING_SESSION_END'
 				 and (a.id is null or a.status not in ('CONFIRMED','IN_PROGRESS') or a.scheduled_end_at<=:now)
 				 for update of s
-				""").param("actorId", actorId).param("now", database(now))
+				""").param("ownerId", ownerId).param("now", database(now))
 				.query((row, ignored) -> row.getObject("id", UUID.class)).list();
 		for (var subscriptionId : pending) {
 			var cancelled = jdbc.sql("""

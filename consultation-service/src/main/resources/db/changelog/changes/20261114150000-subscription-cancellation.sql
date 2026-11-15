@@ -5,6 +5,7 @@ alter table user_subscription
     add column cancellation_requested_at timestamptz,
     add column cancellation_effective_at timestamptz,
     add column cancellation_live_appointment_id uuid references appointment(id),
+    alter column status type varchar(32),
     drop constraint ck_user_subscription_status,
     drop constraint ck_user_subscription_period,
     add constraint ck_user_subscription_status check (
@@ -28,6 +29,8 @@ alter table user_subscription
 alter table subscription_status_history
     add column changed_by uuid,
     add column outcome_code varchar(64),
+    alter column from_status type varchar(32),
+    alter column to_status type varchar(32),
     drop constraint ck_subscription_status_history,
     add constraint ck_subscription_status_history check (
         (from_status is null or from_status in (

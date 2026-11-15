@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.consultation.availability.AvailabilityProperties;
+import com.mentalbridge.consultation.billing.CommercialAccountLock;
 import com.mentalbridge.consultation.credits.CreditEventType;
 import com.mentalbridge.consultation.credits.ServiceCreditService;
 import com.mentalbridge.consultation.entitlement.ServicePackage;
@@ -40,15 +41,18 @@ public class AppointmentService {
 	private final AvailabilityProperties availability;
 	private final Clock clock;
 	private final AppointmentStatusOutbox outbox;
+	private final CommercialAccountLock accountLock;
 
 	public AppointmentService(JdbcClient jdbc, ServiceCreditService credits, SpecialistProfileService profiles,
-			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox) {
+			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox,
+			CommercialAccountLock accountLock) {
 		this.jdbc = jdbc;
 		this.credits = credits;
 		this.profiles = profiles;
 		this.availability = availability;
 		this.clock = clock;
 		this.outbox = outbox;
+		this.accountLock = accountLock;
 	}
 
 	@Transactional
@@ -63,20 +67,12 @@ public class AppointmentService {
 			AppointmentModality requestedModality, UUID replacesAppointmentId, Long expectedReplacementVersion,
 			UUID originatingPlanActionId) {
 		var replay = findByCommand(userId, idempotencyKey);
-		if (replay != null) {
-			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
-					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
-				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
-			}
-			var effectiveOriginatingPlanActionId = originatingPlanActionId;
-			if (effectiveOriginatingPlanActionId == null && replacesAppointmentId != null) {
-				effectiveOriginatingPlanActionId = existingPlanActionOrigin(userId, replacesAppointmentId);
-			}
-			if (!java.util.Objects.equals(replay.originatingPlanActionId(), effectiveOriginatingPlanActionId)) {
-				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
-			}
-			return replay;
-		}
+		if (replay != null) return validateReplay(userId, replay, slotId, requestedModality,
+				replacesAppointmentId, originatingPlanActionId);
+		accountLock.lock(userId);
+		replay = findByCommand(userId, idempotencyKey);
+		if (replay != null) return validateReplay(userId, replay, slotId, requestedModality,
+				replacesAppointmentId, originatingPlanActionId);
 		var now = clock.instant();
 		var creditAccount = credits.current(userId);
 		if (creditAccount.packageCode() == ServicePackage.FREE) {
@@ -144,6 +140,22 @@ public class AppointmentService {
 			throw conflict("APPOINTMENT_SLOT_UNAVAILABLE", "The slot or credit is already held");
 		}
 		return findById(userId, appointmentId);
+	}
+
+	private AppointmentResponse validateReplay(UUID userId, AppointmentResponse replay, UUID slotId,
+			AppointmentModality requestedModality, UUID replacesAppointmentId, UUID originatingPlanActionId) {
+		if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
+				|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
+			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
+		}
+		var effectiveOriginatingPlanActionId = originatingPlanActionId;
+		if (effectiveOriginatingPlanActionId == null && replacesAppointmentId != null) {
+			effectiveOriginatingPlanActionId = existingPlanActionOrigin(userId, replacesAppointmentId);
+		}
+		if (!java.util.Objects.equals(replay.originatingPlanActionId(), effectiveOriginatingPlanActionId)) {
+			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
+		}
+		return replay;
 	}
 
 	@Transactional
