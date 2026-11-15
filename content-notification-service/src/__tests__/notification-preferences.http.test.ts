@@ -31,7 +31,9 @@ function defaults(): NotificationPreferences {
       appointmentMessage: true,
       resourceSystem: true,
       communityInteraction: true,
+      supportPlanReminder: true,
     },
+    dailyReminderTime: '20:00',
     quietHours: {
       enabled: false,
       start: '22:00',
@@ -255,11 +257,39 @@ describe('notification preference HTTP boundary', () => {
     expect(repository.getOrCreate).toHaveBeenLastCalledWith(OWNER_A, 'SPECIALIST');
   });
 
+  it('persists the USER daily reminder time and SupportPlan reminder group', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/notification-preferences')
+      .set('Authorization', `Bearer ${await token()}`)
+      .set('If-Match', '"0"')
+      .send({ dailyReminderTime: '07:30', contentGroups: { supportPlanReminder: false } })
+      .expect(200);
+
+    expect(response.body.dailyReminderTime).toBe('07:30');
+    expect(response.body.contentGroups.supportPlanReminder).toBe(false);
+    expect(records.get(OWNER_A)?.dailyReminderTime).toBe('07:30');
+  });
+
+  it.each([{ dailyReminderTime: '08:00' }, { contentGroups: { supportPlanReminder: false } }])(
+    'rejects USER-only daily reminder fields from a specialist',
+    async (body) => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/notification-preferences')
+        .set('Authorization', `Bearer ${await token(OWNER_A, 'SPECIALIST')}`)
+        .set('If-Match', '"0"')
+        .send(body)
+        .expect(422);
+      expect(repository.update).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     [{ quietHours: { start: '24:30' } }, 'quietHours.start'],
     [{ quietHours: { enabled: true, start: '08:00', end: '08:00' } }, 'quietHours.end'],
     [{ quietHours: { timeZone: 'Not/AZone' } }, 'quietHours.timeZone'],
     [{ channels: { sms: true } }, 'channels'],
+    [{ dailyReminderTime: '24:00' }, 'dailyReminderTime'],
+    [{ dailyReminderTime: '7:30' }, 'dailyReminderTime'],
   ])('returns bounded validation details for invalid preferences', async (body, field) => {
     const response = await request(app.getHttpServer())
       .patch('/api/v1/notification-preferences')

@@ -90,7 +90,16 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
             continue;
           }
           if (reminderGate.decision === 'DEFER') {
-            await this.repository.deferClaim(claim.id, reminderGate.availableAt, reminderGate.code);
+            await this.repository.deferClaim(
+              claim.id,
+              reminderGate.availableAt,
+              reminderGate.code,
+              claim,
+            );
+            continue;
+          }
+          if (!(await this.repository.isDeliverable(claim.id))) {
+            await this.repository.suppressClaim(claim.id, 'NOTIFICATION_UNAVAILABLE');
             continue;
           }
           const ticketId = await this.provider.send({

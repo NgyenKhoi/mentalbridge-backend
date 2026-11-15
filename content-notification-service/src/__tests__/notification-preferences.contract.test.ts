@@ -53,9 +53,20 @@ describe('notification preference contract', () => {
         'contentGroups',
         'quietHours',
         'email',
+        'dailyReminderTime',
         'version',
       ]),
     );
+    expect(preferences.properties['dailyReminderTime']).toMatchObject({
+      type: 'string',
+      pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
+    });
+    const patch = schemas['NotificationPreferencePatch'] as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(patch.properties).toHaveProperty('dailyReminderTime');
+    expect(patch.required ?? []).not.toContain('dailyReminderTime');
     expect(channels.required).toEqual(['inApp', 'email', 'push']);
     expect(groups.required).toEqual([
       'journalReminder',
@@ -65,6 +76,7 @@ describe('notification preference contract', () => {
       'appointmentMessage',
       'resourceSystem',
       'communityInteraction',
+      'supportPlanReminder',
     ]);
     expect(email.required).toEqual([
       'cadence',

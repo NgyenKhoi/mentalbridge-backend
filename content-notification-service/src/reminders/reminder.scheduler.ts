@@ -81,6 +81,15 @@ export class ReminderScheduler implements OnModuleInit, OnApplicationShutdown {
           } catch {
             failures += 1;
           }
+          try {
+            notifications += await this.materialization.materializeSupportPlan(
+              candidate.ownerId,
+              candidate.preferences,
+              randomUUID(),
+            );
+          } catch {
+            failures += 1;
+          }
         }
         if (page.length < this.configuration.REMINDER_SCHEDULER_BATCH_SIZE) break;
         afterOwnerId = page.at(-1)?.ownerId ?? null;

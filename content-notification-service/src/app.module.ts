@@ -97,6 +97,7 @@ import { ReminderMaterializationService } from './reminders/reminder-materializa
 import type { ReminderActivityClient } from './reminders/reminder-activity.client.js';
 import type { ReminderClock } from './reminders/reminder-materialization.service.js';
 import { ReminderScheduler } from './reminders/reminder.scheduler.js';
+import { SupportPlanReminderClient } from './reminders/support-plan-reminder.client.js';
 import { ReminderOverviewController } from './reminders/reminder-overview.controller.js';
 import { ReminderOverviewService } from './reminders/reminder-overview.service.js';
 import { ReminderOverviewRepository } from './reminders/reminder-overview.repository.js';
@@ -327,6 +328,7 @@ export const createAppModule = (
       notificationRepositoryProvider,
       { provide: NOTIFICATION_SERVICE_TOKEN, useClass: NotificationService },
       reminderActivityClientProvider,
+      SupportPlanReminderClient,
       {
         provide: REMINDER_MATERIALIZATION_SERVICE_TOKEN,
         useClass: ReminderMaterializationService,

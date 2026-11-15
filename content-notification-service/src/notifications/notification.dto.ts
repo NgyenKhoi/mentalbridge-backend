@@ -12,6 +12,7 @@ const TargetlessActionSchema = z
       'OPEN_RESOURCES',
       'OPEN_ASSESSMENTS',
       'OPEN_SPECIALIST_APPOINTMENTS',
+      'OPEN_SUPPORT_PLAN',
     ]),
   })
   .strict();
