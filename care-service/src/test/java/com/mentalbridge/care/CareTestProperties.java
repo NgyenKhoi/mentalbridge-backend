@@ -17,6 +17,7 @@ import com.mentalbridge.care.configuration.IdentityAccountStatusVerifier;
 public abstract class CareTestProperties {
 
 	private static final KeyPair JWT_KEY_PAIR = keyPair();
+	protected static final String REMINDER_SERVICE_TOKEN = "synthetic-content-to-care-reminder-token-32-plus";
 
 	@MockitoBean
 	protected IdentityAccountStatusVerifier accountStatusVerifier;
@@ -42,6 +43,7 @@ public abstract class CareTestProperties {
 				() -> "test-only-idempotency-hmac-key-at-least-32-characters");
 		properties.add("mentalbridge.care.voice-consent.idempotency-hmac-key",
 				() -> "test-only-idempotency-hmac-key-at-least-32-characters");
+		properties.add("mentalbridge.care.support-plan-reminder.service-token", () -> REMINDER_SERVICE_TOKEN);
 	}
 
 	private static KeyPair keyPair() {

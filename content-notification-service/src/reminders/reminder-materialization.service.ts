@@ -9,7 +9,9 @@ import {
 import type { NotificationPreferences } from '../notification-preferences/notification-preference.types.js';
 import type { NotificationService } from '../notifications/notification.service.js';
 import type { NotificationCreate, NotificationKind } from '../notifications/notification.types.js';
+import { SUPPORT_PLAN_REMINDER_COPY } from '../push-delivery/push-copy.js';
 import type { NotificationActivity, ReminderActivityClient } from './reminder-activity.client.js';
+import { SupportPlanReminderClient } from './support-plan-reminder.client.js';
 
 const MILESTONES = new Set([7, 14, 30]);
 
@@ -118,13 +120,56 @@ const command = (
 
 @Injectable()
 export class ReminderMaterializationService {
+  // shortcut: per-process memory, a restart costs one extra Care call per owner (inbox insert is idempotent); persist if scheduler goes multi-instance at scale
+  private readonly planChecked = new Map<string, string>();
+
   constructor(
     @Inject(REMINDER_ACTIVITY_CLIENT_TOKEN)
     private readonly activityClient: ReminderActivityClient,
     @Inject(NOTIFICATION_SERVICE_TOKEN)
     private readonly notifications: NotificationService,
     @Inject(REMINDER_CLOCK_TOKEN) private readonly clock: ReminderClock,
+    @Inject(SupportPlanReminderClient) private readonly supportPlan: SupportPlanReminderClient,
   ) {}
+
+  async materializeSupportPlan(
+    ownerId: string,
+    preferences: NotificationPreferences,
+    correlationId: string,
+  ): Promise<number> {
+    const now = this.clock.now();
+    if (
+      !this.supportPlan.isConfigured() ||
+      !preferences.notificationsEnabled ||
+      !preferences.channels.inApp ||
+      !preferences.contentGroups.supportPlanReminder ||
+      isQuietHour(preferences, now)
+    ) {
+      return 0;
+    }
+    const timeZone = preferences.quietHours.timeZone;
+    const localDate = localParts(now, timeZone).date;
+    if (this.planChecked.get(ownerId) === localDate) return 0;
+    const dueAt = localDayStart(localDate, timeZone, timeMinutes(preferences.dailyReminderTime));
+    if (now < new Date(dueAt)) return 0;
+
+    if (!(await this.supportPlan.eligible(ownerId, now, correlationId))) {
+      this.planChecked.set(ownerId, localDate);
+      return 0;
+    }
+    await this.notifications.create({
+      ownerId,
+      kind: 'SUPPORT_PLAN_DAILY_REMINDER',
+      ...SUPPORT_PLAN_REMINDER_COPY,
+      occurredAt: localDayStart(localDate, timeZone),
+      action: { type: 'OPEN_SUPPORT_PLAN' },
+      source: 'CARE_SUPPORT_PLAN',
+      sourceIdentity: `SUPPORT_PLAN_DAILY_REMINDER:${localDate}`,
+      priority: 'NORMAL',
+    });
+    this.planChecked.set(ownerId, localDate);
+    return 1;
+  }
 
   async materialize(
     ownerId: string,

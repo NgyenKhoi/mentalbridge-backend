@@ -74,6 +74,7 @@ export class NotificationPreferenceService {
       notificationsEnabled: patch.notificationsEnabled ?? current.notificationsEnabled,
       channels: { ...current.channels, ...patch.channels },
       contentGroups: { ...current.contentGroups, ...patch.contentGroups },
+      dailyReminderTime: patch.dailyReminderTime ?? current.dailyReminderTime,
       quietHours: { ...current.quietHours, ...patch.quietHours },
       email: { ...current.email, ...patch.email },
       version: current.version,

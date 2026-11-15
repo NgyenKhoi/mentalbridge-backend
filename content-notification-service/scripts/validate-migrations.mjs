@@ -47,6 +47,9 @@ const specialistNotificationPreferences = requiredMigration(
 const nativePushDelivery = requiredMigration('28_add_native_push_delivery.sql');
 const hardenedNativePushDelivery = requiredMigration('29_harden_native_push_delivery.sql');
 const specialistLiveOutbox = requiredMigration('31_add_specialist_notification_live_outbox.sql');
+const dailyReminderTime = requiredMigration(
+  '32_add_daily_reminder_time_and_support_plan_reminder.sql',
+);
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -122,6 +125,13 @@ assert.match(
   /CREATE TRIGGER specialist_notification_live_identity_immutable/,
 );
 assert.doesNotMatch(specialistLiveOutbox, /INSERT INTO specialist_notification_live_outbox/i);
+assert.match(dailyReminderTime, /daily_reminder_time time NOT NULL DEFAULT '20:00'/);
+assert.match(
+  dailyReminderTime,
+  /group_support_plan_reminder_enabled boolean NOT NULL DEFAULT true/,
+);
+assert.match(dailyReminderTime, /'SUPPORT_PLAN_DAILY_REMINDER'/);
+assert.match(dailyReminderTime, /'OPEN_SUPPORT_PLAN'\)\s+AND action_target_id IS NULL/);
 for (const table of [
   'resource_eligibility_publication',
   'resource_eligibility_declaration',

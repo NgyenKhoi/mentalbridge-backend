@@ -52,6 +52,7 @@ export function notificationAction(
     OPEN_RESOURCES: '/resources',
     OPEN_ASSESSMENTS: '/assessments',
     OPEN_SPECIALIST_APPOINTMENTS: '/specialist/appointments',
+    OPEN_SUPPORT_PLAN: '/support-plan',
   };
   return {
     type,

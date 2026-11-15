@@ -81,7 +81,7 @@ describe('configuration', () => {
     expect(configuration.CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS).toBe(300);
     expect(configuration.CONTENT_PUSH_DEVICE_RATE_LIMIT).toBe(30);
     expect(configuration.CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS).toBe(60);
-    expect(configuration.CONTENT_PUSH_DAILY_REMINDER_TIME).toBe('20:00');
+    expect(configuration.CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN).toBeUndefined();
   });
 
   it('normalizes configured CORS origins', () => {
@@ -225,16 +225,26 @@ describe('configuration', () => {
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(true);
   });
 
-  it('validates the daily reminder push time and tolerates empty push secrets while push is off', () => {
+  it('ignores the retired server-wide reminder time and bounds the SupportPlan reminder token', () => {
     expect(
-      loadConfiguration({ ...requiredEnvironment, CONTENT_PUSH_DAILY_REMINDER_TIME: '08:30' })
-        .CONTENT_PUSH_DAILY_REMINDER_TIME,
-    ).toBe('08:30');
-    for (const invalid of ['25:00', '8:30', '20:60', '']) {
-      expect(() =>
-        loadConfiguration({ ...requiredEnvironment, CONTENT_PUSH_DAILY_REMINDER_TIME: invalid }),
-      ).toThrow();
-    }
+      loadConfiguration({ ...requiredEnvironment, CONTENT_PUSH_DAILY_REMINDER_TIME: '08:30' }),
+    ).not.toHaveProperty('CONTENT_PUSH_DAILY_REMINDER_TIME');
+    for (const token of [undefined, '', 'x'.repeat(32)])
+      expect(
+        loadConfiguration({
+          ...requiredEnvironment,
+          CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN: token,
+        }).CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN,
+      ).toBe(token);
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN: 'too-short',
+      }),
+    ).toThrow();
+  });
+
+  it('tolerates empty push secrets while push is off', () => {
     expect(
       loadConfiguration({
         ...requiredEnvironment,

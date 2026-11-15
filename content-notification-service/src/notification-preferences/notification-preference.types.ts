@@ -15,6 +15,8 @@ export interface NotificationPreferenceRow {
   readonly group_appointment_message_enabled: boolean;
   readonly group_resource_system_enabled: boolean;
   readonly group_community_interaction_enabled: boolean;
+  readonly group_support_plan_reminder_enabled: boolean;
+  readonly daily_reminder_time: string;
   readonly quiet_hours_enabled: boolean;
   readonly quiet_hours_start: string;
   readonly quiet_hours_end: string;
@@ -45,7 +47,9 @@ export interface NotificationPreferences {
     readonly appointmentMessage: boolean;
     readonly resourceSystem: boolean;
     readonly communityInteraction: boolean;
+    readonly supportPlanReminder: boolean;
   };
+  readonly dailyReminderTime: string;
   readonly quietHours: {
     readonly enabled: boolean;
     readonly start: string;
@@ -84,7 +88,9 @@ export interface NotificationPreferenceUpdate {
     readonly appointmentMessage?: boolean;
     readonly resourceSystem?: boolean;
     readonly communityInteraction?: boolean;
+    readonly supportPlanReminder?: boolean;
   };
+  readonly dailyReminderTime?: string;
   readonly quietHours?: {
     readonly enabled?: boolean;
     readonly start?: string;

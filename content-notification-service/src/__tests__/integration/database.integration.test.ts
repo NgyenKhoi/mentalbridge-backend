@@ -46,6 +46,8 @@ import {
   UserNotificationRepository,
 } from '../../user-notifications/user-notification.repository.js';
 import { PushDeviceRepository } from '../../push-delivery/push-device.repository.js';
+import type { PushDeliveryClaim } from '../../push-delivery/push-device.types.js';
+import { DailyReminderPushGate } from '../../push-delivery/daily-reminder-push.gate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -116,6 +118,7 @@ describe('Database Integration', () => {
       '29_harden_native_push_delivery.sql',
       '30_add_appointment_push_reminders.sql',
       '31_add_specialist_notification_live_outbox.sql',
+      '32_add_daily_reminder_time_and_support_plan_reminder.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(
@@ -206,25 +209,27 @@ describe('Database Integration', () => {
     if (container) await container.stop();
   });
 
+  const transactionalDatabase = (): DatabaseService =>
+    ({
+      query: (text: string, parameters?: never[]) => pool.query(text, parameters),
+      withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const result = await operation(client);
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
+      },
+    }) as DatabaseService;
+
   describe('native push device lifecycle', () => {
-    const database = (): DatabaseService =>
-      ({
-        query: (text: string, parameters?: never[]) => pool.query(text, parameters),
-        withTransaction: async <T>(operation: (client: DatabaseClient) => Promise<T>) => {
-          const client = await pool.connect();
-          try {
-            await client.query('BEGIN');
-            const result = await operation(client);
-            await client.query('COMMIT');
-            return result;
-          } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-          } finally {
-            client.release();
-          }
-        },
-      }) as DatabaseService;
+    const database = transactionalDatabase;
 
     it('rotates one provider token to its latest owner and revokes idempotently', async () => {
       const repository = new PushDeviceRepository(database());
@@ -547,6 +552,108 @@ describe('Database Integration', () => {
       expect(attempt.rows[0].receipt_checked_at).toBeInstanceOf(Date);
     });
 
+    it('lets a same-day daily reminder reach a device registered before push opt-in without replaying older messages', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        'UPDATE notification_preference SET quiet_hours_enabled = false WHERE user_id = $1',
+        [owner],
+      );
+      await repository.register(
+        owner,
+        {
+          installationId: randomUUID(),
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'race-token', iv: 'race-iv', authTag: 'race-tag', hash: '7'.repeat(64) },
+      );
+      const insert = async (category: string, sourceIdentity: string, action: string | null) => {
+        const id = randomUUID();
+        await pool.query(
+          `INSERT INTO notification
+             (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+              source, source_identity, request_fingerprint, delivery_state, version, action_type)
+           VALUES ($1, $2, $3, 'Tiêu đề', 'Nội dung', 'NORMAL', now() + interval '30 days',
+                   now() - interval '1 hour', 'CONTENT', $4, $5, 'DELIVERED', 0, $6)`,
+          [id, owner, category, sourceIdentity, '7'.repeat(64), action],
+        );
+        return id;
+      };
+      const plan = await insert(
+        'SUPPORT_PLAN_DAILY_REMINDER',
+        `SUPPORT_PLAN_DAILY_REMINDER:${randomUUID()}`,
+        'OPEN_SUPPORT_PLAN',
+      );
+      const journal = await insert('JOURNAL_REMINDER', `JOURNAL_REMINDER:${randomUUID()}`, null);
+      const resource = await insert('SYSTEM_RESOURCE', `race-resource:${randomUUID()}`, null);
+      const attempts = async () =>
+        (
+          await pool.query<{ notification_id: string; state: string; failure_code: string | null }>(
+            `SELECT a.notification_id, a.state, a.failure_code
+             FROM push_delivery_attempt a JOIN notification n ON n.id = a.notification_id
+             WHERE n.recipient_id = $1 ORDER BY a.created_at, a.notification_id`,
+            [owner],
+          )
+        ).rows;
+
+      await repository.materializeCandidates(1000);
+      expect(await attempts()).toEqual([
+        { notification_id: resource, state: 'SUPPRESSED', failure_code: 'PREFERENCE_DISABLED' },
+      ]);
+
+      await pool.query(
+        'UPDATE notification_preference SET channel_push_enabled = true WHERE user_id = $1',
+        [owner],
+      );
+      await Promise.all([
+        repository.materializeCandidates(1000),
+        repository.materializeCandidates(1000),
+      ]);
+
+      const after = await attempts();
+      expect(after).toHaveLength(3);
+      expect(after).toEqual(
+        expect.arrayContaining([
+          { notification_id: resource, state: 'SUPPRESSED', failure_code: 'PREFERENCE_DISABLED' },
+          { notification_id: plan, state: 'PENDING', failure_code: null },
+          { notification_id: journal, state: 'PENDING', failure_code: null },
+        ]),
+      );
+      const claims = await repository.claim(1000);
+      const claim = claims.find((candidate) => candidate.notificationId === plan);
+      const firstJournalClaim = claims.find((candidate) => candidate.notificationId === journal);
+      expect(firstJournalClaim?.dailyReminderTime).toBe('20:00');
+      await repository.deferClaim(
+        firstJournalClaim!.id,
+        new Date(Date.now() - 1_000),
+        'REMINDER_NOT_DUE',
+      );
+      expect(claim).toEqual(
+        expect.objectContaining({
+          kind: 'SUPPORT_PLAN_DAILY_REMINDER',
+          dailyReminderTime: '20:00',
+          actionType: 'OPEN_SUPPORT_PLAN',
+          actionTargetId: null,
+        }),
+      );
+      await repository.suppressClaim(claim!.id, 'ACTIVITY_COMPLETED');
+
+      await pool.query(
+        `UPDATE notification_preference
+         SET group_support_plan_reminder_enabled = false, daily_reminder_time = '07:30'
+         WHERE user_id = $1`,
+        [owner],
+      );
+      const journalClaim = (await repository.claim(1000)).find(
+        (candidate) => candidate.notificationId === journal,
+      );
+      expect(journalClaim?.dailyReminderTime).toBe('07:30');
+    });
+
     it('lets a device registered during the local day receive that day reminders only', async () => {
       const repository = new PushDeviceRepository(database());
       const owner = randomUUID();
@@ -664,6 +771,183 @@ describe('Database Integration', () => {
         attempt_count: 0,
         failure_code: 'REMINDER_NOT_DUE',
         available_at: new Date('2030-03-10T13:00:00.000Z'),
+      });
+    });
+
+    describe('reminder time edited before delivery (MB-855)', () => {
+      const repository = () => new PushDeviceRepository(database());
+      const reminderOwner = async () => {
+        const owner = randomUUID();
+        await repository().register(
+          owner,
+          {
+            installationId: randomUUID(),
+            platform: 'ANDROID',
+            provider: 'EXPO',
+            providerToken: 'not-persisted-by-repository',
+            permissionStatus: 'GRANTED',
+          },
+          {
+            ciphertext: 'edit-token',
+            iv: 'edit-iv',
+            authTag: 'edit-tag',
+            hash: owner.replace(/-/g, '').repeat(2),
+          },
+        );
+        const preferences = new NotificationPreferenceRepository(database());
+        const defaults = await preferences.getOrCreate(owner, 'USER');
+        const saved = await preferences.update(owner, defaults.version, {
+          ...defaults,
+          channels: { ...defaults.channels, push: true },
+          quietHours: { ...defaults.quietHours, enabled: false },
+        });
+        const insert = async (category: string, sourceIdentity: string) => {
+          const id = randomUUID();
+          await pool.query(
+            `INSERT INTO notification
+               (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+                source, source_identity, request_fingerprint, delivery_state, version)
+             VALUES ($1, $2, $3, 'Tiêu đề', 'Nội dung', 'NORMAL', now() + interval '30 days',
+                     now() - interval '1 hour', 'CONTENT', $4, $5, 'DELIVERED', 0)`,
+            [id, owner, category, sourceIdentity, 'e'.repeat(64)],
+          );
+          return id;
+        };
+        const journal = await insert('JOURNAL_REMINDER', 'JOURNAL_REMINDER:2030-03-10');
+        const resource = await insert('SYSTEM_RESOURCE', `edit-resource:${randomUUID()}`);
+        await repository().materializeCandidates(1000);
+        return { owner, preferences, saved, journal, resource };
+      };
+      const attempt = async (notificationId: string) =>
+        (
+          await pool.query<{ state: string; available_at: Date; claimable: boolean }>(
+            `SELECT state, available_at, available_at <= now() AS claimable
+             FROM push_delivery_attempt WHERE notification_id = $1`,
+            [notificationId],
+          )
+        ).rows[0];
+      const claimOf = async (notificationId: string) =>
+        (await repository().claim(1000)).find((claim) => claim.notificationId === notificationId);
+      let now = new Date('2030-03-10T03:00:00.000Z'); // 10:00 Asia/Ho_Chi_Minh
+      const gate = new DailyReminderPushGate(
+        {
+          get: async () => ({
+            asOfLocalDate: '2030-03-10',
+            journal: { completedToday: false },
+            emotionCheckIn: { completedToday: false },
+          }),
+        } as never,
+        { now: () => now },
+        {} as never,
+      );
+      const deferWithGate = async (claim: PushDeliveryClaim) => {
+        const decision = await gate.authorizeClaim(claim);
+        if (decision.decision !== 'DEFER')
+          throw new Error(`expected DEFER, got ${decision.decision}`);
+        await repository().deferClaim(claim.id, decision.availableAt, decision.code, claim);
+        return decision.availableAt;
+      };
+
+      it('requeues only that owner deferred daily push and re-defers it to the edited time', async () => {
+        const first = await reminderOwner();
+        const other = await reminderOwner();
+        const claims = await repository().claim(1000);
+        const claimed = (id: string) => claims.find((claim) => claim.notificationId === id)!;
+        now = new Date('2030-03-10T03:00:00.000Z');
+        expect(await deferWithGate(claimed(first.journal))).toEqual(
+          new Date('2030-03-10T13:00:00.000Z'),
+        );
+        await deferWithGate(claimed(other.journal));
+        await repository().deferClaim(
+          claimed(first.resource).id,
+          new Date('2030-03-10T13:00:00.000Z'),
+          'REMINDER_NOT_DUE',
+        );
+        expect((await attempt(first.journal)).claimable).toBe(false);
+
+        // Earlier edit at 10:00: 20:00 -> 12:00.
+        const earlier = await first.preferences.update(first.owner, first.saved.version, {
+          ...first.saved,
+          dailyReminderTime: '12:00',
+        });
+        expect((await attempt(first.journal)).claimable).toBe(true);
+        expect(await attempt(first.resource)).toEqual(
+          expect.objectContaining({ available_at: new Date('2030-03-10T13:00:00.000Z') }),
+        );
+        expect(await attempt(other.journal)).toEqual(
+          expect.objectContaining({ available_at: new Date('2030-03-10T13:00:00.000Z') }),
+        );
+        const atNoon = (await claimOf(first.journal))!;
+        expect(atNoon.dailyReminderTime).toBe('12:00');
+        expect(await deferWithGate(atNoon)).toEqual(new Date('2030-03-10T05:00:00.000Z'));
+        expect(await attempt(first.journal)).toEqual({
+          state: 'FAILED',
+          available_at: new Date('2030-03-10T05:00:00.000Z'),
+          claimable: false,
+        });
+
+        // Later edit at 12:05: 12:00 -> 21:00 must not send early.
+        now = new Date('2030-03-10T05:05:00.000Z');
+        const later = await first.preferences.update(first.owner, earlier.version, {
+          ...earlier,
+          dailyReminderTime: '21:00',
+        });
+        const atNine = (await claimOf(first.journal))!;
+        expect(atNine.dailyReminderTime).toBe('21:00');
+        expect(await deferWithGate(atNine)).toEqual(new Date('2030-03-10T14:00:00.000Z'));
+
+        // Back to 12:00 at 12:05: the requeued attempt is due and sends.
+        await first.preferences.update(first.owner, later.version, {
+          ...later,
+          dailyReminderTime: '12:00',
+        });
+        const due = (await claimOf(first.journal))!;
+        expect(await gate.authorizeClaim(due)).toEqual({ decision: 'SEND' });
+        await repository().suppressClaim(due.id, 'ACTIVITY_COMPLETED');
+      });
+
+      it('keeps a deferral claimable when the time changed after the claim read it', async () => {
+        const owner = await reminderOwner();
+        now = new Date('2030-03-10T03:00:00.000Z');
+        const stale = (await claimOf(owner.journal))!;
+        expect(stale.dailyReminderTime).toBe('20:00');
+        await owner.preferences.update(owner.owner, owner.saved.version, {
+          ...owner.saved,
+          dailyReminderTime: '12:00',
+        });
+        await deferWithGate(stale);
+        expect((await attempt(owner.journal)).claimable).toBe(true);
+
+        // Concurrent: the edit holds the preference row while the deferral is written.
+        const reclaimed = (await claimOf(owner.journal))!;
+        expect(reclaimed.dailyReminderTime).toBe('12:00');
+        const editor = await pool.connect();
+        try {
+          await editor.query('BEGIN');
+          await editor.query(
+            `UPDATE notification_preference SET daily_reminder_time = '09:00' WHERE user_id = $1`,
+            [owner.owner],
+          );
+          let settled = false;
+          const deferral = deferWithGate(reclaimed).then(() => (settled = true));
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          expect(settled).toBe(false);
+          await editor.query(
+            `UPDATE push_delivery_attempt a
+             SET available_at = now(), updated_at = now()
+             FROM notification n
+             WHERE n.id = a.notification_id AND n.recipient_id = $1
+               AND a.state = 'FAILED' AND a.failure_code = 'REMINDER_NOT_DUE'
+               AND a.available_at > now()`,
+            [owner.owner],
+          );
+          await editor.query('COMMIT');
+          await deferral;
+        } finally {
+          editor.release();
+        }
+        expect((await attempt(owner.journal)).claimable).toBe(true);
+        expect((await claimOf(owner.journal))?.dailyReminderTime).toBe('09:00');
       });
     });
   });
@@ -1316,6 +1600,62 @@ describe('Database Integration', () => {
       expect(rows[0]).toEqual({ aggregate_count: 1, defaults_enabled: true });
     });
 
+    it('round-trips the daily reminder time and SupportPlan reminder group per owner type', async () => {
+      const database = transactionalDatabase();
+      const repository = new NotificationPreferenceRepository(database);
+      const owner = randomUUID();
+      const specialist = randomUUID();
+
+      const defaults = await repository.getOrCreate(owner, 'USER');
+      expect(defaults.dailyReminderTime).toBe('20:00');
+      expect(defaults.contentGroups.supportPlanReminder).toBe(true);
+      expect(
+        (await repository.getOrCreate(specialist, 'SPECIALIST')).contentGroups.supportPlanReminder,
+      ).toBe(false);
+
+      const saved = await repository.update(owner, defaults.version, {
+        ...defaults,
+        dailyReminderTime: '07:30',
+        contentGroups: {
+          ...defaults.contentGroups,
+          journalReminder: false,
+          emotionCheckIn: false,
+          streakMilestone: false,
+        },
+      });
+      expect(saved.dailyReminderTime).toBe('07:30');
+      expect((await repository.getOrCreate(owner, 'USER')).dailyReminderTime).toBe('07:30');
+      const isCandidate = async () =>
+        (await repository.listReminderCandidates(null, 100_000)).some(
+          (candidate) => candidate.ownerId === owner,
+        );
+      expect(await isCandidate()).toBe(true);
+      const planOff = await repository.update(owner, saved.version, {
+        ...saved,
+        contentGroups: { ...saved.contentGroups, supportPlanReminder: false },
+      });
+      expect(planOff.contentGroups.supportPlanReminder).toBe(false);
+      expect(await isCandidate()).toBe(false);
+      await expect(
+        pool.query(
+          `INSERT INTO notification
+             (recipient_id, category, title, body, priority, expires_at, occurred_at, source,
+              source_identity, request_fingerprint, delivery_state, version, action_type,
+              action_target_id)
+           VALUES ($1, 'SUPPORT_PLAN_DAILY_REMINDER', 'T', 'B', 'NORMAL', now() + interval '1 day',
+                   now(), 'CARE_SUPPORT_PLAN', 'SUPPORT_PLAN_DAILY_REMINDER:2030-01-01', $2,
+                   'DELIVERED', 0, 'OPEN_SUPPORT_PLAN', $1)`,
+          [owner, '8'.repeat(64)],
+        ),
+      ).rejects.toThrow();
+      await expect(
+        pool.query(
+          "UPDATE notification_preference SET daily_reminder_time = '24:30' WHERE user_id = $1",
+          [owner],
+        ),
+      ).rejects.toThrow();
+    });
+
     it('initializes specialist defaults without user wellbeing categories', async () => {
       const database = {
         query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
@@ -1375,9 +1715,7 @@ describe('Database Integration', () => {
     });
 
     it('persists a partial/full aggregate across repository instances and isolates owners', async () => {
-      const database = {
-        query: (text: string, parameters?: unknown[]) => pool.query(text, parameters),
-      } as unknown as DatabaseService;
+      const database = transactionalDatabase();
       const firstDevice = new NotificationPreferenceRepository(database);
       const secondDevice = new NotificationPreferenceRepository(database);
       const owner = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';

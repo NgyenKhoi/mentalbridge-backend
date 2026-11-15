@@ -175,6 +175,40 @@ paths:
           "$ref": "#/components/responses/VoiceProblem422"
         "503":
           "$ref": "#/components/responses/VoiceProblem503"
+  /internal/v1/support-plan-reminder-eligibility:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: care-service
+    post:
+      tags: [SupportPlan activity]
+      operationId: checkSupportPlanReminderEligibility
+      summary: Check whether the owner gets today's generic SupportPlan reminder
+      description: >-
+        MB-855 Content-to-Care service read; user JWTs never authorize it. eligible is true only when the owner's
+        current plan is ACTIVE (PAUSED or none is false) and has a SCHEDULED occurrence whose localDate equals asOf's
+        local date in that occurrence's own timezone, whose schedule is ACTIVE with reminderEnabled, and whose native
+        action (v3) is ACTIVE; v2 resource plans and v3 native plans both count. It reuses the Today read, so it may
+        idempotently generate occurrences, and never changes occurrence state. No plan, action, count or clinical
+        detail is returned. Every refusal for a missing, wrong or disabled credential is 401 with no body.
+      security:
+        - supportPlanReminderServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupportPlanReminderEligibilityQuery' }
+      responses:
+        '200':
+          description: Current reminder eligibility only
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportPlanReminderEligibility' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401':
+          description: Missing, wrong or disabled service credential; empty body
+          headers:
+            Cache-Control: { schema: { const: no-store } }
   /api/v1/admin/product-journey-metrics:
     x-mentalbridge-status: implemented
     get:
@@ -3653,6 +3687,11 @@ components:
         disclaimerCode: SCREENING_NOT_DIAGNOSIS
         disclaimer: Đây là kết quả sàng lọc triệu chứng, không phải chẩn đoán y khoa. MentalBridge không cung cấp dịch vụ ứng cứu khẩn cấp, không giám sát con người 24/7 và không tự động liên hệ bên thứ ba.
   securitySchemes:
+    supportPlanReminderServiceToken:
+      type: apiKey
+      in: header
+      name: X-MentalBridge-Service-Token
+      description: Dedicated Content-to-Care SupportPlan reminder credential (CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN); 32-256 printable characters, distinct from every other Care credential; empty disables the read.
     "JournalVoiceCareToken":
       "type": "apiKey"
       "in": "header"
@@ -4132,6 +4171,19 @@ components:
           "description": "New decisions require v2. v1 is accepted only when the owner-scoped idempotency key and exact historical intent already exist; it never appends/restores a grant."
         "granted":
           "type": "boolean"
+    SupportPlanReminderEligibilityQuery:
+      type: object
+      additionalProperties: false
+      required: [ownerAccountId, asOf]
+      properties:
+        ownerAccountId: { type: string, format: uuid, description: Trusted owner asserted by Content }
+        asOf: { type: string, format: date-time, description: Instant whose local date in each occurrence timezone is "today" }
+    SupportPlanReminderEligibility:
+      type: object
+      additionalProperties: false
+      required: [eligible]
+      properties:
+        eligible: { type: boolean }
     "VoiceOwnerCheck":
       "type": "object"
       "additionalProperties": false

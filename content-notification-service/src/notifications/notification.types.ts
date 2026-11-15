@@ -18,6 +18,7 @@ export const NOTIFICATION_KINDS = [
   'ASSESSMENT_RESULT_AVAILABLE',
   'SUPPORT_GUIDE_AVAILABLE',
   'ACCOUNT_STATUS',
+  'SUPPORT_PLAN_DAILY_REMINDER',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -35,7 +36,8 @@ export type NotificationActionType =
   | 'OPEN_COMMUNITY_CONVERSATION'
   | 'OPEN_COMMUNITY_REQUEST'
   | 'OPEN_COMMUNITY_INVITATION'
-  | 'OPEN_SUPPORT_GUIDE';
+  | 'OPEN_SUPPORT_GUIDE'
+  | 'OPEN_SUPPORT_PLAN';
 
 export interface NotificationAction {
   readonly type: NotificationActionType;

@@ -318,6 +318,7 @@ describe('native push delivery', () => {
         kind: 'JOURNAL_REMINDER',
         ownerId: '10000000-0000-4000-8000-000000000001',
         timeZone: 'Asia/Ho_Chi_Minh',
+        dailyReminderTime: '20:00',
         sourceIdentity: 'JOURNAL_REMINDER:2026-09-24',
         notificationId: '30000000-0000-4000-8000-000000000003',
         actionType: 'OPEN_JOURNAL',
@@ -326,12 +327,16 @@ describe('native push delivery', () => {
         appointmentReminder: null,
       };
     };
-    const run = async (decision: unknown) => {
+    const run = async (
+      decision: unknown,
+      isDeliverable: () => Promise<boolean> = async () => true,
+      onGate: () => void = () => undefined,
+    ) => {
       const repository = {
         materializeCandidates: vi.fn(async () => 0),
         settleIneligible: vi.fn(),
         claim: vi.fn(async () => [await reminderClaim()]),
-        isDeliverable: vi.fn(async () => true),
+        isDeliverable: vi.fn(isDeliverable),
         suppressClaim: vi.fn(),
         deferClaim: vi.fn(),
         accepted: vi.fn(),
@@ -350,7 +355,12 @@ describe('native push delivery', () => {
         repository as never,
         provider,
         { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
-        { authorizeClaim: vi.fn(async () => decision) } as never,
+        {
+          authorizeClaim: vi.fn(async () => {
+            onGate();
+            return decision;
+          }),
+        } as never,
       );
       await worker.runOnce();
       return { repository, provider };
@@ -381,6 +391,7 @@ describe('native push delivery', () => {
         'attempt-reminder',
         availableAt,
         'REMINDER_NOT_DUE',
+        expect.objectContaining({ dailyReminderTime: '20:00', timeZone: 'Asia/Ho_Chi_Minh' }),
       );
       expect(provider.send).not.toHaveBeenCalled();
     });
@@ -397,6 +408,25 @@ describe('native push delivery', () => {
         action: { type: 'OPEN_JOURNAL', targetId: null, href: '/journal' },
       });
       expect(repository.accepted).toHaveBeenCalled();
+    });
+
+    it('suppresses without sending when push is turned off while the gate waits on Care', async () => {
+      let deliverable = true;
+      const { repository, provider } = await run(
+        { decision: 'SEND' },
+        async () => deliverable,
+        () => {
+          deliverable = false;
+        },
+      );
+
+      expect(repository.isDeliverable).toHaveBeenCalledTimes(2);
+      expect(repository.suppressClaim).toHaveBeenCalledWith(
+        'attempt-reminder',
+        'NOTIFICATION_UNAVAILABLE',
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(repository.accepted).not.toHaveBeenCalled();
     });
   });
 

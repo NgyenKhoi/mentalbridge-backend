@@ -18,6 +18,7 @@ const ContentGroupPatchSchema = z
     appointmentMessage: z.boolean().optional(),
     resourceSystem: z.boolean().optional(),
     communityInteraction: z.boolean().optional(),
+    supportPlanReminder: z.boolean().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'at least one content group is required');
@@ -29,6 +30,7 @@ export const NotificationPreferencePatchSchema = z
     notificationsEnabled: z.boolean().optional(),
     channels: ChannelPatchSchema.optional(),
     contentGroups: ContentGroupPatchSchema.optional(),
+    dailyReminderTime: TimeSchema.optional(),
     quietHours: z
       .object({
         enabled: z.boolean().optional(),
