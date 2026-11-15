@@ -18,6 +18,7 @@
     "speech:mock": "npm run qa:build && node dist-qa/mock.js",
     "contract:check": "node scripts/check-contract.mjs",
     "migration:check": "node scripts/check-boundaries.mjs",
+    "latency:benchmark": "npm run build && node scripts/benchmark-latency.mjs",
     "start": "node dist/main.js start",
     "dev": "node dist/main.js dev"
   },

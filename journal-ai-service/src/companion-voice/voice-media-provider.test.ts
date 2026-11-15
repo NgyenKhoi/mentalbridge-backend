@@ -3,12 +3,22 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 import { decodeJwt, jwtVerify } from "jose";
-import { AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
+import {
+  AgentDispatch,
+  AgentDispatchClient,
+  ParticipantInfo,
+  ParticipantInfo_State,
+  Room,
+  RoomServiceClient,
+  TrackInfo,
+  TrackType,
+} from "livekit-server-sdk";
 import { loadConfiguration } from "../configuration/configuration.js";
 import {
   LiveKitVoiceMedia,
   VoiceMediaError,
   type VoiceMediaConfiguration,
+  type VoiceMediaDiagnostic,
   type VoiceMediaReference,
 } from "./voice-media-provider.js";
 
@@ -34,6 +44,312 @@ const reference = (): VoiceMediaReference => {
     providerDispatchId: null,
   };
 };
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (reason: Error) => void = () => undefined;
+  const promise = new Promise<T>((fulfill, fail) => {
+    resolve = fulfill;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+function inspectionFixture(
+  diagnostic?: (value: VoiceMediaDiagnostic) => void,
+  monotonic?: () => number,
+  synchronousFailure?: "ROOMS" | "DISPATCHES" | "PARTICIPANTS",
+) {
+  const ref = reference();
+  const roomRead = deferred<Room[]>();
+  const dispatchRead = deferred<AgentDispatch[]>();
+  const participantsRead = deferred<ParticipantInfo[]>();
+  const calls: string[] = [];
+  let deleted = false;
+  const room = new Room({
+    name: ref.roomName,
+    metadata: ref.dispatchId,
+    activeRecording: false,
+  });
+  const dispatch = new AgentDispatch({
+    id: "AD_synthetic",
+    room: ref.roomName,
+    agentName: configuration.agentName,
+    metadata: JSON.stringify({
+      voiceSessionId: ref.voiceSessionId,
+      attemptId: ref.attemptId,
+      dispatchId: ref.dispatchId,
+    }),
+  });
+  const participants = [
+    new ParticipantInfo({
+      identity: ref.participantIdentity,
+      state: ParticipantInfo_State.ACTIVE,
+    }),
+    new ParticipantInfo({
+      identity: ref.agentIdentity,
+      state: ParticipantInfo_State.ACTIVE,
+      tracks: [new TrackInfo({ type: TrackType.AUDIO, muted: false })],
+    }),
+  ];
+  const provider = new LiveKitVoiceMedia(
+    configuration,
+    {
+      rooms: {
+        createRoom: () => Promise.resolve(room),
+        listRooms: () => {
+          calls.push("rooms");
+          if (synchronousFailure === "ROOMS")
+            throw new Error("PRIVATE_SYNC_ROOM");
+          return deleted ? Promise.resolve([]) : roomRead.promise;
+        },
+        listParticipants: () => {
+          calls.push("participants");
+          if (synchronousFailure === "PARTICIPANTS")
+            throw new Error("PRIVATE_SYNC_PARTICIPANT");
+          return participantsRead.promise;
+        },
+        removeParticipant: () => {
+          calls.push("remove");
+          return Promise.resolve();
+        },
+        deleteRoom: () => {
+          calls.push("delete-room");
+          deleted = true;
+          return Promise.resolve();
+        },
+      },
+      agents: {
+        createDispatch: () => Promise.resolve(dispatch),
+        listDispatch: () => {
+          calls.push("dispatches");
+          if (synchronousFailure === "DISPATCHES")
+            throw new Error("PRIVATE_SYNC_DISPATCH");
+          return dispatchRead.promise;
+        },
+        deleteDispatch: () => {
+          calls.push("delete-dispatch");
+          return Promise.resolve();
+        },
+      },
+    },
+    diagnostic,
+    monotonic,
+  );
+  return {
+    ref,
+    provider,
+    room,
+    dispatch,
+    participants,
+    roomRead,
+    dispatchRead,
+    participantsRead,
+    calls,
+  };
+}
+
+void test("room, dispatch and participant snapshots start concurrently without publishing before all checks", async () => {
+  const f = inspectionFixture();
+  let completed = false;
+  const work = f.provider.inspect(f.ref).then((result) => {
+    completed = true;
+    return result;
+  });
+  await Promise.resolve();
+  assert.deepEqual(f.calls, ["rooms", "dispatches", "participants"]);
+  f.dispatchRead.resolve([f.dispatch]);
+  f.participantsRead.resolve(f.participants);
+  await Promise.resolve();
+  assert.equal(completed, false);
+  f.roomRead.resolve([f.room]);
+  assert.deepEqual(await work, {
+    roomExists: true,
+    providerDispatchId: "AD_synthetic",
+    ownerConnected: true,
+    agentConnected: true,
+    agentAudioPublished: true,
+  });
+  assert.deepEqual(f.calls, ["rooms", "dispatches", "participants"]);
+});
+
+void test("inspection read timings include only validated attempt, closed enums and finite elapsed time", async () => {
+  const observations: VoiceMediaDiagnostic[] = [];
+  let now = 100;
+  const f = inspectionFixture(
+    (value) => observations.push(value),
+    () => now,
+  );
+  const work = f.provider.inspect(f.ref);
+  await Promise.resolve();
+  now = 123.9;
+  f.roomRead.resolve([f.room]);
+  f.dispatchRead.resolve([f.dispatch]);
+  f.participantsRead.resolve(f.participants);
+  await work;
+  assert.deepEqual(observations.map((value) => value.operation).sort(), [
+    "DISPATCHES",
+    "PARTICIPANTS",
+    "ROOMS",
+  ]);
+  for (const value of observations) {
+    assert.deepEqual(Object.keys(value).sort(), [
+      "attemptId",
+      "elapsedMs",
+      "operation",
+      "outcome",
+    ]);
+    assert.equal(value.attemptId, f.ref.attemptId);
+    assert.equal(value.outcome, "SUCCESS");
+    assert.equal(value.elapsedMs, 23);
+    assert.equal(JSON.stringify(value).includes("PRIVATE"), false);
+  }
+});
+
+void test("synchronous SDK read exceptions are bounded failed observations without leaking payloads or retrying", async () => {
+  for (const operation of ["ROOMS", "DISPATCHES", "PARTICIPANTS"] as const) {
+    const observations: VoiceMediaDiagnostic[] = [];
+    const f = inspectionFixture(
+      (value) => observations.push(value),
+      undefined,
+      operation,
+    );
+    const work = f.provider.inspect(f.ref);
+    f.roomRead.resolve([f.room]);
+    f.dispatchRead.resolve([f.dispatch]);
+    f.participantsRead.resolve(f.participants);
+    await assert.rejects(work, VoiceMediaError);
+    assert.deepEqual(f.calls, ["rooms", "dispatches", "participants"]);
+    assert.ok(
+      observations.some(
+        (value) => value.operation === operation && value.outcome === "FAILED",
+      ),
+    );
+    assert.equal(JSON.stringify(observations).includes("PRIVATE"), false);
+  }
+});
+
+void test("failed asynchronous reads and throwing diagnostic callbacks cannot authorize or break an inspection", async () => {
+  const failed: VoiceMediaDiagnostic[] = [];
+  const f = inspectionFixture((value) => failed.push(value));
+  const work = f.provider.inspect(f.ref);
+  f.roomRead.resolve([f.room]);
+  f.dispatchRead.reject(new Error("PRIVATE_PROVIDER_URL_TOKEN_BODY"));
+  f.participantsRead.resolve(f.participants);
+  await assert.rejects(work, VoiceMediaError);
+  assert.ok(
+    failed.some(
+      (value) => value.operation === "DISPATCHES" && value.outcome === "FAILED",
+    ),
+  );
+  assert.equal(JSON.stringify(failed).includes("PRIVATE"), false);
+  const observerFailure = inspectionFixture(() => {
+    throw new Error("PRIVATE_OBSERVER");
+  });
+  const accepted = observerFailure.provider.inspect(observerFailure.ref);
+  observerFailure.roomRead.resolve([observerFailure.room]);
+  observerFailure.dispatchRead.resolve([observerFailure.dispatch]);
+  observerFailure.participantsRead.resolve(observerFailure.participants);
+  assert.equal((await accepted).roomExists, true);
+});
+
+void test("invalid reference never emits inspection telemetry and non-finite measurement is omitted", async () => {
+  const observations: VoiceMediaDiagnostic[] = [];
+  const f = inspectionFixture(
+    (value) => observations.push(value),
+    () => Number.NaN,
+  );
+  await assert.rejects(
+    f.provider.inspect({ ...f.ref, attemptId: "PRIVATE_INVALID" }),
+    VoiceMediaError,
+  );
+  assert.deepEqual(f.calls, []);
+  assert.deepEqual(observations, []);
+  const work = f.provider.inspect(f.ref);
+  f.roomRead.resolve([f.room]);
+  f.dispatchRead.resolve([f.dispatch]);
+  f.participantsRead.resolve(f.participants);
+  assert.equal((await work).roomExists, true);
+  assert.deepEqual(observations, []);
+});
+
+void test("an absent room stays a negative inspection even when parallel detail reads fail first", async () => {
+  const f = inspectionFixture();
+  const work = f.provider.inspect(f.ref);
+  f.dispatchRead.reject(new Error("PRIVATE_DISPATCH_ERROR"));
+  f.participantsRead.reject(new Error("PRIVATE_PARTICIPANT_ERROR"));
+  await Promise.resolve();
+  f.roomRead.resolve([]);
+  assert.deepEqual(await work, {
+    roomExists: false,
+    providerDispatchId: null,
+    ownerConnected: false,
+    agentConnected: false,
+    agentAudioPublished: false,
+  });
+  assert.equal(f.calls.includes("delete-room"), false);
+});
+
+void test("recording cleanup and room binding rejection do not wait for stalled detail reads", async () => {
+  const recorded = inspectionFixture();
+  recorded.room.activeRecording = true;
+  const stopped = recorded.provider.inspect(recorded.ref);
+  recorded.roomRead.resolve([recorded.room]);
+  await assert.rejects(stopped, VoiceMediaError);
+  assert.equal(recorded.calls.filter((value) => value === "remove").length, 2);
+  assert.equal(
+    recorded.calls.filter((value) => value === "delete-room").length,
+    1,
+  );
+  const foreign = inspectionFixture();
+  foreign.room.metadata = "PRIVATE_FOREIGN_BINDING";
+  const rejected = foreign.provider.inspect(foreign.ref);
+  foreign.roomRead.resolve([foreign.room]);
+  await assert.rejects(rejected, VoiceMediaError);
+  assert.equal(foreign.calls.includes("delete-room"), false);
+});
+
+void test("parallel inspection failures stay fail-closed and private without retries", async () => {
+  for (const stage of ["rooms", "dispatches", "participants"] as const) {
+    const f = inspectionFixture();
+    const work = f.provider.inspect(f.ref);
+    if (stage === "rooms") f.roomRead.reject(new Error("PRIVATE_ROOM_ERROR"));
+    else {
+      f.roomRead.resolve([f.room]);
+      if (stage === "dispatches")
+        f.dispatchRead.reject(new Error("PRIVATE_DISPATCH_ERROR"));
+      else {
+        f.dispatchRead.resolve([f.dispatch]);
+        f.participantsRead.reject(new Error("PRIVATE_PARTICIPANT_ERROR"));
+      }
+    }
+    await assert.rejects(
+      work,
+      (error: unknown) =>
+        error instanceof VoiceMediaError &&
+        error.message === "PROVIDER_UNAVAILABLE" &&
+        error.cause === undefined,
+    );
+    assert.deepEqual(f.calls, ["rooms", "dispatches", "participants"]);
+  }
+});
+
+void test("foreign participants and non-audio tracks still trigger teardown after concurrent reads", async () => {
+  for (const mode of ["foreign", "video"] as const) {
+    const f = inspectionFixture();
+    if (mode === "foreign")
+      f.participants.push(new ParticipantInfo({ identity: "PRIVATE_FOREIGN" }));
+    else
+      f.participants[0]?.tracks.push(new TrackInfo({ type: TrackType.VIDEO }));
+    const work = f.provider.inspect(f.ref);
+    f.roomRead.resolve([f.room]);
+    f.dispatchRead.resolve([f.dispatch]);
+    f.participantsRead.resolve(f.participants);
+    await assert.rejects(work, VoiceMediaError);
+    assert.equal(f.calls.filter((value) => value === "remove").length, 2);
+    assert.equal(f.calls.includes("delete-room"), true);
+  }
+});
 
 void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch calls and strict revocation", async (t) => {
   const ref = reference();

@@ -520,6 +520,38 @@ void test("speech metrics retain only numeric usage even when cancelled, never p
   assert.equal(JSON.stringify(filtered).includes("PRIVATE"), false);
 });
 
+void test("TTS timing retains finite SDK first-byte and synthesis duration without inventing missing values", () => {
+  const raw = {
+    type: "tts_metrics",
+    audioDurationMs: 1200,
+    charactersCount: 40,
+    cancelled: false,
+    ttfbMs: 210,
+    durationMs: 750,
+    text: "PRIVATE_CONTENT",
+    requestId: "PRIVATE_KEY",
+  };
+  assert.deepEqual(speechUsage(raw), {
+    phase: "speech_usage",
+    component: "TTS",
+    audioDurationMs: 1200,
+    charactersCount: 40,
+    cancelled: false,
+    ttsFirstByteMs: 210,
+    synthesisDurationMs: 750,
+  });
+  for (const missing of [-1, Number.NaN, Infinity]) {
+    const value = speechUsage({ ...raw, ttfbMs: missing, durationMs: missing });
+    assert.equal(value?.ttsFirstByteMs, undefined);
+    assert.equal(value?.synthesisDurationMs, undefined);
+    assert.equal(JSON.stringify(value).includes("PRIVATE"), false);
+  }
+  assert.equal(
+    speechUsage({ ...raw, type: "stt_metrics" })?.ttsFirstByteMs,
+    undefined,
+  );
+});
+
 void test("pinned SDK creates an input while detached, then subscribes only the authorized microphone", async () => {
   initializeLogger({ pretty: false, level: "silent" });
   const room = new RtcRoom();

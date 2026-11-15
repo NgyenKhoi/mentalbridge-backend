@@ -73,6 +73,8 @@ export interface AgentDiagnostic {
     | "heartbeat_fail"
     | "lease_expired"
     | "turn_requested"
+    | "turn_dispatch_timing"
+    | "journal_reply_received"
     | "turn_failed"
     | "tts_begin"
     | "playout_first_audio"
@@ -99,6 +101,15 @@ export interface AgentDiagnostic {
   confidence?: number;
   confidenceValid?: boolean;
   languageAccepted?: boolean;
+  turnSequence?: number;
+  finalToDispatchMs?: number;
+  aggregationMs?: number;
+  schedulerLagMs?: number;
+  journalRoundTripMs?: number;
+  requestToPlayoutMs?: number;
+  ttsToPlayoutMs?: number;
+  ttsFirstByteMs?: number;
+  synthesisDurationMs?: number;
 }
 export function agentDiagnostics(
   attemptId: string,

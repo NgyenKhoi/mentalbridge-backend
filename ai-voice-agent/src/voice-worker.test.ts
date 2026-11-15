@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { loadConfiguration } from "./configuration.js";
 import type {
   Control,
   Dispatch,
@@ -32,7 +33,7 @@ const hold = () => {
   return { wait, release };
 };
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
-function fixture(finalAggregationMs?: number) {
+function fixture(finalAggregationMs = 1500) {
   let now = Date.now();
   const hardStopAt = new Date(now + 300000).toISOString();
   const dispatch: Dispatch = {
@@ -310,7 +311,7 @@ void test("reply expression starts only with trusted first audio and clears on m
   await f.worker.stop("USER_ENDED");
 });
 
-void test("production timer ticks every 250 ms, catches failures and stops scheduling", async (t) => {
+void test("production timer ticks every 50 ms, catches failures and stops scheduling", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   let ticks = 0;
   let failures = 0;
@@ -324,7 +325,7 @@ void test("production timer ticks every 250 ms, catches failures and stops sched
       return Promise.resolve();
     },
   });
-  t.mock.timers.tick(750);
+  t.mock.timers.tick(150);
   await Promise.resolve();
   assert.equal(ticks, 3);
   assert.equal(failures, 3);
@@ -560,8 +561,9 @@ void test("claims before audio and aggregates final Vietnamese segments, ignorin
   assert.equal(f.closes(), 1);
 });
 
-void test("a shorter configured aggregation interval still waits for adjacent finals and ignores interim speech", async () => {
-  const f = fixture(750);
+void test("default aggregation dispatches sooner but waits for a resumed utterance to finalize", async () => {
+  assert.equal(loadConfiguration({}).finalAggregationMs, 750);
+  const f = fixture(loadConfiguration({}).finalAggregationMs);
   await f.start();
   f.emit("Tôi muốn chia sẻ");
   f.advance(500);
@@ -574,9 +576,101 @@ void test("a shorter configured aggregation interval still waits for adjacent fi
   assert.equal(f.turns.length, 0);
   f.advance(1);
   await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.advance(900);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("mình muốn nói tiếp");
+  f.advance(749);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.advance(1);
+  await f.tick();
   assert.equal(f.turns.length, 1);
-  assert.equal(f.turns[0]?.finalTranscript, "Tôi muốn chia sẻ về hôm nay");
+  assert.equal(
+    f.turns[0]?.finalTranscript,
+    "Tôi muốn chia sẻ về hôm nay mình muốn nói tiếp",
+  );
   assert.equal(f.played.length, 1);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("low-confidence interim activity cannot dispatch a pending prefix or lower final confidence", async () => {
+  const f = fixture(750);
+  await f.start();
+  f.emit("PRIVATE_PENDING_PREFIX");
+  f.advance(500);
+  f.emit("PRIVATE_RESUMED_INTERIM", { final: false, confidence: 0.1 });
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("PRIVATE_UNCERTAIN_FINAL", { confidence: 0.7 });
+  f.advance(1000);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("PRIVATE_ACCEPTED_NEW_TURN");
+  f.advance(750);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0]?.finalTranscript, "PRIVATE_ACCEPTED_NEW_TURN");
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("a replayed interim for an accepted final cannot stall the pending response", async () => {
+  const f = fixture(750);
+  const segmentId = randomUUID();
+  await f.start();
+  f.emit("PRIVATE_ACCEPTED_SEGMENT", { segmentId });
+  f.advance(400);
+  f.emit("PRIVATE_ACCEPTED_SEGMENT", { segmentId, final: false });
+  f.advance(350);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0]?.finalTranscript, "PRIVATE_ACCEPTED_SEGMENT");
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("turn latency diagnostics preserve segment boundaries and separate Journal from Agent playout", async () => {
+  const f = fixture(750);
+  const generation = hold();
+  await f.start();
+  f.generation(generation.wait);
+  f.emit("PRIVATE_SYNTHETIC_QUESTION");
+  f.advance(775);
+  const work = f.tick();
+  await flush();
+  f.advance(400);
+  generation.release();
+  await work;
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.phase === "turn_dispatch_timing"),
+    {
+      phase: "turn_dispatch_timing",
+      turnSequence: 1,
+      finalToDispatchMs: 775,
+      aggregationMs: 750,
+      schedulerLagMs: 25,
+    },
+  );
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.phase === "journal_reply_received"),
+    {
+      phase: "journal_reply_received",
+      turnSequence: 1,
+      journalRoundTripMs: 400,
+    },
+  );
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.phase === "playout_first_audio"),
+    {
+      phase: "playout_first_audio",
+      turnSequence: 1,
+      requestToPlayoutMs: 400,
+      ttsToPlayoutMs: 0,
+    },
+  );
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
   await f.worker.stop("USER_ENDED");
 });
 

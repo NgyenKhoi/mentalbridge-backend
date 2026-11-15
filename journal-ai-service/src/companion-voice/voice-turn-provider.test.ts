@@ -272,7 +272,10 @@ void test("pilot phases identify counting rejection before inference and preserv
         (error) => error instanceof VoiceProviderFailure && error.code === code,
       );
       assert.equal(calls, 1);
-      assert.deepEqual(observations, [{ phase: "token_count_requested" }]);
+      assert.deepEqual(observations, [
+        { phase: "provider_prompt_prepared" },
+        { phase: "token_count_requested" },
+      ]);
     }
     for (const mode of ["http", "invalid-json", "invalid-output", "valid"]) {
       const observations: VoiceProviderObservation[] = [];
@@ -322,9 +325,11 @@ void test("pilot phases identify counting rejection before inference and preserv
       if (mode === "valid") await work;
       else await assert.rejects(work);
       assert.equal(calls, 2);
-      assert.deepEqual(observations.slice(0, 3), [
+      assert.deepEqual(observations.slice(0, 5), [
+        { phase: "provider_prompt_prepared" },
         { phase: "token_count_requested" },
         { phase: "token_count_authorized", countedInputTokens: 1500 },
+        { phase: "bedrock_request_body_prepared" },
         { phase: "bedrock_requested" },
       ]);
       assert.equal(
@@ -341,6 +346,132 @@ void test("pilot phases identify counting rejection before inference and preserv
         });
       else assert.equal(usage, undefined);
       assert.equal(JSON.stringify(observations).includes("PRIVATE"), false);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("Voice distinguishes response headers from the complete Bedrock body before validating or returning speech", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const stopReason of ["end_turn", "stop_sequence", undefined]) {
+      let release: () => void = () => undefined;
+      const bodyReleased = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let headersObserved: () => void = () => undefined;
+      const headersReceived = new Promise<void>((resolve) => {
+        headersObserved = resolve;
+      });
+      const observations: VoiceProviderObservation[] = [];
+      let calls = 0;
+      let settled = false;
+      globalThis.fetch = () => {
+        calls++;
+        return Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              async start(controller) {
+                await bodyReleased;
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    JSON.stringify({
+                      ...(stopReason === undefined ? {} : { stopReason }),
+                      output: {
+                        message: {
+                          content: [
+                            {
+                              text: JSON.stringify({
+                                message: "Mình đang lắng nghe bạn.",
+                                language: "vi",
+                                authority: "SUPPORT_ONLY",
+                                clinicalAssessment: "NONE",
+                                safetyDecision: "NONE",
+                                eligibilityDecision: "NONE",
+                                businessAction: "NONE",
+                                thirdPartyAction: "NONE",
+                              }),
+                            },
+                          ],
+                        },
+                      },
+                      usage: { inputTokens: 1500, outputTokens: 30 },
+                    }),
+                  ),
+                );
+                controller.close();
+              },
+            }),
+          ),
+        );
+      };
+      const work = new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "PRIVATE_KEY",
+      }).reply(
+        "PRIVATE_SPEECH",
+        { kinds: [], prompt: "PRIVATE_CONTEXT" },
+        route,
+        {
+          voice: true,
+          voiceObserver: (value) => {
+            observations.push(value);
+            if (value.phase === "bedrock_response_received") headersObserved();
+          },
+        },
+      );
+      void work.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await headersReceived;
+      assert.equal(settled, false);
+      assert.deepEqual(
+        observations.map((value) => value.phase),
+        [
+          "bedrock_request_body_prepared",
+          "bedrock_requested",
+          "bedrock_response_received",
+        ],
+      );
+      release();
+      if (stopReason === "end_turn") {
+        assert.equal((await work).message, "Mình đang lắng nghe bạn.");
+      } else {
+        await assert.rejects(
+          work,
+          (error) =>
+            error instanceof VoiceProviderFailure &&
+            error.code === "UNEXPECTED_STOP_REASON",
+        );
+      }
+      assert.equal(calls, 1);
+      assert.equal(
+        observations.filter(
+          (value) => value.phase === "bedrock_response_body_received",
+        ).length,
+        1,
+      );
+      assert.equal(
+        observations.filter((value) => value.phase === "provider_usage").length,
+        1,
+      );
+      assert.equal(
+        observations.some(
+          (value) => value.phase === "bedrock_response_validated",
+        ),
+        stopReason === "end_turn",
+      );
+      assert.equal(JSON.stringify(observations).includes("PRIVATE"), false);
+      assert.equal(
+        JSON.stringify(observations).includes("Mình đang lắng nghe"),
+        false,
+      );
     }
   } finally {
     globalThis.fetch = original;
