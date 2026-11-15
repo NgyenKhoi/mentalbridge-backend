@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0025-community-sharing-circles
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_circle (
+                id uuid PRIMARY KEY,
+                owner_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                name_ciphertext text NOT NULL,
+                description_ciphertext text NOT NULL,
+                state varchar(16) NOT NULL CHECK (state IN ('ACTIVE','ARCHIVED')),
+                idempotency_key uuid NOT NULL,
+                request_fingerprint varchar(200) NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                UNIQUE (owner_profile_id, idempotency_key)
+              );
+              CREATE TABLE community_circle_member (
+                circle_id uuid NOT NULL REFERENCES community_circle(id),
+                profile_id uuid NOT NULL REFERENCES community_profile(id),
+                inviter_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                role varchar(16) NOT NULL CHECK (role IN ('OWNER','MEMBER')),
+                state varchar(16) NOT NULL CHECK (state IN ('PENDING','ACTIVE','DECLINED','REMOVED')),
+                created_at timestamptz NOT NULL DEFAULT now(),
+                joined_at timestamptz,
+                PRIMARY KEY (circle_id, profile_id),
+                CHECK ((state = 'ACTIVE') = (joined_at IS NOT NULL))
+              );
+              CREATE INDEX ix_community_circle_member_viewer ON community_circle_member (profile_id, state, circle_id);
+              CREATE TABLE community_circle_entry (
+                id uuid PRIMARY KEY,
+                circle_id uuid NOT NULL REFERENCES community_circle(id),
+                parent_id uuid REFERENCES community_circle_entry(id),
+                author_profile_id uuid NOT NULL REFERENCES community_profile(id),
+                content_ciphertext text NOT NULL,
+                state varchar(16) NOT NULL CHECK (state IN ('ACTIVE','DELETED')),
+                idempotency_key uuid NOT NULL,
+                request_fingerprint varchar(200) NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                UNIQUE (author_profile_id, idempotency_key)
+              );
+              CREATE INDEX ix_community_circle_entry_feed ON community_circle_entry (circle_id, parent_id, created_at DESC, id DESC) WHERE state = 'ACTIVE';

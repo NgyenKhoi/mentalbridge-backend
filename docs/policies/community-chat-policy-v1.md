@@ -31,6 +31,14 @@ confirming block, membership, private group or report existence.
 
 ## Direct requests and preference changes
 
+[ADR 0051](../adr/0051-community-friendships-and-member-pages.md) prospectively
+supersedes this section for new admissions when `COMMUNITY_FRIENDS_ENABLED=true`.
+Accepted reciprocal friendship admits a new direct conversation without a second
+message request. Existing active conversations remain usable after unfriending.
+New group invitations and pending invitation acceptance require friendship with
+the inviter. Existing group memberships remain usable. Blocks, restrictions and
+current account authorization continue to override admission.
+
 `APPROVAL_REQUIRED` is the default. `ANYONE` permits an eligible peer to establish
 a direct conversation without a request. It does not bypass blocks/restrictions.
 An unordered Community-profile pair has at most one direct relationship.

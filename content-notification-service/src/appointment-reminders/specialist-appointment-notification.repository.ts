@@ -56,11 +56,16 @@ export class SpecialistAppointmentNotificationRepository {
         `SELECT notifications_enabled AND channel_in_app_enabled
                 AND group_appointment_message_enabled AS enabled
          FROM notification_preference
-         WHERE user_id=$1 AND owner_type='SPECIALIST'`,
+         WHERE user_id=$1 AND owner_type='SPECIALIST' FOR UPDATE`,
         [event.payload.specialistAccountId],
       );
       const deliveryState = preference.rows[0]?.enabled ? 'DELIVERED' : 'CANCELLED';
-      const inserted = await client.query<{ request_fingerprint: string }>(
+      const inserted = await client.query<{
+        id: string;
+        version: string;
+        created_at: Date;
+        expires_at: Date;
+      }>(
         `INSERT INTO notification (
            recipient_id, category, title, body, action_type, priority,
            expires_at, occurred_at, source, source_identity,
@@ -68,7 +73,7 @@ export class SpecialistAppointmentNotificationRepository {
          ) VALUES ($1,'APPOINTMENT',$2,$3,'OPEN_SPECIALIST_APPOINTMENTS','NORMAL',
            now() + interval '90 days',$4,'CONSULTATION_APPOINTMENT_V1',$5,$6,$7)
          ON CONFLICT (recipient_id, source, source_identity) DO NOTHING
-         RETURNING request_fingerprint`,
+         RETURNING id,version,created_at,expires_at`,
         [
           event.payload.specialistAccountId,
           title,
@@ -79,7 +84,26 @@ export class SpecialistAppointmentNotificationRepository {
           deliveryState,
         ],
       );
-      if (inserted.rows.length) return;
+      if (inserted.rows.length) {
+        const notification = inserted.rows[0];
+        if (deliveryState === 'DELIVERED')
+          await client.query(
+            `INSERT INTO specialist_notification_live_outbox (
+               notification_id,recipient_account_id,aggregate_version,
+               correlation_id,causation_id,occurred_at,expires_at
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [
+              notification.id,
+              event.payload.specialistAccountId,
+              notification.version,
+              event.correlationId,
+              event.messageId,
+              notification.created_at,
+              notification.expires_at,
+            ],
+          );
+        return;
+      }
       const existing = await client.query<{ request_fingerprint: string }>(
         `SELECT request_fingerprint
          FROM notification

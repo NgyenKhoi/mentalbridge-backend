@@ -6,23 +6,22 @@ message, opens Community storage, or uses appointment chat eligibility.
 
 ## Configuration and rollout
 
-Set `COMMUNITY_CHAT_ENABLED=true`, configure its Identity authorization credential
-and encryption keys, and enable its existing outbox relay. Provision two independent
+Set `COMMUNITY_CHAT_ENABLED=true` and configure its Identity authorization credential
+and encryption keys; its outbox relay then runs. Provision two independent
 RS256 keypairs: one for Realtime-to-Community delegation and one for the trusted
 Community BFF. Identity private keys are not reused. Deploy compatible providers
-before enabling Realtime and the consuming client.
+before enabling chat on a consuming client.
 
 | Variable                                    | Owner / meaning                                                                                                             |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `REALTIME_COMMUNITY_ENABLED`                | Realtime; defaults false, no namespace/controller/consumer when disabled                                                    |
 | `REALTIME_COMMUNITY_BASE_URL`               | Community REST URL; local default `http://localhost:8084`, Compose `http://community:8084`; production cannot use localhost |
 | `REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY` | Realtime-only PKCS#8 RSA private PEM; literal escaped newlines supported                                                    |
 | `REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY`  | Community-only matching X.509 public PEM                                                                                    |
 | `REALTIME_COMMUNITY_DELEGATION_KEY_ID`      | Both owner services; exact trusted signing-key ID                                                                           |
+| `REALTIME_COMMUNITY_BFF_PRIVATE_KEY`        | Web-container server-only PKCS#8 signing key for the BFF delegation path                                                    |
 | `REALTIME_COMMUNITY_BFF_PUBLIC_KEY`         | Realtime-only trusted BFF X.509 public PEM                                                                                  |
 | `REALTIME_COMMUNITY_BFF_KEY_ID`             | Exact trusted BFF signing-key ID                                                                                            |
-| `COMMUNITY_CHAT_REALTIME_ENABLED`           | Community; defaults false, otherwise dedicated internal JWT chain is enabled                                                |
-| `KAFKA_BOOTSTRAP_SERVERS`                   | Realtime broker addresses, required when enabled                                                                            |
+| `KAFKA_BOOTSTRAP_SERVERS`                   | Realtime broker addresses, required at boot                                                                                 |
 | `REALTIME_COMMUNITY_KAFKA_GROUP`            | One logical group shared by all Realtime replicas; default `realtime-community-v1`; independent from Notification           |
 | `REALTIME_COMMUNITY_REDIS_CHANNEL`          | Environment-specific minimized fanout channel shared by these replicas; examples use local/preprod prefixes                 |
 
@@ -30,7 +29,7 @@ Existing Realtime Redis settings supply ticket and routing storage. A routing
 lease expires after 60 seconds and is renewed every 20 seconds; it is not an
 online/presence signal. Five connections per subject are enforced atomically
 across replicas without evicting an existing device. Existing service readiness
-includes optional `community: connected|degraded` when this feature is enabled.
+includes `community: connected|degraded`.
 
 Precreate `mentalbridge.community.chat.v1` and
 `mentalbridge.community.chat.realtime-dead-letter.v1`. Compose provisions both.
@@ -40,7 +39,7 @@ changes here do not start, migrate or alter shared dev/staging databases.
 
 ## Credentials and owner delegation
 
-The same-origin BFF verifies the current authenticated USER session and signs
+The internal BFF delegation path verifies the current authenticated USER session and signs
 these claims with its independent server-held private key:
 
 ```json
@@ -63,7 +62,7 @@ either from browser input or extend the Identity expiry. RS256, key ID,
 issuer/audience/scope/actor, UUIDs, exact claims, a maximum 30-second delegation
 lifetime and current original Identity expiry are verified by Realtime.
 
-The BFF posts this delegation as Bearer to
+That BFF path posts this delegation as Bearer to
 `POST /internal/v1/community/socket-credentials`. The `no-store` result is
 `{schemaVersion:1, namespace:"/community", credential, expiresAt}`. Community's
 current account/profile gate runs both when issuing and consuming the ticket.
@@ -85,9 +84,9 @@ authorization or content fallback and no mutation retry.
 
 ## Client protocol and recovery
 
-### Native mobile exchange (MB-749)
+### Native USER bearer exchange (MB-749)
 
-Mobile uses the existing Identity bearer injection seam to call
+Mobile and the current web BFF use the verified Identity bearer to call
 `POST /api/v1/community/socket-credentials`, with no body or `{}`. Only verified
 USER sessions are accepted; actor, role, expiry or other body fields are 400.
 The returned `{schemaVersion:1, namespace:"/community", credential, expiresAt}`
@@ -108,9 +107,8 @@ enabling MB-692. Do not route the mobile client to a private service address.
 unavailable, and 503 owner/Redis uncertainty. These outcomes create no durable
 business state. Do not automatically retry issuance; each explicit new connection
 attempt requests a fresh ticket, reauthorizes and repairs history through REST.
-An unused ticket from an uncertain request expires. The existing Community flag
-controls route registration, with no new environment key or database migration.
-Disable the native consumer first on rollback; preserve BFF/appointment routes.
+An unused ticket from an uncertain request expires. Community routes and the
+namespace are always registered; chat itself remains gated by `COMMUNITY_CHAT_ENABLED`.
 
 ### Shared namespace protocol
 
@@ -156,9 +154,9 @@ group messages cause no event, unread change or resync for the blocked viewer.
 Unblock/rejoin establishes a fresh visibility/membership boundary and never
 rebroadcasts retained history as new messages.
 
-On every reconnect, obtain a fresh BFF ticket and subscribe again. Do not reuse
+On every reconnect, obtain a fresh credential and subscribe again. Do not reuse
 the consumed credential. Server disconnects also require an explicit reconnect
-with a fresh credential after the BFF revalidates the session. Stop on expired
+with a fresh credential after the caller revalidates the session. Stop on expired
 or unavailable authentication. The server disconnects at original Identity
 expiry, on dependency uncertainty and on bounded queue/socket backpressure.
 
@@ -229,7 +227,7 @@ Owner uncertainty never uses a cached positive grant; the socket disconnects
 and clears its view. Pub/sub loss also disconnects sockets. Hidden subjects
 produce no event, including no OFFLINE/UNKNOWN event exposing their opt-out.
 
-Existing feature flags, signing keys and Redis configuration are reused. No
+Existing chat configuration, signing keys and Redis configuration are reused. No
 new environment key, Kafka topic, database migration or frontend screen is
 introduced. See [MB-690 evidence](../docs/story-mb-690-community-presence-evidence.md)
 for the acceptance states and exact verification results.

@@ -38,6 +38,7 @@ import {
   voiceWorkerSignalSchema,
 } from "./voice-sessions.js";
 import {
+  voiceExpressionCapability,
   voiceTurnSchema,
   VoiceTurnError,
   type VoiceTurnService,
@@ -393,13 +394,21 @@ export class VoiceWorkerController {
     request.once?.("aborted", abort);
     response.once?.("close", abort);
     try {
-      return await this.turns.generate(
-        uuid(id),
-        key,
-        parsed.data,
-        request.id ?? randomUUID(),
-        controller.signal,
-      );
+      const reply = {
+        ...(await this.turns.generate(
+          uuid(id),
+          key,
+          parsed.data,
+          request.id ?? randomUUID(),
+          controller.signal,
+        )),
+      };
+      if (
+        request.headers["x-mentalbridge-voice-capabilities"] !==
+        voiceExpressionCapability
+      )
+        delete reply.expression;
+      return reply;
     } finally {
       request.off?.("aborted", abort);
       response.off?.("close", abort);

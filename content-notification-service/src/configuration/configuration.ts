@@ -66,6 +66,7 @@ const environmentSchema = z
       .max(5_000)
       .default(2_000),
     CONTENT_APPOINTMENT_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
+    CONTENT_SPECIALIST_LIVE_RELAY_ENABLED: z.enum(['true', 'false']).default('false'),
     CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
     CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED: z.enum(['true', 'false']).default('false'),
     COMMUNITY_SERVICE_URL: z.url().default('http://localhost:8084'),
@@ -103,6 +104,16 @@ const environmentSchema = z
     E2E_TEST_SECRET: z.string().min(16).optional(),
   })
   .superRefine((environment, context) => {
+    if (
+      environment.CONTENT_SPECIALIST_LIVE_RELAY_ENABLED === 'true' &&
+      !environment.KAFKA_BOOTSTRAP_SERVERS?.split(',').some((broker) => broker.trim())
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['KAFKA_BOOTSTRAP_SERVERS'],
+        message: 'is required when specialist live relay is enabled',
+      });
+    }
     if (environment.CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED === 'true') {
       for (const key of [
         'KAFKA_BOOTSTRAP_SERVERS',
@@ -223,6 +234,8 @@ const environmentSchema = z
     APPOINTMENT_REMINDER_ENABLED: environment.APPOINTMENT_REMINDER_ENABLED === 'true',
     CONTENT_APPOINTMENT_CONSUMER_ENABLED:
       environment.CONTENT_APPOINTMENT_CONSUMER_ENABLED === 'true',
+    CONTENT_SPECIALIST_LIVE_RELAY_ENABLED:
+      environment.CONTENT_SPECIALIST_LIVE_RELAY_ENABLED === 'true',
     CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED:
       environment.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED === 'true',
     CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED:

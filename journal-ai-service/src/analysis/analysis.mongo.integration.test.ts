@@ -1,10 +1,11 @@
+import { aiConsentAuthorizationsFixture } from "./consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { MongoClient } from "mongodb";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 
 import { createApplication } from "../application.js";
@@ -24,7 +25,7 @@ const migrations = [
 ] as { up(database: unknown): Promise<void> }[];
 
 void test("runs the owner HTTP flow against migrated MongoDB", async () => {
-  const mongo = await MongoMemoryServer.create();
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   const client = new MongoClient(mongo.getUri());
   const databaseName = "analysis_mb367_integration";
   const database = client.db(databaseName);
@@ -109,11 +110,21 @@ void test("runs the owner HTTP flow against migrated MongoDB", async () => {
     tokenFor(ownerId),
     tokenFor(otherId),
   ]);
+  let contextGranted = true;
   const forwardedTokens: string[] = [];
   const consent: ConsentClient = {
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: (bearer) => {
       forwardedTokens.push(bearer);
-      return Promise.resolve({ authorized: true, reason: "GRANTED" });
+      return Promise.resolve(
+        contextGranted
+          ? { authorized: true, reason: "GRANTED" }
+          : { authorized: false, reason: "MISSING" },
+      );
     },
   };
   const app = await createApplication(configuration, {
@@ -147,6 +158,21 @@ void test("runs the owner HTTP flow against migrated MongoDB", async () => {
       })
       .expect(201);
     const journalId = String((created.body as { id: unknown }).id);
+    contextGranted = false;
+    const denied = await request(server)
+      .post(`/api/v1/journals/${journalId}/revisions/1/analysis-jobs`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .set("Idempotency-Key", "analysis-missing-l2-0001")
+      .expect(409);
+    assert.equal(
+      (denied.body as { code: string }).code,
+      "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    assert.equal(
+      await database.collection("analysis_jobs").countDocuments(),
+      0,
+    );
+    contextGranted = true;
     const accepted = await request(server)
       .post(`/api/v1/journals/${journalId}/revisions/1/analysis-jobs`)
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -179,7 +205,8 @@ void test("runs the owner HTTP flow against migrated MongoDB", async () => {
       (completed.body as { result?: { provider?: unknown } }).result?.provider,
       "DETERMINISTIC_FAKE",
     );
-    assert.ok(forwardedTokens.length >= 2 && forwardedTokens.length <= 3);
+    // denied 1; accepted 2 (pre-read + post-read); worker 3 (pre-read, post-read, pre-provider); replay 0-1.
+    assert.ok(forwardedTokens.length >= 6 && forwardedTokens.length <= 7);
     assert.ok(forwardedTokens.every((token) => token === ownerToken));
     await request(server)
       .get(`/api/v1/analysis-jobs/${jobId}`)

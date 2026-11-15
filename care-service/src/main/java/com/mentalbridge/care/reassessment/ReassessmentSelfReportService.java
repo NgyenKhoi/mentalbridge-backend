@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import com.mentalbridge.care.reassessment.ReassessmentSelfReportStore.StoredSelfReport;
 import com.mentalbridge.care.reassessment.ReassessmentSummaryView.Period;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Selection;
 import com.mentalbridge.care.shared.ApiException;
 
 @Service
@@ -35,8 +36,10 @@ public class ReassessmentSelfReportService {
 		String requestHash = hash(normalized);
 		var replay = reports.findByRequest(userId, key);
 		if (replay.isPresent()) return replay(replay.get(), requestHash);
+		var checklist = ReassessmentSymptomCatalog.accept(normalized.symptomChecklist());
 		var stored = reports.persist(UUID.randomUUID(), userId, key, requestHash, normalized.currentPeriod(),
-				normalized.currentExperience(), normalized.helpfulContext(), normalized.difficultContext(), clock.instant());
+				normalized.currentExperience(), normalized.helpfulContext(), normalized.difficultContext(), checklist,
+				clock.instant());
 		return replay(stored, requestHash);
 	}
 
@@ -48,8 +51,9 @@ public class ReassessmentSelfReportService {
 		var existing = reports.find(userId, id).orElseThrow(this::notFound);
 		if (existing.deleted()) throw notFound();
 		var normalized = normalize(command);
+		var checklist = ReassessmentSymptomCatalog.accept(normalized.symptomChecklist());
 		return reports.replace(userId, id, expectedVersion, normalized.currentExperience(), normalized.helpfulContext(),
-				normalized.difficultContext(), clock.instant()).map(this::view).orElseThrow(this::versionMismatch);
+				normalized.difficultContext(), checklist, clock.instant()).map(this::view).orElseThrow(this::versionMismatch);
 	}
 
 	public void delete(UUID userId, UUID id, long expectedVersion) {
@@ -74,17 +78,18 @@ public class ReassessmentSelfReportService {
 	private ReassessmentSelfReportView view(StoredSelfReport stored) {
 		return new ReassessmentSelfReportView(stored.id(), stored.sourceVersion(),
 				new Period(stored.periodStart(), stored.periodEnd()), stored.currentExperience(), stored.helpfulContext(),
-				stored.difficultContext(), stored.version(), stored.authoredAt(), stored.updatedAt());
+				stored.difficultContext(), stored.version(), stored.authoredAt(), stored.updatedAt(), stored.symptomChecklist(),
+				ReassessmentSymptomCatalog.reasons(stored.symptomChecklist()));
 	}
 
 	private CreateCommand normalize(CreateCommand command) {
 		return new CreateCommand(command.currentPeriod(), command.currentExperience(), normalized(command.helpfulContext()),
-				normalized(command.difficultContext()));
+				normalized(command.difficultContext()), ReassessmentSymptomCatalog.normalize(command.symptomChecklist()));
 	}
 
 	private ReplaceCommand normalize(ReplaceCommand command) {
 		return new ReplaceCommand(command.currentExperience(), normalized(command.helpfulContext()),
-				normalized(command.difficultContext()));
+				normalized(command.difficultContext()), ReassessmentSymptomCatalog.normalize(command.symptomChecklist()));
 	}
 
 	private String normalized(String value) {
@@ -103,8 +108,14 @@ public class ReassessmentSelfReportService {
 	}
 
 	private String hash(CreateCommand command) {
-		String value = command.currentPeriod().startAt() + "|" + command.currentPeriod().endAt() + "|"
-				+ command.currentExperience() + "|" + command.helpfulContext() + "|" + command.difficultContext();
+		var checklist = command.symptomChecklist();
+		String value = checklist == null
+				? command.currentPeriod().startAt() + "|" + command.currentPeriod().endAt() + "|"
+						+ command.currentExperience() + "|" + command.helpfulContext() + "|" + command.difficultContext()
+				: "reassessment-self-report-create-v2|" + field(command.currentPeriod().startAt().toString())
+						+ field(command.currentPeriod().endAt().toString()) + field(command.currentExperience())
+						+ field(command.helpfulContext()) + field(command.difficultContext()) + field(checklist.catalogRevision())
+						+ checklist.selectedCodes().size() + "#" + String.join("", checklist.selectedCodes().stream().map(this::field).toList());
 		try {
 			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
 					.digest(value.getBytes(StandardCharsets.UTF_8)));
@@ -112,6 +123,10 @@ public class ReassessmentSelfReportService {
 		catch (Exception exception) {
 			throw new IllegalStateException("SHA-256 is unavailable", exception);
 		}
+	}
+
+	private String field(String value) {
+		return value == null ? "~" : value.length() + ":" + value;
 	}
 
 	private ApiException notFound() {
@@ -125,6 +140,15 @@ public class ReassessmentSelfReportService {
 	}
 
 	public record CreateCommand(Period currentPeriod, String currentExperience, String helpfulContext,
-			String difficultContext) { }
-	public record ReplaceCommand(String currentExperience, String helpfulContext, String difficultContext) { }
+			String difficultContext, Selection symptomChecklist) {
+		public CreateCommand(Period currentPeriod, String currentExperience, String helpfulContext, String difficultContext) {
+			this(currentPeriod, currentExperience, helpfulContext, difficultContext, null);
+		}
+	}
+	public record ReplaceCommand(String currentExperience, String helpfulContext, String difficultContext,
+			Selection symptomChecklist) {
+		public ReplaceCommand(String currentExperience, String helpfulContext, String difficultContext) {
+			this(currentExperience, helpfulContext, difficultContext, null);
+		}
+	}
 }

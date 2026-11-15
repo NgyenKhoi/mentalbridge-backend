@@ -9,6 +9,11 @@ import request from "supertest";
 
 import { createApplication } from "./application.js";
 import {
+  aiConsentAuthorizationsFixture,
+  contextConsentClient,
+} from "./analysis/consent.fixture.js";
+import type { ChatRepository } from "./companion-chat/companion-chat.js";
+import {
   loadConfiguration,
   type ServiceConfiguration,
 } from "./configuration/configuration.js";
@@ -492,9 +497,9 @@ void test("serves consent-gated Support Guide phrasing over the internal boundar
   const app = await createApplication(testConfiguration, {
     ...readyDependencies,
     supportGuidePhrasing: {
-      consentClient: {
+      consentClient: contextConsentClient({
         check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
-      },
+      }),
       provider: {
         phrase: (approvedText) =>
           Promise.resolve({
@@ -542,14 +547,101 @@ void test("serves consent-gated Support Guide phrasing over the internal boundar
   }
 });
 
+void test("context-selection consent refusals are problem responses marked no-store", async () => {
+  for (const [snapshot, status, code] of [
+    [
+      () =>
+        Promise.resolve(
+          aiConsentAuthorizationsFixture({
+            authorized: false,
+            reason: "MISSING",
+          }),
+        ),
+      403,
+      "AI_CONTEXT_CONSENT_REQUIRED",
+    ],
+    [
+      () =>
+        Promise.resolve(
+          aiConsentAuthorizationsFixture(
+            { authorized: false, reason: "DEPENDENCY_REQUIRED" },
+            { authorized: false, reason: "REVOKED" },
+          ),
+        ),
+      403,
+      "AI_CONTEXT_CONSENT_REQUIRED",
+    ],
+    [
+      () => Promise.reject(new Error("synthetic Care timeout")),
+      503,
+      "CONSENT_UNAVAILABLE",
+    ],
+  ] as const) {
+    let assembled = 0;
+    const app = await createApplication(testConfiguration, {
+      ...readyDependencies,
+      companionChat: {
+        repository: {
+          findConversation: () => Promise.resolve({}),
+        } as unknown as ChatRepository,
+        consentClient: {
+          check: () => Promise.reject(new Error("unused")),
+          snapshot,
+        },
+        contextAssembler: {
+          assemble: () => {
+            assembled += 1;
+            return Promise.reject(new Error("must not assemble"));
+          },
+        },
+      },
+    });
+    await app.init();
+    try {
+      const now = Math.floor(Date.now() / 1_000);
+      const token = await new SignJWT({ roles: ["USER"] })
+        .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+        .setIssuer(testConfiguration.IDENTITY_JWT_ISSUER)
+        .setAudience(testConfiguration.IDENTITY_JWT_AUDIENCE)
+        .setSubject("11111111-1111-4111-8111-111111111111")
+        .setIssuedAt(now)
+        .setNotBefore(now)
+        .setExpirationTime(now + 60)
+        .setJti(`context-refusal-${code}-${String(status)}`)
+        .sign(testPrivateKey);
+      await request(app.getHttpServer() as unknown as Server)
+        .put(
+          "/api/v1/ai-companion/conversations/33333333-3333-4333-8333-333333333333/context",
+        )
+        .set("authorization", `Bearer ${token}`)
+        .send({
+          sources: {
+            plan: true,
+            diary: false,
+            screening: false,
+            resourceIds: [],
+          },
+        })
+        .expect(status)
+        .expect("Cache-Control", "no-store")
+        .expect("Content-Type", /application\/problem\+json/)
+        .expect((response) => {
+          assert.equal((response.body as { code?: unknown }).code, code);
+        });
+      assert.equal(assembled, 0);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
 void test("serves bounded SupportPlan Companion fallback over the internal boundary", async () => {
   const app = await createApplication(testConfiguration, {
     ...readyDependencies,
     supportPlanCompanion: {
-      consentClient: {
-        check: () =>
-          Promise.reject(new Error("must not run in deterministic mode")),
-      },
+      consentClient: contextConsentClient({
+        check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+      }),
       provider: {
         phrase: () =>
           Promise.reject(new Error("must not run in deterministic mode")),

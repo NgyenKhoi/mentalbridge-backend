@@ -1,5 +1,5 @@
 import type { AgentState } from "./voice-worker.js";
-import type { Dispatch } from "./contract.js";
+import type { Dispatch, Reply } from "./contract.js";
 
 export function isAdmittedAgent(
   dispatch: Dispatch,
@@ -43,21 +43,34 @@ const displayStates: Record<AgentState, AgentDisplayState | ""> = {
 };
 
 export class AgentStatePublisher {
-  private pending: AgentDisplayState | "" | undefined;
-  private current: AgentDisplayState | "" | undefined;
+  private pending:
+    | { state: AgentDisplayState | ""; expression: string }
+    | undefined;
+  private current:
+    | { state: AgentDisplayState | ""; expression: string }
+    | undefined;
   private work: Promise<void> | undefined;
   private ended = false;
   constructor(
     private readonly admitted: () => boolean,
     private readonly write: (attributes: {
       "lk.agent.state": string;
+      "mb.mam.expression": string;
     }) => Promise<unknown>,
   ) {}
-  state(state: AgentState) {
+  state(state: AgentState, expression?: Reply["expression"]) {
     if (this.ended) return;
-    const value = displayStates[state];
+    const value = {
+      state: displayStates[state],
+      expression: state === "SPEAKING" ? (expression ?? "neutral") : "",
+    };
     if (state === "ENDING" || state === "ENDED") this.ended = true;
-    if (value === this.current && this.pending === undefined) return;
+    if (
+      value.state === this.current?.state &&
+      value.expression === this.current.expression &&
+      this.pending === undefined
+    )
+      return;
     this.pending = value;
     this.schedule();
   }
@@ -75,10 +88,22 @@ export class AgentStatePublisher {
       this.pending = undefined;
       try {
         if (!this.admitted()) continue;
-        await this.write({ "lk.agent.state": value });
+        await this.write({
+          "lk.agent.state": value.state,
+          "mb.mam.expression": value.expression,
+        });
         this.current = value;
       } catch {
         this.current = undefined;
+        try {
+          if (this.admitted())
+            await this.write({
+              "lk.agent.state": "",
+              "mb.mam.expression": "",
+            });
+        } catch {
+          this.current = undefined;
+        }
       }
     }
   }

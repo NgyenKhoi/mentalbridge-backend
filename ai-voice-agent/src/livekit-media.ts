@@ -21,7 +21,7 @@ import {
 } from "@livekit/rtc-node";
 import { AgentFailure, type AgentConfiguration } from "./configuration.js";
 import { PilotSpeechBudget } from "./pilot-speech-budget.js";
-import type { Dispatch } from "./contract.js";
+import type { Dispatch, Reply } from "./contract.js";
 import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
 import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
 import type { AgentDiagnostic } from "./diagnostics.js";
@@ -482,8 +482,8 @@ export class LiveKitMedia implements MediaPort {
       this.inputEnabled,
     );
   }
-  state(state: AgentState) {
-    this.display?.state(state);
+  state(state: AgentState, expression?: Reply["expression"]) {
+    this.display?.state(state, expression);
   }
   private isClosed() {
     return this.closed;

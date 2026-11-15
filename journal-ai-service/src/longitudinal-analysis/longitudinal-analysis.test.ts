@@ -1,3 +1,9 @@
+import {
+  aiConsentAuthorizationsFixture,
+  pausedRead,
+  sealedJournalRow,
+  withdrawnAuthorizations,
+} from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -23,6 +29,7 @@ import type {
 import {
   LongitudinalAnalysisService,
   LongitudinalAnalysisWorker,
+  MongoLongitudinalAnalysisRepository,
   type LongitudinalAnalysisJob,
   type LongitudinalAnalysisRepository,
   type LongitudinalAnalysisResult,
@@ -34,6 +41,8 @@ import {
 class MemoryRepository implements LongitudinalAnalysisRepository {
   readonly jobs: LongitudinalAnalysisJob[] = [];
   readonly results: LongitudinalAnalysisResult[] = [];
+  selectionReads = 0;
+  sourceReads = 0;
   selectedSources: LongitudinalSourceRevision[] = [];
   sourceLoad: LongitudinalSourceLoad = { state: "CURRENT", sources: [] };
 
@@ -75,10 +84,19 @@ class MemoryRepository implements LongitudinalAnalysisRepository {
   }
 
   selectSources() {
+    this.selectionReads += 1;
     return Promise.resolve(this.selectedSources);
   }
 
-  loadSources() {
+  realLoad?: LongitudinalAnalysisRepository["loadSources"];
+  loadSources(
+    ownerAccountId: string,
+    revisions: readonly LongitudinalSourceRevision[],
+    authorize: () => Promise<boolean>,
+  ) {
+    this.sourceReads += 1;
+    if (this.realLoad)
+      return this.realLoad(ownerAccountId, revisions, authorize);
     return Promise.resolve(this.sourceLoad);
   }
 
@@ -174,6 +192,9 @@ class MemoryRepository implements LongitudinalAnalysisRepository {
 }
 
 class SequenceConsent implements ConsentClient {
+  async snapshot() {
+    return aiConsentAuthorizationsFixture(await this.check());
+  }
   constructor(private readonly decisions: (ConsentDecision | Error)[]) {}
 
   check() {
@@ -211,9 +232,13 @@ class FixedRouter implements LongitudinalModelRouter {
 
 class SequenceProvider implements LongitudinalProvider {
   calls = 0;
+  readonly payloads: Parameters<LongitudinalProvider["analyze"]>[] = [];
   constructor(private readonly outputs: unknown[]) {}
 
-  analyze(): Promise<ProviderAnalysis> {
+  analyze(
+    ...payload: Parameters<LongitudinalProvider["analyze"]>
+  ): Promise<ProviderAnalysis> {
+    this.payloads.push(payload);
     this.calls += 1;
     const output = this.outputs.shift();
     if (output instanceof Error) return Promise.reject(output);
@@ -310,7 +335,13 @@ const request = (
 });
 
 const subject = (
-  consent: ConsentClient = new SequenceConsent([granted, granted, granted]),
+  consent: ConsentClient = new SequenceConsent([
+    granted,
+    granted,
+    granted,
+    granted,
+    granted,
+  ]),
   provider = new SequenceProvider([normalized]),
 ) => {
   const repository = new MemoryRepository();
@@ -358,6 +389,17 @@ void test("persists sufficient exact-source evidence and exposes a minimized Car
   await waitForTerminal(value.repository);
   const completed = await value.service.get(request(), accepted.jobId);
   assert.equal(completed.status, "SUCCEEDED");
+  assert.deepEqual(value.provider.payloads, [
+    [
+      value.repository.sourceLoad.sources,
+      {
+        previousPeriodJournalEntryCount: 3,
+        currentPeriodJournalEntryCount: 3,
+        sufficientForComparison: true,
+      },
+      new FixedRouter().route(freeEntitlement),
+    ],
+  ]);
   assert.ok(completed.result);
   assert.equal(completed.result.dataCoverage.sufficientForComparison, true);
   assert.equal(completed.result.sourceJournalRevisions.length, 6);
@@ -412,7 +454,9 @@ void test("forces sparse and imbalanced comparisons to INSUFFICIENT_DATA", async
 });
 
 void test("returns one idempotent job for an exact request retry", async () => {
-  const value = subject(new SequenceConsent([granted, granted, granted]));
+  const value = subject(
+    new SequenceConsent([granted, granted, granted, granted, granted]),
+  );
   value.repository.selectedSources = sources(3, 3);
   const comparison = periods();
   const accepted = await value.service.create(
@@ -451,7 +495,10 @@ void test("records a stable provider failure without exposing provider output", 
   const provider = new SequenceProvider([
     new ProviderFailure("PERMANENT", "UNAVAILABLE"),
   ]);
-  const value = subject(new SequenceConsent([granted, granted]), provider);
+  const value = subject(
+    new SequenceConsent([granted, granted, granted]),
+    provider,
+  );
   value.repository.selectedSources = sources(3, 3);
   await value.service.create(request("longitudinal-provider-failure"));
   await waitForTerminal(value.repository);
@@ -478,7 +525,9 @@ void test("rejects invalid period bounds before consent or persistence", async (
 });
 
 void test("Care access rechecks current consent and fails closed", async () => {
-  const value = subject(new SequenceConsent([granted, granted, revoked]));
+  const value = subject(
+    new SequenceConsent([granted, granted, granted, revoked]),
+  );
   value.repository.selectedSources = sources(3, 3);
   await value.service.create(request("longitudinal-care-consent"));
   await waitForTerminal(value.repository);
@@ -497,7 +546,9 @@ void test("Care access rechecks current consent and fails closed", async () => {
 });
 
 void test("rejects an idempotency key reused for a valid different comparison", async () => {
-  const value = subject(new SequenceConsent([granted, granted, granted]));
+  const value = subject(
+    new SequenceConsent([granted, granted, granted, granted, granted]),
+  );
   value.repository.selectedSources = sources(3, 3);
   await value.service.create(request("longitudinal-conflict-01"));
   const changed = periods();
@@ -514,4 +565,149 @@ void test("rejects an idempotency key reused for a valid different comparison", 
       value.service.create(request("longitudinal-conflict-01", owner, changed)),
     ConflictException,
   );
+});
+
+void test("longitudinal denial prevents source selection and late denial prevents provider use", async () => {
+  for (const reason of [
+    "MISSING",
+    "REVOKED",
+    "POLICY_OUTDATED",
+    "DEPENDENCY_REQUIRED",
+  ] as const) {
+    const denied = subject(
+      new SequenceConsent([{ authorized: false, reason }]),
+    );
+    await assert.rejects(
+      () => denied.service.create(request(`longitudinal-denied-${reason}`)),
+      (error) =>
+        error instanceof ConflictException &&
+        (error.getResponse() as { code: string }).code ===
+          "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    assert.equal(denied.repository.selectionReads, 0);
+    assert.equal(denied.repository.sourceReads, 0);
+    assert.equal(denied.provider.calls, 0);
+    const late = subject(
+      new SequenceConsent([granted, granted, { authorized: false, reason }]),
+    );
+    await late.service.create(request(`longitudinal-final-${reason}`));
+    await waitForTerminal(late.repository);
+    assert.equal(late.provider.calls, 0);
+  }
+});
+
+void test("longitudinal retry rechecks L2 before loading private sources", async () => {
+  const provider = new SequenceProvider([
+    new ProviderFailure("RETRYABLE", "UNAVAILABLE"),
+    normalized,
+  ]);
+  const value = subject(
+    new SequenceConsent([granted, granted, granted, revoked]),
+    provider,
+  );
+  await value.service.create(request("longitudinal-retry-revoked"));
+  await waitForTerminal(value.repository);
+  assert.equal(provider.calls, 1);
+  assert.equal(value.repository.sourceReads, 1);
+  assert.equal(value.repository.jobs[0]?.terminalReason, "CONSENT_REVOKED");
+});
+
+void test("longitudinal scheduled restart fails without bearer or private source reads", async () => {
+  const value = subject();
+  const service = new LongitudinalAnalysisService(
+    value.repository,
+    new SequenceConsent([granted]),
+    { dispatch: () => undefined } as unknown as LongitudinalAnalysisWorker,
+    configuration,
+  );
+  await service.create(request("longitudinal-restart-lost-token"));
+  await value.worker.run();
+  assert.equal(
+    value.repository.jobs[0]?.terminalReason,
+    "AUTHORIZATION_CONTEXT_LOST",
+  );
+  assert.equal(value.repository.sourceReads, 0);
+  assert.equal(value.provider.calls, 0);
+});
+
+void test("Care projection rechecks L2 after loading the normalized result", async () => {
+  const value = subject(
+    new SequenceConsent([granted, granted, granted, granted, revoked]),
+  );
+  await value.service.create(request("longitudinal-projection-final-check"));
+  await waitForTerminal(value.repository);
+  const analysisId = value.repository.results[0]?.analysisId;
+  assert.ok(analysisId);
+  await assert.rejects(
+    () =>
+      value.service.getForCare(
+        request(),
+        owner,
+        analysisId,
+        "REASSESSMENT_SUMMARY",
+      ),
+    ForbiddenException,
+  );
+});
+
+void test("longitudinal worker reauthorizes L2 after a paused source read and decrypts nothing after withdrawal", async () => {
+  for (const reason of ["REVOKED", "DEPENDENCY_REQUIRED"] as const) {
+    let allowed = true;
+    const consent: ConsentClient = {
+      check: () => Promise.reject(new Error("unused")),
+      snapshot: () =>
+        Promise.resolve(
+          allowed
+            ? aiConsentAuthorizationsFixture()
+            : withdrawnAuthorizations(reason),
+        ),
+    };
+    const key = Buffer.alloc(32, 7);
+    const real = new MongoLongitudinalAnalysisRepository({
+      ...configuration,
+      MONGODB_URI: "mongodb://127.0.0.1:1",
+      MONGODB_DATABASE: "synthetic_mb806",
+      MONGODB_CONNECTION_TIMEOUT_MS: 1,
+      JOURNAL_ENCRYPTION_KEY: key,
+    });
+    const selected = sources(1, 1);
+    const rows = selected.map((source) =>
+      sealedJournalRow(key, owner, source.journalId),
+    );
+    const read = pausedRead();
+    const internals = real as unknown as {
+      connect: () => Promise<void>;
+      journals: { find: () => { toArray: () => Promise<unknown[]> } };
+      decrypt: (...args: unknown[]) => string;
+    };
+    const decrypt = internals.decrypt.bind(real);
+    let decrypts = 0;
+    internals.connect = () => Promise.resolve();
+    internals.journals = {
+      find: () => ({
+        toArray: async () => {
+          await read.wait();
+          return rows;
+        },
+      }),
+    };
+    internals.decrypt = (...args) => {
+      decrypts += 1;
+      return decrypt(...args);
+    };
+    const value = subject(consent);
+    value.repository.selectedSources = selected;
+    value.repository.realLoad = real.loadSources.bind(real);
+    await value.service.create(request(`longitudinal-paused-${reason}`));
+    await read.started;
+    allowed = false;
+    read.resume();
+    await waitForTerminal(value.repository);
+    assert.equal(decrypts, 0);
+    assert.equal(value.provider.calls, 0);
+    assert.equal(
+      value.repository.jobs[0]?.terminalReason,
+      reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
+    );
+  }
 });

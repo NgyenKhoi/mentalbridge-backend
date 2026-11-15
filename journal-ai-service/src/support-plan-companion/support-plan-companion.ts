@@ -755,19 +755,21 @@ export class SupportPlanCompanionService {
       return supportPlanCompanionMessageSchema.parse(response);
     };
 
-    if (this.configuration.PROVIDER_MODE === "DETERMINISTIC_FAKE")
-      return fallback("PROVIDER_DISABLED");
-
     let consent;
     try {
-      consent = await this.consent.check(
-        authorization.slice("Bearer ".length),
-        correlationId,
-      );
-    } catch {
+      consent = (
+        await this.consent.snapshot(
+          authorization.slice("Bearer ".length),
+          correlationId,
+        )
+      ).context;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
       return fallback("CONSENT_UNAVAILABLE");
     }
     if (!consent.authorized) return fallback("CONSENT_REQUIRED");
+    if (this.configuration.PROVIDER_MODE === "DETERMINISTIC_FAKE")
+      return fallback("PROVIDER_DISABLED");
 
     let analysis;
     try {

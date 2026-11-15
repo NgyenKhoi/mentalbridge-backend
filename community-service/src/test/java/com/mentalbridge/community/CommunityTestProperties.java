@@ -26,7 +26,7 @@ public abstract class CommunityTestProperties {
 		when(accountStatusVerifier.isActive(any(), any())).thenReturn(true);
 	}
 
-	static KeyPair jwtKeyPair() {
+	protected static KeyPair jwtKeyPair() {
 		return JWT_KEY_PAIR;
 	}
 
@@ -36,6 +36,9 @@ public abstract class CommunityTestProperties {
 		properties.add("mentalbridge.community.jwt.audience", () -> "mentalbridge-test-api");
 		properties.add("mentalbridge.community.jwt.public-key",
 				() -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+		properties.add("mentalbridge.community.chat-realtime.key-id", () -> "community-test-key");
+		properties.add("mentalbridge.community.chat-realtime.public-key", () -> "-----BEGIN PUBLIC KEY-----\n"
+				+ Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()) + "\n-----END PUBLIC KEY-----");
 		properties.add("mentalbridge.community.identity-account-status.connect-timeout", () -> "PT0.25S");
 		properties.add("mentalbridge.community.identity-account-status.read-timeout", () -> "PT0.75S");
 		properties.add("mentalbridge.community.cloudinary.cloud-name", () -> "test-cloud");

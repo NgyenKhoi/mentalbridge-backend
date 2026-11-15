@@ -56,6 +56,9 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.account-preference-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.community-interaction-dead-letter.v1 --partitions 1 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content-notification.care-user-notification-dead-letter.v1 --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.content.notification-created.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.realtime.specialist-notification-retry.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.realtime.specialist-notification-dead-letter.v1 --partitions 1 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic mentalbridge.admin.audit-event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete
         /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name mentalbridge.admin.audit-event.v1 --add-config retention.ms=604800000,cleanup.policy=delete
     depends_on:
@@ -247,7 +250,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP: ${CONSULTATION_KAFKA_LISTENER_AUTO_STARTUP:-true}
       CONSULTATION_ACCOUNT_LIFECYCLE_ENABLED: "true"
-      CONSULTATION_PAYOUT_MODE: ${CONSULTATION_PAYOUT_MODE:-FAKE}
+      CONSULTATION_PAYOUT_MODE: ${CONSULTATION_PAYOUT_MODE:-DISABLED}
       CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED: ${CONSULTATION_PAYOUT_STAGING_DEMO_ENABLED:-false}
       CONSULTATION_PAYOUT_SETTLEMENT_HOLD: ${CONSULTATION_PAYOUT_SETTLEMENT_HOLD:-P7D}
       CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND: ${CONSULTATION_PAYOUT_MINIMUM_WITHDRAWAL_VND:-100000}
@@ -327,7 +330,7 @@ services:
       COMMUNITY_LIQUIBASE_ENABLED: "false"
       COMMUNITY_CHAT_GROUP_MEMBER_LIMIT: ${COMMUNITY_CHAT_GROUP_MEMBER_LIMIT:-30}
       COMMUNITY_CHAT_ENABLED: ${COMMUNITY_CHAT_ENABLED:-false}
-      COMMUNITY_CHAT_REALTIME_ENABLED: ${COMMUNITY_CHAT_REALTIME_ENABLED:-false}
+      COMMUNITY_FRIENDS_ENABLED: ${COMMUNITY_FRIENDS_ENABLED:-false}
       COMMUNITY_CHAT_NOTIFICATION_ENABLED: ${COMMUNITY_CHAT_NOTIFICATION_ENABLED:-false}
       CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY: ${CONTENT_COMMUNITY_NOTIFICATION_PUBLIC_KEY:-}
       CONTENT_COMMUNITY_NOTIFICATION_KEY_ID: ${CONTENT_COMMUNITY_NOTIFICATION_KEY_ID:-}
@@ -342,7 +345,6 @@ services:
       COMMUNITY_CHAT_ENCRYPTION_KEY: ${COMMUNITY_CHAT_ENCRYPTION_KEY:-}
       COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION: ${COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION:-v1}
       COMMUNITY_CHAT_DECRYPTION_KEYS: ${COMMUNITY_CHAT_DECRYPTION_KEYS:-{}}
-      COMMUNITY_CHAT_RELAY_ENABLED: ${COMMUNITY_CHAT_RELAY_ENABLED:-false}
       COMMUNITY_CHAT_RELAY_BATCH_SIZE: ${COMMUNITY_CHAT_RELAY_BATCH_SIZE:-100}
       COMMUNITY_CHAT_RELAY_INTERVAL: ${COMMUNITY_CHAT_RELAY_INTERVAL:-PT5S}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?Set CLOUDINARY_CLOUD_NAME in .env}
@@ -434,6 +436,7 @@ services:
       CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY: ${CONTENT_COMMUNITY_NOTIFICATION_PRIVATE_KEY:-}
       CONTENT_COMMUNITY_NOTIFICATION_KEY_ID: ${CONTENT_COMMUNITY_NOTIFICATION_KEY_ID:-}
       CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED: ${CONTENT_CARE_USER_NOTIFICATION_CONSUMER_ENABLED:-true}
+      CONTENT_SPECIALIST_LIVE_RELAY_ENABLED: ${CONTENT_SPECIALIST_LIVE_RELAY_ENABLED:-false}
     ports:
       - "${SERVICE_BIND_ADDRESS:-127.0.0.1}:${CONTENT_PORT:-3003}:3003"
     depends_on:
@@ -533,6 +536,8 @@ services:
       REALTIME_SERVICE_URL: http://realtime:3004
       REALTIME_PUBLIC_URL: ${PUBLIC_REALTIME_ORIGIN:-http://localhost:3004}
       REALTIME_SERVICE_TIMEOUT_MS: ${REALTIME_SERVICE_TIMEOUT_MS:-3000}
+      REALTIME_COMMUNITY_BFF_PRIVATE_KEY: ${REALTIME_COMMUNITY_BFF_PRIVATE_KEY:-}
+      REALTIME_COMMUNITY_BFF_KEY_ID: ${REALTIME_COMMUNITY_BFF_KEY_ID:-}
       COMMUNITY_SERVICE_URL: http://community:8084
       COMMUNITY_SERVICE_TIMEOUT_MS: ${COMMUNITY_SERVICE_TIMEOUT_MS:-15000}
     ports:
@@ -596,7 +601,9 @@ services:
     environment:
       NODE_ENV: production
       REALTIME_PORT: 3004
-      REALTIME_COMMUNITY_ENABLED: ${REALTIME_COMMUNITY_ENABLED:-false}
+      REALTIME_SPECIALIST_LIVE_ENABLED: ${REALTIME_SPECIALIST_LIVE_ENABLED:-false}
+      CONTENT_NOTIFICATION_SERVICE_URL: ${CONTENT_NOTIFICATION_SERVICE_URL:-http://content-notification:3003}
+      CONTENT_NOTIFICATION_TIMEOUT_MS: ${CONTENT_NOTIFICATION_TIMEOUT_MS:-2000}
       REALTIME_COMMUNITY_BASE_URL: ${REALTIME_COMMUNITY_BASE_URL:-http://community:8084}
       REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: ${REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY:-}
       REALTIME_COMMUNITY_DELEGATION_KEY_ID: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:-}

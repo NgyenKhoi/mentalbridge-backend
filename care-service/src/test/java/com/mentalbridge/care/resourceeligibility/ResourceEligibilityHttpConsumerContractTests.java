@@ -213,6 +213,105 @@ class ResourceEligibilityHttpConsumerContractTests {
 	}
 
 	@Test
+	void mappedResourceUsesLatestExactTupleWithoutSendingChecklistOrPrivateEvidence() throws Exception {
+		stub.enqueueRaw(200, mappedCurrentVersion("7"), Duration.ZERO);
+		stub.enqueueContract(200, mappedEligibleResponse());
+		var client = client(baseUrl(), properties(1, Duration.ofMillis(50), Duration.ofSeconds(1)));
+		var resourceId = "00000000-0000-4000-8000-000000000211";
+
+		var versions = client.currentVersions(List.of(resourceId), "user-jwt", CORRELATION_ID);
+		var response = client.resolve(mappedRequest(versions.get(resourceId)), "user-jwt", CORRELATION_ID);
+
+		var admitted = response.results().getFirst();
+		assertThat(admitted.resourceId()).isEqualTo(resourceId);
+		assertThat(admitted.contentVersion()).isEqualTo("7");
+		assertThat(admitted.publicationId()).isEqualTo("30000000-0000-4000-8000-000000000001");
+		assertThat(admitted.role().name()).isEqualTo("PRIMARY");
+		assertThat(response.policyVersion()).isEqualTo("content-eligibility-v1");
+		assertThat(stub.paths()).containsExactly("/internal/v1/resources/current-versions:resolve",
+				"/internal/v1/resource-eligibility:resolve");
+		var bodies = stub.requestBodies();
+		var discovery = MAPPER.readTree(bodies.getFirst());
+		assertThat(discovery.properties()).extracting(java.util.Map.Entry::getKey).containsExactly("resourceIds");
+		assertThat(discovery.path("resourceIds").get(0).asText()).isEqualTo(resourceId);
+		var query = MAPPER.readTree(bodies.getLast()).path("requests").get(0);
+		assertThat(query.properties()).extracting(java.util.Map.Entry::getKey).containsExactlyInAnyOrder(
+				"requestId", "resourceId", "contentVersion", "targetDomain", "requiredRole", "instrument",
+				"screeningLevel", "supportTier", "locale");
+		assertThat(query.path("contentVersion").asText()).isEqualTo("7");
+		assertThat(String.join("", bodies)).doesNotContain("PERSISTENT_WORRY", "selectedCodes", "symptomChecklist",
+				"helpfulContext", "difficultContext", "mappingRevision", "selfReportId");
+		assertThat(stub.attempts()).isEqualTo(2);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "STALE", "WITHDRAWN", "WRONG_RESOURCE", "WRONG_VERSION", "UNAVAILABLE" })
+	void mappedExactFailureNeverFallsBackToTheSeedOrAnotherVersion(String failure) {
+		stub.enqueueRaw(200, mappedCurrentVersion("7"), Duration.ZERO);
+		if (failure.equals("UNAVAILABLE")) {
+			stub.enqueueContract(503, problem(503));
+		}
+		else if (failure.equals("STALE") || failure.equals("WITHDRAWN")) {
+			stub.enqueueContract(200, """
+					{"policyVersion":"content-eligibility-v1","resolvedAt":"2026-09-14T02:00:00Z",
+					"results":[{"requestId":"10000000-0000-4000-8000-000000000001",
+					"resourceId":"00000000-0000-4000-8000-000000000211","contentVersion":"7",
+					"outcome":"%s","reasonCode":"%s","role":null,"publicationId":null,
+					"category":null,"title":null,"summary":null,"externalUrl":null}]}
+					""".formatted(failure, failure.equals("STALE") ? "CONTENT_VERSION_STALE" : "ELIGIBILITY_WITHDRAWN"));
+		}
+		else {
+			stub.enqueueRaw(200, failure.equals("WRONG_RESOURCE")
+					? mappedEligibleResponse().replace("000000000211", "000000000208")
+					: mappedEligibleResponse().replace("\"contentVersion\":\"7\"", "\"contentVersion\":\"0\""), Duration.ZERO);
+		}
+		var client = client(baseUrl(), properties(1, Duration.ofMillis(50), Duration.ofSeconds(1)));
+		var versions = client.currentVersions(List.of("00000000-0000-4000-8000-000000000211"),
+				"user-jwt", CORRELATION_ID);
+
+		var response = client.resolve(mappedRequest(versions.get("00000000-0000-4000-8000-000000000211")),
+				"user-jwt", CORRELATION_ID);
+
+		var expected = failure.equals("STALE") ? ResourceEligibilityOutcome.STALE
+				: failure.equals("WITHDRAWN") ? ResourceEligibilityOutcome.WITHDRAWN : ResourceEligibilityOutcome.UNAVAILABLE;
+		assertThat(response.results().getFirst().outcome()).isEqualTo(expected);
+		assertThat(response.results().getFirst().contentVersion()).isEqualTo("7");
+		assertThat(stub.attempts()).isEqualTo(2);
+		assertThat(stub.requestBodies().getLast()).contains("\"contentVersion\":\"7\"")
+				.doesNotContain("\"contentVersion\":\"0\"");
+	}
+
+	@Test
+	void mappedDiscoveryRejectsWrongResourceIdentityBeforeExactAdmission() {
+		stub.enqueueRaw(200, mappedCurrentVersion("7").replace("000000000211", "000000000208"), Duration.ZERO);
+		var client = client(baseUrl(), properties(1, Duration.ofMillis(50), Duration.ofSeconds(1)));
+
+		assertThatThrownBy(() -> client.currentVersions(List.of("00000000-0000-4000-8000-000000000211"),
+				"user-jwt", CORRELATION_ID)).isInstanceOfSatisfying(ApiException.class,
+						exception -> assertThat(exception.code()).isEqualTo("RESOURCE_ELIGIBILITY_UNAVAILABLE"));
+
+		assertThat(stub.paths()).containsExactly("/internal/v1/resources/current-versions:resolve");
+		assertThat(stub.attempts()).isEqualTo(1);
+	}
+
+	private ResourceEligibilityBatchRequest mappedRequest(String contentVersion) {
+		return new ResourceEligibilityBatchRequest(List.of(new ResourceEligibilityQuery(
+				"10000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000211", contentVersion,
+				ScreeningDomain.ANXIETY_SYMPTOMS, RequiredEligibilityRole.PRIMARY, ScreeningInstrument.GAD_7,
+				ScreeningLevel.MILD, SupportTier.SELF_GUIDED_SUPPORT, "vi-VN")));
+	}
+
+	private static String mappedCurrentVersion(String version) {
+		return "{\"results\":[{\"resourceId\":\"00000000-0000-4000-8000-000000000211\",\"contentVersion\":\""
+				+ version + "\"}]}";
+	}
+
+	private static String mappedEligibleResponse() {
+		return validResponse().replace("20000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000211")
+				.replace("\"contentVersion\":\"3\"", "\"contentVersion\":\"7\"");
+	}
+
+	@Test
 	void retriesCurrentVersionOutageButFailsClosedOnRejectionOrMalformedPayload() {
 		stub.enqueueRaw(503, problem(503), Duration.ZERO);
 		stub.enqueueRaw(200, "{\"results\":[{\"resourceId\":\"20000000-0000-4000-8000-000000000001\",\"contentVersion\":\"0\"}]}",
@@ -359,6 +458,8 @@ class ResourceEligibilityHttpConsumerContractTests {
 
 	private static final class ContractStub {
 		private final ConcurrentLinkedQueue<StubResponse> responses = new ConcurrentLinkedQueue<>();
+		private final ConcurrentLinkedQueue<String> paths = new ConcurrentLinkedQueue<>();
+		private final ConcurrentLinkedQueue<String> requestBodies = new ConcurrentLinkedQueue<>();
 		private final AtomicInteger attempts = new AtomicInteger();
 		private final AtomicReference<String> authorization = new AtomicReference<>();
 		private final AtomicReference<String> correlationId = new AtomicReference<>();
@@ -384,6 +485,8 @@ class ResourceEligibilityHttpConsumerContractTests {
 			correlationId.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
 			method.set(exchange.getRequestMethod());
 			requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			paths.add(exchange.getRequestURI().getPath());
+			requestBodies.add(requestBody.get());
 			StubResponse response = responses.remove();
 			try {
 				Thread.sleep(response.delay().toMillis());
@@ -403,6 +506,14 @@ class ResourceEligibilityHttpConsumerContractTests {
 
 		int attempts() {
 			return attempts.get();
+		}
+
+		List<String> paths() {
+			return List.copyOf(paths);
+		}
+
+		List<String> requestBodies() {
+			return List.copyOf(requestBodies);
 		}
 
 		String authorization() {

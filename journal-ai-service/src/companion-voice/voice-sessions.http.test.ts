@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import SwaggerParser from "@apidevtools/swagger-parser";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import request from "supertest";
+import { z } from "zod";
 import { createApplication } from "../application.js";
 import { loadConfiguration } from "../configuration/configuration.js";
 import { VoiceAccessError, type VoiceAccessCode } from "./voice-access.js";
@@ -226,6 +227,7 @@ void test("Voice public and worker REST separate identities, validate closed com
             replyId: randomUUID(),
             language: "vi-VN" as const,
             spokenText: "Mình đang lắng nghe. Bạn có thể chia sẻ thêm không?",
+            expression: "comfort" as const,
             expiresAt: new Date(now.getTime() + 10000).toISOString(),
             policyVersion: "companion-voice-policy-v1" as const,
           });
@@ -479,13 +481,53 @@ void test("Voice public and worker REST separate identities, validate closed com
     await turnRequest()
       .send({ ...turnBody, language: "en-US" })
       .expect(422);
-    await turnRequest()
+    // Reply parser of the Agent released before MB-820 (origin/dev ai-voice-agent/src/contract.ts:80-91).
+    const preMb820ReplySchema = z
+      .object({
+        voiceSessionId: z.uuid(),
+        turnId: z.uuid(),
+        replyId: z.uuid(),
+        language: z.literal("vi-VN"),
+        spokenText: z.string().trim().min(1).max(1000),
+        expiresAt: z.iso.datetime({ offset: true }),
+        policyVersion: z.literal("companion-voice-policy-v1"),
+      })
+      .strict();
+    for (const capability of [undefined, "", "EXPRESSION", "expression,x"]) {
+      const legacyRequest = turnRequest();
+      if (capability !== undefined)
+        legacyRequest.set("X-MentalBridge-Voice-Capabilities", capability);
+      const legacyReply = await legacyRequest
+        .send(turnBody)
+        .expect(200)
+        .expect("Cache-Control", "no-store");
+      assertContract("VoiceReply", legacyReply.body);
+      assert.deepEqual(Object.keys(legacyReply.body as object), [
+        "voiceSessionId",
+        "turnId",
+        "replyId",
+        "language",
+        "spokenText",
+        "expiresAt",
+        "policyVersion",
+      ]);
+      assert.equal(
+        preMb820ReplySchema.safeParse(legacyReply.body).success,
+        true,
+        String(capability),
+      );
+    }
+    const declared = await turnRequest()
+      .set("X-MentalBridge-Voice-Capabilities", "expression")
       .send(turnBody)
       .expect(200)
-      .expect("Cache-Control", "no-store")
-      .expect((response) => {
-        assertContract("VoiceReply", response.body);
-      });
+      .expect("Cache-Control", "no-store");
+    assertContract("VoiceReply", declared.body);
+    assert.equal(
+      (declared.body as { expression?: string }).expression,
+      "comfort",
+    );
+    assert.equal(preMb820ReplySchema.safeParse(declared.body).success, false);
     for (const [code, status] of [
       ["PROVIDER_TIMEOUT", 504],
       ["INVALID_FINAL_TRANSCRIPT", 422],

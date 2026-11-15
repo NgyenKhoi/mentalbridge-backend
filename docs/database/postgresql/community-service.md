@@ -432,3 +432,45 @@ Exact readable-message intake is isolated from feed reports and general chat rea
 | `review_due_at` | UTC bounded unresolved-review deadline, 30 days after intake; not a deletion/clinical-response SLA. |
 
 Commands additionally support REPORT_MESSAGE/REPORT result, actor-scoped normalized-payload fingerprint and exact case pointer. New-key duplicates return the original actor/message case without copying or replacing evidence.
+
+### `public.community_friendship`
+
+Migration 0024 owns current reciprocal Community relationships. It stores only
+Community profile references. Both participants may read their relationship.
+Pending rows disappear on cancel/decline and accepted rows on unfriend. No
+public friend graph or friend count is exposed. Existing chat history is separate.
+
+| Field | Meaning and consistency |
+| --- | --- |
+| `id` | Random immutable request-generation UUID used for exact accept/remove commands, preventing an old command from deciding a new request. |
+| `first_profile_id` | Smaller profile UUID in the unordered pair, owned locally and cascading on profile deletion. |
+| `second_profile_id` | Larger profile UUID, distinct from the first. Pair uniqueness prevents duplicate or crossed relationships. |
+| `requester_profile_id` | One participant who initiated this request. Only the other participant can accept. |
+| `state` | Current authoritative PENDING or ACCEPTED fact. Crossed requests remain PENDING. |
+| `created_at` | Immutable UTC insertion instant for this request generation. |
+| `accepted_at` | Nullable UTC reciprocal-acceptance instant, required exactly for ACCEPTED rows. |
+
+Sorted profile locks serialize requests, acceptance/removal, blocks and chat
+admission. Lists use bounded ascending request UUID cursors and exclude blocked,
+restricted or deleted peers. The table has no raw message, health or account data.
+
+## Private sharing groups (owner approval 2026-11-07)
+
+Migration 0025 and ADR 0052 introduce a distinct invitation-only feed.
+
+| Table/field | Authority and meaning |
+| --- | --- |
+| community_circle.id / owner_profile_id | Community UUID and creator/owner; no external account identifier is exposed. |
+| name_ciphertext / description_ciphertext | Private user-authored group identity, AES-GCM key-ring ciphertext with group-specific purpose. Never logged or used for health inference. |
+| state / created_at | ACTIVE or ARCHIVED; archival revokes all visibility. Database timestamp is authoritative. |
+| idempotency_key / request_fingerprint | Owner-scoped creation retry UUID and keyed fingerprint; conflicting retry input returns 409. |
+| community_circle_member.circle_id / profile_id | Unique local group/profile membership; FKs reference only Community tables. |
+| inviter_profile_id / role | Original inviter and OWNER/MEMBER; only owner manages others. |
+| state / created_at / joined_at | PENDING, ACTIVE, DECLINED, REMOVED. joined_at is non-null only while ACTIVE. Pending members cannot query content/member lists. Removal immediately revokes access. |
+| community_circle_entry.id / circle_id / parent_id | Entry UUID/group, nullable root-post reference for a comment. Only one comment level; application verifies same-group active root. |
+| author_profile_id / content_ciphertext | Local Community author and encrypted private publication text, bounded to 5,000 code points. No anonymous publication or external health source. |
+| state / created_at | ACTIVE or DELETED; deletion clears ciphertext. Creation time plus UUID gives deterministic pagination. |
+| idempotency_key / request_fingerprint | Author-scoped publication retry identity and keyed body/group/parent fingerprint. Content-free tombstone prevents recreation on retry. |
+
+No new broker events, provider credentials or cross-service storage reads.
+REST pages contain at most 10 entries, fitting the existing bounded BFF response.

@@ -262,7 +262,8 @@ public class ReassessmentSummaryService {
 		}
 		var source = new ExplicitSelfReport(report.id(), report.sourceVersion(), report.version(),
 				new Period(report.periodStart(), report.periodEnd()), report.currentExperience(), report.helpfulContext(),
-				report.difficultContext(), report.authoredAt(), report.updatedAt());
+				report.difficultContext(), report.authoredAt(), report.updatedAt(), report.symptomChecklist(),
+				ReassessmentSymptomCatalog.reasons(report.symptomChecklist()));
 		return new SelfReportedExperienceDimension("AVAILABLE", null, source);
 	}
 

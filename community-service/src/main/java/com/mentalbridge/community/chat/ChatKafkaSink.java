@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Component
-@ConditionalOnProperty(prefix = "mentalbridge.community.chat-relay", name = "enabled", havingValue = "true")
+@ConditionalOnProperty(prefix = "mentalbridge.community.chat", name = "enabled", havingValue = "true")
 class ChatKafkaSink {
     private final DefaultKafkaProducerFactory<String, String> factory;
     private final KafkaTemplate<String, String> kafka;

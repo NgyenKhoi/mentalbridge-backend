@@ -45,7 +45,7 @@ Legacy URL fields remain nullable, with HTTPS provider-host validation.
 
 The public `POST /internal/v1/payments/payos/webhook` verifies the original body
 through the SDK, then validates the complete signed data and successful envelope.
-Only exact order/link/amount/reference evidence for an unexpired pending payment
+Only exact order/link/amount/reference evidence for a pending payment
 can activate a period and credits through the shared locked settlement path.
 Exact redelivery is idempotent. Signed mismatches, reused references, confirmation
 samples and terminal late receipts are sanitized `VERIFIED_UNMATCHED` evidence
@@ -54,13 +54,26 @@ in commercial reconciliation, without raw payloads or bank-party details.
 Owner payment GET reconciles pending PayOS payments with signed SDK status queries,
 bounded cadence/backoff and no database transaction over HTTP. Only an exact
 `PAID` result with one matching transfer settles; underpayment stays pending.
-Expiry reconciles first, commits local finality/releases upgrade-held credits,
-then cancels the provider link. Return URLs never settle or cancel payments.
+Expiry reconciles first. Verified exact `PAID` evidence settles a pending payment
+even when observed after local expiry. Failed queries and `PAID` without exact
+proof do not themselves cause local expiry; owner reads and scheduler ticks
+preserve `PENDING` during retry backoff or an in-flight query. A later successful
+non-`PAID` provider answer may trigger ordinary local expiry. At 24 hours after
+`expires_at`, any still-pending PayOS payment closes as `FAILED` with
+`terminalReason=EXPIRED` and `PAYOS_REVIEW_DEADLINE`, restores upgrade-held
+credits, attempts provider-link cancellation, and appears as `PAYMENT_REVIEW`
+in admin commercial discrepancies. Later verified `PAID` evidence stays
+`VERIFIED_UNMATCHED:PAYMENT_ALREADY_FINAL` without automatic entitlement or
+refund. Return URLs never settle or cancel payments.
 Failed expiry cancellation retries with bounded backoff; six failed attempts
 leave `PAYOS_CANCEL_REQUIRES_REVIEW` in the persisted reconciliation audit code.
 The terminal payment and restored credits stay final throughout those retries.
 `terminalReason` is nullable for legacy payments; new known failures persist
 `EXPIRED`, `CANCELLED` or `PROVIDER_FAILED` alongside ledger status `FAILED`.
+An elapsed `ACTIVE` subscription is rendered as `ENDED` in admin detail and
+provenance reads. The next checkout records the `ACTIVE` to `ENDED` transition
+under the user's checkout lock before creating a new pending period; old credit
+history and held credits remain, while period end blocks old credits from reuse.
 
 | Configuration | Meaning |
 | --- | --- |
@@ -316,7 +329,7 @@ and the [MB-384 local video runbook](../docs/runbooks/mb-384-livekit-video.md).
 | `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared service credential for the narrow eligibility read | injected secret |
 | `KAFKA_BOOTSTRAP_SERVERS` | When relay enabled | Broker list for appointment status events | `localhost:9092` |
 | `CONSULTATION_APPOINTMENT_OUTBOX_RELAY_ENABLED` | No | Enables bounded appointment outbox relay | `false` |
-| `CONSULTATION_PAYOUT_MODE` | No | `DISABLED`, deterministic `FAKE`, independently gated dormant `MOMO`, or staging-only `PAYOS`; unknown modes fail closed | `DISABLED` |
+| `CONSULTATION_PAYOUT_MODE` | No | Unset is `DISABLED`; deterministic `FAKE` requires explicit local/test configuration, with independently gated dormant `MOMO` or staging-only `PAYOS`; unknown modes fail closed | `DISABLED` |
 | `PAYOS_PAYOUT_CLIENT_ID` | PAYOS payout | Separate payout channel client ID; never borrowed from collect | empty; injected secret |
 | `PAYOS_PAYOUT_API_KEY` | PAYOS payout | Separate payout channel API key | empty; injected secret |
 | `PAYOS_PAYOUT_CHECKSUM_KEY` | PAYOS payout | Separate payout signing and response-verification key | empty; injected secret |

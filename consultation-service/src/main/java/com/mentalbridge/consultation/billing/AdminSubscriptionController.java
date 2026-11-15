@@ -2,6 +2,7 @@ package com.mentalbridge.consultation.billing;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -18,9 +19,11 @@ import com.mentalbridge.consultation.shared.ApiException;
 public class AdminSubscriptionController {
 
 	private final JdbcClient jdbc;
+	private final Clock clock;
 
-	public AdminSubscriptionController(JdbcClient jdbc) {
+	public AdminSubscriptionController(JdbcClient jdbc, Clock clock) {
 		this.jdbc = jdbc;
+		this.clock = clock;
 	}
 
 	@GetMapping("/api/v1/admin/subscriptions/{subscriptionId}")
@@ -28,11 +31,12 @@ public class AdminSubscriptionController {
 	public AdminSubscriptionDetailResponse subscriptionDetail(@PathVariable UUID subscriptionId) {
 		var sub = jdbc.sql("""
 				select s.id, s.user_id, s.plan_version_id, v.plan_code, v.pricing_policy_version,
-				 s.status, s.current_period_start, s.current_period_end, s.created_at
+				 case when s.status='ACTIVE' and s.current_period_end<=:now then 'ENDED' else s.status end as status,
+				 s.current_period_start, s.current_period_end, s.created_at
 				from user_subscription s
 				join subscription_plan_version v on v.id=s.plan_version_id
 				where s.id = :subscriptionId
-				""").param("subscriptionId", subscriptionId)
+				""").param("subscriptionId", subscriptionId).param("now", java.sql.Timestamp.from(clock.instant()))
 				.query((row, ignored) -> new SubHeader(
 						row.getObject("id", UUID.class),
 						row.getObject("user_id", UUID.class),

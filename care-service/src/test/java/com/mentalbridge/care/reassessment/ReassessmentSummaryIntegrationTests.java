@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -284,6 +285,130 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void symptomCatalogIsUserOnlyLocalAndNeverCached() throws Exception {
+		mvc.perform(get("/api/v1/reassessment-self-reports/catalog")).andExpect(status().isUnauthorized());
+		mvc.perform(get("/api/v1/reassessment-self-reports/catalog").with(admin())).andExpect(status().isForbidden());
+		mvc.perform(get("/api/v1/reassessment-self-reports/catalog").with(user(UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.catalogRevision").value("reassessment-symptoms-v1"))
+				.andExpect(jsonPath("$.mappingRevision").value("reassessment-symptom-resource-map-v1"))
+				.andExpect(jsonPath("$.maxSelections").value(8)).andExpect(jsonPath("$.items.length()").value(8))
+				.andExpect(jsonPath("$.items[0].code").value("SLEEP_DIFFICULTY"))
+				.andExpect(jsonPath("$.items[0].label").value("Khó ngủ hoặc giấc ngủ bị gián đoạn"));
+	}
+
+	@Test
+	void checklistCrudPreservesLegacyOmissionAndImmutableSummaryAndClearsTheTombstone() throws Exception {
+		var owner = insertProfile();
+		var other = insertProfile();
+		var evidence = assessments(owner);
+		var body = checklistReport(List.of("LOW_MOOD", "APPETITE_CHANGE", "LOW_ENERGY"));
+		String key = "reassessment-checklist-history";
+		var created = mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner))
+				.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+				.andExpect(status().isCreated()).andExpect(header().string("ETag", "\"0\""))
+				.andExpect(jsonPath("$.symptomChecklist.mappingRevision").value("reassessment-symptom-resource-map-v1"))
+				.andExpect(jsonPath("$.symptomChecklist.selectedCodes[0]").value("APPETITE_CHANGE"))
+				.andExpect(jsonPath("$.symptomSelectionReasons.length()").value(3))
+				.andExpect(jsonPath("$.symptomSelectionReasons[0].code").value("LOW_ENERGY"))
+				.andExpect(jsonPath("$.symptomSelectionReasons[2].reasonCode").value("NO_APPROVED_RESOURCE_MAPPING"))
+				.andReturn();
+		var reportId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).path("selfReportId").asText());
+		var reordered = checklistReport(List.of("LOW_ENERGY", "LOW_MOOD", "APPETITE_CHANGE"));
+		mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner)).header("Idempotency-Key", key)
+				.contentType(MediaType.APPLICATION_JSON).content(reordered.toString()))
+				.andExpect(status().isCreated()).andExpect(jsonPath("$.selfReportId").value(reportId.toString()));
+		String summaryBody = jobBody(evidence.currentPhq9(), evidence.currentGad7(), UUID.randomUUID(),
+				PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END, reportId);
+		String summaryKey = "reassessment-checklist-summary";
+		var composed = mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", summaryKey).contentType(MediaType.APPLICATION_JSON).content(summaryBody))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.selfReportedExperience.source.symptomChecklist.selectedCodes.length()").value(3))
+				.andExpect(jsonPath("$.selfReportedExperience.source.symptomSelectionReasons[0].mappingRevision")
+						.value("reassessment-symptom-resource-map-v1")).andReturn();
+		var saved = objectMapper.readTree(composed.getResponse().getContentAsString());
+		String summaryId = saved.path("summaryId").asText();
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", reportId).with(user(other)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"currentExperience\":\"BETTER\"}"))
+				.andExpect(status().isNotFound());
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", reportId).with(user(owner)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"currentExperience\":\"BETTER\"}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
+				.andExpect(jsonPath("$.symptomChecklist.selectedCodes.length()").value(3));
+		mvc.perform(get("/api/v1/reassessment-self-reports/current").with(user(owner))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.symptomChecklist.selectedCodes[0]").value("APPETITE_CHANGE"));
+		var empty = checklistReport(List.of());
+		empty.remove("currentPeriod");
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", reportId).with(user(owner)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(empty.toString()))
+				.andExpect(status().isPreconditionFailed())
+				.andExpect(jsonPath("$.code").value("REASSESSMENT_SELF_REPORT_VERSION_MISMATCH"));
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", reportId).with(user(owner)).header("If-Match", "\"1\"")
+				.contentType(MediaType.APPLICATION_JSON).content(empty.toString()))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.version").value(2))
+				.andExpect(jsonPath("$.symptomChecklist.selectedCodes").isEmpty())
+				.andExpect(jsonPath("$.symptomChecklist.mappingRevision").value("reassessment-symptom-resource-map-v1"))
+				.andExpect(jsonPath("$.symptomSelectionReasons").isEmpty());
+		var replay = mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", summaryKey).contentType(MediaType.APPLICATION_JSON).content(summaryBody))
+				.andExpect(status().isCreated()).andReturn();
+		assertThat(objectMapper.readTree(replay.getResponse().getContentAsString())).isEqualTo(saved);
+		mvc.perform(delete("/api/v1/reassessment-self-reports/{id}", reportId).with(user(other)).header("If-Match", "\"2\""))
+				.andExpect(status().isNotFound());
+		mvc.perform(delete("/api/v1/reassessment-self-reports/{id}", reportId).with(user(owner)).header("If-Match", "\"2\""))
+				.andExpect(status().isNoContent());
+		assertThat(jdbc.sql("""
+				select symptom_catalog_revision is null and cardinality(symptom_codes)=0
+				and current_experience is null and helpful_context is null and difficult_context is null
+				from reassessment_self_report where id=:id
+				""").param("id", reportId).query(Boolean.class).single()).isTrue();
+		mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner)).header("Idempotency-Key", key)
+				.contentType(MediaType.APPLICATION_JSON).content(body.toString())).andExpect(status().isNotFound());
+		var historical = mvc.perform(get("/api/v1/reassessment-summaries/{id}", summaryId).with(user(owner)))
+				.andExpect(status().isOk()).andReturn();
+		assertThat(objectMapper.readTree(historical.getResponse().getContentAsString())).isEqualTo(saved);
+		assertThat(adaptiveEvidence.read(owner, UUID.fromString(summaryId), "token", UUID.randomUUID()).selfReport().source()).isNull();
+	}
+
+	@Test
+	void rejectsInvalidChecklistShapesAndUnsupportedRevisionsWithoutWritingOrEchoingCodes() throws Exception {
+		var owner = insertProfile();
+		var invalid = List.of("null", "[]", "{}", "{\"catalogRevision\":null,\"selectedCodes\":[]}",
+				"{\"catalogRevision\":\" \",\"selectedCodes\":[]}",
+				"{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":null}",
+				"{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":[null]}",
+				"{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":[\"PRIVATE_UNKNOWN_CODE\"]}",
+				"{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":[\"LOW_ENERGY\",\"LOW_ENERGY\"]}",
+				"{\"catalogRevision\":\"reassessment-symptoms-v1\",\"selectedCodes\":[" + "\"LOW_ENERGY\",".repeat(8) + "\"LOW_ENERGY\"]}");
+		for (int index = 0; index < invalid.size(); index++) {
+			var request = checklistReport(List.of());
+			request.set("symptomChecklist", objectMapper.readTree(invalid.get(index)));
+			var result = mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner))
+					.header("Idempotency-Key", "reassessment-bad-checklist-" + index).contentType(MediaType.APPLICATION_JSON)
+					.content(request.toString())).andExpect(status().isBadRequest())
+					.andExpect(jsonPath("$.code").value("VALIDATION_FAILED")).andReturn();
+			assertThat(result.getResponse().getContentAsString()).doesNotContain("PRIVATE_UNKNOWN_CODE");
+		}
+		var unsupported = checklistReport(List.of("LOW_ENERGY"));
+		((ObjectNode) unsupported.path("symptomChecklist")).put("catalogRevision", "reassessment-symptoms-future");
+		mvc.perform(post("/api/v1/reassessment-self-reports").with(user(owner))
+				.header("Idempotency-Key", "reassessment-bad-catalog-01").contentType(MediaType.APPLICATION_JSON)
+				.content(unsupported.toString())).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("REASSESSMENT_SYMPTOM_CATALOG_UNSUPPORTED"));
+		assertThat(jdbc.sql("select count(*) from reassessment_self_report where user_id=:owner")
+				.param("owner", owner).query(Long.class).single()).isZero();
+		var reportId = createSelfReport(owner, "reassessment-legacy-catalog", "UNSURE", null, null);
+		unsupported.remove("currentPeriod");
+		mvc.perform(put("/api/v1/reassessment-self-reports/{id}", reportId).with(user(owner)).header("If-Match", "\"0\"")
+				.contentType(MediaType.APPLICATION_JSON).content(unsupported.toString())).andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("REASSESSMENT_SYMPTOM_CATALOG_UNSUPPORTED"));
+		mvc.perform(get("/api/v1/reassessment-self-reports/current").with(user(owner))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.version").value(0)).andExpect(jsonPath("$.symptomChecklist").doesNotExist())
+				.andExpect(jsonPath("$.symptomSelectionReasons").doesNotExist());
+	}
+
+	@Test
 	void replacesDeletesAndKeepsEarlierSummarySnapshotsDeterministic() throws Exception {
 		var owner = insertProfile();
 		var other = insertProfile();
@@ -540,6 +665,18 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 	private UUID createSelfReport(UUID owner, String key, String experience, String helpful, String difficult)
 			throws Exception {
 		return createSelfReport(owner, key, experience, helpful, difficult, CURRENT_START, CURRENT_END);
+	}
+
+	private ObjectNode checklistReport(List<String> codes) {
+		var body = objectMapper.createObjectNode();
+		body.putObject("currentPeriod").put("startAt", CURRENT_START.toString()).put("endAt", CURRENT_END.toString());
+		body.put("currentExperience", "UNSURE");
+		body.put("helpfulContext", "Private owner-authored context.");
+		var checklist = body.putObject("symptomChecklist");
+		checklist.put("catalogRevision", ReassessmentSymptomCatalog.CATALOG_REVISION);
+		var selected = checklist.putArray("selectedCodes");
+		codes.forEach(selected::add);
+		return body;
 	}
 
 	private UUID createSelfReport(UUID owner, String key, String experience, String helpful, String difficult,

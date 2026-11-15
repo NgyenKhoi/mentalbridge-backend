@@ -21,6 +21,17 @@ interface SupportPlanActivityOccurrenceRepository
 	List<SupportPlanActivityOccurrenceEntity> findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(
 			UUID supportPlanId, UUID userId, LocalDate from, LocalDate through);
 
+	@Query("""
+			select occurrence.state as state, occurrence.completedAt as completedAt,
+			       occurrence.skippedAt as skippedAt
+			from SupportPlanActivityOccurrenceEntity occurrence
+			where occurrence.supportPlanId = :planId and occurrence.userId = :userId
+			  and ((occurrence.state = 'COMPLETED' and occurrence.completedAt >= :from and occurrence.completedAt < :to)
+			    or (occurrence.state = 'SKIPPED' and occurrence.skippedAt >= :from and occurrence.skippedAt < :to))
+			""")
+	List<OutcomeTimestamp> findOutcomes(@Param("planId") UUID planId, @Param("userId") UUID userId,
+			@Param("from") Instant from, @Param("to") Instant to);
+
 	Optional<SupportPlanActivityOccurrenceEntity> findByIdAndUserId(UUID id, UUID userId);
 
 	@Query(value = """
@@ -162,6 +173,19 @@ interface SupportPlanActivityOccurrenceRepository
 	@Modifying(flushAutomatically = true)
 	@Query(value = """
 			update support_plan_activity_occurrence
+			set state = 'COMPLETED', state_reason = null, completed_at = :now,
+			    cancelled_at = null, evidence_owner = 'CARE', evidence_kind = 'OWNER_REVIEW_DECISION',
+			    evidence_id = :evidenceId, evidence_occurred_at = :now, evidence_verified_at = :now,
+			    updated_at = :now, version = version + 1
+			where activity_schedule_id = :scheduleId
+			  and (state = 'SCHEDULED' or (state = 'CANCELLED' and state_reason = 'PLAN_PAUSED'))
+			""", nativeQuery = true)
+	int fulfillOpenCycleReview(@Param("scheduleId") UUID scheduleId,
+			@Param("evidenceId") String evidenceId, @Param("now") Instant now);
+
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			update support_plan_activity_occurrence
 			set state = 'SCHEDULED', state_reason = null, cancelled_at = null,
 			    updated_at = :now, version = version + 1
 			where support_plan_id = :planId and state = 'CANCELLED'
@@ -196,5 +220,11 @@ interface SupportPlanActivityOccurrenceRepository
 	interface OccurrenceAuthorityLink {
 		UUID getSupportPlanId();
 		UUID getSourceActionId();
+	}
+
+	interface OutcomeTimestamp {
+		String getState();
+		Instant getCompletedAt();
+		Instant getSkippedAt();
 	}
 }

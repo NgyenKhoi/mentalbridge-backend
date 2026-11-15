@@ -6,6 +6,9 @@ import { ConversationsModule } from '../conversations/conversations.module.js';
 import { ConversationRepository } from '../conversations/conversation.repository.js';
 import { HistoryController } from '../history/history.controller.js';
 import { SecurityModule } from '../security/security.module.js';
+import { AppointmentModerationController } from '../moderation/appointment-moderation.controller.js';
+import { AppointmentModerationRepository } from '../moderation/appointment-moderation.repository.js';
+import { AppointmentModerationService } from '../moderation/appointment-moderation.service.js';
 import { MessageEncryptionService } from './message-encryption.service.js';
 import { MessageRepository } from './message.repository.js';
 import { MessageService } from './message.service.js';
@@ -19,12 +22,14 @@ export class MessagesModule {
     return {
       module: MessagesModule,
       imports: [ConversationsModule.register(eligibility, evidence), SecurityModule],
-      controllers: [HistoryController],
+      controllers: [HistoryController, AppointmentModerationController],
       providers: [
         ConversationRepository,
         MessageEncryptionService,
         MessageRepository,
         MessageService,
+        AppointmentModerationRepository,
+        AppointmentModerationService,
       ],
       exports: [MessageService],
     };

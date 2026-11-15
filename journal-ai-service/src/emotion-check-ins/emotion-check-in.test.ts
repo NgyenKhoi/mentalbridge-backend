@@ -1,3 +1,4 @@
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -153,11 +154,16 @@ const ownerId = "11111111-1111-4111-8111-111111111111";
 const otherOwnerId = "22222222-2222-4222-8222-222222222222";
 const now = new Date("2026-09-16T17:30:00.000Z");
 const grantedConsent: ConsentClient = {
+  snapshot: async function (bearer, correlationId) {
+    return aiConsentAuthorizationsFixture(
+      await this.check(bearer, correlationId),
+    );
+  },
   check: () =>
     Promise.resolve({
       authorized: true,
       reason: "GRANTED",
-      policyVersion: "ai-processing-capstone-v1",
+      policyVersion: "ai-context-processing-capstone-v1",
       decidedAt: "2026-09-16T09:00:00.000Z",
     }),
 };
@@ -235,6 +241,11 @@ const seedCheckIn = (
 
 void test("completion evidence is a read-only content-free owner fact without decryption or AI consent", async () => {
   const { repository, crypto, service } = subject({
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: () => Promise.reject(new Error("Consent must not be queried")),
   });
   const created = await service.create(request(createBody));
@@ -557,10 +568,19 @@ void test("returns note-free context only under current consent", async () => {
   assert.equal("note" in projection, false);
   assert.equal("factors" in projection, false);
   assert.equal("id" in projection, false);
-  assert.equal(context.consent.policyVersion, "ai-processing-capstone-v1");
+  assert.equal(
+    context.consent.policyVersion,
+    "ai-context-processing-capstone-v1",
+  );
   assert.equal(context.consent.decidedAt, "2026-09-16T09:00:00.000Z");
+  assert.equal(context.consent.type, "AI_CONTEXT_PROCESSING");
 
   const withdrawn = subject({
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: () => Promise.resolve({ authorized: false, reason: "REVOKED" }),
   });
   await withdrawn.service.create(request(createBody));
@@ -574,6 +594,11 @@ void test("returns note-free context only under current consent", async () => {
   );
 
   const unavailable = subject({
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: () => Promise.reject(new Error("Care unavailable")),
   });
   await unavailable.service.create(request(createBody));
@@ -732,4 +757,66 @@ void test("returns truthful zero progress when no check-ins exist", async () => 
     LOW: 0,
     VERY_LOW: 0,
   });
+});
+
+void test("L1 alone cannot query or decrypt emotion context", async () => {
+  for (const reason of [
+    "MISSING",
+    "REVOKED",
+    "POLICY_OUTDATED",
+    "DEPENDENCY_REQUIRED",
+  ] as const) {
+    const value = subject({
+      check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+      snapshot: () =>
+        Promise.resolve(
+          aiConsentAuthorizationsFixture({ authorized: false, reason }),
+        ),
+    });
+    let reads = 0;
+    value.repository.list = () => {
+      reads += 1;
+      return Promise.reject(new Error("must not read"));
+    };
+    await assert.rejects(
+      () => value.service.context(request({}), { purpose: "AI_REFLECTION" }),
+      (error: unknown) =>
+        error instanceof HttpException &&
+        error.getStatus() === 403 &&
+        (error.getResponse() as { code: string }).code ===
+          "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    assert.equal(reads, 0);
+  }
+});
+
+void test("refuses emotion projection after L2 is withdrawn during the source query", async () => {
+  let revoked = false;
+  const value = subject({
+    check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+    snapshot: () =>
+      Promise.resolve(
+        aiConsentAuthorizationsFixture(
+          revoked
+            ? { authorized: false, reason: "REVOKED" }
+            : { authorized: true, reason: "GRANTED" },
+        ),
+      ),
+  });
+  await value.service.create(request(createBody));
+  const list = value.repository.list.bind(value.repository);
+  value.repository.list = (...arguments_) => {
+    revoked = true;
+    return list(...arguments_);
+  };
+  const document = value.repository.documents[0];
+  assert.ok(document);
+  const revision = document.revisions[0];
+  assert.ok(revision);
+  revision.payload.ciphertext = Buffer.alloc(1);
+  await assert.rejects(
+    () => value.service.context(request({}), { purpose: "AI_REFLECTION" }),
+    (error: unknown) =>
+      error instanceof HttpException && error.getStatus() === 403,
+  );
 });

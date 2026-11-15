@@ -199,14 +199,17 @@ export class MessageService {
   }
 
   private toView(message: StoredMessage): MessageView {
+    const deletedAt = message.deletedAt?.toISOString() ?? null;
     return {
       messageId: message.messageId,
       conversationId: message.conversationId,
       senderId: message.senderId,
       clientMessageId: message.clientMessageId,
       type: message.type,
-      content: this.encryption.decrypt(message),
+      content: deletedAt ? null : this.encryption.decrypt(message),
       sentAt: message.sentAt.toISOString(),
+      state: deletedAt ? 'DELETED' : 'VISIBLE',
+      deletedAt,
       schemaVersion: 1,
     };
   }

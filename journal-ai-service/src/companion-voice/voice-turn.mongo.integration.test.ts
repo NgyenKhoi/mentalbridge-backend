@@ -865,6 +865,48 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   );
 
   await t.test(
+    "expression is only neutral or comfort, Text handoff stays neutral, and replay is stable",
+    async () => {
+      const urgent = "Tôi vừa uống cả lọ thuốc";
+      const urgentReply = "Hãy nhờ người ở cạnh giúp bạn ngay.";
+      for (const [tag, transcript, message, handoff, expected] of [
+        ["comfort", "Tôi muốn nói thêm", reply().message, false, "comfort"],
+        ["neutral", "Tôi muốn nói thêm", reply().message, false, "neutral"],
+        ["warm", "Tôi muốn nói thêm", reply().message, false, "neutral"],
+        ["encourage", "Tôi muốn nói thêm", reply().message, false, "neutral"],
+        ["excited", "Tôi muốn nói thêm", reply().message, false, "neutral"],
+        [undefined, "Tôi muốn nói thêm", reply().message, false, "neutral"],
+        // No word list exists: an urgent turn can never yield a smile value.
+        ["warm", urgent, urgentReply, false, "neutral"],
+        ["encourage", urgent, urgentReply, false, "neutral"],
+        ["comfort", urgent, urgentReply, false, "comfort"],
+        ["comfort", "Tôi muốn nói thêm", reply().message, true, "neutral"],
+        ["warm", "Tôi muốn nói thêm", reply().message, true, "neutral"],
+      ] as const) {
+        const f = await fixture(false, handoff);
+        f.respond(() =>
+          Promise.resolve({
+            ...reply(),
+            message,
+            ...(tag === undefined
+              ? {}
+              : {
+                  expression: tag as NonNullable<ProviderReply["expression"]>,
+                }),
+          }),
+        );
+        const input = f.input(1, transcript);
+        const key = randomUUID();
+        const generated = await f.generate(input, key);
+        assert.equal(generated.expression, expected);
+        const replay = await f.generate(input, key);
+        assert.deepEqual(replay, generated);
+        assert.equal(f.calls(), 1);
+      }
+    },
+  );
+
+  await t.test(
     "separate Journal replicas race one turn fence and cannot regenerate after RAM loss",
     async () => {
       const f = await fixture();
@@ -1111,6 +1153,42 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         .expect(401);
       assert.equal((unauth.body as { code: string }).code, "UNAUTHENTICATED");
       assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "L1 withdrawal after the durable speech claim refuses the final provider attempt and publication",
+    async () => {
+      const f = await fixture();
+      const recordSpeechActivity = f.left.sessions.recordSpeechActivity.bind(
+        f.left.sessions,
+      );
+      f.left.sessions.recordSpeechActivity = async (...input) => {
+        await recordSpeechActivity(...input);
+        f.revokeAi();
+      };
+      const result = await f.send(f.input(), randomUUID(), 403);
+      assert.equal((result.body as { code: string }).code, "CONSENT_REQUIRED");
+      assert.equal(f.calls(), 0);
+      assert.deepEqual(f.contexts, []);
+      await f.left.sessions.reconcile();
+      const media = await f.db
+        .collection<RawRecord>("ai_voice_media")
+        .findOne({ _id: f.active.id });
+      assert.equal(media?.expectedReplyId, null);
+      const session = await f.db
+        .collection<RawRecord>("ai_voice_sessions")
+        .findOne({ _id: f.active.id });
+      assert.ok(session);
+      assert.equal(session.deliveredSession, false);
+      assert.ok(["ENDED", "FAILED"].includes(String(session.state)));
+      const commands = await f.db
+        .collection<RawRecord>("ai_voice_media_commands")
+        .find({ operation: "turn" })
+        .toArray();
+      assert.equal(commands.length, 1);
+      assert.equal(JSON.stringify(commands).includes("finalTranscript"), false);
+      assert.equal(JSON.stringify(commands).includes("replyId"), false);
     },
   );
 

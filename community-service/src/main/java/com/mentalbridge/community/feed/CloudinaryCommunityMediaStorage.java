@@ -49,7 +49,8 @@ class CloudinaryCommunityMediaStorage implements CommunityMediaStorage {
 	public StoredAsset inspect(String storageKey, CommunityMediaEntity.Type mediaType) {
 		try {
 			ApiResponse response = cloudinary.api().resource(storageKey,
-					Map.of("resource_type", resourceType(mediaType), "type", DELIVERY_TYPE));
+					Map.of("resource_type", resourceType(mediaType), "type", DELIVERY_TYPE,
+							"media_metadata", mediaType == CommunityMediaEntity.Type.VIDEO));
 			return new StoredAsset(text(response, "public_id"), text(response, "resource_type"),
 					text(response, "type"), text(response, "format"), number(response, "bytes").longValue(),
 					number(response, "width").intValue(), number(response, "height").intValue(),

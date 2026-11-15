@@ -12,6 +12,32 @@ const requiredEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('configuration', () => {
+  it('keeps specialist live relay disabled and requires nonempty brokers only when enabled', () => {
+    expect(loadConfiguration(requiredEnvironment).CONTENT_SPECIALIST_LIVE_RELAY_ENABLED).toBe(
+      false,
+    );
+    for (const brokers of [undefined, '', ' , '])
+      expect(() =>
+        loadConfiguration({
+          ...requiredEnvironment,
+          CONTENT_SPECIALIST_LIVE_RELAY_ENABLED: 'true',
+          KAFKA_BOOTSTRAP_SERVERS: brokers,
+        }),
+      ).toThrow();
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_SPECIALIST_LIVE_RELAY_ENABLED: 'true',
+        KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+      }).CONTENT_SPECIALIST_LIVE_RELAY_ENABLED,
+    ).toBe(true);
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_SPECIALIST_LIVE_RELAY_ENABLED: 'yes',
+      }),
+    ).toThrow();
+  });
   it('requires dedicated signing configuration and Kafka only when Community notice intake is enabled', () => {
     expect(loadConfiguration(requiredEnvironment).CONTENT_COMMUNITY_NOTICE_CONSUMER_ENABLED).toBe(
       false,

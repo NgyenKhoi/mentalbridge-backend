@@ -8,6 +8,73 @@ governed dataset metadata/samples, and benchmark coordination. Consultation
 provides versioned package entitlement; Care remains the consent, safety,
 Support Guide, SupportPlan, eligibility, and confirmation authority.
 
+## Current two-level consent boundary (MB-806)
+
+[ADR 0050](../adr/0050-two-level-ai-consent.md) is the prospective authority.
+Existing current `AI_PROCESSING` v2 remains L1 for actively sent content and
+eligible bounded conversational memory. `AI_CONTEXT_PROCESSING` v1 is independent
+L2, effective only with L1 and never backfilled. Exact/longitudinal analysis,
+Care evidence reuse, personal context selection/fetch, plan companion, saved-brief
+AI draft, Guide phrasing and emotion projection all require L2 before personal
+source access and immediately before every provider attempt, including retries.
+
+The single strict Care snapshot adapter forwards an ephemeral verified bearer.
+Unknown/malformed/inconsistent or unavailable authority fails closed with
+`CONSENT_UNAVAILABLE` (chat retains `CONSENT_OR_ENTITLEMENT_UNAVAILABLE`);
+the caller's own invalid bearer retains `401`. No grant
+cache, shadow consent, persisted bearer, saved prompt or new retry is added.
+Chat requires L1 at request and final attempt. Known L2-off skips personal
+assembly and excludes complete personal-kind pairs before decryption; loss
+during assembly discards all personal input and rebuilds plain input under the
+final successful read. New labels union fetched and retained-history kinds.
+New conversations select no source; saved preferences require fresh L2 and
+source checks, while clearing stays available. Existing history remains readable
+and immutable. Deterministic Guide/plan fallbacks stay available without consent.
+Voice remains L1 plus separate Voice v2 with unchanged empty-kind handoff limits.
+
+## MB-810 encrypted TEXT conversation titles
+
+The [ADR 0021 title amendment](../adr/0021-ai-companion-conversation-and-quota.md#mb-810-title-amendment--owner-decision-2026-11-06)
+records the owner's 2026-11-06 decisions. The first committed reply may initialize
+an empty/default TEXT conversation from the same v1/v2 structured output, with
+no second provider call. A usable topic title has at most six words and 80
+Unicode code points after whitespace normalization; missing or invalid titles
+fall back to the first 40 code points of the outer-trimmed first user message.
+Manual and explicit-create titles allow 1–80 code points after outer trim,
+without the six-word limit. Existing custom titles and populated legacy history
+are preserved.
+
+Prompt guidance forbids crisis/diagnosis labels and grants no safety authority;
+provider `NONE` is not proof of safety. The owner accepted that a risky first
+message may appear through the fallback. `MB-810-CARE-SAFETY-TITLE` defers a
+neutral dated override until a trusted current-turn Care safety source exists.
+No detector or inferred safety flag is introduced.
+
+Titles use optional `encryptedTitle` with existing AES-GCM keys and a distinct
+title AAD; the required legacy `title` remains neutral on new writes. Only absent
+envelopes fall back to legacy plaintext. Corrupt envelopes display neutral and
+remain replaceable using their derived opaque `titleVersion`. Owner-filtered
+list/detail and successful sends expose title metadata; post-success hydration
+failure omits both send metadata fields without losing the answer or quota.
+
+Owner-only `PUT /api/v1/ai-companion/conversations/{conversationId}/title`
+requires `Idempotency-Key` and a strong quoted title-state `If-Match`. A title CAS
+and completed encrypted rename result share the existing Mongo transaction and
+command collection. Exact retries return the original title/version; changed
+input yields `409 IDEMPOTENCY_KEY_REUSED`, stale state yields
+`412 CHAT_TITLE_VERSION_CONFLICT`, and uncertain persistence yields
+`503 CHAT_TITLE_UNAVAILABLE`. Rename requires no consent, entitlement, provider,
+quota or rate work. Manual rename permanently prevents auto initialization.
+
+Migration 018 is the sole additive strict/error validator-only `collMod`, as
+authorized on 2026-11-06. Deploy it before title-writing code; it rewrites no
+documents and changes no index or required field. Down refuses while encrypted
+titles exist and otherwise restores 017; retain compatible readers on rollback.
+No shared Mongo execution is authorized. OpenAPI `1.19.0` is additive on `/api/v1`;
+MB-811 consumer ngocquyen synchronizes contracts and revalidates overlapping
+send/rename responses because send metadata is current-at-read while rename
+retry metadata is historical.
+
 ## Use cases and acceptance
 
 | Capability             | Main behavior                                                                                                                                | Acceptance                                                                                                                                                                                              |
@@ -32,7 +99,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - Use MongoDB for every Journal/AI operational aggregate. Analysis workers use atomic claim and bounded leases; future publication requires a Mongo-owned outbox or another accepted recoverable design.
 - AI adapters receive minimized decrypted content only for the approved operation; raw provider responses and hidden reasoning are never persisted.
 - Support Guide phrasing accepts only Care-approved Vietnamese copy, rechecks
-  current `AI_PROCESSING` consent using the forwarded user bearer, and returns
+  effective L2 `AI_CONTEXT_PROCESSING` consent using the forwarded user bearer, and returns
   structured provider/model/prompt provenance. It cannot receive raw
   assessment answers or change Care-owned safety, resource, eligibility, or
   action decisions; Care retains its exact approved copy on every failure.
@@ -67,7 +134,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 - [x] JAI-01 Scaffold the NestJS/TypeScript service with feature modules, typed configuration, health/readiness, lint, test, and build commands.
 - [ ] JAI-02 Resolve journal retention/encryption plus dataset license/edit and benchmark label policies; AI provider/result retention is fixed by ADR 0015.
 - [ ] JAI-03 Define journal/AI Companion analysis/dataset/benchmark OpenAPI and the ADR 0015 normalized provider-result schema. The exact-revision request/status/result slice is complete; dataset and benchmark contracts remain deferred.
-- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and `AI_PROCESSING` contracts are complete; specialist-sharing remains deferred.
+- [ ] JAI-04 Define analysis command/result schemas and Care consent/structured-indicator contracts. Exact-revision, longitudinal, and Care L1/L2 consent contracts are complete; specialist-sharing remains deferred.
 - [x] MB-370 provides an internal ConsultationBrief suggestion boundary with exact minimized sources, current consent/entitlement/provider checks, strict editable output, and no persistence or specialist delivery.
 - [x] MB-649 implements bounded SupportPlan Companion message orchestration, deterministic fallback, provider output guards, safe telemetry, and the callable v1 REST contract without persistence or mutation authority.
 - [ ] JAI-05 Add `migrate-mongo` validators/indexes for journal, job, result, dataset, and benchmark collections plus data documentation. Journal, exact-revision and longitudinal job/result, and MB-369 synthetic benchmark metadata collections are complete; general dataset import remains deferred.
@@ -81,7 +148,7 @@ Support Guide, SupportPlan, eligibility, and confirmation authority.
 
 MB-371 adds owner-scoped idempotent longitudinal jobs over two equal 7-31 day
 periods. Journal/AI selects at most 50 active current revisions per period,
-persists the exact selected versions, rechecks `AI_PROCESSING` consent before
+persists the exact selected versions, rechecks effective L2 `AI_CONTEXT_PROCESSING` consent before
 provider execution, and uses the existing entitlement-aware single-provider
 route with one bounded retry. At least three entries per period and a maximum
 2:1 count ratio are required for a directional comparison; otherwise every
@@ -170,6 +237,21 @@ No Voice suggestions, catalogue, provider switch, storage or API change is added
 Source/fixture checks do not establish real-model tone quality; activation needs
 an approved live listening/evaluation window. Details are in
 [ADR 0049](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
+
+## Companion conversation eval (MB-845)
+
+The TEXT companion eval replays synthetic CC0 dataset v2 (core, crisis,
+hard-negative, suggestion and multi-turn venting scenarios) on the real route
+under owner-approved request and USD caps. It reports per-check pass rates,
+latency p50/p95 against the 10 s target, tokens, estimated cost, errors and
+run-to-run consistency, plus two labelled views with confusion matrix,
+precision, recall and F1: the crisis pointer (reply sends the user to Cần trợ
+giúp ngay and sets no suggestion) and resource suggestion, with destination
+accuracy. Deterministic follow-up-arc checks gate the caring-question arc; a
+same-model LLM judge scores it but never gates. The metric measures reply
+behaviour only; no runtime crisis classifier is added and AI still decides
+nothing about safety. Method, thresholds and before/after results:
+[MB-845 evidence](../story-mb-845-companion-eval.md).
 
 ## Story 6201 authoring decision
 

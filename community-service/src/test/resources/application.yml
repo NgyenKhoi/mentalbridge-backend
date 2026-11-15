@@ -1,4 +1,9 @@
 spring:
+  datasource:
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   application:
     name: community-service
   cloud:
@@ -11,6 +16,12 @@ spring:
     hibernate:
       # Same as main: entity mappings must match the Liquibase schema.
       ddl-auto: validate
+
+mentalbridge:
+  community:
+    chat-realtime:
+      public-key: ${REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY:}
+      key-id: ${REALTIME_COMMUNITY_DELEGATION_KEY_ID:}
 
 eureka:
   client:

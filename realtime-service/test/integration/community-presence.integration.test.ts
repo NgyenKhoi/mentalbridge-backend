@@ -12,6 +12,12 @@ describe('Community atomic foreground leases on real Redis', { concurrent: false
   let stopped = false;
   const subject = randomUUID();
   const expiry = () => Math.floor(Date.now() / 1000) + 300;
+  async function serverTimeMs(): Promise<number> {
+    return redis.execute(async (client) => {
+      const [seconds, microseconds] = await client.time();
+      return Number(seconds) * 1000 + Math.floor(Number(microseconds) / 1000);
+    });
+  }
   beforeAll(async () => {
     container = await new GenericContainer('redis:7.4-alpine')
       .withExposedPorts(6379)
@@ -46,18 +52,20 @@ describe('Community atomic foreground leases on real Redis', { concurrent: false
 
   it('uses server expiry and prunes crash/stale leases without cached ONLINE', async () => {
     await presence.heartbeat(subject, 'crashed-device', true, expiry());
+    const crashExpiresAt = (await serverTimeMs()) + 100;
     await redis.execute((client) =>
       client.zAdd('community:v1:presence:' + subject, {
-        score: Date.now() + 100,
+        score: crashExpiresAt,
         value: 'crashed-device',
       }),
     );
     await vi.waitFor(async () => {
       expect((await presence.states([subject]))[0]?.state).toBe('OFFLINE');
     });
+    const staleExpiresAt = (await serverTimeMs()) - 1;
     await redis.execute((client) =>
       client.zAdd('community:v1:presence:' + subject, {
-        score: Date.now() - 1,
+        score: staleExpiresAt,
         value: 'stale-device',
       }),
     );
@@ -92,8 +100,13 @@ describe('Community atomic foreground leases on real Redis', { concurrent: false
     await expect(presence.heartbeat(subject, 'expired', true, 1)).rejects.toMatchObject({
       code: 'UNAUTHENTICATED',
     });
-    await presence.heartbeat(subject, 'short-session', true, Math.floor(Date.now() / 1000) + 3);
-    expect((await presence.states([subject]))[0]?.expiresIn).toBeLessThanOrEqual(3000);
+    const identityExpiresAt = Math.floor((await serverTimeMs()) / 1000) + 3;
+    await presence.heartbeat(subject, 'short-session', true, identityExpiresAt);
+    const leaseExpiresAt = await redis.execute((client) =>
+      client.zScore('community:v1:presence:' + subject, 'short-session'),
+    );
+    expect(leaseExpiresAt).toBe(identityExpiresAt * 1000);
+    expect((await presence.states([subject]))[0]?.state).toBe('ONLINE');
   });
 
   it('returns UNKNOWN and rejects renewals after a real Redis failure', async () => {

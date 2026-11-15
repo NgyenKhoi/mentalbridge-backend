@@ -101,6 +101,19 @@ ADR 0027 adds Community as an independent Spring Boot/PostgreSQL bounded context
 
 Use REST/JSON DTOs for synchronous business APIs and service-to-service queries. Spring services register with Eureka and Java consumers use OpenFeign only as a REST client adapter; discovery does not change ownership, authorization, or OpenAPI contracts. WebSocket terminates only at Realtime Service for live client chat, presence, receipts, and in-app notifications. Kafka carries durable asynchronous commands/events only for accepted features that require independent consumers, fan-out, or replay; MB-367 analysis jobs remain local MongoDB work. Redis carries only ephemeral presence, connection routing, fan-out, rate-limit, delivery/idempotency, and expiring hashed OTP state; it is not a database-query cache or business source of truth.
 
+MB-800 adds live specialist appointment inbox invalidations through Content's
+transactional outbox, Kafka, Redis and Realtime's separately named
+`notification.created` event. Both `CONTENT_SPECIALIST_LIVE_RELAY_ENABLED` and
+`REALTIME_SPECIALIST_LIVE_ENABLED` default to `false`; the relay requires
+`KAFKA_BOOTSTRAP_SERVERS`, and Realtime requires the existing broker/Redis settings
+plus `CONTENT_NOTIFICATION_SERVICE_URL` and the bounded
+`CONTENT_NOTIFICATION_TIMEOUT_MS=2000` owner-read deadline. Content revalidates
+the socket's SPECIALIST owner before emission. REST inbox state and absolute
+unread counts repair missed signals; no browser receipt or replay is promised.
+See [the backend delivery boundary](docs/requirements-traceability/stories/mb-800.md)
+and each service README before configuring the flags. These settings do not
+enable native push or backfill historical notifications.
+
 ## Core flow
 
 ```text

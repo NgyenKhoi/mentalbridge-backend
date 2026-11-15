@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -141,6 +142,7 @@ class VoiceConsentServiceTests {
 				.thenReturn(Optional.of(decision("AI_VOICE_PROCESSING", VoiceConsentService.VERSION, false)));
 		assertThat(service.authorize(owner, UUID.randomUUID()).authorized()).isFalse();
 		assertThat(service.authorize(owner, UUID.randomUUID()).authorized()).isFalse();
+		verify(decisions, never()).findFirstByUserIdAndConsentTypeOrderByDecidedAtDescIdDesc(owner, "AI_CONTEXT_PROCESSING");
 	}
 
 	@Test

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -24,8 +25,7 @@ import com.mentalbridge.care.assessment.AssessmentService.AssessmentView;
 import com.mentalbridge.care.assessment.AssessmentService.HistoryPage;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService;
-import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.OccurrenceListView;
-import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.OccurrenceView;
+import com.mentalbridge.care.supportplan.SupportPlanActivityOccurrenceService.Outcome;
 
 class ActivityDashboardServiceTests {
 
@@ -42,9 +42,7 @@ class ActivityDashboardServiceTests {
 	void setUp() {
 		service = new ActivityDashboardService(assessments, occurrences, journal, consultation, clock);
 		when(assessments.history(any(), isNull(), anyInt())).thenReturn(new HistoryPage(List.of(), null, false));
-		when(occurrences.list(any(), any(), any())).thenReturn(
-				new OccurrenceListView(UUID.randomUUID(), "ACTIVE", "v1", LocalDate.parse("2026-09-01"),
-						LocalDate.parse("2026-09-30"), List.of(), "FACTUAL"));
+		when(occurrences.outcomes(any(), any(), any())).thenReturn(List.of());
 		when(journal.journals(any(), any(), anyInt())).thenReturn(
 				new JournalActivityHttpClient.JournalPage(List.of(), new JournalActivityHttpClient.Page(50, false)));
 		when(journal.emotions(any(), any(), anyInt())).thenReturn(
@@ -59,12 +57,9 @@ class ActivityDashboardServiceTests {
 				Instant.parse("2026-09-29T20:00:00Z"), null, null, null);
 		when(assessments.history(userId, null, 50)).thenReturn(new HistoryPage(List.of(assessment), null, false));
 
-		OccurrenceView completed = mock(OccurrenceView.class);
-		when(completed.state()).thenReturn("COMPLETED");
-		when(completed.completedAt()).thenReturn(Instant.parse("2026-09-28T03:00:00Z"));
-		when(occurrences.list(userId, LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-30")))
-				.thenReturn(new OccurrenceListView(UUID.randomUUID(), "ACTIVE", "v1",
-						LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-30"), List.of(completed), "FACTUAL"));
+		when(occurrences.outcomes(userId, Instant.parse("2026-08-31T17:00:00Z"),
+				Instant.parse("2026-09-30T17:00:00Z")))
+				.thenReturn(List.of(new Outcome("COMPLETED", Instant.parse("2026-09-28T03:00:00Z"))));
 
 		when(journal.journals(any(), any(), anyInt())).thenReturn(new JournalActivityHttpClient.JournalPage(
 				List.of(new JournalActivityHttpClient.JournalItem(UUID.randomUUID(),
@@ -105,7 +100,7 @@ class ActivityDashboardServiceTests {
 	@Test
 	void keepsDependencyFailuresSourceSpecificAndMissingPlanEmpty() {
 		when(journal.journals(any(), any(), anyInt())).thenThrow(new IllegalStateException("private failure"));
-		when(occurrences.list(any(), any(), any())).thenThrow(
+		when(occurrences.outcomes(any(), any(), any())).thenThrow(
 				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND", "No current plan"));
 
 		var result = service.dashboard(userId, "owner-token", ZoneId.of("Asia/Bangkok"), 30, correlationId);
@@ -133,5 +128,47 @@ class ActivityDashboardServiceTests {
 		assertThat(result.summary().assessmentSubmissions()).isEqualTo(1);
 		assertThat(result.summary().latestAssessmentInstrument()).isEqualTo("GAD7");
 		assertThat(result.bounded().windowDays()).isEqualTo(7);
+	}
+
+	@Test
+	void queriesNinetyDaysByLocalMidnightsAcrossDaylightSavingChange() {
+		var zone = ZoneId.of("America/New_York");
+		var dstClock = Clock.fixed(Instant.parse("2026-03-09T12:00:00Z"), ZoneOffset.UTC);
+		var dashboard = new ActivityDashboardService(assessments, occurrences, journal, consultation, dstClock);
+
+		var result = dashboard.dashboard(userId, "owner-token", zone, 90, correlationId);
+
+		verify(occurrences).outcomes(userId,
+				LocalDate.parse("2025-12-10").atStartOfDay(zone).toInstant(),
+				Instant.parse("2026-03-10T04:00:00Z"));
+		assertThat(result.daily()).hasSize(90);
+		assertThat(result.sources()).containsEntry("supportPlans", "empty");
+	}
+
+	@Test
+	void keepsGoodSourcesWhenPlanOutcomeReadFails() {
+		when(occurrences.outcomes(any(), any(), any())).thenThrow(new IllegalStateException("storage unavailable"));
+		when(journal.emotions(any(), any(), anyInt())).thenReturn(new JournalActivityHttpClient.EmotionPage(
+				List.of(new JournalActivityHttpClient.EmotionItem(UUID.randomUUID(), "GOOD",
+						Instant.parse("2026-09-30T03:00:00Z"))), new JournalActivityHttpClient.Page(90, false)));
+
+		var result = service.dashboard(userId, "owner-token", ZoneId.of("Asia/Bangkok"), 7, correlationId);
+
+		assertThat(result.partial()).isTrue();
+		assertThat(result.sources()).containsEntry("supportPlans", "unavailable")
+				.containsEntry("emotions", "available");
+		assertThat(result.summary().emotionCheckIns()).isEqualTo(1);
+	}
+
+	@Test
+	void malformedOutcomeDoesNotLeakEarlierPlanFactsIntoAnUnavailableSource() {
+		when(occurrences.outcomes(any(), any(), any())).thenReturn(List.of(
+				new Outcome("COMPLETED", Instant.parse("2026-09-30T03:00:00Z")),
+				new Outcome("SCHEDULED", null)));
+
+		var result = service.dashboard(userId, "owner-token", ZoneId.of("Asia/Bangkok"), 7, correlationId);
+
+		assertThat(result.sources()).containsEntry("supportPlans", "unavailable");
+		assertThat(result.summary().supportCompleted()).isZero();
 	}
 }

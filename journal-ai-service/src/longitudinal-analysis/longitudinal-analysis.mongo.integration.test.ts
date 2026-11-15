@@ -1,10 +1,11 @@
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { MongoClient } from "mongodb";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 
 import { createApplication } from "../application.js";
@@ -27,7 +28,7 @@ const migrations = [
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 void test("runs the bounded longitudinal owner and Care flow against migrated MongoDB", async () => {
-  const mongo = await MongoMemoryServer.create();
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   const client = new MongoClient(mongo.getUri());
   const databaseName = "longitudinal_mb371_integration";
   const database = client.db(databaseName);
@@ -112,11 +113,21 @@ void test("runs the bounded longitudinal owner and Care flow against migrated Mo
     tokenFor(ownerId),
     tokenFor(otherId),
   ]);
+  let contextGranted = true;
   const forwardedTokens: string[] = [];
   const consent: ConsentClient = {
+    snapshot: async function (bearer, correlationId) {
+      return aiConsentAuthorizationsFixture(
+        await this.check(bearer, correlationId),
+      );
+    },
     check: (bearer) => {
       forwardedTokens.push(bearer);
-      return Promise.resolve({ authorized: true, reason: "GRANTED" });
+      return Promise.resolve(
+        contextGranted
+          ? { authorized: true, reason: "GRANTED" }
+          : { authorized: false, reason: "MISSING" },
+      );
     },
   };
   const app = await createApplication(configuration, {
@@ -175,6 +186,22 @@ void test("runs the bounded longitudinal owner and Care flow against migrated Mo
       },
       excludedJournalIds: [journalIds[0], journalIds[4]],
     };
+    contextGranted = false;
+    const denied = await request(server)
+      .post("/api/v1/longitudinal-analysis-jobs")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .set("Idempotency-Key", "longitudinal-missing-l2-0001")
+      .send(comparison)
+      .expect(409);
+    assert.equal(
+      (denied.body as { code: string }).code,
+      "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    assert.equal(
+      await database.collection("longitudinal_analysis_jobs").countDocuments(),
+      0,
+    );
+    contextGranted = true;
     const accepted = await request(server)
       .post("/api/v1/longitudinal-analysis-jobs")
       .set("Authorization", `Bearer ${ownerToken}`)
@@ -258,6 +285,21 @@ void test("runs the bounded longitudinal owner and Care flow against migrated Mo
       .set("Authorization", `Bearer ${otherToken}`)
       .expect(404);
 
+    contextGranted = false;
+    const deniedProjection = await request(server)
+      .get(`/internal/v1/users/${ownerId}/longitudinal-analyses/${analysisId}`)
+      .query({ purpose: "REASSESSMENT_SUMMARY" })
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(403);
+    assert.equal(
+      (deniedProjection.body as { code: string }).code,
+      "AI_CONTEXT_CONSENT_REQUIRED",
+    );
+    await request(server)
+      .get(`/api/v1/longitudinal-analysis-jobs/${jobId}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    contextGranted = true;
     const storedJob = await database
       .collection<{ _id: string }>("longitudinal_analysis_jobs")
       .findOne({ _id: jobId });

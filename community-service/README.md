@@ -57,13 +57,15 @@ Realtime delegations; a public Identity USER bearer and unsigned actor headers
 cannot substitute. Results are no-store and current Identity eligibility is
 queried before local locking. See [Realtime Community integration](../realtime-service/COMMUNITY.md).
 
-Set `COMMUNITY_CHAT_REALTIME_ENABLED=true` only with the matching
+When `COMMUNITY_CHAT_ENABLED=true`, the internal Realtime JWT chain requires the matching
 `REALTIME_COMMUNITY_DELEGATION_PUBLIC_KEY` X.509 RSA PEM and
 `REALTIME_COMMUNITY_DELEGATION_KEY_ID`. The private signing key belongs only to
-Realtime. Disabled is the default; existing public chat APIs retain their normal
+Realtime. Existing public chat APIs retain their normal
 Identity USER authentication. There is no new database migration: the existing
 read watermark transaction adds a recipient-self `READ_STATE_CHANGED` outbox
 fact only on a real advance. Retry/out-of-order read acknowledgements add no fact.
+The service `.env.example` lists the public key and key ID; the retired
+`COMMUNITY_CHAT_RELAY_ENABLED` switch is no longer part of this configuration.
 
 MB-690 adds `POST /internal/v1/community/chat/presence-projections` under the
 conversation-bound `community:presence:project` scope. Its closed body contains
@@ -153,6 +155,9 @@ Copy `.env.example` to `.env` for local development. Real environment variables 
 | `EUREKA_DEFAULT_ZONE` | no | Eureka registry URL |
 
 Do not commit `.env`, credentials, private keys, media signatures, or delivery URLs.
+
+Video finalization requests Cloudinary `media_metadata` so the Admin API returns
+the verified duration required by the existing 60-second upload limit.
 
 ## Verify
 
@@ -250,7 +255,7 @@ rolls back capability while preserving purpose-bound evidence and encryption key
 | `COMMUNITY_CHAT_ENCRYPTION_KEY` | Required base64 32-byte AES-GCM/HMAC secret when enabled; supplied externally. |
 | `COMMUNITY_CHAT_ENCRYPTION_KEY_VERSION` | Stable non-secret key identifier, default v1; never reuse a version with another key. |
 | `COMMUNITY_CHAT_DECRYPTION_KEYS` | JSON object of retained version→base64 keys for ciphertext/cursor/retry rotation, default {} (at most ten prior versions). |
-| `COMMUNITY_CHAT_RELAY_ENABLED` | Independent opt-in publisher, default false; requires chat enabled and the provisioned topic. |
+| Chat outbox relay | Runs whenever `COMMUNITY_CHAT_ENABLED=true`; the provisioned topic carries live chat facts to Realtime. |
 | `COMMUNITY_CHAT_RELAY_BATCH_SIZE` | Maximum sequential claims per run, default 100, valid 1–500. |
 | `COMMUNITY_CHAT_RELAY_INTERVAL` | Fixed delay, default PT5S, valid 100 ms–1 hour. |
 
@@ -268,8 +273,31 @@ AES-GCM binds each ciphertext to its exact message/conversation/sender. Retain o
 
 ### Minimized fact relay and rollout
 
-`mentalbridge.community.chat.v1` is provisioned explicitly by Compose with three partitions and seven-day delete retention. Production provisioning must match the accepted schema and conversation UUID key before enabling `COMMUNITY_CHAT_RELAY_ENABLED`; broker auto-creation is not a rollout strategy. The relay claims one due row at a time with `SKIP LOCKED`, a ten-second lease and stale-attempt protection. Kafka calls run outside the database transaction, with `acks=all`, producer idempotence, 500 ms metadata blocking, one-second broker request timeout, three-second delivery timeout and four-second ACK wait. Failed attempts back off from one to thirty seconds. A broker outage never changes a successful owner save into a delivery claim.
+`mentalbridge.community.chat.v1` is provisioned explicitly by Compose with three partitions and seven-day delete retention. Production provisioning must match the accepted schema and conversation UUID key before enabling `COMMUNITY_CHAT_ENABLED`; broker auto-creation is not a rollout strategy. The relay claims one due row at a time with `SKIP LOCKED`, a ten-second lease and stale-attempt protection. Kafka calls run outside the database transaction, with `acks=all`, producer idempotence, 500 ms metadata blocking, one-second broker request timeout, three-second delivery timeout and four-second ACK wait. Failed attempts back off from one to thirty seconds. A broker outage never changes a successful owner save into a delivery claim.
 
 Publishing is at-least-once: a crash or timeout around ACK can replay the same envelope ID. Consumers must dedupe stable/logical identities and reauthorize each current recipient rather than treating a fact as a permission grant. No consumer, socket delivery, presence projection or notification materialization is installed by this story. Existing interaction publishing uses its own producer configuration. The chat producer disables payload-printing error listeners and logs only safe event ID/attempt metadata.
 
 Apply owner Liquibase migrations 0017/0018 before enabling the feature; canonical SQL is documentation only. Deploy Identity's dedicated eligibility provider first, provision the topic and install externally managed keys/credentials, then opt in the Community API and relay. Compose passes the eligibility credential only to Identity and Community, and encryption keys only to Community. Use TLS or a trusted private service network for the credential-bearing Identity call. A rollback disables API/relay flags and retains additive tables, ciphertext and key versions; do not drop durable messages or rewrite applied migrations. This change does not deploy to shared environments or invoke paid/external providers.
+
+## Reciprocal friendships and member pages
+
+Owner approval and rollout are recorded in [ADR 0051](../docs/adr/0051-community-friendships-and-member-pages.md).
+Set `COMMUNITY_FRIENDS_ENABLED=true` after migration 0024 and the compatible web
+consumer. The default false preserves prior chat admission. Accepted friendship
+admits new direct conversations and group invitations. Existing active threads
+and memberships continue independently of friendship removal. Member pages show
+only visible named Community publications. Search uses chosen Community names.
+
+The new six paths are in `contracts/openapi/community-social-v1.json`, referenced
+by canonical Community OpenAPI v1.16. Web consumers run
+`COMMUNITY_OPENAPI_SOURCE=<provider path> node scripts/community-contract.mjs --sync`
+and copy the adjacent social fragment before generation. No new Kafka fact,
+consumer, notification claim or provider credential is introduced by friendships.
+
+Private sharing groups are documented in ADR 0052 and the circles v1 OpenAPI
+sidecar. They are separate from chat groups and public posts, with invitation-
+only membership, member-only text publication/comments, owner management and
+archival. Deployment requires additive owner migration 0025 and the existing
+Community chat encryption key ring plus friendship/chat feature flags; no new
+provider credentials. Pages are bounded to 10 results. Web consumer:
+frontend/mentalbridge/ features/community, `/community/groups`.

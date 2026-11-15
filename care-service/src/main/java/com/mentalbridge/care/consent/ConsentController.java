@@ -41,6 +41,11 @@ public class ConsentController {
 		return AiProcessingAuthorization.from(consents.authorizeAiProcessing(subject(jwt)));
 	}
 
+	@GetMapping("/consents/ai-authorizations")
+	ConsentService.AiConsentAuthorizations authorizeAiPurposes(@AuthenticationPrincipal Jwt jwt) {
+		return consents.authorizeAiPurposes(subject(jwt));
+	}
+
 	@PostMapping("/consent-decisions")
 	ResponseEntity<ConsentDecisionResponse> record(@AuthenticationPrincipal Jwt jwt,
 			@RequestHeader("Idempotency-Key") @Size(min = 16, max = 128) @Pattern(regexp = "^[!-~]+$") String idempotencyKey,

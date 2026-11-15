@@ -5,6 +5,7 @@ import { VoiceProviderFailure } from "../llm-providers/voice-diagnostics.js";
 import {
   RoutedChatProvider,
   providerOutputJsonSchema,
+  voiceProviderOutputJsonSchema,
   type MinimizedContext,
 } from "./companion-chat.js";
 import {
@@ -278,7 +279,9 @@ void test("real provider request adapters share guidance and keep hostile data o
           user: request.user,
         });
         assert.ok(
-          request.system.includes(JSON.stringify(providerOutputJsonSchema)),
+          request.system.includes(
+            JSON.stringify(voiceProviderOutputJsonSchema),
+          ),
         );
       } else assertStructuredSchema(request.schema);
     }
@@ -402,33 +405,31 @@ void test("selected Text is quoted untrusted context only in the opted-in Voice 
   );
 });
 
-void test("v1 TEXT and every VOICE variant are unchanged, with or without the friend flag", () => {
+void test("v1 TEXT remains unchanged and every VOICE variant adds only expression guidance", () => {
   for (const friend of [undefined, false, true]) {
     const flag = friend === undefined ? {} : { friend };
-    assert.equal(
-      companionGuidanceSystem({ channel: "VOICE", ...flag }),
-      v1Guidance.VOICE,
-    );
-    assert.equal(
-      companionGuidanceSystem({ channel: "VOICE", textHandoff: true, ...flag }),
-      v1Guidance.VOICE_HANDOFF,
-    );
-    assert.equal(
-      companionGuidanceSystem({
-        channel: "VOICE",
-        replyStyle: "SUPPORTIVE",
-        ...flag,
-      }),
-      v1Guidance.VOICE_SUPPORTIVE,
-    );
-    assert.equal(
-      companionGuidanceSystem({
-        channel: "VOICE",
-        replyStyle: "BRIEF",
-        ...flag,
-      }),
-      v1Guidance.VOICE_BRIEF,
-    );
+    for (const [delivery, baseline] of [
+      [{ channel: "VOICE", ...flag }, v1Guidance.VOICE],
+      [
+        { channel: "VOICE", textHandoff: true, ...flag },
+        v1Guidance.VOICE_HANDOFF,
+      ],
+      [
+        { channel: "VOICE", replyStyle: "SUPPORTIVE", ...flag },
+        v1Guidance.VOICE_SUPPORTIVE,
+      ],
+      [
+        { channel: "VOICE", replyStyle: "BRIEF", ...flag },
+        v1Guidance.VOICE_BRIEF,
+      ],
+    ] as const) {
+      const current = companionGuidanceSystem(delivery);
+      assert.equal(current.startsWith(`${baseline}\n`), true);
+      assert.match(
+        current,
+        /Set expression to neutral or comfort for delivery only/u,
+      );
+    }
   }
   assert.equal(companionGuidanceSystem({ channel: "TEXT" }), v1Guidance.TEXT);
   assert.equal(
@@ -470,8 +471,8 @@ void test("friend guidance keeps links server-owned and suggestions to acceptanc
     /accepted your offer in the previous turn or directly asked/u,
   );
   assert.match(friend, /Never set suggestion on a crisis cue/u);
-  assert.match(friend, /Most replies end with a statement/u);
-  assert.match(friend, /never end a reply with a colon/u);
+  assert.match(friend, /end with a statement, not a question/u);
+  assert.match(friend, /Never end a reply with a colon/u);
   assert.match(friend, /Có gì giúp mình đỡ hơn không/u);
   assert.match(friend, /never “hôm trước”/u);
   assert.match(friend, /never use the straight double quote/u);
@@ -498,7 +499,27 @@ void test("friend guidance keeps links server-owned and suggestions to acceptanc
   assert.match(friend, /set it to exactly what you named/u);
   // The old "an offer never gets a button" line made the model drop the button on direct asks.
   assert.equal(friend.includes("never gets a button"), false);
-  assert.match(friend, /at most one reply in two asks one/u);
+  // MB-845: a caring follow-up arc replaced the "one reply in two asks" rule.
+  assert.equal(friend.includes("at most one reply in two asks one"), false);
+  assert.match(friend, /end with exactly one short follow-up question/u);
+  assert.match(friend, /never ask two questions in one reply/u);
+  assert.match(friend, /never repeat a question you already asked/u);
+  assert.match(friend, /Wrap up by the fourth reply at the latest/u);
+  assert.match(friend, /your third reply wraps up/u);
+  assert.match(friend, /A wrap-up has no question mark anywhere/u);
+  assert.match(
+    friend,
+    /After three question replies in a row, the next reply always wraps up/u,
+  );
+  assert.match(friend, /reflect what you understood/u);
+  assert.match(
+    friend,
+    /This overrides follow-up questions, advice and wrap-up/u,
+  );
+  assert.match(
+    friend,
+    /including a wrap-up that softly names a feature the user did not ask for/u,
+  );
   // Verbatim tone examples were copied into real replies; only the crisis reply stays fixed.
   assert.equal(friend.includes("Synthetic tone examples"), false);
   assert.match(friend, /never call a resource Nhật ký/u);
@@ -572,7 +593,7 @@ const captureBodies = async (
 };
 const plainReply = JSON.stringify(output("Mình đang lắng nghe nè."));
 
-void test("requests without the friend flag are byte-identical to today, and Voice ignores friend input", async () => {
+void test("Text requests remain byte-identical and Voice ignores friend input", async () => {
   for (const [key, provider] of [
     ["GEMINI_TEXT", "GEMINI"],
     ["OPENAI_TEXT", "OPENAI"],
@@ -581,16 +602,18 @@ void test("requests without the friend flag are byte-identical to today, and Voi
     const { bodies } = await captureBodies(provider, plainReply, {});
     assert.deepEqual(bodies, [v1ProviderBodies[key]], key);
   }
-  for (const [key, replyStyle] of [
-    ["BEDROCK_VOICE_BRIEF", "BRIEF"],
-    ["BEDROCK_VOICE_SUPPORTIVE", "SUPPORTIVE"],
-  ] as const) {
+  for (const replyStyle of ["BRIEF", "SUPPORTIVE"] as const) {
+    const baseline = await captureBodies("BEDROCK", plainReply, {
+      voice: true,
+      replyStyle,
+    });
     const { bodies } = await captureBodies("BEDROCK", plainReply, {
       voice: true,
       replyStyle,
       friend: friendInput,
     });
-    assert.deepEqual(bodies, [v1ProviderBodies[key]], key);
+    assert.deepEqual(bodies, baseline.bodies, replyStyle);
+    assert.match(bodies[0] ?? "", /expression/u);
   }
 });
 

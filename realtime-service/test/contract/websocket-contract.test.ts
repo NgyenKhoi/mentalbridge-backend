@@ -177,6 +177,8 @@ describe('WebSocket v1 contracts', () => {
           type: 'TEXT',
           content: 'Synthetic contract message',
           sentAt: '2026-09-04T12:00:01Z',
+          state: 'VISIBLE',
+          deletedAt: null,
           schemaVersion: 1,
         },
       }),

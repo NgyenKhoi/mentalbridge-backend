@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 
 import com.cloudinary.Cloudinary;
+import com.zaxxer.hikari.HikariDataSource;
 import com.mentalbridge.community.configuration.CloudinaryProperties;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -38,6 +39,9 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 
 	@Autowired
 	private JdbcClient jdbc;
+	@Autowired
+	private HikariDataSource dataSource;
+
 
 	@Autowired
 	private MockMvc mvc;
@@ -55,6 +59,13 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 	void contextLoadsWithTypedCloudinaryConfiguration() {
 		assertThat(cloudinary).isNotNull();
 		assertThat(cloudinaryProperties.cloudName()).isEqualTo("test-cloud");
+	}
+
+	@Test
+	void postgresConnectionsBoundIdleTransactionsAndKeepAlive() {
+		assertThat(jdbc.sql("select current_setting('idle_in_transaction_session_timeout')")
+				.query(String.class).single()).isEqualTo("30s");
+		assertThat(dataSource.getDataSourceProperties().getProperty("tcpKeepAlive")).isEqualTo("true");
 	}
 
 	@Test
@@ -77,11 +88,14 @@ class CommunityServiceApplicationTests extends CommunityTestProperties {
 				"0012-community-topic-governance", "0013-community-resource-attachment",
 				"0014-community-sensitive-content-warning", "0015-community-saved-post-ordering",
 				"0016-community-profile-avatar", "0017-community-direct-chat", "0018-community-chat-messages", "0019-community-private-groups", "0020-community-chat-report-intake", "0021-community-comment-reactions",
-				"0022-community-chat-message-retraction", "0023-community-chat-personal-clear");
+				"0022-community-chat-message-retraction", "0023-community-chat-personal-clear",
+				"0024-community-friendships", "0025-community-sharing-circles");
 		assertThat(businessTables).containsExactly("community_access_restriction", "community_block",
 				"community_chat_command", "community_chat_conversation", "community_chat_invitation", "community_chat_membership", "community_chat_message", "community_chat_outbox",
 				"community_chat_privacy", "community_chat_read_state", "community_chat_report_case", "community_chat_request",
+				"community_circle", "community_circle_entry", "community_circle_member",
 				"community_comment", "community_comment_reaction", "community_comment_revision", "community_content_hide",
+				"community_friendship",
 				"community_interaction_outbox", "community_media", "community_moderation_action",
 				"community_moderation_case", "community_post",
 				"community_post_bookmark", "community_post_reaction", "community_post_topic", "community_profile",

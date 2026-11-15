@@ -120,3 +120,51 @@ Real payment/payout remains VND, with approved price, `creditAllocation`, creden
 - Users may keep an admissible familiar SupportPlan when evidence changes, while Care still prevents continuation of a plan that is no longer admissible.
 - `PLUS` supports four consultations per paid period and `PREMIUM` ten, while reservation caps prevent excessive slot hoarding.
 - Old `0/1/3` credit periods and pre-amendment ReassessmentSummary records remain truthful historical data.
+
+## MB-808 reassessment checklist amendment — 2026-11-06
+
+The owner approved the eight-code Vietnamese catalog and deterministic resource
+map in `mb-808-catalog-draft.md` as written on 2026-11-06, including the five
+existing resource IDs, exact slot restrictions, two evidence-only items and
+physical-symptom exclusions. The accepted bundle is
+`reassessment-symptoms-v1` / `reassessment-symptom-resource-map-v1`.
+Care retains this immutable bundle and publishes a new revision for any code,
+label or mapping change; released revisions and historical snapshots remain
+unchanged. This product approval does not replace production clinical, legal,
+licensing or current Content publication/eligibility approval.
+
+The optional closed checklist supplements the fourth independent reassessment
+dimension. It is explicitly user-authored for the report's exact period, never
+inferred from Journal, screening, engagement or an omitted/empty selection.
+It produces no diagnosis, severity, total, recovery score or clinical verdict.
+Absent and explicitly empty selections do not assert absence of symptoms.
+Breathlessness, chest pain, fainting/loss of consciousness, headache/body pain
+and medical-triage/advice copy are excluded from this checklist.
+
+Approved mappings create candidate reasons only: sleep → resource `...207`,
+low energy/low mood → `...208`, persistent worry → `...211`, concentration
+difficulty → `...203`, and stress overload → `...209`; all resource UUIDs have
+prefix `00000000-0000-4000-8000-000000000`. Appetite change and social withdrawal
+remain self-report evidence without an approved resource. Exact labels, codes
+and slot rules are recorded in the
+[policy v2 amendment](../policies/support-plan-policy-v2.md#mb-808-reassessment-checklist-amendment--2026-11-06)
+and the Care contract. Content alone decides latest exact-version eligibility;
+seed review confers no runtime right and older approved versions are never a
+fallback for an ineligible current version.
+
+New mapped options apply only to `NATIVE_V3`, inside existing compatible slots,
+with existing resource/option bounds and CORE/PRIMARY requirements. They never
+add slots or promote ADJUNCT to CORE. V2 reports and snapshots may retain
+checklist evidence, but v2 plan replacement behavior and the labelled adapter
+remain compatible without a checklist mapping extension or conversion.
+
+Care snapshots codes, catalog/map revisions and candidate reasons with the
+exact report/revision/period in new immutable summaries. Only an admitted,
+user-confirmed native draft persists accepted exact mapping provenance.
+Review fingerprints bind this evidence and reasons; both explicit confirmation
+stages recheck current local source/deletion/latest-summary identity under the
+owner lock after remote checks. Exact ledger replay precedes mutable evidence
+validation. Checklist-bound drafts require adaptive-review confirmation rather
+than direct activation/replacement. No automatic plan change, consent change,
+AI composition, displayed/declined-review database or private-source disclosure
+is introduced.

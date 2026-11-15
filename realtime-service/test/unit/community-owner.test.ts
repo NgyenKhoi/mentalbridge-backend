@@ -69,8 +69,17 @@ describe('Community current-owner client', () => {
       client.subscribe(communityBob, communityConversation, randomUUID()),
     ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
   });
-  it('requires enabled feature credentials and closes actor injection and poison facts', () => {
-    expect(() => communityConfiguration({ REALTIME_COMMUNITY_ENABLED: 'true' })).toThrow();
+  it('requires Community credentials without an enable flag and closes actor injection and poison facts', () => {
+    expect(() => communityConfiguration()).toThrow();
+    expect(
+      communityConfiguration({
+        REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: 'test-private',
+        REALTIME_COMMUNITY_DELEGATION_KEY_ID: 'test-delegation',
+        REALTIME_COMMUNITY_BFF_PUBLIC_KEY: 'test-public',
+        REALTIME_COMMUNITY_BFF_KEY_ID: 'test-bff',
+        KAFKA_BOOTSTRAP_SERVERS: 'broker.test:9092',
+      }),
+    ).not.toHaveProperty('enabled');
     const command = {
       schemaVersion: 1,
       commandId: randomUUID(),

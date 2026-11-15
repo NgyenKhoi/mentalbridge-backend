@@ -71,6 +71,19 @@ public class SupportPlanActivityOccurrenceService {
 						new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
 	}
 
+	@Transactional(readOnly = true)
+	public List<Outcome> outcomes(UUID userId, Instant from, Instant to) {
+		var plan = plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED")).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_CURRENT_NOT_FOUND",
+						"Current SupportPlan was not found"));
+		return occurrences.findOutcomes(plan.id(), userId, from, to).stream()
+				.map(value -> new Outcome(value.getState(), "COMPLETED".equals(value.getState())
+						? value.getCompletedAt() : value.getSkippedAt()))
+				.toList();
+	}
+
+	public record Outcome(String state, Instant recordedAt) { }
+
 	@Transactional
 	void activateUserDraft(SupportPlanEntity plan, Instant now) {
 		assertCurrentPersonalization(plan);
@@ -591,11 +604,25 @@ public class SupportPlanActivityOccurrenceService {
 		rescheduleCycleReview(plan, now, true);
 	}
 
-	private void rescheduleCycleReview(SupportPlanEntity plan, Instant now, boolean continuation) {
-		var action = actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId()).stream()
+	@Transactional
+	void fulfillDueCycleReview(SupportPlanEntity plan, Instant now) {
+		var cycle = SupportPlanCycle.view(plan, now);
+		if (cycle == null || !"REVIEW_DUE".equals(cycle.state())) return;
+		schedules.findBySupportPlanIdAndSourceActionIdOrderByScheduleVersionDesc(plan.id(), cycleReviewAction(plan).id())
+				.stream().filter(value -> !"ENDED".equals(value.status())).findFirst()
+				.ifPresent(schedule -> occurrences.fulfillOpenCycleReview(schedule.id(),
+						plan.id() + ":" + cycle.cycleNumber(), now));
+	}
+
+	private PlanActionEntity cycleReviewAction(SupportPlanEntity plan) {
+		return actions.findBySupportPlanIdAndUserIdOrderByPlanFocusIdAscOrdinalAsc(plan.id(), plan.userId()).stream()
 				.filter(value -> "REASSESSMENT_SCREENING".equals(value.actionType()) && "ACTIVE".equals(value.status()))
 				.findFirst().orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_POLICY_STALE",
 						"The proposal reassessment action is unavailable"));
+	}
+
+	private void rescheduleCycleReview(SupportPlanEntity plan, Instant now, boolean continuation) {
+		var action = cycleReviewAction(plan);
 		var history = schedules.findBySupportPlanIdAndSourceActionIdOrderByScheduleVersionDesc(plan.id(), action.id());
 		var previous = history.stream().filter(value -> !"ENDED".equals(value.status())).findFirst().orElse(null);
 		LocalDate due = SupportPlanCycle.view(plan, now).reviewDueOn();
@@ -603,7 +630,11 @@ public class SupportPlanActivityOccurrenceService {
 		if (previous != null) {
 			previous.end(previous.effectiveFrom().minusDays(1), now);
 			schedules.flush();
-			occurrences.cancelOpenCycleReview(previous.id(), now);
+			if (continuation) {
+				occurrences.fulfillOpenCycleReview(previous.id(), plan.id() + ":" + (plan.cycleNumber() - 1), now);
+			} else {
+				occurrences.cancelOpenCycleReview(previous.id(), now);
+			}
 		}
 		int version = history.stream().mapToInt(SupportPlanActivityScheduleEntity::scheduleVersion).max().orElse(0) + 1;
 		// Keep the user's own MB-640 choices for the review reminder; only the date moves.

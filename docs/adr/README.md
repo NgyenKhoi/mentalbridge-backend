@@ -1,8 +1,12 @@
 # MentalBridge ADR register
 
+- [0052 — Private Community sharing groups](0052-private-community-sharing-groups.md), owner-approved 2026-11-07.
+
 Use ADR **filename + Decision ID**, not numeric prefix alone, when a reference could be ambiguous.
 
 ## Current product-scope chain
+
+- [0051 — Community friendships and member pages](0051-community-friendships-and-member-pages.md), accepted owner amendment on 2026-11-06.
 
 MB-684 accepted [0042-community-chat-contract.md](0042-community-chat-contract.md)
 (`MB-COMMUNITY-CHAT-001`) in merged PR #206. It scopes Community-owned private
@@ -42,6 +46,7 @@ still planned. Native-only credential ingress is the scoped
 | [0046-ai-voice-companion-contract.md](0046-ai-voice-companion-contract.md) | `MB-AI-VOICE-COMPANION-001` | Accepted target for MB-755; runtime not implemented | AI Companion voice, independent finite quotas, Care dual consent, ephemeral content, isolated LiveKit agents and planned owner/worker contracts |
 | [0047-payos-active-gateway-momo-dormant.md](0047-payos-active-gateway-momo-dormant.md) | `MB-PAYOS-PAYIN-001`; `MB-PAYOS-PAYOUT-001` and `MB-STAGING-DEMO-PAYOUT-001` amendments 2026-11-04 | Accepted by owner | PayOS staging-only collect and separately gated bank payout; exact manual admin confirmation and authenticated reconciliation; explicit verified-funded demo exception; legacy synthetic earnings non-redeemable and production blocked |
 | [0049-ai-companion-friend-voice-and-suggestions.md](0049-ai-companion-friend-voice-and-suggestions.md) | `MB-AI-COMPANION-FRIEND-001` | Accepted for MB-791 implementation; flag off until owner sign-off | TEXT friend voice, same-conversation memory, non-personal Resource catalogue, closed-enum server-resolved suggestion with encrypted persistence, per-plan token budget |
+| [0050-two-level-ai-consent.md](0050-two-level-ai-consent.md) | `MB-TWO-LEVEL-AI-CONSENT-001` | Accepted by owner for MB-806, 2026-11-06 | Existing current AI_PROCESSING grants become L1 only; independent dependent L2 gates personal sources, analysis and accompaniment, without backfill |
 
 For clauses explicitly amended by ADR 0022, ADR 0024, ADR 0034, or [0043-plan-scoped-resource-progress.md](0043-plan-scoped-resource-progress.md), the relevant
 latest amendment is the current prospective authority. Historical records keep

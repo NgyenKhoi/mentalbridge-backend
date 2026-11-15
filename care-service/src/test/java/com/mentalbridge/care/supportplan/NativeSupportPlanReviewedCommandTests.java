@@ -68,6 +68,21 @@ class NativeSupportPlanReviewedCommandTests {
 		verifyNoInteractions(profiles, activities);
 	}
 
+	@Test
+	void checklistDraftCannotBypassAdaptiveConfirmationThroughDirectWriterCommands() {
+		var draft = draft();
+		when(draft.modelVersion()).thenReturn(3);
+		when(draft.planPolicyVersion()).thenReturn(NativeSupportPlanWriter.PROPOSAL_POLICY);
+		when(draft.status()).thenReturn("DRAFT");
+		when(draft.checklistProvenance()).thenReturn(mock(ReassessmentSymptomMapping.class));
+		when(plans.findByIdAndUserIdForUpdate(draft.id(), userId)).thenReturn(Optional.of(draft));
+		assertConflict(() -> writer.activate(userId, draft.id(), 0, key, hash, null, UUID.randomUUID(), NOW), "ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+		assertConflict(() -> writer.replace(userId, draft.id(), 0, planId, 0, UUID.randomUUID(),
+				"CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE", key, hash, null, UUID.randomUUID(), NOW), "ADAPTIVE_REVIEW_CONFIRM_REQUIRED");
+		verifyNoInteractions(activities);
+		verify(plans, never()).saveAndFlush(any());
+	}
+
 	@ParameterizedTest
 	@ValueSource(booleans = {false, true})
 	void onlyGuardedReviewedReplacementUsesReviewedActivityActivation(boolean reviewed) {
@@ -88,7 +103,9 @@ class NativeSupportPlanReviewedCommandTests {
 					"CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE", key, hash, evidence, UUID.randomUUID(), NOW, guard);
 			var order = inOrder(guard, current, activities);
 			order.verify(guard).run();
+			order.verify(activities).fulfillDueCycleReview(current, NOW);
 			order.verify(current).supersede(NOW);
+			order.verify(activities).end(planId, "PLAN_REPLACED", NOW);
 			order.verify(activities).activateReviewedDraft(draft, NOW);
 			verify(activities, never()).activateUserDraft(any(), any());
 		}
@@ -97,6 +114,7 @@ class NativeSupportPlanReviewedCommandTests {
 					"CURRENT_PLAN_VALID_ALTERNATIVES_AVAILABLE", key, hash, evidence, UUID.randomUUID(), NOW);
 			verify(activities).activateUserDraft(draft, NOW);
 			verify(activities, never()).activateReviewedDraft(any(), any());
+			verify(activities, never()).fulfillDueCycleReview(any(), any());
 			verifyNoInteractions(guard);
 		}
 	}

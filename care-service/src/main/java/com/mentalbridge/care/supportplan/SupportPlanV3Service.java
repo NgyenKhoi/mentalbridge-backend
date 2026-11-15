@@ -64,7 +64,7 @@ public class SupportPlanV3Service {
 	@Transactional
 	public PlanResourceActionsView resourceActions(UUID userId, LocalDate localDate) {
 		var current = plans.findByUserIdAndStatusInForUpdate(userId, List.of("ACTIVE", "PAUSED"));
-		if (current.isEmpty()) return new PlanResourceActionsView("NONE", null, null, null, null, localDate, List.of());
+		if (current.isEmpty()) return new PlanResourceActionsView("NONE", null, null, null, null, null, null, localDate, List.of());
 		var plan = current.get();
 		Map<String, SupportPlanActivityOccurrenceEntity> today = new java.util.HashMap<>();
 		if (plan.modelVersion() == 3) {
@@ -86,8 +86,17 @@ public class SupportPlanV3Service {
 							new PlanResourceReferenceView(UUID.fromString(source.sourceId()), source.sourceRevision(), source.publicationId()),
 							scheduled, occurrence == null ? null : resourceToday(occurrence));
 				}).toList();
+		var targetDomains = families.findBySupportPlanIdOrderByOrdinal(plan.id()).stream()
+				.map(SupportPlanTemplateFamilyEntity::targetDomain).distinct().toList();
+		String timeZone = activities.planTimezone(plan);
 		return new PlanResourceActionsView(plan.status(), plan.id(), plan.version(), representation(plan),
-				activities.planTimezone(plan), localDate, values);
+				timeZone, targetDomains.isEmpty() ? null : targetDomains, periodStartedAt(plan, timeZone), localDate, values);
+	}
+
+	private static Instant periodStartedAt(SupportPlanEntity plan, String timeZone) {
+		if (plan.activatedAt() == null || plan.cycleStartedOn() == null) return plan.activatedAt();
+		Instant cycleStart = plan.cycleStartedOn().atStartOfDay(ZoneId.of(timeZone)).toInstant();
+		return cycleStart.isAfter(plan.activatedAt()) ? cycleStart : plan.activatedAt();
 	}
 
 	private PlanResourceTodayView resourceToday(SupportPlanActivityOccurrenceEntity occurrence) {
@@ -192,7 +201,7 @@ public class SupportPlanV3Service {
 		return new SupportPlanV3View(plan.id(), 3, policyVersion, representation(plan), plan.status(), plan.version(), safety, values,
 				plan.createdAt(), plan.updatedAt(), plan.activatedAt(), plan.completedAt(), plan.completionReason(),
 				plan.supersededAt(), plan.discardedAt(), "WELLBEING_SUPPORT_NOT_TREATMENT",
-				SupportPlanService.disclaimer(), SupportPlanCycle.view(plan, clock.instant()));
+				SupportPlanService.disclaimer(), SupportPlanCycle.view(plan, clock.instant()), plan.checklistProvenance());
 	}
 
 	private List<PlanFocusView> adaptedFocuses(SupportPlanEntity plan) {
@@ -391,6 +400,8 @@ public class SupportPlanV3Service {
 			@JsonInclude(JsonInclude.Include.NON_NULL) Long supportPlanVersion,
 			@JsonInclude(JsonInclude.Include.NON_NULL) String representationMode,
 			@JsonInclude(JsonInclude.Include.NON_NULL) String timeZone,
+			@JsonInclude(JsonInclude.Include.NON_NULL) List<String> targetDomains,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Instant activatedAt,
 			LocalDate localDate, List<PlanResourceActionView> actions) { }
 	public record PlanResourceActionView(String actionId, long actionVersion, String title,
 			PlanResourceReferenceView resource, ActionScheduleView schedule, PlanResourceTodayView today) { }
@@ -406,7 +417,16 @@ public class SupportPlanV3Service {
 			String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
 			Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,
 			Instant discardedAt, String disclaimerCode, String disclaimer,
-			@JsonInclude(JsonInclude.Include.NON_NULL) SupportPlanCycle.View cycle) { }
+			@JsonInclude(JsonInclude.Include.NON_NULL) SupportPlanCycle.View cycle,
+			@JsonInclude(JsonInclude.Include.NON_NULL) ReassessmentSymptomMapping symptomMapping) {
+		public SupportPlanV3View(UUID supportPlanId, int modelVersion, String planPolicyVersion, String representationMode,
+				String status, long version, SafetyView safety, List<PlanFocusView> focuses, Instant createdAt, Instant updatedAt,
+				Instant activatedAt, Instant completedAt, String completionReason, Instant supersededAt,
+				Instant discardedAt, String disclaimerCode, String disclaimer, SupportPlanCycle.View cycle) {
+			this(supportPlanId, modelVersion, planPolicyVersion, representationMode, status, version, safety, focuses, createdAt,
+					updatedAt, activatedAt, completedAt, completionReason, supersededAt, discardedAt, disclaimerCode, disclaimer, cycle, null);
+		}
+	}
 	public record SafetyView(String status, String reasonCode, String policyVersion,
 			String guidanceCode, String guidance) { }
 	public record PlanFocusView(String focusId, String title, String rationale,

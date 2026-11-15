@@ -1,11 +1,56 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Community API
-  version: 1.15.0
+  version: 1.17.0
   description: Privacy-isolated peer-support Community Contract v1.11. Feed and saved-post ordering never use Care, Journal, emotion, SupportPlan, inferred severity, or AI data. Optional owner-selected uploaded avatars use verified Community media only and never expose anonymous/deleted identity. MB-616 adds an owner-private newest-saved query over the bookmark facts delivered by MB-579; inaccessible posts fail closed and bookmark state never becomes a recommendation profile. MB-745 adds sender-only message retraction with content-free tombstones at the original message identity and position. MB-746 adds an idempotent per-user conversation cutoff that never deletes another participant's history.
 servers:
   - url: http://localhost:8084
 paths:
+  /api/v1/community/circles:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles'
+  /api/v1/community/circles/{circleId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D'
+  /api/v1/community/circles/{circleId}/invitations:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1invitations'
+  /api/v1/community/circles/{circleId}/decision:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1decision'
+  /api/v1/community/circles/{circleId}/members/{profileId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1members~1%7BprofileId%7D'
+  /api/v1/community/circles/{circleId}/posts:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1posts'
+  /api/v1/community/circles/{circleId}/posts/{entryId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1posts~1%7BentryId%7D'
+  /api/v1/community/circles/{circleId}/posts/{entryId}/comments:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1posts~1%7BentryId%7D~1comments'
+  /api/v1/community/circles/{circleId}/comments/{entryId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-circles-v1.json#/paths/~1api~1v1~1community~1circles~1%7BcircleId%7D~1comments~1%7BentryId%7D'
+  /api/v1/community/chat/friends:
+    x-mentalbridge-status: implemented
+    $ref: './community-social-v1.json#/paths/~1api~1v1~1community~1chat~1friends'
+  /api/v1/community/chat/friends/{profileId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-social-v1.json#/paths/~1api~1v1~1community~1chat~1friends~1%7BprofileId%7D'
+  /api/v1/community/chat/friendships/{friendshipId}/accept:
+    x-mentalbridge-status: implemented
+    $ref: './community-social-v1.json#/paths/~1api~1v1~1community~1chat~1friendships~1%7BfriendshipId%7D~1accept'
+  /api/v1/community/chat/friendships/{friendshipId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-social-v1.json#/paths/~1api~1v1~1community~1chat~1friendships~1%7BfriendshipId%7D'
+  /api/v1/community/members:
+    x-mentalbridge-status: implemented
+    $ref: './community-social-v1.json#/paths/~1api~1v1~1community~1members'
+  /api/v1/community/members/{profileId}:
+    x-mentalbridge-status: implemented
+    $ref: './community-social-v1.json#/paths/~1api~1v1~1community~1members~1%7BprofileId%7D'
   /api/v1/community/comments/{commentId}/reaction:
     x-mentalbridge-status: implemented
     $ref: './community-comment-reaction-v1.json#/paths/~1api~1v1~1community~1comments~1%7BcommentId%7D~1reaction'
@@ -732,6 +777,38 @@ components:
       required: true
       schema: { type: string, pattern: '^"(0|[1-9]\d*)"$' }
   schemas:
+    CommunityCircle:
+      $ref: './community-circles-v1.json#/components/schemas/CommunityCircle'
+    CommunityCircleMember:
+      $ref: './community-circles-v1.json#/components/schemas/CommunityCircleMember'
+    CommunityCircleDetail:
+      $ref: './community-circles-v1.json#/components/schemas/CommunityCircleDetail'
+    CommunityCircleEntry:
+      $ref: './community-circles-v1.json#/components/schemas/CommunityCircleEntry'
+    CommunityCircleEntryPage:
+      $ref: './community-circles-v1.json#/components/schemas/CommunityCircleEntryPage'
+    CommunityCirclePage:
+      $ref: './community-circles-v1.json#/components/schemas/CommunityCirclePage'
+    CreateCommunityCircle:
+      $ref: './community-circles-v1.json#/components/schemas/CreateCommunityCircle'
+    WriteCommunityCircleEntry:
+      $ref: './community-circles-v1.json#/components/schemas/WriteCommunityCircleEntry'
+    InviteCommunityCircleMember:
+      $ref: './community-circles-v1.json#/components/schemas/InviteCommunityCircleMember'
+    DecideCommunityCircleInvitation:
+      $ref: './community-circles-v1.json#/components/schemas/DecideCommunityCircleInvitation'
+    CommunityMemberIdentity:
+      $ref: './community-social-v1.json#/components/schemas/CommunityMemberIdentity'
+    CommunityFriendshipState:
+      $ref: './community-social-v1.json#/components/schemas/CommunityFriendshipState'
+    CommunityFriendship:
+      $ref: './community-social-v1.json#/components/schemas/CommunityFriendship'
+    CommunityFriendshipPage:
+      $ref: './community-social-v1.json#/components/schemas/CommunityFriendshipPage'
+    CommunityMemberProfile:
+      $ref: './community-social-v1.json#/components/schemas/CommunityMemberProfile'
+    CommunityMemberPage:
+      $ref: './community-social-v1.json#/components/schemas/CommunityMemberPage'
     CommunityTopicCode:
       type: string
       enum: [MY_STORY, SMALL_MILESTONE, HELPFUL_REFLECTION, PEER_QUESTION, EXPERIENCE_SHARING, HELPFUL_RESOURCE]

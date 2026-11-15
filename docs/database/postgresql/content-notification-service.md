@@ -8,6 +8,50 @@ Original owner/conceptual section labels and section-specific status notes are r
 
 [All PostgreSQL owners](../postgresql-field-data-dictionary.md)
 
+## Specialist inbox live outbox (MB-800)
+
+Migration `31_add_specialist_notification_live_outbox.sql` adds the Content-owned
+`public.specialist_notification_live_outbox`. Only a newly inserted eligible
+specialist appointment inbox row enqueues, in that row's existing transaction.
+There is no history scan or legacy-recipient inference. The local notification
+foreign key cascades only upon deliberate owner hard deletion; ordinary inbox
+deletion remains soft. This ledger proves Kafka handoff, never browser receipt.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable opaque event UUID used unchanged as Kafka `messageId` and the socket event identity on every retry. |
+| `notification_id` | Unique local notification foreign key and aggregate/Kafka key; one creation event per newly committed logical inbox item. |
+| `recipient_account_id` | Immutable external Identity specialist account UUID captured from the owner inbox row; routing metadata, never authorization by itself. |
+| `recipient_role` | Immutable literal `SPECIALIST`; prevents routing this feature to another role. |
+| `aggregate_version` | Non-negative notification version captured at creation, currently zero; later read/delete mutations never rewrite the event. |
+| `correlation_id` | Immutable source correlation UUID grouping safe diagnostics. |
+| `causation_id` | Immutable source appointment event message UUID identifying the intake that first created this inbox row. |
+| `occurred_at` | Immutable database UTC inbox `created_at`, rather than source appointment time or retry time. |
+| `expires_at` | Immutable UTC inbox retention deadline captured at creation; the relay also checks current owner expiry. |
+| `state` | Content relay lifecycle: `PENDING`, terminal Kafka-ACKed `PUBLISHED`, current-ineligibility `SUPPRESSED`, or exhausted `FAILED`. Inbox `DELIVERED` keeps its original meaning. |
+| `attempt_count` | Bounded 0–5 claim/attempt counter; a crashed worker consumes an attempt so abandoned fifth claims cannot retry forever. |
+| `next_attempt_at` | Nullable UTC retry deadline; present only while pending. Backoff is 1/5/30/60 seconds and never extends inbox expiry. |
+| `claim_token` | Nullable random fencing UUID for one worker lease; every terminal/retry update must match it and an unexpired lease. |
+| `claim_until` | Nullable UTC end of the 30-second lease, paired with the token; expired claims become recoverable. |
+| `published_at` | Nullable database UTC time recorded only after Kafka `acks=all`; present exactly for `PUBLISHED`, with no client ACK implication. |
+| `last_error_code` | Optional bounded code `NOT_ELIGIBLE`, `PUBLISH_UNAVAILABLE`, or `CLAIM_EXHAUSTED`; never exception text, payload, bearer or content. |
+| `created_at` | Immutable database UTC insertion instant retained for ledger diagnostics. |
+
+An immutable-identity trigger protects the event and occurrence fields.
+The pending partial index supports ordered bounded claim scans; short transactions
+use `FOR UPDATE SKIP LOCKED`, then finish before Kafka I/O. Relay workers claim one
+row at a time, at most 20 per tick, so later rows do not consume their leases while
+earlier rows wait for Kafka. Expired fifth claims become observable `FAILED` rows.
+Kafka ACK followed by process loss may repeat the same event UUID. Current
+SPECIALIST ownership, appointment/source, delivery/deletion/expiry and locked
+preference decisions remain Content authority; Redis/socket state is ephemeral.
+
+`GET /internal/v1/notifications/{notificationId}/live-eligibility` derives the
+owner from verified Identity `sub`, admits SPECIALIST role, and returns only the
+currently eligible ID. Foreign/absent/suppressed rows have the same 404. It does
+not create preferences or mutate the ledger. Eligibility holds at the owner
+query; concurrent state changes are reconciled by current inbox REST reads.
+
 ## Conceptual owner `content` (`mentalbridge_content_notification.public`)
 
 ### `content.resource`

@@ -43,9 +43,12 @@ export interface VoiceReply {
   replyId: string;
   language: "vi-VN";
   spokenText: string;
+  expression?: "neutral" | "comfort";
   expiresAt: string;
   policyVersion: "companion-voice-policy-v1";
 }
+const expressionSchema = z.enum(["neutral", "comfort"]);
+export const voiceExpressionCapability = "expression";
 interface Pair {
   user: string;
   assistant: string;
@@ -349,6 +352,19 @@ export class VoiceTurnService {
       ]);
       if (this.isAborted(requestSignal))
         throw new VoiceLedgerError("SESSION_EXPIRED");
+      const dispatch = await this.sessions.authorizeTurn(
+        id,
+        input.attemptId,
+        input.leaseId,
+        correlationId,
+      );
+      if (
+        this.digest(
+          JSON.stringify(this.route(dispatch.entitlement.packageCode)),
+        ) !== routeHash ||
+        this.isAborted(requestSignal)
+      )
+        throw new VoiceMediaError();
       let rejectAbort: () => void = () => undefined;
       const cancelled = new Promise<never>((_resolve, reject) => {
         rejectAbort = () => {
@@ -414,6 +430,9 @@ export class VoiceTurnService {
       }
       const spokenText = validatedAssistantMessage(reply.message);
       if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
+      const expression = session.contextHandoffHash
+        ? "neutral"
+        : (expressionSchema.safeParse(reply.expression).data ?? "neutral");
       stage("output_validated");
       const publication = await this.sessions.authorizeTurn(
         id,
@@ -462,6 +481,7 @@ export class VoiceTurnService {
         replyId,
         language: "vi-VN",
         spokenText,
+        expression,
         expiresAt: expiresAt.toISOString(),
         policyVersion: "companion-voice-policy-v1",
       };

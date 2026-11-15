@@ -22,6 +22,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -54,6 +55,18 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean CollectPaymentGateway checkoutGateway;
 	@org.springframework.test.context.bean.override.mockito.MockitoSpyBean java.time.Clock clock;
 	@Autowired com.mentalbridge.consultation.credits.ServiceCreditService credits;
+
+	@BeforeEach
+	void keepMigrationCatalogueWindowsOutsideClockSkew() {
+		jdbc.sql("""
+				update subscription_plan_version set effective_from=current_timestamp-interval '1 minute'
+				where id in (:plus,:premium)
+				""").param("plus", PLUS).param("premium", PREMIUM).update();
+		jdbc.sql("""
+				update subscription_plan_version set retired_at=current_timestamp-interval '1 minute'
+				where id in ('51500000-0000-4000-8000-000000000002', '51500000-0000-4000-8000-000000000003')
+				""").update();
+	}
 
 	@Test
 	void providerTimeoutLeavesOneCommittedPaymentAndReplayNeverResendsTheCharge() throws Exception {
@@ -204,6 +217,71 @@ class SubscriptionBillingIntegrationTests extends ConsultationTestProperties {
 				.param("id", userId).query(Long.class).single()).isEqualTo(4);
 		assertThat(jdbc.sql("select count(*) from service_credit_ledger where account_id=:id and event_type='PROVISIONED'")
 				.param("id", userId).query(Long.class).single()).isEqualTo(4);
+	}
+
+	@Test
+	void returningPayerCanPurchaseAfterPaidPeriodEndsWithoutLosingOldCreditHistory() throws Exception {
+		var userId = UUID.randomUUID();
+		var first = billing.checkout(userId, PLUS, key("first-period"));
+		var success = fixture(first.paymentId(), 0, Instant.now().toEpochMilli(), 880001);
+		sign(success);
+		postIpn(success, 204);
+		assertThat(credits.current(userId).balance().available()).isEqualTo(4);
+		org.mockito.Mockito.doReturn(Instant.now().plusSeconds(40L * 86_400)).when(clock).instant();
+		assertThat(credits.current(userId).balance().available()).isZero();
+		mvc.perform(get("/api/v1/admin/subscriptions/" + first.subscriptionId())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENDED"));
+		mvc.perform(get("/api/v1/admin/commercial/provenance")
+				.param("subscriptionId", first.subscriptionId().toString())
+				.with(role(UUID.randomUUID(), "ROLE_ADMIN")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.subscriptions[0].status").value("ENDED"));
+		var renewed = billing.checkout(userId, PLUS, key("next-period"));
+		assertThat(renewed.status()).isEqualTo("PENDING");
+		assertThat(renewed.subscriptionId()).isNotEqualTo(first.subscriptionId());
+		assertThat(jdbc.sql("select status from user_subscription where id=:id")
+				.param("id", first.subscriptionId()).query(String.class).single()).isEqualTo("ENDED");
+		assertThat(jdbc.sql("select ended_at=current_period_end from user_subscription where id=:id")
+				.param("id", first.subscriptionId()).query(Boolean.class).single()).isTrue();
+		assertThat(jdbc.sql("select count(*) from service_credit_ledger where account_id=:id and event_type='PROVISIONED'")
+				.param("id", userId).query(Long.class).single()).isEqualTo(4);
+	}
+
+	@Test
+	void checkoutUsesOneInstantWhenCurrentPeriodEndsDuringPreparation() throws Exception {
+		var userId = UUID.randomUUID();
+		var first = billing.checkout(userId, PLUS, key("boundary-first"));
+		var success = fixture(first.paymentId(), 0, Instant.now().toEpochMilli(), 880003);
+		sign(success);
+		postIpn(success, 204);
+		var periodEnd = Instant.now().plusSeconds(10).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+		jdbc.sql("update user_subscription set current_period_end=:periodEnd where id=:id")
+				.param("periodEnd", java.time.OffsetDateTime.ofInstant(periodEnd, java.time.ZoneOffset.UTC))
+				.param("id", first.subscriptionId()).update();
+		org.mockito.Mockito.doReturn(periodEnd.minusMillis(1), periodEnd.minusMillis(1), periodEnd.plusMillis(1))
+				.when(clock).instant();
+		assertThatThrownBy(() -> billing.checkout(userId, PLUS, key("boundary-second")))
+				.isInstanceOfSatisfying(ApiException.class,
+					exception -> assertThat(exception.code()).isEqualTo("SUBSCRIPTION_PLAN_CHANGE_NOT_ALLOWED"));
+		assertThat(jdbc.sql("select status from user_subscription where id=:id")
+				.param("id", first.subscriptionId()).query(String.class).single()).isEqualTo("ACTIVE");
+	}
+
+	@Test
+	void expiredPeriodWithPendingUpgradeWaitsForPaymentReconciliation() throws Exception {
+		var userId = UUID.randomUUID();
+		var first = billing.checkout(userId, PLUS, key("upgrade-before-expiry"));
+		var success = fixture(first.paymentId(), 0, Instant.now().toEpochMilli(), 880002);
+		sign(success);
+		postIpn(success, 204);
+		var upgrade = billing.checkout(userId, PREMIUM, key("pending-upgrade"));
+		assertThat(upgrade.status()).isEqualTo("PENDING");
+		org.mockito.Mockito.doReturn(Instant.now().plusSeconds(40L * 86_400)).when(clock).instant();
+		assertThatThrownBy(() -> billing.checkout(userId, PLUS, key("renew-after-upgrade")))
+				.isInstanceOfSatisfying(ApiException.class,
+						error -> assertThat(error.code()).isEqualTo("SUBSCRIPTION_UPGRADE_PENDING"));
+		assertThat(jdbc.sql("select status from user_subscription where id=:id")
+				.param("id", first.subscriptionId()).query(String.class).single()).isEqualTo("ACTIVE");
 	}
 
 	@Test

@@ -48,6 +48,7 @@ function fixture(finalAggregationMs?: number) {
   const played: string[] = [];
   const states: string[] = [];
   const mediaStates: string[] = [];
+  const mediaExpressions: (Reply["expression"] | undefined)[] = [];
   const diagnostics: AgentDiagnostic[] = [];
   const inputChanges: boolean[] = [];
   let callbacks: MediaCallbacks | undefined;
@@ -65,6 +66,8 @@ function fixture(finalAggregationMs?: number) {
   let readiness: Promise<void> | undefined;
   let heartbeat: Promise<void> | undefined;
   let replyExpiryOffset = 0;
+  let replyExpression: Reply["expression"];
+  let firstAudio: Promise<void> | undefined;
   let playingReject: ((error: Error) => void) | undefined;
   const journal: Pick<JournalClient, "claim" | "control" | "turn"> = {
     claim: () =>
@@ -143,14 +146,16 @@ function fixture(finalAggregationMs?: number) {
         replyId: randomUUID(),
         language: "vi-VN",
         spokenText: "Mình đang lắng nghe. Bạn muốn chia sẻ thêm điều gì?",
+        ...(replyExpression ? { expression: replyExpression } : {}),
         expiresAt: new Date(expires + replyExpiryOffset).toISOString(),
         policyVersion,
       } satisfies Reply;
     },
   };
   const media: MediaPort = {
-    state: (state) => {
+    state: (state, expression) => {
       mediaStates.push(state);
+      mediaExpressions.push(expression);
     },
     start: (value) => {
       callbacks = value;
@@ -163,6 +168,7 @@ function fixture(finalAggregationMs?: number) {
     },
     speak: async (text, started, signal) => {
       played.push(text);
+      if (firstAudio) await firstAudio;
       await started();
       if (play)
         await Promise.race([
@@ -204,6 +210,7 @@ function fixture(finalAggregationMs?: number) {
     played,
     states,
     mediaStates,
+    mediaExpressions,
     diagnostics,
     inputChanges,
     dispatch,
@@ -268,8 +275,40 @@ function fixture(finalAggregationMs?: number) {
     replyExpiryOffset: (value: number) => {
       replyExpiryOffset = value;
     },
+    replyExpression: (value: Reply["expression"]) => {
+      replyExpression = value;
+    },
+    firstAudio: (value: Promise<void>) => {
+      firstAudio = value;
+    },
   };
 }
+
+void test("reply expression starts only with trusted first audio and clears on mute", async () => {
+  const f = fixture();
+  const audio = hold();
+  const playback = hold();
+  f.replyExpression("comfort");
+  f.firstAudio(audio.wait);
+  f.play(playback.wait);
+  await f.start();
+  f.emit("Tôi muốn kể thêm");
+  f.advance(1500);
+  const turn = f.tick();
+  await flush();
+  assert.equal(f.mediaStates.at(-1), "WAITING_FOR_REPLY");
+  assert.equal(f.mediaExpressions.includes("comfort"), false);
+  audio.release();
+  await flush();
+  assert.equal(f.mediaStates.at(-1), "SPEAKING");
+  assert.equal(f.mediaExpressions.at(-1), "comfort");
+  f.mute(true);
+  await turn;
+  assert.equal(f.mediaStates.at(-1), "MUTED");
+  assert.equal(f.mediaExpressions.at(-1), undefined);
+  playback.release();
+  await f.worker.stop("USER_ENDED");
+});
 
 void test("production timer ticks every 250 ms, catches failures and stops scheduling", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });

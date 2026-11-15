@@ -331,7 +331,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
     }
 
     @Test
-    void verifiedWebhookRecoversUnconfirmedCreationAndSuccessAfterDeadlineCannotActivate() throws Exception {
+    void verifiedWebhookRecoversUnconfirmedCreationAndSettlesPendingPaymentAfterDeadline() throws Exception {
         var uncertain = checkout(PLUS);
         jdbc.sql("update payment_transaction set payos_payment_link_id=null,qr_code=null where id=:id")
                 .param("id", uncertain.original().paymentId()).update();
@@ -341,12 +341,165 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         var overdue = checkout(PLUS);
         jdbc.sql("""
                 update payment_transaction set created_at=current_timestamp-interval '20 minutes',
-                 expires_at=current_timestamp-interval '1 second' where id=:id
+                 expires_at=current_timestamp-interval '10 seconds' where id=:id
                 """).param("id", overdue.original().paymentId()).update();
         send(event(overdue, "overdue-pending-webhook"), 204);
-        assertThat(outcome("overdue-pending-webhook")).isEqualTo("VERIFIED_UNMATCHED:PAYMENT_EXPIRED");
-        assertThat(current(overdue).terminalReason()).isEqualTo("EXPIRED");
-        assertThat(credits.current(overdue.userId()).balance().available()).isZero();
+        assertThat(outcome("overdue-pending-webhook")).isEqualTo("PROCESSED:");
+        assertThat(current(overdue).status()).isEqualTo("SUCCEEDED");
+        assertThat(credits.current(overdue.userId()).balance().available()).isEqualTo(4);
+    }
+
+    @Test
+    void verifiedPaidWebhookSettlesPendingPaymentObservedAfterLocalExpiry() throws Exception {
+        var payment = checkout(PLUS);
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '20 minutes',expires_at=current_timestamp-interval '10 seconds' where id=:id")
+                .param("id", payment.original().paymentId()).update();
+        send(event(payment, "late-observed-paid"), 204);
+        assertThat(outcome("late-observed-paid")).isEqualTo("PROCESSED:");
+        assertThat(jdbc.sql("select status from payment_transaction where id=:id")
+                .param("id", payment.original().paymentId()).query(String.class).single()).isEqualTo("SUCCEEDED");
+        assertThat(credits.current(payment.userId()).balance().available()).isEqualTo(4);
+    }
+
+    @Test
+    void verifiedPaidWebhookAfterReviewDeadlineCannotBeatScheduler() throws Exception {
+        var payment = checkout(PLUS);
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '25 hours',expires_at=current_timestamp-interval '24 hours 1 minute' where id=:id")
+                .param("id", payment.original().paymentId()).update();
+        send(event(payment, "paid-past-review-deadline"), 204);
+        assertThat(outcome("paid-past-review-deadline")).isEqualTo("VERIFIED_UNMATCHED:PAYMENT_ALREADY_FINAL");
+        assertThat(current(payment).status()).isEqualTo("FAILED");
+        assertThat(jdbc.sql("select reconciliation_failure_code from payment_transaction where id=:id")
+                .param("id", payment.original().paymentId()).query(String.class).single()).isEqualTo("PAYOS_REVIEW_DEADLINE");
+        assertThat(credits.current(payment.userId()).balance().available()).isZero();
+    }
+
+    @Test
+    void failedStatusQueryAfterLocalExpiryPreservesPendingPayment() {
+        var payment = checkout(PLUS);
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '20 minutes',expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null where id=:id")
+                .param("id", payment.original().paymentId()).update();
+        doThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYOS_STATUS_UNAVAILABLE", "Unavailable"))
+                .when(gateway).query(payment.orderCode());
+        assertThat(current(payment).status()).isEqualTo("PENDING");
+        assertThat(jdbc.sql("select reconciliation_failure_code from payment_transaction where id=:id")
+                .param("id", payment.original().paymentId()).query(String.class).single()).isEqualTo("PAYOS_STATUS_UNAVAILABLE");
+        assertThat(current(payment).status()).isEqualTo("PENDING");
+        verify(gateway, times(1)).query(payment.orderCode());
+        billing.expirePendingCheckouts();
+        assertThat(current(payment).status()).isEqualTo("PENDING");
+        verify(gateway, times(1)).query(payment.orderCode());
+        verify(gateway, times(0)).cancel(payment.orderCode());
+    }
+
+    @Test
+    void paidStatusWithoutMatchingProofAfterLocalExpiryRemainsPendingForReview() {
+        var payment = checkout(PLUS);
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '20 minutes',expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null where id=:id")
+                .param("id", payment.original().paymentId()).update();
+        doReturn(new PayosCheckoutGateway.Status(payment.orderCode(), payment.link(), 5_000, 4_999, 1,
+                "PAID", List.of(new PayosCheckoutGateway.Transaction(4_999, "late-underpaid"))))
+                .when(gateway).query(payment.orderCode());
+        assertThat(current(payment).status()).isEqualTo("PENDING");
+        assertThat(outcome("late-underpaid")).isEqualTo("VERIFIED_UNMATCHED:PROVIDER_RESULT_NOT_SUCCESSFUL");
+        assertThat(current(payment).status()).isEqualTo("PENDING");
+        verify(gateway, times(1)).query(payment.orderCode());
+        verify(gateway, times(0)).cancel(payment.orderCode());
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '25 hours',expires_at=current_timestamp-interval '24 hours 1 minute' where id=:id")
+                .param("id", payment.original().paymentId()).update();
+        assertThat(current(payment).status()).isEqualTo("FAILED");
+        assertThat(jdbc.sql("select reconciliation_failure_code from payment_transaction where id=:id")
+                .param("id", payment.original().paymentId()).query(String.class).single()).isEqualTo("PAYOS_REVIEW_DEADLINE");
+        verify(gateway, times(1)).query(payment.orderCode());
+    }
+
+    @Test
+    void inFlightStatusQueryDoesNotLetAnotherOwnerReadExpirePayment() throws Exception {
+        var payment = checkout(PLUS);
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '20 minutes',expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null where id=:id")
+                .param("id", payment.original().paymentId()).update();
+        var querying = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            querying.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Query was not released");
+            return paid(payment, "in-flight-paid");
+        }).when(gateway).query(payment.orderCode());
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var first = executor.submit(() -> current(payment));
+            assertThat(querying.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(current(payment).status()).isEqualTo("PENDING");
+            verify(gateway, times(0)).cancel(payment.orderCode());
+            release.countDown();
+            assertThat(first.get().status()).isEqualTo("SUCCEEDED");
+        }
+        finally {
+            release.countDown();
+        }
+        assertThat(outcome("in-flight-paid")).isEqualTo("PROCESSED:");
+    }
+
+    @Test
+    void reviewDeadlineClosesBackedOffUpgradeAndShowsAdminDiscrepancy() throws Exception {
+        var plus = checkout(PLUS);
+        send(event(plus, "review-deadline-plus"), 204);
+        var upgrade = checkout(plus.userId(), PREMIUM);
+        jdbc.sql("update payment_transaction set created_at=current_timestamp-interval '25 hours',expires_at=current_timestamp-interval '24 hours 1 minute',reconciliation_next_at=current_timestamp+interval '5 minutes' where id=:id")
+                .param("id", upgrade.original().paymentId()).update();
+        assertThat(credits.current(plus.userId()).balance().available()).isZero();
+        doThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYOS_CANCEL_UNAVAILABLE", "Unavailable"))
+                .when(gateway).cancel(upgrade.orderCode());
+        billing.expirePendingCheckouts();
+        assertThat(current(upgrade).status()).isEqualTo("FAILED");
+        assertThat(current(upgrade).terminalReason()).isEqualTo("EXPIRED");
+        assertThat(jdbc.sql("select reconciliation_failure_code from payment_transaction where id=:id")
+                .param("id", upgrade.original().paymentId()).query(String.class).single()).isEqualTo("PAYOS_REVIEW_DEADLINE");
+        assertThat(credits.current(plus.userId()).balance().available()).isEqualTo(4);
+        mvc.perform(get("/api/v1/admin/commercial/discrepancies").with(jwt()
+                .jwt(token -> token.subject(UUID.randomUUID().toString()))
+                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.webhooks[?(@.failureCode == 'PAYOS_REVIEW_DEADLINE')]").isNotEmpty());
+        verify(gateway, times(0)).query(upgrade.orderCode());
+        verify(gateway, times(1)).cancel(upgrade.orderCode());
+        due(upgrade);
+        doNothing().when(gateway).cancel(upgrade.orderCode());
+        billing.expirePendingCheckouts();
+        verify(gateway, times(2)).cancel(upgrade.orderCode());
+        assertThat(jdbc.sql("select reconciliation_failure_code from payment_transaction where id=:id")
+                .param("id", upgrade.original().paymentId()).query(String.class).single()).isEqualTo("PAYOS_REVIEW_DEADLINE");
+        send(event(upgrade, "paid-after-review-deadline"), 204);
+        assertThat(outcome("paid-after-review-deadline")).isEqualTo("VERIFIED_UNMATCHED:PAYMENT_ALREADY_FINAL");
+    }
+
+    @Test
+    void paidUpgradeForEndedSubscriptionRemainsVisibleWithoutReactivatingOldPeriod() throws Exception {
+        var plus = checkout(PLUS);
+        send(event(plus, "first-period-before-upgrade"), 204);
+        var upgrade = checkout(plus.userId(), PREMIUM);
+        jdbc.sql("update user_subscription set status='ENDED',ended_at=current_period_end where id=:id")
+                .param("id", plus.original().subscriptionId()).update();
+        send(event(upgrade, "paid-after-subscription-ended"), 204);
+        assertThat(outcome("paid-after-subscription-ended")).isEqualTo("VERIFIED_UNMATCHED:SUBSCRIPTION_NOT_CURRENT");
+        assertThat(jdbc.sql("select status from payment_transaction where id=:id")
+                .param("id", upgrade.original().paymentId()).query(String.class).single()).isEqualTo("PENDING");
+        assertThat(jdbc.sql("select status from user_subscription where id=:id")
+                .param("id", plus.original().subscriptionId()).query(String.class).single()).isEqualTo("ENDED");
+    }
+
+    @Test
+    void paidUpgradeAfterSourcePeriodEndCannotReactivateExpiredSubscription() throws Exception {
+        var plus = checkout(PLUS);
+        send(event(plus, "first-period-before-expired-upgrade"), 204);
+        var upgrade = checkout(plus.userId(), PREMIUM);
+        jdbc.sql("""
+                update user_subscription set current_period_start=current_timestamp-interval '40 days',
+                 current_period_end=current_timestamp-interval '1 minute' where id=:id
+                """).param("id", plus.original().subscriptionId()).update();
+        send(event(upgrade, "paid-after-source-period"), 204);
+        assertThat(outcome("paid-after-source-period")).isEqualTo("VERIFIED_UNMATCHED:SUBSCRIPTION_NOT_CURRENT");
+        assertThat(jdbc.sql("select status from payment_transaction where id=:id")
+                .param("id", upgrade.original().paymentId()).query(String.class).single()).isEqualTo("PENDING");
     }
 
     @Test
@@ -354,7 +507,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         var payment = checkout(PLUS);
         jdbc.sql("""
                 update payment_transaction set created_at=current_timestamp-interval '20 minutes',
-                 expires_at=current_timestamp-interval '1 second',reconciliation_next_at=null where id=:id
+                 expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null where id=:id
                 """).param("id", payment.original().paymentId()).update();
         var expired = current(payment);
         assertThat(expired.status()).isEqualTo("FAILED");
@@ -362,6 +515,11 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         verify(gateway).cancel(payment.orderCode());
         send(event(payment, "late-expired"), 204);
         assertThat(outcome("late-expired")).isEqualTo("VERIFIED_UNMATCHED:PAYMENT_ALREADY_FINAL");
+        mvc.perform(get("/api/v1/admin/commercial/discrepancies").with(jwt()
+                .jwt(token -> token.subject(UUID.randomUUID().toString()))
+                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.webhooks[?(@.failureCode == 'PAYMENT_ALREADY_FINAL')]").isNotEmpty());
         assertThat(credits.current(payment.userId()).balance().available()).isZero();
     }
 
@@ -372,7 +530,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         var upgrade = checkout(plus.userId(), PREMIUM);
         jdbc.sql("""
                 update payment_transaction set created_at=current_timestamp-interval '20 minutes',
-                 expires_at=current_timestamp-interval '1 second',reconciliation_next_at=null where id=:id
+                 expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null where id=:id
                 """).param("id", upgrade.original().paymentId()).update();
         doAnswer(invocation -> {
             var changed = (Boolean) invocation.callRealMethod();
@@ -425,7 +583,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         var payment = checkout(PLUS);
         jdbc.sql("""
                 update payment_transaction set created_at=current_timestamp-interval '20 minutes',
-                 expires_at=current_timestamp-interval '1 second',reconciliation_next_at=null where id=:id
+                 expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null where id=:id
                 """).param("id", payment.original().paymentId()).update();
         doThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYOS_STATUS_UNAVAILABLE", "Unavailable"))
                 .when(gateway).cancel(payment.orderCode());
@@ -444,7 +602,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
     }
 
     @Test
-    void paymentLockWaitCrossingDeadlineCannotSettleUsingReceiptArrivalTime() throws Exception {
+    void paymentLockWaitCrossingDeadlineStillSettlesVerifiedPaidEvidence() throws Exception {
         var payment = checkout(PLUS);
         var event = json.writeValueAsString(event(payment, "lock-expiry-reference"));
         var locked = new CountDownLatch(1);
@@ -478,9 +636,10 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         finally {
             release.countDown();
         }
-        assertThat(outcome("lock-expiry-reference")).isEqualTo("VERIFIED_UNMATCHED:PAYMENT_EXPIRED");
-        assertThat(current(payment).terminalReason()).isEqualTo("EXPIRED");
-        assertThat(credits.current(payment.userId()).balance().available()).isZero();
+        assertThat(outcome("lock-expiry-reference")).isEqualTo("PROCESSED:");
+        assertThat(current(payment).status()).isEqualTo("SUCCEEDED");
+        doReturn(Instant.now().plusSeconds(3_601)).when(clock).instant();
+        assertThat(credits.current(payment.userId()).balance().available()).isEqualTo(4);
     }
 
     @Test
@@ -488,11 +647,9 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         var payment = checkout(PLUS);
         jdbc.sql("""
                 update payment_transaction set created_at=current_timestamp-interval '20 minutes',
-                 expires_at=current_timestamp-interval '1 second',reconciliation_next_at=null,
+                 expires_at=current_timestamp-interval '10 seconds',reconciliation_next_at=null,
                  reconciliation_failures=4,reconciliation_failure_code='PAYOS_STATUS_UNAVAILABLE' where id=:id
                 """).param("id", payment.original().paymentId()).update();
-        doThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYOS_STATUS_UNAVAILABLE", "Unavailable"))
-                .when(gateway).query(payment.orderCode());
         doThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYOS_STATUS_UNAVAILABLE", "Unavailable"))
                 .when(gateway).cancel(payment.orderCode());
         for (var attempt = 0; attempt < 7; attempt++) {
@@ -536,7 +693,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
     private PaymentResponse current(Fixture payment) { return billing.payment(payment.userId(), payment.original().paymentId()); }
 
     private void due(Fixture payment) {
-        jdbc.sql("update payment_transaction set reconciliation_next_at=current_timestamp-interval '1 second' where id=:id")
+        jdbc.sql("update payment_transaction set reconciliation_next_at=current_timestamp-interval '10 seconds' where id=:id")
                 .param("id", payment.original().paymentId()).update();
     }
 

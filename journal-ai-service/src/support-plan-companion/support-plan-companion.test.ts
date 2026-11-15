@@ -1,3 +1,4 @@
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -119,6 +120,11 @@ const reviewRequest = {
 } as const satisfies SupportPlanCompanionIntent;
 
 const consentGranted: ConsentClient = {
+  snapshot: async function (bearer, correlationId) {
+    return aiConsentAuthorizationsFixture(
+      await this.check(bearer, correlationId),
+    );
+  },
   check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
 };
 
@@ -209,6 +215,11 @@ void test("rejects raw sensitive and unknown context before consent or provider 
   let providerCalls = 0;
   const service = serviceWith({
     consent: {
+      snapshot: async function (bearer, correlationId) {
+        return aiConsentAuthorizationsFixture(
+          await this.check(bearer, correlationId),
+        );
+      },
       check: () => {
         consentChecks += 1;
         return Promise.resolve({ authorized: true, reason: "GRANTED" });
@@ -245,6 +256,11 @@ void test("requires the dedicated Care caller credential before consent or provi
   let providerCalls = 0;
   const service = serviceWith({
     consent: {
+      snapshot: async function (bearer, correlationId) {
+        return aiConsentAuthorizationsFixture(
+          await this.check(bearer, correlationId),
+        );
+      },
       check: () => {
         consentChecks += 1;
         return Promise.resolve({ authorized: true, reason: "GRANTED" });
@@ -306,6 +322,52 @@ void test("returns bounded generated phrasing for action, progress, and review i
     assert.equal(result.text, text);
     assert.equal(result.fallbackReason, null);
     assert.equal("command" in result, false);
+  }
+});
+
+void test("sends only the complete approved plan envelope under L2", async () => {
+  let calls = 0;
+  const result = await invoke(
+    serviceWith({
+      provider: {
+        phrase: (source) => {
+          calls += 1;
+          assert.deepEqual(source, actionRequest);
+          return providerOutput(actionRequest.context.action.title).phrase(
+            source,
+          );
+        },
+      },
+    }),
+    actionRequest,
+  );
+  assert.equal(result.delivery, "GENERATED");
+  assert.equal(calls, 1);
+});
+
+void test("disabled AI preserves deterministic templates under missing or suspended L2", async () => {
+  for (const reason of ["MISSING", "DEPENDENCY_REQUIRED"] as const) {
+    const result = await invoke(
+      serviceWith({
+        configuration: {
+          ...configuration,
+          PROVIDER_MODE: "DETERMINISTIC_FAKE",
+        },
+        consent: {
+          check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+          snapshot: () =>
+            Promise.resolve(
+              aiConsentAuthorizationsFixture({ authorized: false, reason }),
+            ),
+        },
+        provider: {
+          phrase: () => Promise.reject(new Error("must not execute")),
+        },
+      }),
+      actionRequest,
+    );
+    assert.equal(result.delivery, "TEMPLATE");
+    assert.equal(result.fallbackReason, "CONSENT_REQUIRED");
   }
 });
 
@@ -504,23 +566,49 @@ void test("uses local fallback without provider access when consent is absent or
       return Promise.reject(new Error("must not execute"));
     },
   };
-  const missing = await invoke(
+  for (const reason of [
+    "MISSING",
+    "REVOKED",
+    "POLICY_OUTDATED",
+    "DEPENDENCY_REQUIRED",
+  ] as const) {
+    const denied = await invoke(
+      serviceWith({
+        provider,
+        consent: {
+          check: () => Promise.resolve({ authorized: true, reason: "GRANTED" }),
+          snapshot: () =>
+            Promise.resolve(
+              aiConsentAuthorizationsFixture(
+                {
+                  authorized: false,
+                  reason,
+                  ...(reason === "POLICY_OUTDATED"
+                    ? { policyVersion: "historical-context-v0" }
+                    : {}),
+                },
+                reason === "DEPENDENCY_REQUIRED"
+                  ? { authorized: false, reason: "REVOKED" }
+                  : { authorized: true, reason: "GRANTED" },
+              ),
+            ),
+        },
+      }),
+      actionRequest,
+    );
+    assert.equal(denied.delivery, "TEMPLATE");
+    assert.equal(denied.fallbackReason, "CONSENT_REQUIRED");
+  }
+  const unavailable = await invoke(
     serviceWith({
       provider,
       consent: {
-        check: () => Promise.resolve({ authorized: false, reason: "MISSING" }),
+        snapshot: () => Promise.reject(new Error("Care unavailable")),
+        check: () => Promise.reject(new Error("Care unavailable")),
       },
     }),
     actionRequest,
   );
-  const unavailable = await invoke(
-    serviceWith({
-      provider,
-      consent: { check: () => Promise.reject(new Error("Care unavailable")) },
-    }),
-    actionRequest,
-  );
-  assert.equal(missing.fallbackReason, "CONSENT_REQUIRED");
   assert.equal(unavailable.fallbackReason, "CONSENT_UNAVAILABLE");
   assert.equal(providerCalls, 0);
 });
@@ -626,6 +714,20 @@ void test("rejects non-user callers", async () => {
       actionRequest,
       ["SPECIALIST"],
     ),
+    UnauthorizedException,
+  );
+});
+
+void test("preserves caller authentication failure before the plan provider", async () => {
+  const service = serviceWith({
+    consent: {
+      check: () => Promise.reject(new UnauthorizedException()),
+      snapshot: () => Promise.reject(new UnauthorizedException()),
+    },
+    provider: { phrase: () => Promise.reject(new Error("must not execute")) },
+  });
+  await assert.rejects(
+    () => invoke(service, actionRequest),
     UnauthorizedException,
   );
 });

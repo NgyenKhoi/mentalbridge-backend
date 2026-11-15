@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Controller,
-  ForbiddenException,
   Inject,
   Injectable,
   Module,
@@ -14,7 +13,11 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 
-import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
+import {
+  CareConsentClient,
+  assertAiContextProcessingConsent,
+  type ConsentClient,
+} from "../analysis/analysis.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import {
   RoutedSupportGuidePhrasingProvider,
@@ -62,16 +65,11 @@ export class SupportGuidePhrasingService {
       !authorization.startsWith("Bearer ")
     )
       throw new UnauthorizedException();
-    let consent;
-    try {
-      consent = await this.consent.check(
-        authorization.slice("Bearer ".length),
-        request.id ?? crypto.randomUUID(),
-      );
-    } catch {
-      throw new ServiceUnavailableException();
-    }
-    if (!consent.authorized) throw new ForbiddenException();
+    await assertAiContextProcessingConsent(
+      this.consent,
+      authorization.slice("Bearer ".length),
+      request.id ?? crypto.randomUUID(),
+    );
     try {
       const analysis = await this.provider.phrase(parsed.data.approvedText);
       const output = z

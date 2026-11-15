@@ -46,8 +46,9 @@ void test("only the exact admitted Agent in the expected connected room may publ
   }
 });
 
-void test("genuine coarse states publish one fixed key, then clear terminal hints permanently", async () => {
-  const writes: { "lk.agent.state": string }[] = [];
+void test("genuine coarse states publish paired fixed keys, then clear terminal hints permanently", async () => {
+  const writes: { "lk.agent.state": string; "mb.mam.expression": string }[] =
+    [];
   const publisher = new AgentStatePublisher(
     () => true,
     (value) => {
@@ -86,8 +87,15 @@ void test("genuine coarse states publish one fixed key, then clear terminal hint
       "",
     ],
   );
+  assert.deepEqual(
+    writes.map((value) => value["mb.mam.expression"]),
+    ["", "", "", "neutral", "", "", "", ""],
+  );
   for (const value of writes) {
-    assert.deepEqual(Object.keys(value), ["lk.agent.state"]);
+    assert.deepEqual(Object.keys(value), [
+      "lk.agent.state",
+      "mb.mam.expression",
+    ]);
     assert.ok(
       value["lk.agent.state"] === "" ||
         agentStates.some((state) => state === value["lk.agent.state"]),
@@ -100,21 +108,64 @@ void test("in-flight writes are serialized and stale thinking cannot overwrite a
   const pending = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const writes: string[] = [];
+  const writes: { state: string; expression: string }[] = [];
   const publisher = new AgentStatePublisher(
     () => true,
     async (value) => {
-      writes.push(value["lk.agent.state"]);
+      writes.push({
+        state: value["lk.agent.state"],
+        expression: value["mb.mam.expression"],
+      });
       if (writes.length === 1) await pending;
     },
   );
   publisher.state("WAITING_FOR_REPLY");
   await flush();
-  publisher.state("SPEAKING");
+  publisher.state("SPEAKING", "comfort");
   const closing = publisher.close();
   release();
   await closing;
-  assert.deepEqual(writes, ["thinking", ""]);
+  assert.deepEqual(writes, [
+    { state: "thinking", expression: "" },
+    { state: "", expression: "" },
+  ]);
+});
+
+void test("expression follows first speaking update and clears after interruption or failed write", async () => {
+  const writes: { "lk.agent.state": string; "mb.mam.expression": string }[] =
+    [];
+  let fail = true;
+  const publisher = new AgentStatePublisher(
+    () => true,
+    (value) => {
+      writes.push(value);
+      if (fail && value["mb.mam.expression"] === "comfort") {
+        fail = false;
+        return Promise.reject(new Error("DISPLAY_WRITE_FAILED"));
+      }
+      return Promise.resolve();
+    },
+  );
+  publisher.state("WAITING_FOR_REPLY");
+  await flush();
+  publisher.state("SPEAKING", "comfort");
+  await flush();
+  publisher.state("INTERRUPTED");
+  await flush();
+  await publisher.close();
+  assert.deepEqual(
+    writes.map((value) => [
+      value["lk.agent.state"],
+      value["mb.mam.expression"],
+    ]),
+    [
+      ["thinking", ""],
+      ["speaking", "comfort"],
+      ["", ""],
+      ["listening", ""],
+      ["", ""],
+    ],
+  );
 });
 
 void test("display publication failures remain isolated and a later transition can recover", async () => {
@@ -131,5 +182,40 @@ void test("display publication failures remain isolated and a later transition c
   publisher.state("WAITING_FOR_REPLY");
   await flush();
   await publisher.close();
-  assert.equal(count, 3);
+  assert.equal(count, 4);
+});
+
+void test("terminal clear is written while admitted; a reconnecting room skips it and leaves the reset to the web consumer", async () => {
+  for (const reconnecting of [false, true]) {
+    const writes: [string, string][] = [];
+    let connected = true;
+    const publisher = new AgentStatePublisher(
+      () =>
+        isAdmittedAgent(dispatch, room, {
+          connected,
+          room,
+          metadata: dispatch.dispatchId,
+          identity: `va-${dispatch.attemptId}`,
+          agent: true,
+        }),
+      (value) => {
+        writes.push([value["lk.agent.state"], value["mb.mam.expression"]]);
+        return Promise.resolve();
+      },
+    );
+    publisher.state("SPEAKING", "comfort");
+    await flush();
+    // LiveKit Room Reconnecting: isConnected is false before the worker stops.
+    if (reconnecting) connected = false;
+    await publisher.close();
+    assert.deepEqual(
+      writes,
+      reconnecting
+        ? [["speaking", "comfort"]]
+        : [
+            ["speaking", "comfort"],
+            ["", ""],
+          ],
+    );
+  }
 });

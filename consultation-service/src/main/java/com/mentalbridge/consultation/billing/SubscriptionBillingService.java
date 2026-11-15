@@ -113,11 +113,13 @@ public class SubscriptionBillingService {
 		}
 		if ("FREE".equals(target.planCode())) throw conflict("FREE_PLAN_CHECKOUT_NOT_REQUIRED",
 				"The free plan does not require checkout");
+		var now = databaseNow();
+		endExpiredSubscriptions(userId, now);
 		if (jdbc.sql("select count(*) from user_subscription where user_id=:userId and status='PENDING_PAYMENT'")
 				.param("userId", userId).query(Long.class).single() > 0) {
 			throw conflict("SUBSCRIPTION_PAYMENT_PENDING", "A purchase checkout is already pending");
 		}
-		var current = currentSubscription(userId);
+		var current = currentSubscription(userId, now);
 		if (current == null) {
 			var projected = jdbc.sql("""
 					select package_code from current_service_entitlement
@@ -134,6 +136,27 @@ public class SubscriptionBillingService {
 			throw conflict("SUBSCRIPTION_DOWNGRADE_NOT_SUPPORTED", "Subscription downgrade is not supported");
 		}
 		throw conflict("SUBSCRIPTION_PLAN_CHANGE_NOT_ALLOWED", "The requested plan change is not allowed");
+	}
+
+	private void endExpiredSubscriptions(UUID userId, OffsetDateTime now) {
+		if (jdbc.sql("""
+				select exists(select 1 from user_subscription s join subscription_upgrade u on u.subscription_id=s.id
+				where s.user_id=:userId and s.status='ACTIVE' and s.current_period_end<=:now
+				and u.status='PENDING_PAYMENT')
+				""").param("userId", userId).param("now", now).query(Boolean.class).single()) {
+			throw conflict("SUBSCRIPTION_UPGRADE_PENDING", "An upgrade checkout is already pending");
+		}
+		var ended = jdbc.sql("""
+				update user_subscription set status='ENDED', ended_at=current_period_end, updated_at=:now, version=version+1
+				where user_id=:userId and status='ACTIVE' and current_period_end<=:now returning id
+				""").param("userId", userId).param("now", now).query(UUID.class).list();
+		for (var subscriptionId : ended) {
+			jdbc.sql("""
+					insert into subscription_status_history (id, subscription_id, from_status, to_status, reason_code, changed_at)
+					values (:id, :subscriptionId, 'ACTIVE', 'ENDED', 'PERIOD_ENDED', :now)
+					""").param("id", UUID.randomUUID()).param("subscriptionId", subscriptionId)
+					.param("now", now).update();
+		}
 	}
 
 	@Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -160,13 +183,19 @@ public class SubscriptionBillingService {
         var now = clock.instant();
         var paymentIds = jdbc.sql("""
                 select id from payment_transaction
-                where (status='PENDING' and (expires_at <= :now or (payment_provider='PAYOS'
-                 and (reconciliation_next_at is null or reconciliation_next_at<=:now))))
+                where (status='PENDING' and ((payment_provider<>'PAYOS' and expires_at<=:now)
+                 or (payment_provider='PAYOS' and (expires_at<=:reviewCutoff
+                  or reconciliation_next_at is null or reconciliation_next_at<=:now))))
                  or (payment_provider='PAYOS' and status='FAILED' and terminal_reason='EXPIRED'
-                  and reconciliation_failure_code in ('PAYOS_CANCEL_PENDING','PAYOS_CANCEL_UNAVAILABLE')
+                  and reconciliation_failure_code in ('PAYOS_CANCEL_PENDING','PAYOS_CANCEL_UNAVAILABLE','PAYOS_REVIEW_DEADLINE')
                   and reconciliation_next_at<=:now)
-                order by expires_at,id limit 100
-                """).param("now", databaseInstant(now)).query(UUID.class).list();
+                order by case when payment_provider='PAYOS' and status='PENDING'
+                 then case when expires_at<=:reviewCutoff then expires_at
+                  else coalesce(reconciliation_next_at,expires_at) end
+                 else expires_at end,id limit 100
+                """).param("now", databaseInstant(now))
+                .param("reviewCutoff", databaseInstant(now.minus(PayosPaymentWebhookService.PENDING_REVIEW_LIMIT)))
+                .query(UUID.class).list();
         for (var paymentId : paymentIds) {
             var provider = jdbc.sql("select payment_provider from payment_transaction where id=:id")
                     .param("id", paymentId).query(String.class).single();
@@ -316,13 +345,13 @@ public class SubscriptionBillingService {
                 row.getLong("amount_minor"), row.getTimestamp("expires_at").toInstant(), row.getString("terminal_reason"))).single();
 	}
 
-	private CurrentSubscription currentSubscription(UUID userId) {
+	private CurrentSubscription currentSubscription(UUID userId, OffsetDateTime now) {
 		return jdbc.sql("""
 				select s.id, s.user_id, s.plan_version_id, v.plan_code, v.non_consultation_value_minor, v.pricing_policy_version,
 				 s.current_period_start, s.current_period_end from user_subscription s
 				join subscription_plan_version v on v.id=s.plan_version_id
 				where s.user_id=:userId and s.status='ACTIVE' and s.current_period_end > :now for update
-				""").param("userId", userId).param("now", databaseNow()).query((row, ignored) -> new CurrentSubscription(
+				""").param("userId", userId).param("now", now).query((row, ignored) -> new CurrentSubscription(
 				row.getObject("id", UUID.class), row.getObject("user_id", UUID.class),
 				row.getObject("plan_version_id", UUID.class), row.getString("plan_code"), row.getString("pricing_policy_version"),
 				row.getLong("non_consultation_value_minor"), row.getTimestamp("current_period_start").toInstant(),

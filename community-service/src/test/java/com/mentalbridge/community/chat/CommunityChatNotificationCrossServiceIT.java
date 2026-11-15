@@ -231,7 +231,7 @@ class CommunityChatNotificationCrossServiceIT extends ChatGroupIntegrationSuppor
         });
         var sink = new ChatKafkaSink(kafka, chatProperties);
         try {
-            new ChatOutboxRelay(relayPersistence, sink, new ChatRelayProperties(false, 100, Duration.ofSeconds(5))).publishDue();
+            new ChatOutboxRelay(relayPersistence, sink, new ChatRelayProperties(100, Duration.ofSeconds(5))).publishDue();
         } finally {
             sink.close();
         }

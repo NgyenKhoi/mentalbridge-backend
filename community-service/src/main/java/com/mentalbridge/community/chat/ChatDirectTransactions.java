@@ -36,10 +36,21 @@ class ChatDirectTransactions {
         if (replay.isPresent() && !crypto.matches(replay.orElseThrow().requestFingerprint, "START_DIRECT", targetId.toString()))
             throw ChatException.conflict();
         var pair = List.of(actor.id(), targetId).stream().sorted(Comparator.comparing(UUID::toString)).toList();
+        var existing = conversations.findByFirstProfileIdAndSecondProfileId(pair.get(0), pair.get(1));
+        if (existing.filter(c -> c.state.equals("ACTIVE")).isEmpty() && !access.friends(actor.id(), targetId)) throw ChatException.target();
         var conversation = conversations.findByFirstProfileIdAndSecondProfileId(pair.get(0), pair.get(1))
                 .orElseGet(() -> conversations.saveAndFlush(new ChatConversationEntity(pair.get(0), pair.get(1), clock.instant())));
         ChatModels.DirectResult result;
         if (conversation.state.equals("ACTIVE")) result = ChatModels.DirectResult.active(conversation.id);
+        else if (access.friendshipRequired()) {
+            conversation.activate(clock.instant());
+            requests.findByConversationIdAndState(conversation.id, "PENDING").forEach(request -> {
+                request.decide("ACCEPTED", clock.instant());
+                request.decidedByProfileId = request.recipientProfileId;
+            });
+            facts.invalidated(conversation, correlation);
+            result = ChatModels.DirectResult.active(conversation.id);
+        }
         else {
             if (requests.existsByConversationIdAndRequesterProfileIdAndStateIn(conversation.id, actor.id(), List.of("DECLINED", "BLOCKED")))
                 throw ChatException.notAllowed();
@@ -84,6 +95,7 @@ class ChatDirectTransactions {
             return resulting.equals("ACCEPTED") ? ChatModels.DirectResult.active(conversation.id) : null;
         }
         access.pair(actor.id(), requester);
+        if (resulting.equals("ACCEPTED") && !access.friends(actor.id(), requester)) throw ChatException.target();
         if (!request.pending(clock.instant())) throw ChatException.notAllowed();
         if (request.version != expected) throw ChatException.version();
         request.decide(resulting, clock.instant());

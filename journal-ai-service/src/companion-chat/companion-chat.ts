@@ -8,12 +8,14 @@ import {
   HttpException,
   Inject,
   Injectable,
+  Logger,
   Module,
   NotFoundException,
   Param,
   Post,
   Put,
   Req,
+  Res,
   type DynamicModule,
   type OnApplicationShutdown,
 } from "@nestjs/common";
@@ -31,6 +33,7 @@ import {
   randomUUID,
 } from "node:crypto";
 import { z } from "zod";
+import { ProviderFailure } from "../llm-providers/llm-providers.js";
 import {
   VoiceProviderFailure,
   providerUsage,
@@ -50,10 +53,15 @@ import {
   estimateInputTokens,
   type FriendInput,
 } from "./companion-text-request.js";
-import { recentHistory } from "./conversation-history.js";
+import { conversationMemory } from "./conversation-history.js";
 import { ResourceCatalog } from "./resource-catalog.js";
 
-import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
+import {
+  CareConsentClient,
+  ConsentUnavailableError,
+  assertAiContextProcessingConsent,
+  type ConsentClient,
+} from "../analysis/analysis.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { Entry, Revision } from "../journals/journal.js";
 import {
@@ -79,9 +87,43 @@ const CLOCK = "COMPANION_CHAT_CLOCK";
 
 const uuid = z.uuid();
 const idempotencyKey = z.string().min(16).max(128);
+const defaultConversationTitle = "Cuộc trò chuyện mới";
+const conversationTitleSchema = z
+  .string()
+  .trim()
+  .refine((title) => {
+    const length = Array.from(title).length;
+    return length >= 1 && length <= 80;
+  });
 const createConversationSchema = z
-  .object({ title: z.string().trim().min(1).max(80).optional() })
+  .object({ title: conversationTitleSchema.optional() })
   .strict();
+const renameTitleSchema = z.object({ title: conversationTitleSchema }).strict();
+const titleVersionSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
+const renameTitleResultSchema = z
+  .object({
+    conversationId: uuid,
+    title: conversationTitleSchema,
+    titleVersion: titleVersionSchema,
+  })
+  .strict();
+
+export const providerTitleInstruction =
+  "For this first TEXT reply only, include an optional title in the same JSON object: a short Vietnamese topic title, at most six words and 80 Unicode characters. Do not use crisis or diagnosis labels. This is display wording only, never a safety decision. Use null if no suitable title is available.";
+
+const normalizedProviderTitle = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const title = value.trim().replace(/\s+/gu, " ");
+  return conversationTitleSchema.safeParse(title).success &&
+    title.split(" ").length <= 6
+    ? title
+    : undefined;
+};
+
+const canInitializeTitle = (conversation: Conversation): boolean =>
+  conversation.messages.length === 0 &&
+  !Object.hasOwn(conversation, "encryptedTitle") &&
+  conversation.title === defaultConversationTitle;
 const sendMessageSchema = z
   .object({
     message: z.string().trim().min(1).max(2_000),
@@ -152,6 +194,19 @@ export interface ConversationContextSources {
   resourceIds: string[];
 }
 
+const emptySources = (): ConversationContextSources => ({
+  plan: false,
+  diary: false,
+  screening: false,
+  resourceIds: [],
+});
+
+const hasPersonalSelection = (sources: ConversationContextSources) =>
+  sources.plan ||
+  sources.diary ||
+  sources.screening ||
+  sources.resourceIds.length > 0;
+
 export interface ConversationContext {
   sources: ConversationContextSources;
   updatedAt: Date;
@@ -161,6 +216,7 @@ export interface Conversation {
   _id: string;
   ownerAccountId: string;
   title: string;
+  encryptedTitle?: EncryptedChatText;
   context: ConversationContext;
   messages: ChatMessage[];
   createdAt: Date;
@@ -187,6 +243,19 @@ export interface SendResult {
   contextKinds: ContextKind[];
   quota: QuotaSnapshot;
   suggestion: CompanionSuggestion | null;
+  title?: string;
+  titleVersion?: string;
+}
+
+export interface RenameTitleResult {
+  conversationId: string;
+  title: string;
+  titleVersion: string;
+}
+
+export interface RenameTitleOutcome {
+  operation: "RENAME_TITLE";
+  encryptedResult: EncryptedChatText;
 }
 
 export interface ChatCommand {
@@ -196,7 +265,7 @@ export interface ChatCommand {
   keyHash: string;
   fingerprint: string;
   state: "RUNNING" | "SUCCEEDED" | "FAILED";
-  response: SendResult | null;
+  response: SendResult | RenameTitleOutcome | null;
   failureCode: string | null;
   failureStatus: number | null;
   failureTitle: string | null;
@@ -219,10 +288,12 @@ export interface MinimizedContext {
 
 export interface ProviderReply {
   message: string;
+  expression?: "neutral" | "comfort";
   inputTokens: number;
   outputTokens: number;
   usageSource?: "PROVIDER" | "ESTIMATED";
   suggestion?: ProviderSuggestion | null;
+  title?: string;
 }
 
 export const companionMaxOutputTokens = 2_000;
@@ -251,6 +322,21 @@ export const providerOutputJsonSchema = {
     thirdPartyAction: { type: "string", enum: ["NONE"] },
   },
 } as const;
+
+export const voiceProviderOutputJsonSchema = {
+  ...providerOutputJsonSchema,
+  properties: {
+    ...providerOutputJsonSchema.properties,
+    expression: {
+      anyOf: [
+        { type: "string", enum: ["neutral", "comfort"] },
+        { type: "null" },
+      ],
+    },
+  },
+} as const;
+
+const voiceExpressionSchema = z.enum(["neutral", "comfort"]);
 
 const providerOutputSchema = z
   .object({
@@ -353,6 +439,8 @@ export interface ChatProvider {
       textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
       friend?: FriendInput;
+      requestTitle?: boolean;
+      onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
   ): Promise<ProviderReply>;
 }
@@ -440,13 +528,24 @@ export interface ChatRepository {
     tokenBudget: number,
     expiresAt: Date,
   ): Promise<{ successfulAnswers: number; usedTokens: number }>;
+  reserveAttempt(
+    command: ChatCommand,
+    estimate: number,
+    budget: number,
+  ): Promise<void>;
+  settleAttempt(command: ChatCommand, difference: number): Promise<number>;
   complete(
     command: ChatCommand,
     userMessage: ChatMessage,
     assistantMessage: ChatMessage,
     result: SendResult,
-    usedTokens: number,
-    tokenBudget: number,
+    deadline: number,
+    encryptedTitle?: EncryptedChatText,
+  ): Promise<void>;
+  renameTitle(
+    command: ChatCommand,
+    expected: Conversation,
+    encryptedTitle: EncryptedChatText,
   ): Promise<void>;
   fail(
     command: ChatCommand,
@@ -539,7 +638,103 @@ const nextLocalDay = (instant: Date, timezone: string): Date => {
 
 @Injectable()
 export class ChatCrypto {
+  private readonly logger = new Logger(ChatCrypto.name);
+
   constructor(private readonly configuration: ServiceConfiguration) {}
+
+  encryptTitle(owner: string, conversationId: string, title: string) {
+    return this.seal(`${owner}:${conversationId}:title`, title);
+  }
+
+  decryptTitle(
+    owner: string,
+    conversationId: string,
+    envelope: EncryptedChatText | undefined,
+  ) {
+    if (!envelope) throw new Error("Title encryption metadata is unavailable");
+    z.object({
+      algorithm: z.literal("AES-256-GCM"),
+      keyId: z.literal(this.configuration.JOURNAL_ENCRYPTION_KEY_ID),
+    }).parse(envelope);
+    const title = this.open(`${owner}:${conversationId}:title`, envelope);
+    if (Array.from(title).length > 80)
+      throw new Error("Title bounds are invalid");
+    conversationTitleSchema.parse(title);
+    return title;
+  }
+
+  titleVersion(conversation: ConversationSummary): string {
+    const bytes = (value: unknown): unknown =>
+      Buffer.isBuffer(value) || value instanceof Binary
+        ? buffer(value).toString("base64")
+        : value;
+    const envelope = conversation.encryptedTitle;
+    const state = Object.hasOwn(conversation, "encryptedTitle")
+      ? [
+          "encrypted",
+          envelope
+            ? [
+                envelope.algorithm,
+                envelope.keyId,
+                bytes(envelope.iv),
+                bytes(envelope.tag),
+                bytes(envelope.ciphertext),
+              ]
+            : envelope,
+        ]
+      : ["legacy", conversation.title];
+    return digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify([conversation.ownerAccountId, conversation._id, state]),
+    );
+  }
+
+  title(
+    conversation: ConversationSummary,
+  ): Pick<RenameTitleResult, "title" | "titleVersion"> {
+    let title = conversation.title;
+    if (Object.hasOwn(conversation, "encryptedTitle")) {
+      try {
+        title = this.decryptTitle(
+          conversation.ownerAccountId,
+          conversation._id,
+          conversation.encryptedTitle,
+        );
+      } catch {
+        this.logger.warn("CHAT_TITLE_DECRYPT_FAILED");
+        title = defaultConversationTitle;
+      }
+    }
+    return { title, titleVersion: this.titleVersion(conversation) };
+  }
+
+  encryptRenameResult(
+    owner: string,
+    conversationId: string,
+    commandId: string,
+    result: RenameTitleResult,
+  ) {
+    return this.seal(
+      `${owner}:${conversationId}:${commandId}:rename-title-result`,
+      JSON.stringify(result),
+    );
+  }
+
+  decryptRenameResult(
+    owner: string,
+    conversationId: string,
+    commandId: string,
+    envelope: EncryptedChatText,
+  ): RenameTitleResult {
+    return renameTitleResultSchema.parse(
+      JSON.parse(
+        this.open(
+          `${owner}:${conversationId}:${commandId}:rename-title-result`,
+          envelope,
+        ),
+      ),
+    );
+  }
 
   encrypt(
     owner: string,
@@ -699,6 +894,7 @@ export class MongoChatRepository
             _id: 1,
             ownerAccountId: 1,
             title: 1,
+            encryptedTitle: 1,
             context: 1,
             createdAt: 1,
             updatedAt: 1,
@@ -873,13 +1069,31 @@ export class MongoChatRepository
     userMessage: ChatMessage,
     assistantMessage: ChatMessage,
     result: SendResult,
-    usedTokens: number,
-    tokenBudget: number,
+    deadline: number,
+    encryptedTitle?: EncryptedChatText,
   ) {
     await this.connect();
     const session = this.client.startSession();
     try {
       await session.withTransaction(async () => {
+        if (Date.now() >= deadline)
+          throw new ChatProblem(
+            503,
+            "CHAT_PROVIDER_UNAVAILABLE",
+            "AI provider is unavailable",
+          );
+        if (encryptedTitle)
+          await this.conversations.updateOne(
+            {
+              _id: command.conversationId,
+              ownerAccountId: command.ownerAccountId,
+              messages: { $size: 0 },
+              encryptedTitle: { $exists: false },
+              title: defaultConversationTitle,
+            },
+            { $set: { encryptedTitle, title: defaultConversationTitle } },
+            { session },
+          );
         const conversation = await this.conversations.updateOne(
           {
             _id: command.conversationId,
@@ -903,13 +1117,10 @@ export class MongoChatRepository
           {
             ownerAccountId: command.ownerAccountId,
             reservations: command._id,
-            usedTokens: {
-              $lte: Math.max(0, tokenBudget - usedTokens),
-            },
           },
           {
             $pull: { reservations: command._id },
-            $inc: { successfulAnswers: 1, usedTokens },
+            $inc: { successfulAnswers: 1 },
           },
           { session },
         );
@@ -932,6 +1143,99 @@ export class MongoChatRepository
         );
         if (completed.modifiedCount !== 1)
           throw new Error("Atomic chat completion precondition failed");
+        if (Date.now() >= deadline)
+          throw new ChatProblem(
+            503,
+            "CHAT_PROVIDER_UNAVAILABLE",
+            "AI provider is unavailable",
+          );
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async reserveAttempt(command: ChatCommand, estimate: number, budget: number) {
+    await this.connect();
+    const charged = await this.quotas.updateOne(
+      {
+        ownerAccountId: command.ownerAccountId,
+        reservations: command._id,
+        usedTokens: { $lte: budget - estimate },
+      },
+      { $inc: { usedTokens: estimate } },
+    );
+    if (charged.modifiedCount !== 1)
+      throw new ChatProblem(
+        429,
+        "CHAT_TOKEN_BUDGET_EXHAUSTED",
+        "AI token budget is exhausted",
+      );
+  }
+
+  async settleAttempt(command: ChatCommand, difference: number) {
+    if (difference === 0) return 0;
+    await this.connect();
+    const charged = await this.quotas.findOneAndUpdate(
+      { ownerAccountId: command.ownerAccountId, reservations: command._id },
+      { $inc: { usedTokens: difference } },
+      { returnDocument: "after" },
+    );
+    if (!charged) throw new Error("Chat attempt settlement failed");
+    return charged.usedTokens;
+  }
+
+  async renameTitle(
+    command: ChatCommand,
+    expected: Conversation,
+    encryptedTitle: EncryptedChatText,
+  ) {
+    await this.connect();
+    const expectedTitle = expected.encryptedTitle;
+    const session = this.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const updated = await this.conversations.updateOne(
+          {
+            _id: command.conversationId,
+            ownerAccountId: command.ownerAccountId,
+            expiresAt: { $gt: command.updatedAt },
+            ...(Object.hasOwn(expected, "encryptedTitle") &&
+            expectedTitle !== undefined
+              ? {
+                  encryptedTitle: {
+                    $exists: true,
+                    $eq: expectedTitle,
+                  },
+                }
+              : { encryptedTitle: { $exists: false }, title: expected.title }),
+          },
+          {
+            $set: {
+              encryptedTitle,
+              title: defaultConversationTitle,
+              updatedAt: command.updatedAt,
+            },
+          },
+          { session },
+        );
+        if (updated.matchedCount !== 1) {
+          const live = await this.conversations.findOne(
+            {
+              _id: command.conversationId,
+              ownerAccountId: command.ownerAccountId,
+              expiresAt: { $gt: command.updatedAt },
+            },
+            { session, projection: { _id: 1 } },
+          );
+          if (!live) throw new NotFoundException();
+          throw new ChatProblem(
+            412,
+            "CHAT_TITLE_VERSION_CONFLICT",
+            "Conversation title has changed",
+          );
+        }
+        await this.commands.insertOne(command, { session });
       });
     } finally {
       await session.endSession();
@@ -966,22 +1270,42 @@ export class MongoChatRepository
 
 const supportPlanSchema = z.looseObject({
   supportPlanId: uuid,
+  modelVersion: z.literal(3),
+  representationMode: z.enum(["NATIVE_V3", "V2_RESOURCE_ADAPTER"]),
   status: z.enum(["ACTIVE", "PAUSED"]),
   version: z.number().int().min(0),
-  rationale: z.looseObject({ text: z.string().max(2_048) }),
-  slots: z
+  focuses: z
     .array(
       z.looseObject({
-        purposeCode: z.string().max(64),
-        selectedResource: z
-          .looseObject({
-            title: z.string().max(255),
-            summary: z.string().max(4_096),
-          })
-          .nullable(),
+        title: z.string().trim().min(1).max(255),
+        rationale: z.string().trim().min(1).max(2_048).nullable(),
+        ordinal: z.number().int().min(1).max(20),
+        actions: z
+          .array(
+            z.looseObject({
+              actionType: z.enum([
+                "RESOURCE",
+                "JOURNAL",
+                "EMOTION_CHECK_IN",
+                "ROUTINE_SELF_MANAGEMENT",
+                "PROFESSIONAL_SUPPORT",
+                "REASSESSMENT_SCREENING",
+                "SELF_REPORT_REVIEW",
+              ]),
+              status: z.enum(["DRAFT", "ACTIVE", "ENDED"]),
+              ordinal: z.number().int().min(1).max(20),
+              presentation: z.looseObject({
+                title: z.string().trim().min(1).max(255),
+                summary: z.string().trim().min(1).max(4_096).nullable(),
+              }),
+            }),
+          )
+          .min(1)
+          .max(20),
       }),
     )
-    .max(5),
+    .min(1)
+    .max(20),
 });
 
 const assessmentHistorySchema = z.looseObject({
@@ -1021,7 +1345,10 @@ export class OwnerVerifiedContextAssembler
   private readonly client: MongoClient;
   private readonly journals: Collection<Entry>;
 
-  constructor(private readonly configuration: ServiceConfiguration) {
+  constructor(
+    private readonly configuration: ServiceConfiguration,
+    private readonly consent: ConsentClient,
+  ) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
@@ -1040,11 +1367,21 @@ export class OwnerVerifiedContextAssembler
     correlationId: string,
     selection: ContextSelection,
   ): Promise<MinimizedContext> {
-    await this.client.connect();
     const sections: string[] = [];
     const kinds = new Set<MinimizedContext["kinds"][number]>();
 
     if (selection.diary) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      await this.client.connect();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       const rows = await this.journals
         .find({
           ownerAccountId,
@@ -1053,6 +1390,11 @@ export class OwnerVerifiedContextAssembler
         .sort({ occurredAt: -1, createdAt: -1, _id: -1 })
         .limit(3)
         .toArray();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       for (const row of rows) {
         const revision = row.revisions.find(
           (candidate: Revision) => candidate.revision === row.currentRevision,
@@ -1084,6 +1426,11 @@ export class OwnerVerifiedContextAssembler
     }
 
     if (selection.screening) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       let response: Response;
       try {
         response = await fetch(
@@ -1119,6 +1466,11 @@ export class OwnerVerifiedContextAssembler
           "CHAT_CONTEXT_UNAVAILABLE",
           "Care context is invalid",
         );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       if (parsed.data.items.length > 0) {
         sections.push(
           `Recent screening summaries (not diagnoses): ${JSON.stringify(
@@ -1136,11 +1488,16 @@ export class OwnerVerifiedContextAssembler
     }
 
     if (selection.plan) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       let response: Response;
       try {
         response = await fetch(
           new URL(
-            "/api/v1/support-plans/current",
+            "/api/v2/support-plans/current",
             this.configuration.CARE_BASE_URL,
           ),
           {
@@ -1165,27 +1522,58 @@ export class OwnerVerifiedContextAssembler
             "CHAT_CONTEXT_UNAVAILABLE",
             "Care context is unavailable",
           );
-        const parsed = supportPlanSchema.safeParse(await response.json());
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          throw new ChatProblem(
+            503,
+            "CHAT_CONTEXT_UNAVAILABLE",
+            "Care context is invalid",
+          );
+        }
+        const parsed = supportPlanSchema.safeParse(body);
         if (!parsed.success)
           throw new ChatProblem(
             503,
             "CHAT_CONTEXT_UNAVAILABLE",
             "Care context is invalid",
           );
+        await assertAiContextProcessingConsent(
+          this.consent,
+          authorization,
+          correlationId,
+        );
+        let remaining = 5;
+        const focuses = parsed.data.focuses
+          .toSorted((left, right) => left.ordinal - right.ordinal)
+          .flatMap((focus) => {
+            if (remaining === 0) return [];
+            const actions = focus.actions
+              .toSorted((left, right) => left.ordinal - right.ordinal)
+              .filter((action) => action.status === "ACTIVE")
+              .slice(0, remaining)
+              .map((action) => ({
+                type: action.actionType,
+                title: action.presentation.title,
+                summary: action.presentation.summary,
+              }));
+            remaining -= actions.length;
+            return actions.length === 0
+              ? []
+              : [
+                  {
+                    title: focus.title,
+                    rationale: focus.rationale,
+                    actions,
+                  },
+                ];
+          });
         sections.push(
           `Current SupportPlan: ${JSON.stringify({
             status: parsed.data.status,
             version: parsed.data.version,
-            summary: parsed.data.rationale.text,
-            activities: parsed.data.slots.map((slot) => ({
-              purposeCode: slot.purposeCode,
-              resource: slot.selectedResource
-                ? {
-                    title: slot.selectedResource.title,
-                    summary: slot.selectedResource.summary,
-                  }
-                : null,
-            })),
+            focuses,
           })}`,
         );
         kinds.add("SUPPORT_PLAN");
@@ -1193,6 +1581,11 @@ export class OwnerVerifiedContextAssembler
     }
 
     if (selection.resourceIds.length > 0) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       const now = new Date();
       const from = new Date(now.getTime() - 31 * 86_400_000);
       const progressUrl = new URL(
@@ -1241,6 +1634,11 @@ export class OwnerVerifiedContextAssembler
         );
       const resources = await Promise.all(
         selection.resourceIds.map(async (resourceId) => {
+          await assertAiContextProcessingConsent(
+            this.consent,
+            authorization,
+            correlationId,
+          );
           let response: Response;
           try {
             response = await fetch(
@@ -1278,6 +1676,11 @@ export class OwnerVerifiedContextAssembler
           return parsed.data;
         }),
       );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
       sections.push(
         `Resources the user viewed: ${JSON.stringify(
           resources.map((resource) => ({
@@ -1308,6 +1711,8 @@ export class RoutedChatProvider implements ChatProvider {
       textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
       friend?: FriendInput;
+      requestTitle?: boolean;
+      onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
   ) {
     options?.signal?.throwIfAborted();
@@ -1337,16 +1742,57 @@ export class RoutedChatProvider implements ChatProvider {
         : {}),
       ...(friend ? { friend: true } : {}),
     });
+    const requestTitle = options?.requestTitle === true && !options.voice;
+    if (requestTitle) system += `\n${providerTitleInstruction}`;
     const input = companionUserInput({
       message: userMessage,
       context,
       ...(friend ? { friend } : {}),
     });
-    const outputJsonSchema = friend
-      ? providerOutputJsonSchemaV2
-      : providerOutputJsonSchema;
+    const coreOutputJsonSchema = options?.voice
+      ? voiceProviderOutputJsonSchema
+      : friend
+        ? providerOutputJsonSchemaV2
+        : providerOutputJsonSchema;
+    const outputJsonSchema = requestTitle
+      ? {
+          ...coreOutputJsonSchema,
+          required:
+            route.provider === "OPENAI"
+              ? [...coreOutputJsonSchema.required, "title"]
+              : coreOutputJsonSchema.required,
+          properties: {
+            ...coreOutputJsonSchema.properties,
+            title: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+        }
+      : options?.voice && route.provider === "OPENAI"
+        ? {
+            ...coreOutputJsonSchema,
+            required: [...coreOutputJsonSchema.required, "expression"],
+          }
+        : coreOutputJsonSchema;
     const temperature = friend ? 0.7 : 0.2;
     const providerId: string = route.provider;
+    if (
+      !options?.voice &&
+      !["GEMINI", "OPENAI", "BEDROCK"].includes(providerId)
+    )
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
+    if (
+      !options?.voice &&
+      providerId === "BEDROCK" &&
+      !this.configuration.BEDROCK_API_KEY
+    )
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
     let response: Response;
     try {
       if (providerId === "GEMINI") {
@@ -1429,7 +1875,7 @@ export class RoutedChatProvider implements ChatProvider {
         if (boundedVoice) {
           if (route.model !== "global.anthropic.claude-sonnet-4-6")
             throw new Error("Voice pilot route unavailable");
-          system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(providerOutputJsonSchema)}`;
+          system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
           await authorizeVoiceInput(
             this.configuration.BEDROCK_API_KEY,
             system,
@@ -1476,10 +1922,14 @@ export class RoutedChatProvider implements ChatProvider {
                   ? "TIMEOUT"
                   : "TRANSPORT",
             );
-      throw new ChatProblem(
-        503,
-        "CHAT_PROVIDER_UNAVAILABLE",
-        "AI provider is unavailable",
+      throw new ProviderFailure(
+        "RETRYABLE",
+        error instanceof Error &&
+          (error.name === "TimeoutError" || error.name === "AbortError")
+          ? "TIMEOUT"
+          : "UNAVAILABLE",
+        {},
+        { cause: error },
       );
     }
     if (!response.ok && options?.voice)
@@ -1487,10 +1937,12 @@ export class RoutedChatProvider implements ChatProvider {
         response.status >= 500 ? "HTTP_5XX" : "HTTP_4XX",
       );
     if (!response.ok)
-      throw new ChatProblem(
-        503,
-        "CHAT_PROVIDER_UNAVAILABLE",
-        "AI provider is unavailable",
+      throw new ProviderFailure(
+        response.status === 429 || response.status >= 500
+          ? "RETRYABLE"
+          : "PERMANENT",
+        "UNAVAILABLE",
+        { httpStatus: response.status },
       );
     if (options?.voice && route.provider === "BEDROCK")
       options.voiceObserver?.({ phase: "bedrock_response_received" });
@@ -1505,6 +1957,50 @@ export class RoutedChatProvider implements ChatProvider {
         "CHAT_PROVIDER_INVALID_RESPONSE",
         "AI response is invalid",
       );
+    }
+    if (
+      !options?.voice &&
+      options?.onUsage &&
+      body &&
+      typeof body === "object"
+    ) {
+      const raw = body as Record<string, unknown>;
+      const usage =
+        raw[route.provider === "GEMINI" ? "usageMetadata" : "usage"];
+      const reported =
+        usage && typeof usage === "object"
+          ? (usage as Record<string, unknown>)
+          : {};
+      const reportedInput =
+        reported[
+          route.provider === "GEMINI"
+            ? "promptTokenCount"
+            : route.provider === "OPENAI"
+              ? "input_tokens"
+              : "inputTokens"
+        ];
+      const reportedOutput =
+        reported[
+          route.provider === "GEMINI"
+            ? "candidatesTokenCount"
+            : route.provider === "OPENAI"
+              ? "output_tokens"
+              : "outputTokens"
+        ];
+      if (
+        typeof reportedInput === "number" &&
+        Number.isSafeInteger(reportedInput) &&
+        reportedInput >= 0 &&
+        typeof reportedOutput === "number" &&
+        Number.isSafeInteger(reportedOutput) &&
+        reportedOutput >= 0
+      )
+        options.onUsage(reportedInput, reportedOutput);
+      else
+        options.onUsage(
+          Math.ceil((system.length + input.length) / 4),
+          Math.ceil(JSON.stringify(body).length / 4),
+        );
     }
     if (options?.voice && route.provider === "BEDROCK") {
       options.voiceObserver?.({
@@ -1596,7 +2092,32 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     }
-    // A malformed suggestion only drops the button; the v1 fields stay strict.
+    let expression: ProviderReply["expression"];
+    if (
+      options?.voice &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { expression: rawExpression, ...rest } = output as Record<
+        string,
+        unknown
+      >;
+      expression =
+        voiceExpressionSchema.safeParse(rawExpression).data ?? "neutral";
+      output = rest;
+    }
+    let title: string | undefined;
+    if (
+      !options?.voice &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { title: rawTitle, ...rest } = output as Record<string, unknown>;
+      title = normalizedProviderTitle(rawTitle);
+      output = rest;
+    }
     let suggestion: ProviderSuggestion | null = null;
     if (
       friend &&
@@ -1640,6 +2161,7 @@ export class RoutedChatProvider implements ChatProvider {
       options.voiceObserver?.({ phase: "bedrock_response_validated" });
     return {
       message: friend ? withoutCutOffTail(normalized) : normalized,
+      ...(options?.voice ? { expression: expression ?? "neutral" } : {}),
       inputTokens: inputTokens ?? Math.ceil((system.length + input.length) / 4),
       outputTokens: outputTokens ?? Math.ceil(normalized.length / 4),
       ...(options?.voice
@@ -1651,6 +2173,7 @@ export class RoutedChatProvider implements ChatProvider {
           }
         : {}),
       ...(friend ? { suggestion } : {}),
+      ...(title === undefined ? {} : { title }),
     };
   }
 }
@@ -1660,7 +2183,7 @@ const publicConversation = (
   conversation: Conversation,
 ) => ({
   conversationId: conversation._id,
-  title: conversation.title,
+  ...crypto.title(conversation),
   context: {
     sources: conversation.context.sources,
     updatedAt: conversation.context.updatedAt.toISOString(),
@@ -1686,9 +2209,12 @@ const publicConversation = (
   })),
 });
 
-const publicConversationSummary = (conversation: ConversationSummary) => ({
+const publicConversationSummary = (
+  crypto: ChatCrypto,
+  conversation: ConversationSummary,
+) => ({
   conversationId: conversation._id,
-  title: conversation.title,
+  ...crypto.title(conversation),
   createdAt: conversation.createdAt.toISOString(),
   updatedAt: conversation.updatedAt.toISOString(),
   expiresAt: conversation.expiresAt.toISOString(),
@@ -1722,14 +2248,9 @@ export class CompanionChatService {
     const conversation: Conversation = {
       _id: randomUUID(),
       ownerAccountId: owner,
-      title: body.data.title ?? "Cuộc trò chuyện mới",
+      title: defaultConversationTitle,
       context: {
-        sources: {
-          plan: true,
-          diary: false,
-          screening: false,
-          resourceIds: [],
-        },
+        sources: emptySources(),
         updatedAt: now,
       },
       messages: [],
@@ -1739,6 +2260,12 @@ export class CompanionChatService {
         now.getTime() + this.configuration.CHAT_RETENTION_DAYS * 86_400_000,
       ),
     };
+    if (body.data.title !== undefined)
+      conversation.encryptedTitle = this.crypto.encryptTitle(
+        owner,
+        conversation._id,
+        body.data.title,
+      );
     await this.repository.createConversation(conversation);
     return publicConversation(this.crypto, conversation);
   }
@@ -1746,7 +2273,9 @@ export class CompanionChatService {
   async list(request: ChatRequest) {
     const owner = requestOwner(request);
     const rows = await this.repository.listConversations(owner);
-    return { items: rows.map(publicConversationSummary) };
+    return {
+      items: rows.map((row) => publicConversationSummary(this.crypto, row)),
+    };
   }
 
   async get(request: ChatRequest, conversationId: string) {
@@ -1772,6 +2301,27 @@ export class CompanionChatService {
       throw new BadRequestException();
     const parsed = conversationContextSchema.safeParse(request.body);
     if (!parsed.success) throw new BadRequestException();
+    if (!(await this.repository.findConversation(owner, conversationId)))
+      throw new NotFoundException();
+    if (hasPersonalSelection(parsed.data.sources)) {
+      const correlationId = request.id ?? randomUUID();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        bearer(request),
+        correlationId,
+      );
+      await this.context.assemble(
+        owner,
+        bearer(request),
+        correlationId,
+        parsed.data.sources,
+      );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        bearer(request),
+        correlationId,
+      );
+    }
     const context: ConversationContext = {
       sources: parsed.data.sources,
       updatedAt: this.clock.now(),
@@ -1818,6 +2368,7 @@ export class CompanionChatService {
     if (replay) return this.replay(replay, fingerprint);
 
     const now = this.clock.now();
+    const sendDeadline = Date.now() + 24_000;
     const command: ChatCommand = {
       _id: randomUUID(),
       ownerAccountId: owner,
@@ -1843,11 +2394,11 @@ export class CompanionChatService {
 
     let decision: EntitlementDecision;
     try {
-      const consent = await this.consent.check(
+      const consent = await this.consent.snapshot(
         bearer(request),
         request.id ?? randomUUID(),
       );
-      if (!consent.authorized)
+      if (!consent.chat.authorized)
         throw new ChatProblem(
           403,
           "AI_CONSENT_REQUIRED",
@@ -1870,6 +2421,12 @@ export class CompanionChatService {
         failure.title,
       );
       if (error instanceof HttpException) throw error;
+      if (error instanceof ConsentUnavailableError)
+        throw new ChatProblem(
+          503,
+          "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+          "Consent is unavailable",
+        );
       throw new ChatProblem(
         503,
         "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
@@ -1919,59 +2476,193 @@ export class CompanionChatService {
       throw error;
     }
 
+    let delivered: SendResult;
     try {
-      const minimized = await this.context.assemble(
-        owner,
+      const correlationId = request.id ?? randomUUID();
+      let authorization = await this.consent.snapshot(
         bearer(request),
-        request.id ?? randomUUID(),
-        conversation.context.sources,
+        correlationId,
       );
+      if (!authorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      let minimized: MinimizedContext = { kinds: [], prompt: "" };
+      if (
+        authorization.context.authorized &&
+        hasPersonalSelection(conversation.context.sources)
+      ) {
+        try {
+          minimized = await this.context.assemble(
+            owner,
+            bearer(request),
+            correlationId,
+            conversation.context.sources,
+          );
+        } catch (error) {
+          authorization = await this.consent.snapshot(
+            bearer(request),
+            correlationId,
+          );
+          if (!authorization.chat.authorized)
+            throw new ChatProblem(
+              403,
+              "AI_CONSENT_REQUIRED",
+              "AI processing consent is required",
+            );
+          if (authorization.context.authorized) throw error;
+        }
+      }
+      authorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!authorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      if (!authorization.context.authorized)
+        minimized = { kinds: [], prompt: "" };
       const route = this.route(decision);
-      const friend: FriendInput | undefined = this.configuration
+      const sources = authorization.context.authorized
+        ? conversation.context.sources
+        : emptySources();
+      const memory = this.configuration.COMPANION_GUIDANCE_V2_ENABLED
+        ? conversationMemory(conversation.messages, sources, (message) =>
+            this.crypto.decrypt(owner, conversationId, message),
+          )
+        : { history: [], kinds: [] };
+      let friend: FriendInput | undefined = this.configuration
         .COMPANION_GUIDANCE_V2_ENABLED
         ? {
-            history: recentHistory(
-              conversation.messages,
-              conversation.context.sources,
-              (message) => this.crypto.decrypt(owner, conversationId, message),
-            ),
+            history: memory.history,
             catalog: await this.catalog.items(),
           }
         : undefined;
-      // Refuse before spend: the estimate measures the same text the provider receives.
+      minimized = {
+        ...minimized,
+        kinds: [...new Set([...minimized.kinds, ...memory.kinds])],
+      };
+      const finalAuthorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!finalAuthorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      if (!finalAuthorization.context.authorized) {
+        minimized = { kinds: [], prompt: "" };
+        if (friend)
+          friend = {
+            ...friend,
+            history: conversationMemory(
+              conversation.messages,
+              emptySources(),
+              (message) => this.crypto.decrypt(owner, conversationId, message),
+            ).history,
+          };
+      }
+      const requestTitle = canInitializeTitle(conversation);
       const estimate = estimateInputTokens(
-        companionGuidanceSystem({ channel: "TEXT", friend: !!friend }),
+        companionGuidanceSystem({ channel: "TEXT", friend: !!friend }) +
+          (requestTitle ? `\n${providerTitleInstruction}` : ""),
         companionUserInput({
           message: parsed.data.message,
           context: minimized,
           ...(friend ? { friend } : {}),
         }),
       );
-      if (reserved.usedTokens + estimate > tokenBudget)
-        throw new ChatProblem(
-          429,
-          "CHAT_TOKEN_BUDGET_EXHAUSTED",
-          "AI token budget is exhausted",
+      const deadlineFailure = () =>
+        new ChatProblem(
+          503,
+          "CHAT_PROVIDER_UNAVAILABLE",
+          "AI provider is unavailable",
         );
-      const reply = await this.provider.reply(
-        parsed.data.message,
-        minimized,
-        route,
-        friend ? { friend } : undefined,
-      );
-      const assistant = validatedAssistantMessage(reply.message, {
-        rejectLinks: friend !== undefined,
-      });
+      let reply: ProviderReply | undefined;
+      let assistant: string | undefined;
+      let firstFailure: ChatProblem | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const remainingMs = sendDeadline - Date.now();
+        if (attempt === 1 && remainingMs < 3_000)
+          throw firstFailure ?? deadlineFailure();
+        if (remainingMs <= 0) throw deadlineFailure();
+        await this.repository.reserveAttempt(command, estimate, tokenBudget);
+        const signal = AbortSignal.timeout(Math.min(10_000, remainingMs));
+        let usage: { input: number; output: number } | undefined;
+        let attemptedReply: ProviderReply | undefined;
+        let attemptError: unknown;
+        try {
+          attemptedReply = await Promise.race([
+            this.provider.reply(parsed.data.message, minimized, route, {
+              ...(friend ? { friend } : {}),
+              ...(requestTitle ? { requestTitle: true } : {}),
+              signal,
+              onUsage: (input, output) => {
+                usage = { input, output };
+              },
+            }),
+            new Promise<never>((_resolve, reject) => {
+              const timeout = () => {
+                reject(new ProviderFailure("RETRYABLE", "TIMEOUT"));
+              };
+              if (signal.aborted) timeout();
+              else signal.addEventListener("abort", timeout, { once: true });
+            }),
+          ]);
+          assistant = validatedAssistantMessage(attemptedReply.message, {
+            rejectLinks: friend !== undefined,
+          });
+        } catch (error) {
+          attemptError = error;
+        }
+        const actual = usage
+          ? usage.input + usage.output
+          : attemptedReply
+            ? attemptedReply.inputTokens + attemptedReply.outputTokens
+            : estimate;
+        const usedTokens = await this.repository.settleAttempt(
+          command,
+          actual - estimate,
+        );
+        if (usedTokens > tokenBudget)
+          throw new ChatProblem(
+            429,
+            "CHAT_TOKEN_BUDGET_EXHAUSTED",
+            "AI token budget is exhausted",
+          );
+        if (Date.now() >= sendDeadline) throw deadlineFailure();
+        if (!attemptError && attemptedReply && assistant) {
+          reply = attemptedReply;
+          break;
+        }
+        const retryable =
+          attemptError instanceof ProviderFailure
+            ? attemptError.kind === "RETRYABLE"
+            : attemptError instanceof ChatProblem
+              ? attemptError.code === "CHAT_PROVIDER_INVALID_RESPONSE"
+              : true;
+        const terminalFailure =
+          attemptError instanceof ChatProblem
+            ? attemptError
+            : new ChatProblem(
+                503,
+                "CHAT_PROVIDER_UNAVAILABLE",
+                "AI provider is unavailable",
+              );
+        if (attempt === 1 || !retryable) throw terminalFailure;
+        firstFailure = terminalFailure;
+      }
+      if (!reply || !assistant) throw deadlineFailure();
       const suggestion = friend
         ? resolveSuggestion(reply.suggestion, friend.catalog)
         : null;
-      const tokens = reply.inputTokens + reply.outputTokens;
-      if (reserved.usedTokens + tokens > tokenBudget)
-        throw new ChatProblem(
-          429,
-          "CHAT_TOKEN_BUDGET_EXHAUSTED",
-          "AI token budget is exhausted",
-        );
       const createdAt = this.clock.now();
       const userMessageId = randomUUID();
       const assistantMessageId = randomUUID();
@@ -1986,7 +2677,7 @@ export class CompanionChatService {
         ),
         createdAt,
         route: null,
-        contextKinds: [],
+        contextKinds: minimized.kinds,
       };
       const assistantMessage: ChatMessage = {
         messageId: assistantMessageId,
@@ -2032,15 +2723,23 @@ export class CompanionChatService {
         suggestion,
       };
       // The replay snapshot is plaintext; the suggestion lives only on the encrypted message.
+      if (Date.now() >= sendDeadline) throw deadlineFailure();
       await this.repository.complete(
         command,
         userMessage,
         assistantMessage,
         { ...result, suggestion: null },
-        tokens,
-        tokenBudget,
+        sendDeadline,
+        requestTitle
+          ? this.crypto.encryptTitle(
+              owner,
+              conversationId,
+              normalizedProviderTitle(reply.title) ??
+                Array.from(parsed.data.message).slice(0, 40).join(""),
+            )
+          : undefined,
       );
-      return result;
+      delivered = result;
     } catch (error) {
       const failure = this.failure(
         error,
@@ -2054,7 +2753,201 @@ export class CompanionChatService {
         failure.title,
       );
       if (error instanceof HttpException) throw error;
+      if (error instanceof ConsentUnavailableError)
+        throw new ChatProblem(
+          503,
+          "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+          "Consent is unavailable",
+        );
       throw new ChatProblem(503, failure.code, failure.title);
+    }
+    const titleRemainingMs = sendDeadline - Date.now();
+    if (titleRemainingMs <= 0) return delivered;
+    let titleTimeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.withTitle(owner, delivered),
+        new Promise<SendResult>((resolve) => {
+          titleTimeout = setTimeout(() => {
+            resolve(delivered);
+          }, titleRemainingMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(titleTimeout);
+    }
+  }
+
+  async rename(
+    request: ChatRequest,
+    conversationId: string,
+  ): Promise<RenameTitleResult> {
+    const owner = requestOwner(request);
+    const parsed = renameTitleSchema.safeParse(request.body);
+    const rawKey = idempotencyKey.safeParse(request.headers["idempotency-key"]);
+    const ifMatch = request.headers["if-match"];
+    if (
+      !uuid.safeParse(conversationId).success ||
+      !parsed.success ||
+      !rawKey.success ||
+      typeof ifMatch !== "string" ||
+      !/^"[A-Za-z0-9_-]{43}"$/u.test(ifMatch)
+    )
+      throw new BadRequestException();
+    const now = this.clock.now();
+    const keyHash = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      `rename-title:${rawKey.data}`,
+    );
+    const fingerprint = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify({
+        operation: "RENAME_TITLE",
+        conversationId,
+        title: parsed.data.title,
+        ifMatch,
+      }),
+    );
+    try {
+      const conversation = await this.repository.findConversation(
+        owner,
+        conversationId,
+      );
+      if (!conversation || conversation.expiresAt <= now)
+        throw new NotFoundException();
+      const previous = await this.repository.findCommand(owner, keyHash);
+      if (previous) return this.replayRename(previous, fingerprint);
+      if (`"${this.crypto.titleVersion(conversation)}"` !== ifMatch)
+        throw new ChatProblem(
+          412,
+          "CHAT_TITLE_VERSION_CONFLICT",
+          "Conversation title has changed",
+        );
+      const encryptedTitle = this.crypto.encryptTitle(
+        owner,
+        conversationId,
+        parsed.data.title,
+      );
+      const result: RenameTitleResult = {
+        conversationId,
+        title: parsed.data.title,
+        titleVersion: this.crypto.titleVersion({
+          ...conversation,
+          title: defaultConversationTitle,
+          encryptedTitle,
+        }),
+      };
+      const command: ChatCommand = {
+        _id: randomUUID(),
+        ownerAccountId: owner,
+        conversationId,
+        keyHash,
+        fingerprint,
+        state: "SUCCEEDED",
+        response: null,
+        failureCode: null,
+        failureStatus: null,
+        failureTitle: null,
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: conversation.expiresAt,
+      };
+      command.response = {
+        operation: "RENAME_TITLE",
+        encryptedResult: this.crypto.encryptRenameResult(
+          owner,
+          conversationId,
+          command._id,
+          result,
+        ),
+      };
+      await this.repository.renameTitle(command, conversation, encryptedTitle);
+      return result;
+    } catch (error) {
+      let completed: ChatCommand | null;
+      try {
+        completed = await this.repository.findCommand(owner, keyHash);
+        if (completed) {
+          const conversation = await this.repository.findConversation(
+            owner,
+            conversationId,
+          );
+          if (!conversation || conversation.expiresAt <= this.clock.now())
+            throw new NotFoundException();
+        }
+      } catch (recoveryError) {
+        if (recoveryError instanceof NotFoundException) throw recoveryError;
+        throw new ChatProblem(
+          503,
+          "CHAT_TITLE_UNAVAILABLE",
+          "Conversation title is unavailable",
+        );
+      }
+      if (completed) return this.replayRename(completed, fingerprint);
+      if (
+        error instanceof HttpException &&
+        [404, 409, 412].includes(error.getStatus())
+      )
+        throw error;
+      throw new ChatProblem(
+        503,
+        "CHAT_TITLE_UNAVAILABLE",
+        "Conversation title is unavailable",
+      );
+    }
+  }
+
+  private replayRename(
+    command: ChatCommand,
+    fingerprint: string,
+  ): RenameTitleResult {
+    if (command.fingerprint !== fingerprint)
+      throw new ChatProblem(
+        409,
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key was reused",
+      );
+    if (
+      command.state === "SUCCEEDED" &&
+      command.response &&
+      "operation" in command.response
+    ) {
+      try {
+        return this.crypto.decryptRenameResult(
+          command.ownerAccountId,
+          command.conversationId,
+          command._id,
+          command.response.encryptedResult,
+        );
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_TITLE_UNAVAILABLE",
+          "Conversation title is unavailable",
+        );
+      }
+    }
+    throw new ChatProblem(
+      503,
+      "CHAT_TITLE_UNAVAILABLE",
+      "Conversation title is unavailable",
+    );
+  }
+
+  private async withTitle(
+    owner: string,
+    result: SendResult,
+  ): Promise<SendResult> {
+    try {
+      const conversation = await this.repository.findConversation(
+        owner,
+        result.conversationId,
+      );
+      return conversation
+        ? { ...result, ...this.crypto.title(conversation) }
+        : result;
+    } catch {
+      return result;
     }
   }
 
@@ -2079,16 +2972,32 @@ export class CompanionChatService {
         "IDEMPOTENCY_KEY_REUSED",
         "Idempotency key was reused",
       );
-    if (command.state === "SUCCEEDED" && command.response) {
+    if (
+      command.state === "SUCCEEDED" &&
+      command.response &&
+      !("operation" in command.response)
+    ) {
       // The snapshot never holds the suggestion; restore it from the encrypted assistant message.
       const { assistantMessageId } = command.response;
-      const conversation = await this.repository.findConversation(
-        command.ownerAccountId,
-        command.conversationId,
-      );
+      let conversation: Conversation | null;
+      try {
+        conversation = await this.repository.findConversation(
+          command.ownerAccountId,
+          command.conversationId,
+        );
+      } catch {
+        return { ...command.response, suggestion: null };
+      }
       const message = conversation?.messages.find(
         (value) => value.messageId === assistantMessageId,
       );
+      let title: Partial<Pick<RenameTitleResult, "title" | "titleVersion">> =
+        {};
+      try {
+        if (conversation) title = this.crypto.title(conversation);
+      } catch {
+        title = {};
+      }
       return {
         ...command.response,
         suggestion: message
@@ -2098,6 +3007,7 @@ export class CompanionChatService {
               message,
             )
           : null,
+        ...title,
       };
     }
     if (command.state === "FAILED")
@@ -2120,6 +3030,30 @@ export class CompanionChatService {
         status: error.getStatus(),
         title: error.safeTitle,
       };
+    if (error instanceof ConsentUnavailableError)
+      return {
+        code: "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+        status: 503,
+        title: "Consent is unavailable",
+      };
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      return {
+        code:
+          typeof response === "object" &&
+          "code" in response &&
+          typeof response.code === "string"
+            ? response.code
+            : code,
+        status: error.getStatus(),
+        title:
+          typeof response === "object" &&
+          "title" in response &&
+          typeof response.title === "string"
+            ? response.title
+            : title,
+      };
+    }
     return { code, status: 503, title };
   }
 }
@@ -2158,8 +3092,24 @@ export class CompanionChatController {
   updateContext(
     @Req() request: ChatRequest,
     @Param("conversationId") conversationId: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
   ) {
+    response.setHeader("Cache-Control", "no-store");
     return this.service.updateContext(request, conversationId);
+  }
+
+  @Put(":conversationId/title")
+  async rename(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    const result = await this.service.rename(request, conversationId);
+    response.setHeader("ETag", `"${result.titleVersion}"`);
+    return result;
   }
 
   @Delete(":conversationId")
@@ -2201,7 +3151,9 @@ export const registerCompanionChatModule = (
       ? { provide: CONTEXT, useValue: dependencies.contextAssembler }
       : {
           provide: CONTEXT,
-          useFactory: () => new OwnerVerifiedContextAssembler(configuration),
+          useFactory: (consent: ConsentClient) =>
+            new OwnerVerifiedContextAssembler(configuration, consent),
+          inject: [CONSENT],
         },
     dependencies.provider
       ? { provide: PROVIDER, useValue: dependencies.provider }

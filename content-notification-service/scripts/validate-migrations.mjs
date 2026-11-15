@@ -46,6 +46,7 @@ const specialistNotificationPreferences = requiredMigration(
 );
 const nativePushDelivery = requiredMigration('28_add_native_push_delivery.sql');
 const hardenedNativePushDelivery = requiredMigration('29_harden_native_push_delivery.sql');
+const specialistLiveOutbox = requiredMigration('31_add_specialist_notification_live_outbox.sql');
 const review1Seed = await readFile(
   new URL('../migrations/review1/1_seed_review1_controlled_resource.sql', import.meta.url),
   'utf8',
@@ -109,6 +110,18 @@ assert.match(hardenedNativePushDelivery, /ADD COLUMN receipt_attempt_count\b/);
 assert.match(hardenedNativePushDelivery, /ADD COLUMN delivery_eligible_from_at\b/);
 assert.match(hardenedNativePushDelivery, /'CONFIRMED'/);
 assert.match(hardenedNativePushDelivery, /CREATE TABLE push_device_command_rate_limit\b/);
+assert.match(specialistLiveOutbox, /CREATE TABLE specialist_notification_live_outbox\b/);
+assert.match(
+  specialistLiveOutbox,
+  /notification_id uuid NOT NULL UNIQUE REFERENCES notification\(id\)/,
+);
+assert.match(specialistLiveOutbox, /state IN \('PENDING', 'PUBLISHED', 'SUPPRESSED', 'FAILED'\)/);
+assert.match(specialistLiveOutbox, /attempt_count BETWEEN 0 AND 5/);
+assert.match(
+  specialistLiveOutbox,
+  /CREATE TRIGGER specialist_notification_live_identity_immutable/,
+);
+assert.doesNotMatch(specialistLiveOutbox, /INSERT INTO specialist_notification_live_outbox/i);
 for (const table of [
   'resource_eligibility_publication',
   'resource_eligibility_declaration',

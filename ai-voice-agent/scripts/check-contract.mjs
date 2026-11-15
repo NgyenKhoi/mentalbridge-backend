@@ -29,9 +29,15 @@ for (const [name, schema] of [
     Object.keys(expected.properties).sort(),
   );
   for (const [key, value] of Object.entries(expected.properties))
-    for (const constraint of ["const", "format", "maxLength", "minLength"])
+    for (const constraint of [
+      "const",
+      "format",
+      "maxLength",
+      "minLength",
+      "enum",
+    ])
       if (value[constraint] !== undefined)
-        assert.equal(
+        assert.deepEqual(
           actual.properties[key][constraint],
           value[constraint],
           `${name}.${key}.${constraint}`,

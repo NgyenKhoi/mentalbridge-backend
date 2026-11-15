@@ -137,6 +137,12 @@ class PayoutPropertiesTests {
 		var provider = new ConfiguredPayoutProvider(properties, momo, payos);
 		var command = new PayoutProvider.Command(UUID.randomUUID(), UUID.randomUUID(), "unused", 210_000,
 				"VND", "BANK_ACCOUNT", "unused");
+		assertThat(provider.submit(command).failureCode()).isEqualTo("REAL_PAYOUT_DISABLED");
+		assertThat(provider.query(new PayoutProvider.Query("FAKE", command.payoutId(), command.attemptId(),
+				command.requestId(), command.amountVnd(), command.currency(), command.destinationType(),
+				command.destinationCiphertext(), null))
+				.failureCode()).isEqualTo("PAYOUT_PROVIDER_UNAVAILABLE");
+		properties.setMode("FAKE");
 		var first = provider.submit(command);
 		assertThat(first.status()).isEqualTo("SUCCEEDED");
 		assertThat(first.providerReference()).isEqualTo("fake-" + command.payoutId());

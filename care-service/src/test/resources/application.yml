@@ -1,4 +1,9 @@
 spring:
+  datasource:
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   application:
     name: care-service
   cloud:

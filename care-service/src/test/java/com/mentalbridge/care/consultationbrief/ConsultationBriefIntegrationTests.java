@@ -2,9 +2,14 @@ package com.mentalbridge.care.consultationbrief;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,10 +34,13 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
+import com.mentalbridge.care.consent.ConsentService;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -46,6 +54,8 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 	@Autowired JdbcClient jdbc;
 	@MockitoBean AppointmentContextClient appointments;
 	@MockitoBean JournalConsultationBriefDraftHttpClient aiDrafts;
+	@MockitoSpyBean ConsentService consents;
+	@MockitoSpyBean ConsultationBriefService briefs;
 
 	@Test
 	void ownerRequestsEditableAiSuggestionWithExactSourceAndDeletionClearsIt() throws Exception {
@@ -54,7 +64,7 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 		doReturn(new ConsultationBriefAiDraftClient.DraftProviderResponse(
 				"Work pressure has made it harder to focus this week",
 				List.of("Discuss one manageable next step"), "consultation-brief-ai-source-v1",
-				"ai-processing-capstone-v2", "PLUS", "DEMO", "service-entitlement-v1", 1L,
+				"ai-context-processing-capstone-v1", "PLUS", "DEMO", "service-entitlement-v1", 1L,
 				"exact-revision-routing-v1", "benchmark-approval-v1", "GEMINI", "gemini-approved",
 				"consultation-brief-draft-v1", 1, 12L, 20L, 15L, 1L))
 				.when(aiDrafts).draft(anyString(), anyString(), any());
@@ -71,6 +81,19 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 		var jobId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
 				accepted.getResponse().getContentAsByteArray()).get("jobId").asText();
 		awaitJob(jobId, "SUCCEEDED");
+		var outgoing = org.mockito.ArgumentCaptor.forClass(ConsultationBriefAiDraftClient.DraftProviderRequest.class);
+		verify(aiDrafts).draft(anyString(), anyString(), outgoing.capture());
+		var evaluatedAt = jdbc.sql("select evaluated_at from support_evaluation_v2 where id=:id").param("id", fixture.evaluationId())
+				.query((rs, row) -> rs.getTimestamp(1).toInstant()).single();
+		var sourceScreening = List.of(
+				new ConsultationBriefService.ScreeningContext("PHQ9", "DEPRESSIVE_SYMPTOMS", "MILD", "phq9-vi-vn-capstone-v2",
+						"phq9-standard-bands-v1", evaluatedAt, "mb-support-routing-capstone-v2"),
+				new ConsultationBriefService.ScreeningContext("GAD7", "ANXIETY_SYMPTOMS", "MODERATE", "gad7-vi-vn-adult-v1",
+						"gad7-standard-bands-v1", evaluatedAt, "mb-support-routing-capstone-v2"));
+		var briefId = jdbc.sql("select id from consultation_brief where appointment_id=:id").param("id", fixture.appointmentId()).query(UUID.class).single();
+		assertThat(outgoing.getValue()).isEqualTo(new ConsultationBriefAiDraftClient.DraftProviderRequest(fixture.appointmentId(), briefId,
+				0, fixture.evaluationId(), "Work pressure this week", List.of("Discuss a manageable next step"), sourceScreening,
+				"consultation-brief-ai-source-v1"));
 
 		mvc.perform(get("/api/v1/consultation-briefs/{id}/ai-draft-jobs/{jobId}",
 				fixture.appointmentId(), jobId).with(user(fixture.userId())))
@@ -94,6 +117,83 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.terminalReason").value("SOURCE_DELETED"))
 				.andExpect(jsonPath("$.currentSituation").isEmpty())
 				.andExpect(jsonPath("$.userGoals").isEmpty());
+	}
+
+	@Test
+	void chatConsentAloneCannotReadSourcesOrEnqueueAnAiBrief() throws Exception {
+		var fixture = fixture(Instant.now().plusSeconds(3_600));
+		consents.record(fixture.userId(), "synthetic-brief-chat-only", new ConsentService.DecisionCommand("AI_PROCESSING", "ai-processing-capstone-v2", true));
+		mvc.perform(post("/api/v1/consultation-briefs/{id}/ai-draft-jobs", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"0\"").header("Idempotency-Key", "synthetic-brief-context-required"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("AI_CONTEXT_CONSENT_REQUIRED"));
+		verify(aiDrafts, never()).draft(anyString(), anyString(), any());
+		assertThat(jdbc.sql("select count(*) from consultation_brief_ai_draft_job where user_id=:owner").param("owner", fixture.userId()).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void unavailableContextAuthorityCannotReadSourcesOrEnqueueAnAiBrief() throws Exception {
+		var fixture = fixture(Instant.now().plusSeconds(3_600));
+		doThrow(new CannotCreateTransactionException("synthetic unavailable database"))
+				.when(consents).authorizeAiContextProcessing(fixture.userId());
+		mvc.perform(post("/api/v1/consultation-briefs/{id}/ai-draft-jobs", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"0\"").header("Idempotency-Key", "synthetic-brief-consent-unavailable"))
+				.andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("CONSENT_UNAVAILABLE"));
+		verify(aiDrafts, never()).draft(anyString(), anyString(), any());
+		assertThat(jdbc.sql("select count(*) from consultation_brief_ai_draft_job where user_id=:owner").param("owner", fixture.userId()).query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void withdrawalCommittedDuringAppointmentLookupBlocksSourceProjectionAndJobInsert() throws Exception {
+		for (var withdrawn : List.of(
+				new ConsentService.DecisionCommand("AI_CONTEXT_PROCESSING", "ai-context-processing-capstone-v1", false),
+				new ConsentService.DecisionCommand("AI_PROCESSING", "ai-processing-capstone-v2", false))) {
+			var fixture = fixture(Instant.now().plusSeconds(3_600));
+			grantAi(fixture.userId());
+			mvc.perform(put("/api/v1/consultation-briefs/{id}/draft", fixture.appointmentId()).with(user(fixture.userId()))
+					.contentType(MediaType.APPLICATION_JSON).content(body(fixture.evaluationId()))).andExpect(status().isOk());
+			doAnswer(invocation -> {
+				consents.record(fixture.userId(), "synthetic-brief-withdraw-" + UUID.randomUUID(), withdrawn);
+				return new AppointmentContext(fixture.appointmentId(), fixture.userId(), fixture.specialistId(),
+						"CONFIRMED", fixture.startAt(), fixture.startAt().plusSeconds(3_600), 1);
+			}).when(appointments).get(any(), anyString(), any());
+			var projected = new java.util.ArrayList<Object>();
+			doAnswer(invocation -> {
+				var source = invocation.callRealMethod();
+				projected.add(source);
+				return source;
+			}).when(briefs).aiDraftSource(any(), anyString(), any(), any(), anyLong(), any());
+			mvc.perform(post("/api/v1/consultation-briefs/{id}/ai-draft-jobs", fixture.appointmentId())
+					.with(user(fixture.userId())).header("If-Match", "\"0\"")
+					.header("Idempotency-Key", "synthetic-brief-lookup-" + withdrawn.consentType()))
+					.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("AI_CONTEXT_CONSENT_REQUIRED"));
+			assertThat(projected).isEmpty();
+			verify(consents, times(2)).authorizeAiContextProcessing(fixture.userId());
+			verify(aiDrafts, never()).draft(anyString(), anyString(), any());
+			assertThat(jdbc.sql("select count(*) from consultation_brief_ai_draft_job where user_id=:owner")
+					.param("owner", fixture.userId()).query(Long.class).single()).isZero();
+		}
+	}
+
+	@Test
+	void contextWithdrawalAfterFirstAttemptStopsRetryAndLeavesNoSuggestion() throws Exception {
+		var fixture = fixture(Instant.now().plusSeconds(3_600));
+		grantAi(fixture.userId());
+		doAnswer(invocation -> {
+			consents.record(fixture.userId(), "synthetic-brief-revoke-context", new ConsentService.DecisionCommand(
+					"AI_CONTEXT_PROCESSING", "ai-context-processing-capstone-v1", false));
+			throw new IllegalStateException("synthetic provider unavailable");
+		}).when(aiDrafts).draft(anyString(), anyString(), any());
+		mvc.perform(put("/api/v1/consultation-briefs/{id}/draft", fixture.appointmentId()).with(user(fixture.userId()))
+				.contentType(MediaType.APPLICATION_JSON).content(body(fixture.evaluationId()))).andExpect(status().isOk());
+		var accepted = mvc.perform(post("/api/v1/consultation-briefs/{id}/ai-draft-jobs", fixture.appointmentId())
+				.with(user(fixture.userId())).header("If-Match", "\"0\"").header("Idempotency-Key", "synthetic-brief-retry-revoked"))
+				.andExpect(status().isAccepted()).andReturn();
+		var jobId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(accepted.getResponse().getContentAsByteArray()).get("jobId").asText();
+		awaitJob(jobId, "FAILED");
+		verify(aiDrafts).draft(anyString(), anyString(), any());
+		mvc.perform(get("/api/v1/consultation-briefs/{id}/ai-draft-jobs/{jobId}", fixture.appointmentId(), jobId).with(user(fixture.userId())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.terminalReason").value("CONSENT_REQUIRED"))
+				.andExpect(jsonPath("$.attemptCount").value(1)).andExpect(jsonPath("$.currentSituation").isEmpty());
 	}
 
 	@Test
@@ -371,6 +471,8 @@ class ConsultationBriefIntegrationTests extends CareTestProperties {
 				""").param("id", UUID.randomUUID()).param("userId", userId)
 				.param("key", "consultation-ai-consent-" + UUID.randomUUID())
 				.param("hash", "a".repeat(64)).update();
+		consents.record(userId, "synthetic-brief-context-" + UUID.randomUUID(), new ConsentService.DecisionCommand(
+				"AI_CONTEXT_PROCESSING", "ai-context-processing-capstone-v1", true));
 	}
 
 	private void awaitJob(String jobId, String expected) throws InterruptedException {

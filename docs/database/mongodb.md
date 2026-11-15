@@ -158,10 +158,27 @@ indexes for four Journal/AI collections:
   `suggestion` envelope on assistant messages: the resolved destination,
   Resource ID and title, encrypted with the same key and an AAD that ends in
   `:suggestion`.
+  Migration `018_companion_conversation_title.cjs` adds optional `encryptedTitle`
+  using the same envelope and key with AAD `${owner}:${conversationId}:title`.
+  New explicit-create, automatic and manual titles are encrypted; required
+  `title` remains the neutral `Cuộc trò chuyện mới` on every new title write.
+  Absence of the envelope alone allows an old document's plaintext `title`
+  fallback. A present unreadable envelope yields the neutral display title,
+  never a legacy value. The public `titleVersion` is a derived title-state HMAC,
+  not a persisted field or message/context activity version. Atomic first-turn
+  initialization checks empty messages, absent envelope and neutral legacy title;
+  manual or explicitly created titles cannot be overwritten by a send.
 - `ai_companion_commands` stores the keyed idempotency hash and fingerprint plus
   an immutable success or failure snapshot. The unique owner/key index makes an
   exact retry stable and rejects a key reused with different input. Deleting a
   conversation removes its commands in the same transaction.
+  MB-810 rename keys use the existing hash with a `rename-title:` namespace and
+  fingerprints of operation/conversation/normalized title/If-Match. Completed
+  rename responses store an encrypted title result bound by
+  owner/conversation/command/purpose AAD plus its original version. Exact retry
+  returns that historical result without updating the current conversation.
+  Send snapshots never copy new plaintext title metadata; sends and send replays
+  hydrate current-at-read title metadata separately from durable answer success.
 - `ai_companion_quota_ledgers` stores one `(owner, localDate, timezone)` ledger
   with successful-answer and in-flight reservation counts. The server derives
   the local day and reset instant from its configured IANA timezone. It never
@@ -173,8 +190,9 @@ Conversation append, quota consumption, and command completion use a MongoDB
 transaction, so the deployed MongoDB must support replica-set transactions.
 Provider/context failures release their reservation and do not consume a
 success allowance. Consultation remains authoritative for the current service
-plan, and Care remains authoritative for current `AI_PROCESSING` consent and
-SupportPlan context.
+plan, and Care remains authoritative for the atomic current L1/L2 snapshot and SupportPlan
+context. Under [ADR 0050](../adr/0050-two-level-ai-consent.md), existing current
+`AI_PROCESSING` v2 is L1-only and new `AI_CONTEXT_PROCESSING` v1 is dependent L2.
 
 Migration `011_bedrock_provider.cjs` additively accepts `BEDROCK` in assistant
 route provenance. It retains the existing deterministic fake, Gemini, and
@@ -184,9 +202,24 @@ Migration `012_ai_companion_conversation_context.cjs` backfills every existing
 conversation with the conservative default `{ plan: true, diary: false,
 screening: false, resourceIds: [] }`, then requires the owner-scoped context
 subdocument under strict validation. It also extends message provenance with
-`RESOURCE`. The application treats this stored selection as authoritative and
-ignores legacy message-body context; resource IDs are revalidated against the
-owner's recent Content progress before any minimized context is assembled.
+`RESOURCE`. This is the immutable historical migration default. MB-806 changes the application's
+new-conversation default to all flags false and resourceIds empty without a
+persisted-shape or validator change. Stored selections are preferences, never
+consent authority; they are ignored without effective L2 and source ownership is
+revalidated before use. Resource IDs remain bounded by the owner's recent Content
+progress. Complete message pairs with any disallowed personal kind are filtered
+before decryption. New provenance unions actual fetched and retained-history kinds,
+while old labels and results are never rewritten. No Mongo migration is needed.
+
+The MB-810 owner decision of 2026-11-06 specifically authorizes one additive
+validator-only migration 018. Its `up` runs one strict/error `collMod`, retaining
+017's complete validator and adding only optional `encryptedTitle`. It changes
+no existing document bytes, required field, index or command validator. There is
+no backfill or startup schema repair. Deploy 018 before encrypted-title writes;
+its `down` refuses if any `encryptedTitle` exists and otherwise restores 017
+without deleting data. Application rollback must preserve encrypted-title read
+compatibility. Applying it to shared dev/staging Mongo needs separate owner
+authorization.
 
 ## AI Companion Voice admission and usage collections
 
@@ -301,15 +334,15 @@ One document per server-generated `voiceSessionId`, also used as `_id`. Its
 idempotency keys are not stored. Exact accepted retries reuse the same session
 and reservation.
 
-| Fields | Purpose |
-| --- | --- |
-| `state`, `policyVersion`, `terminalReason`, `settledAt` | Closed lifecycle, approved policy, and idempotent terminal outcome. |
-| `entitlement` | Frozen admission-time Consultation package, source, version, checked time, and validity snapshot; renewal never rewrites provenance or authorizes a future turn from this snapshot alone. |
-| `quotaDay`, `admittedSeconds`, `authorizedAt`, `hardStopAt` | Frozen server-derived Vietnam quota day and wall-clock admission deadline. |
-| `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence` | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing. |
-| `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts. |
-| `createdAt`, `updatedAt`, `expiresAt` | Metadata lifecycle; `expiresAt` is exactly creation plus 30 days and is never extended by activity or settlement. |
-| `contextHandoffHash` (optional) | Migration 016: 43-character HMAC of an owner-bound Text-context ticket. Unique across sessions, including terminal rows; never contains the ticket, conversation ID, content or summary. Absent on voice-only sessions. |
+| Fields                                                                                                                                  | Purpose                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`, `policyVersion`, `terminalReason`, `settledAt`                                                                                 | Closed lifecycle, approved policy, and idempotent terminal outcome.                                                                                                                                                     |
+| `entitlement`                                                                                                                           | Frozen admission-time Consultation package, source, version, checked time, and validity snapshot; renewal never rewrites provenance or authorizes a future turn from this snapshot alone.                               |
+| `quotaDay`, `admittedSeconds`, `authorizedAt`, `hardStopAt`                                                                             | Frozen server-derived Vietnam quota day and wall-clock admission deadline.                                                                                                                                              |
+| `authorityExpiresAt`, `dispatchState`, `capacityGeneration`, `attemptId`, `leaseId`, `leaseExpiresAt`, `lastSequence`                   | Short authority lease, possibly issued media boundary, and stale/reordered attempt fencing.                                                                                                                             |
+| `deliveredSession`, `chargedSeconds`, `activeMilliseconds`, `openActiveSince`, `lastActivityAt`, `connectDeadline`, `reconnectDeadline` | Content-free first-publication and interval accounting with idle, connection, and reconnect cuts.                                                                                                                       |
+| `createdAt`, `updatedAt`, `expiresAt`                                                                                                   | Metadata lifecycle; `expiresAt` is exactly creation plus 30 days and is never extended by activity or settlement.                                                                                                       |
+| `contextHandoffHash` (optional)                                                                                                         | Migration 016: 43-character HMAC of an owner-bound Text-context ticket. Unique across sessions, including terminal rows; never contains the ticket, conversation ID, content or summary. Absent on voice-only sessions. |
 
 Indexes are `uq_ai_voice_owner_key` (unique owner/key),
 `idx_ai_voice_retention_sweep` (`expiresAt`), and
@@ -448,7 +481,9 @@ the fixed 30-second provider timeout. At most two attempts are allowed. The
 forwarded end-user bearer JWT is held only in process memory and is never a job
 field; a reclaimed job without that context fails closed with
 `AUTHORIZATION_CONTEXT_LOST`. Request-time and pre-attempt Care checks use the
-current `AI_PROCESSING` decision. Revocation blocks an attempt or retry without
+effective L2 `AI_CONTEXT_PROCESSING` through Care's atomic snapshot, before
+source content access and immediately before every provider attempt. Revocation
+blocks an attempt or retry without
 deleting earlier results.
 
 The first attempt also resolves the current entitlement through Consultation
@@ -731,6 +766,27 @@ db.messages.createIndex({ senderId: 1, clientMessageId: 1 }, { unique: true });
 Use cursor pagination. A deletion replaces display content with a tombstone while retention/moderation rules decide encrypted-body removal. Do not put large attachments in MongoDB; store private object keys and validated metadata in a separate `message_attachments` collection or relational metadata.
 
 `bodyCiphertext`, `bodyIv`, and `bodyTag` are the AES-256-GCM envelope persisted by Realtime; plaintext is returned only after current authorization. `keyVersion` resolves against the configured decryption keyring so a controlled key rotation preserves history. Operators deploy old and new keys together before selecting a new active key and retain every version still referenced by stored messages. `commandFingerprint` is a keyed digest over the logical conversation, type, and content so a repeated sender-scoped `clientMessageId` can distinguish a safe retry from conflicting content without storing a raw plaintext hash. Migration `realtime-service/migrations/001_realtime_message_foundation.cjs` is the executable validator and index baseline.
+
+## Appointment message moderation collections
+
+Migration `realtime-service/migrations/002_appointment_message_moderation.cjs`
+activates three bounded Realtime-owned collections:
+
+- `appointment_message_reports` binds one reporter and target message, stores a
+  stable reason plus optional AES-256-GCM encrypted context, and records only
+  the bounded `OPEN`/`RESOLVED` review lifecycle;
+- `appointment_moderation_commands` fences delete, report, and resolution
+  retries by actor plus idempotency key and rejects a conflicting fingerprint;
+- `appointment_moderation_audit` records actor, role, action, target, safe
+  reason, outcome, correlation ID, and timestamp without message content.
+
+Report list responses omit reporter identity and message content. Only an
+authorized `ADMIN` detail read may decrypt the retained target content and
+report context. Participant delete/report commands reauthorize the exact
+appointment through Consultation and fail closed for cross-appointment,
+non-owner, missing, or already deleted targets. A tombstone retains the
+encrypted body for the approved moderation/retention path while every normal
+history response exposes `content: null` and server-owned `DELETED` state.
 
 ## `message_receipts` — PROPOSED
 

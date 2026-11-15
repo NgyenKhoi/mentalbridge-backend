@@ -7,6 +7,8 @@ import {
 } from "../llm-providers/voice-diagnostics.js";
 import {
   RoutedChatProvider,
+  providerOutputJsonSchema,
+  voiceProviderOutputJsonSchema,
   selectCompanionProviderRoute,
   validatedAssistantMessage,
   type ChatRoute,
@@ -397,6 +399,73 @@ void test("voice reuses the Companion Bedrock schema/prompt/validator without to
     assert.throws(() =>
       validatedAssistantMessage("Tôi chẩn đoán bạn đang mắc trầm cảm"),
     );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("voice-only expression accepts only neutral or comfort and every other tag becomes neutral", async () => {
+  const original = globalThis.fetch;
+  const core = {
+    message: "Mầm đang lắng nghe bạn nè.",
+    language: "vi",
+    authority: "SUPPORT_ONLY",
+    clinicalAssessment: "NONE",
+    safetyDecision: "NONE",
+    eligibilityDecision: "NONE",
+    businessAction: "NONE",
+    thirdPartyAction: "NONE",
+  };
+  assert.equal(
+    Object.hasOwn(providerOutputJsonSchema.properties, "expression"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(voiceProviderOutputJsonSchema.properties, "expression"),
+    true,
+  );
+  assert.deepEqual(
+    voiceProviderOutputJsonSchema.properties.expression.anyOf[0].enum,
+    ["neutral", "comfort"],
+  );
+  try {
+    for (const [tag, expected] of [
+      ["neutral", "neutral"],
+      ["comfort", "comfort"],
+      ["warm", "neutral"],
+      ["encourage", "neutral"],
+      ["excited", "neutral"],
+      [null, "neutral"],
+      [undefined, "neutral"],
+    ] as const) {
+      globalThis.fetch = () =>
+        Promise.resolve(
+          Response.json({
+            stopReason: "end_turn",
+            output: {
+              message: {
+                content: [
+                  {
+                    text: JSON.stringify({
+                      ...core,
+                      ...(tag === undefined ? {} : { expression: tag }),
+                    }),
+                  },
+                ],
+              },
+            },
+            usage: { inputTokens: 120, outputTokens: 30 },
+          }),
+        );
+      const result = await new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "synthetic-bedrock-credential",
+      }).reply("Tôi muốn nói thêm", { kinds: [], prompt: "[]" }, route, {
+        voice: true,
+      });
+      assert.equal(result.expression, expected);
+      assert.equal(result.message, core.message);
+    }
   } finally {
     globalThis.fetch = original;
   }

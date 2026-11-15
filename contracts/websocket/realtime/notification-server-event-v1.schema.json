@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/websocket/realtime/notification-server-event-v1.schema.json",
+  "title": "Realtime specialist notification server event v1",
+  "description": "Separate notification.created Socket.IO event on authenticated /realtime. A pointer invalidates REST state; no ACK, count increment or replay guarantee is implied. The existing realtime.event chat/ready union is unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "correlationId",
+    "occurredAt",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": { "const": "notification.created" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notificationId"],
+      "properties": {
+        "notificationId": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

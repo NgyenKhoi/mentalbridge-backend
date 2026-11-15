@@ -66,7 +66,26 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/moderation-cases",
 			"GET /api/v1/community/admin/moderation-cases/{caseId}",
 			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions",
-			"GET /api/v1/community/admin/operations/summary");
+			"GET /api/v1/community/admin/operations/summary",
+			"GET /api/v1/community/circles",
+			"POST /api/v1/community/circles",
+			"GET /api/v1/community/circles/{circleId}",
+			"DELETE /api/v1/community/circles/{circleId}",
+			"POST /api/v1/community/circles/{circleId}/invitations",
+			"POST /api/v1/community/circles/{circleId}/decision",
+			"DELETE /api/v1/community/circles/{circleId}/members/{profileId}",
+			"GET /api/v1/community/circles/{circleId}/posts",
+			"POST /api/v1/community/circles/{circleId}/posts",
+			"DELETE /api/v1/community/circles/{circleId}/posts/{entryId}",
+			"GET /api/v1/community/circles/{circleId}/posts/{entryId}/comments",
+			"POST /api/v1/community/circles/{circleId}/posts/{entryId}/comments",
+			"DELETE /api/v1/community/circles/{circleId}/comments/{entryId}",
+			"GET /api/v1/community/chat/friends",
+			"PUT /api/v1/community/chat/friends/{profileId}",
+			"POST /api/v1/community/chat/friendships/{friendshipId}/accept",
+			"DELETE /api/v1/community/chat/friendships/{friendshipId}",
+			"GET /api/v1/community/members",
+			"GET /api/v1/community/members/{profileId}");
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
 			"GET /api/v1/community/comments/{commentId}/reaction", "PUT /api/v1/community/comments/{commentId}/reaction", "DELETE /api/v1/community/comments/{commentId}/reaction",
@@ -122,7 +141,26 @@ class CommunityOpenApiContractTests {
 			"GET /api/v1/community/admin/moderation-cases",
 			"GET /api/v1/community/admin/moderation-cases/{caseId}",
 			"POST /api/v1/community/admin/moderation-cases/{caseId}/actions",
-			"GET /api/v1/community/admin/operations/summary");
+			"GET /api/v1/community/admin/operations/summary",
+			"GET /api/v1/community/circles",
+			"POST /api/v1/community/circles",
+			"GET /api/v1/community/circles/{circleId}",
+			"DELETE /api/v1/community/circles/{circleId}",
+			"POST /api/v1/community/circles/{circleId}/invitations",
+			"POST /api/v1/community/circles/{circleId}/decision",
+			"DELETE /api/v1/community/circles/{circleId}/members/{profileId}",
+			"GET /api/v1/community/circles/{circleId}/posts",
+			"POST /api/v1/community/circles/{circleId}/posts",
+			"DELETE /api/v1/community/circles/{circleId}/posts/{entryId}",
+			"GET /api/v1/community/circles/{circleId}/posts/{entryId}/comments",
+			"POST /api/v1/community/circles/{circleId}/posts/{entryId}/comments",
+			"DELETE /api/v1/community/circles/{circleId}/comments/{entryId}",
+			"GET /api/v1/community/chat/friends",
+			"PUT /api/v1/community/chat/friends/{profileId}",
+			"POST /api/v1/community/chat/friendships/{friendshipId}/accept",
+			"DELETE /api/v1/community/chat/friendships/{friendshipId}",
+			"GET /api/v1/community/members",
+			"GET /api/v1/community/members/{profileId}");
 
 	@Test
 	void frozenV1ContractIsValidAndMarksDeliveredOperationsImplemented() {
@@ -178,7 +216,7 @@ class CommunityOpenApiContractTests {
 	@Test
 	void sensitiveContentWarningContractIsBoundedAndVersioned() {
 		var api = new OpenAPIV3Parser().read(contract().toString());
-		assertThat(api.getInfo().getVersion()).isEqualTo("1.15.0");
+		assertThat(api.getInfo().getVersion()).isEqualTo("1.17.0");
 		assertThat(api.getComponents().getSchemas().get("CommunitySensitiveContentWarning").getEnum())
 				.containsExactly("SENSITIVE_CONTENT");
 		assertThat(api.getComponents().getSchemas().get("ModerationAction").getEnum())

@@ -10,7 +10,17 @@ import org.springframework.stereotype.Component;
 class ChatAccess {
     private final CommunityChatProfiles profiles;
     private final ChatPrivacyRepository privacy;
-    ChatAccess(CommunityChatProfiles profiles, ChatPrivacyRepository privacy) { this.profiles = profiles; this.privacy = privacy; }
+    private final FriendshipRepository friendships;
+    private final FriendshipProperties friendshipProperties;
+    ChatAccess(CommunityChatProfiles profiles, ChatPrivacyRepository privacy, FriendshipRepository friendships, FriendshipProperties friendshipProperties) {
+        this.profiles = profiles; this.privacy = privacy; this.friendships = friendships; this.friendshipProperties = friendshipProperties;
+    }
+    boolean friends(UUID first, UUID second) {
+        if (!friendshipProperties.enabled()) return true;
+        var pair = List.of(first, second).stream().sorted(java.util.Comparator.comparing(UUID::toString)).toList();
+        return friendships.findByFirstProfileIdAndSecondProfileId(pair.get(0), pair.get(1)).filter(f -> f.state.equals("ACCEPTED")).isPresent();
+    }
+    boolean friendshipRequired() { return friendshipProperties.enabled(); }
     Profile actor(UUID subject) {
         var profile = profiles.ensure(subject);
         return lock(List.of(profile.id())).getFirst();

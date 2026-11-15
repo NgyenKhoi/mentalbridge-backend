@@ -49,7 +49,7 @@ CREATE TABLE care.consent_decision (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES care.user_profile(account_id),
     consent_type varchar(40) NOT NULL CHECK (consent_type IN (
-        'PRIVACY_POLICY', 'AI_PROCESSING', 'AI_VOICE_PROCESSING', 'RESEARCH_DATA', 'MARKETING_NOTIFICATION'
+        'PRIVACY_POLICY', 'AI_PROCESSING', 'AI_CONTEXT_PROCESSING', 'AI_VOICE_PROCESSING', 'RESEARCH_DATA', 'MARKETING_NOTIFICATION'
     )),
     policy_version varchar(64) NOT NULL,
     granted boolean NOT NULL,
@@ -448,6 +448,7 @@ CREATE TABLE care.support_plan (
     personalization_id uuid,
     personalization_revision bigint,
     personalization_schema_version varchar(64),
+    checklist_provenance jsonb,
     entitlement_package varchar(16) NOT NULL,
     entitlement_source varchar(16) NOT NULL,
     entitlement_policy_version varchar(64) NOT NULL,
@@ -477,7 +478,9 @@ CREATE TABLE care.support_plan (
     FOREIGN KEY (support_evaluation_id, user_id)
         REFERENCES care.support_evaluation_v2(id, user_id),
     FOREIGN KEY (personalization_id, user_id, personalization_revision)
-        REFERENCES care.support_plan_personalization(id, user_id, revision)
+        REFERENCES care.support_plan_personalization(id, user_id, revision),
+    CHECK (checklist_provenance IS NULL
+        OR (model_version = 3 AND jsonb_typeof(checklist_provenance) = 'object'))
 );
 
 CREATE TABLE care.support_plan_focus (
@@ -852,6 +855,11 @@ CREATE TABLE care.support_plan_activity_occurrence (
                 AND length(btrim(evidence_id)) BETWEEN 1 AND 255
                 AND (evidence_revision IS NULL OR length(btrim(evidence_revision)) BETWEEN 1 AND 128)
                 AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
+            OR (source_action_type = 'REASSESSMENT_SCREENING' AND evidence_owner = 'CARE'
+                AND evidence_kind = 'OWNER_REVIEW_DECISION' AND evidence_id IS NOT NULL
+                AND length(btrim(evidence_id)) BETWEEN 1 AND 255
+                AND evidence_revision IS NULL
+                AND evidence_occurred_at IS NOT NULL AND evidence_verified_at IS NOT NULL)
         ))) IS TRUE
         AND (evidence_verified_at IS NULL OR evidence_verified_at >= evidence_occurred_at)
     )
@@ -874,6 +882,8 @@ CREATE TABLE care.reassessment_self_report (
     current_experience varchar(32),
     helpful_context varchar(500),
     difficult_context varchar(500),
+    symptom_catalog_revision varchar(128),
+    symptom_codes text[] NOT NULL DEFAULT '{}',
     version bigint NOT NULL,
     authored_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -882,6 +892,16 @@ CREATE TABLE care.reassessment_self_report (
     CHECK (source_version = 'reassessment-self-report-v1'),
     CHECK (current_experience IS NULL OR current_experience IN
         ('BETTER', 'ABOUT_THE_SAME', 'MORE_DIFFICULT', 'UNSURE')),
+    CHECK (
+        cardinality(symptom_codes) BETWEEN 0 AND 8
+        AND array_position(symptom_codes, NULL) IS NULL
+        AND ((symptom_catalog_revision IS NULL AND cardinality(symptom_codes) = 0)
+            OR (symptom_catalog_revision IS NOT NULL
+                AND length(btrim(symptom_catalog_revision)) BETWEEN 1 AND 128
+                AND symptom_catalog_revision ~ '[^[:space:]]'))
+        AND (deleted_at IS NULL
+            OR (symptom_catalog_revision IS NULL AND cardinality(symptom_codes) = 0))
+    ),
     CHECK (
         (deleted_at IS NULL AND current_experience IS NOT NULL)
         OR (deleted_at IS NOT NULL AND current_experience IS NULL

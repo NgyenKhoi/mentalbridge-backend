@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Inject,
@@ -61,15 +62,70 @@ const ANALYSIS_WORKER = "ANALYSIS_WORKER";
 const uuid = z.uuid();
 const revisionSchema = z.coerce.number().int().min(1).max(200);
 const idempotencyKeySchema = z.string().min(16).max(128);
+const consentLevelSchema = (
+  consentType: "AI_PROCESSING" | "AI_CONTEXT_PROCESSING",
+  currentVersion: string,
+  context: boolean,
+) =>
+  z
+    .object({
+      authorized: z.boolean(),
+      reason: z.enum([
+        "GRANTED",
+        "MISSING",
+        "REVOKED",
+        "POLICY_OUTDATED",
+        "DEPENDENCY_REQUIRED",
+      ]),
+      consentType: z.literal(consentType),
+      policyVersion: z.string().min(1).max(64).nullable(),
+      decidedAt: z.iso.datetime({ offset: true }).nullable(),
+    })
+    .strict()
+    .superRefine((decision, validation) => {
+      if (
+        decision.authorized !== (decision.reason === "GRANTED") ||
+        (!context && decision.reason === "DEPENDENCY_REQUIRED") ||
+        (decision.reason === "MISSING"
+          ? decision.policyVersion !== null || decision.decidedAt !== null
+          : decision.policyVersion === null || decision.decidedAt === null) ||
+        ((decision.reason === "GRANTED" ||
+          decision.reason === "DEPENDENCY_REQUIRED") &&
+          decision.policyVersion !== currentVersion) ||
+        (decision.reason === "POLICY_OUTDATED" &&
+          decision.policyVersion === currentVersion)
+      )
+        validation.addIssue({
+          code: "custom",
+          message: "Inconsistent consent authorization",
+        });
+    });
 const consentSchema = z
   .object({
-    authorized: z.boolean(),
-    reason: z.enum(["GRANTED", "MISSING", "REVOKED", "POLICY_OUTDATED"]),
-    consentType: z.literal("AI_PROCESSING"),
-    policyVersion: z.string().max(64).nullable(),
-    decidedAt: z.iso.datetime({ offset: true }).nullable(),
+    chat: consentLevelSchema(
+      "AI_PROCESSING",
+      "ai-processing-capstone-v2",
+      false,
+    ),
+    context: consentLevelSchema(
+      "AI_CONTEXT_PROCESSING",
+      "ai-context-processing-capstone-v1",
+      true,
+    ),
+    checkedAt: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .superRefine((snapshot, validation) => {
+    if (
+      (snapshot.context.authorized && !snapshot.chat.authorized) ||
+      (snapshot.context.reason === "DEPENDENCY_REQUIRED" &&
+        snapshot.chat.authorized)
+    )
+      validation.addIssue({
+        code: "custom",
+        message: "Inconsistent consent dependency",
+      });
+  });
 const binaryBuffer = (value: Buffer | Binary): Buffer =>
   Buffer.isBuffer(value) ? value : Buffer.from(value.buffer);
 
@@ -139,7 +195,7 @@ export interface AnalysisResult {
 }
 
 export interface JournalSource {
-  state: "CURRENT" | "STALE" | "DELETED" | "MISSING";
+  state: "CURRENT" | "STALE" | "DELETED" | "MISSING" | "UNAUTHORIZED";
   text?: string;
 }
 
@@ -151,10 +207,12 @@ export interface AnalysisRepository {
   create(job: AnalysisJob): Promise<AnalysisJob>;
   findOwned(ownerAccountId: string, jobId: string): Promise<AnalysisJob | null>;
   findResult(jobId: string): Promise<AnalysisResult | null>;
+  /** `authorize` runs after the awaited read, immediately before decryption. */
   source(
     ownerAccountId: string,
     journalId: string,
     revision: number,
+    authorize: () => Promise<boolean>,
   ): Promise<JournalSource>;
   claim(
     workerId: string,
@@ -191,14 +249,73 @@ export interface AnalysisRepository {
 
 export interface ConsentDecision {
   authorized: boolean;
-  reason: "GRANTED" | "MISSING" | "REVOKED" | "POLICY_OUTDATED";
+  reason:
+    | "GRANTED"
+    | "MISSING"
+    | "REVOKED"
+    | "POLICY_OUTDATED"
+    | "DEPENDENCY_REQUIRED";
+  consentType?: "AI_PROCESSING" | "AI_CONTEXT_PROCESSING";
   policyVersion?: string | null;
   decidedAt?: string | null;
 }
 
+export interface AiConsentAuthorizations {
+  chat: ConsentDecision;
+  context: ConsentDecision;
+  checkedAt: string;
+}
+
+export const parseAiConsentAuthorizations = (
+  body: unknown,
+): AiConsentAuthorizations => {
+  const parsed = consentSchema.safeParse(body);
+  if (!parsed.success)
+    throw new ConsentUnavailableError("Care consent response is invalid");
+  return parsed.data;
+};
+
 export interface ConsentClient {
   check(bearerToken: string, correlationId: string): Promise<ConsentDecision>;
+  snapshot(
+    bearerToken: string,
+    correlationId: string,
+  ): Promise<AiConsentAuthorizations>;
 }
+
+const assertAiConsent = async (
+  client: ConsentClient,
+  bearer: string,
+  correlationId: string,
+  level: "chat" | "context",
+) => {
+  let decision: ConsentDecision;
+  try {
+    decision = (await client.snapshot(bearer, correlationId))[level];
+  } catch (error) {
+    if (error instanceof UnauthorizedException) throw error;
+    throw new ServiceUnavailableException({ code: "CONSENT_UNAVAILABLE" });
+  }
+  if (!decision.authorized)
+    throw new ForbiddenException({
+      code:
+        level === "chat"
+          ? "AI_CONSENT_REQUIRED"
+          : "AI_CONTEXT_CONSENT_REQUIRED",
+    });
+  return decision;
+};
+
+export const assertAiProcessingConsent = (
+  client: ConsentClient,
+  bearer: string,
+  correlationId: string,
+) => assertAiConsent(client, bearer, correlationId, "chat");
+export const assertAiContextProcessingConsent = (
+  client: ConsentClient,
+  bearer: string,
+  correlationId: string,
+) => assertAiConsent(client, bearer, correlationId, "context");
 
 export interface AnalysisDependencies {
   repository?: AnalysisRepository;
@@ -212,7 +329,7 @@ interface AnalysisRequest extends AuthenticatedRequest {
   readonly id?: string;
 }
 
-class ConsentUnavailableError extends Error {}
+export class ConsentUnavailableError extends Error {}
 export { ProviderFailure } from "../llm-providers/llm-providers.js";
 export type { ExactRevisionProvider } from "../llm-providers/llm-providers.js";
 export type {
@@ -304,6 +421,7 @@ export class MongoAnalysisRepository
     ownerAccountId: string,
     journalId: string,
     revisionNumber: number,
+    authorize: () => Promise<boolean>,
   ) {
     await this.connect();
     const journal = await this.journals.findOne({
@@ -318,6 +436,7 @@ export class MongoAnalysisRepository
       (candidate: Revision) => candidate.revision === revisionNumber,
     );
     if (!revision) return { state: "MISSING" as const };
+    if (!(await authorize())) return { state: "UNAUTHORIZED" as const };
     return {
       state: "CURRENT" as const,
       text: this.decrypt(ownerAccountId, journalId, revision),
@@ -494,11 +613,26 @@ export class CareConsentClient implements ConsentClient {
   constructor(private readonly configuration: Configuration) {}
 
   async check(bearer: string, correlationId: string) {
+    const { authorized, reason, policyVersion, decidedAt } = (
+      await this.snapshot(bearer, correlationId)
+    ).chat;
+    return {
+      authorized,
+      reason,
+      policyVersion: policyVersion ?? null,
+      decidedAt: decidedAt ?? null,
+    };
+  }
+
+  async snapshot(
+    bearer: string,
+    correlationId: string,
+  ): Promise<AiConsentAuthorizations> {
     let response: Response;
     try {
       response = await fetch(
         new URL(
-          "/api/v1/consents/ai-processing/authorization",
+          "/api/v1/consents/ai-authorizations",
           this.configuration.CARE_BASE_URL,
         ),
         {
@@ -514,17 +648,23 @@ export class CareConsentClient implements ConsentClient {
         cause: error,
       });
     }
+    if (response.status === 401) throw new UnauthorizedException();
     if (!response.ok)
       throw new ConsentUnavailableError("Care consent is unavailable");
-    const parsed = consentSchema.safeParse(await response.json());
-    if (!parsed.success)
+    if (
+      !response.headers
+        .get("cache-control")
+        ?.split(",")
+        .some((directive) => directive.trim().toLowerCase() === "no-store")
+    )
       throw new ConsentUnavailableError("Care consent response is invalid");
-    return {
-      authorized: parsed.data.authorized,
-      reason: parsed.data.reason,
-      policyVersion: parsed.data.policyVersion,
-      decidedAt: parsed.data.decidedAt,
-    };
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new ConsentUnavailableError("Care consent response is invalid");
+    }
+    return parseAiConsentAuthorizations(body);
   }
 }
 
@@ -602,29 +742,29 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
       await this.finishFailure(job, "AUTHORIZATION_CONTEXT_LOST");
       return;
     }
+    const denial = await this.contextDenial(context);
+    if (denial) {
+      await this.finishFailure(job, denial);
+      return;
+    }
+    const latest: { denial: AnalysisTerminalReason | null } = { denial: null };
     const source = await this.repository.source(
       job.ownerAccountId,
       job.journalId,
       job.journalRevision,
+      async () => {
+        latest.denial = await this.contextDenial(context);
+        return latest.denial === null;
+      },
     );
+    if (source.state === "UNAUTHORIZED") {
+      await this.finishFailure(job, latest.denial ?? "CONSENT_REQUIRED");
+      return;
+    }
     if (source.state !== "CURRENT" || !source.text) {
       await this.finishFailure(
         job,
         source.state === "DELETED" ? "JOURNAL_DELETED" : "REVISION_STALE",
-      );
-      return;
-    }
-    let consent: ConsentDecision;
-    try {
-      consent = await this.consent.check(context.bearer, context.correlationId);
-    } catch {
-      await this.finishFailure(job, "CONSENT_UNAVAILABLE");
-      return;
-    }
-    if (!consent.authorized) {
-      await this.finishFailure(
-        job,
-        consent.reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
       );
       return;
     }
@@ -670,6 +810,11 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
     );
     if (!activeJob) {
       await this.finishFailure(job, "PROVIDER_UNAVAILABLE");
+      return;
+    }
+    const finalDenial = await this.contextDenial(context);
+    if (finalDenial) {
+      await this.finishFailure(activeJob, finalDenial);
       return;
     }
     try {
@@ -745,6 +890,24 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
             : "PROVIDER_UNAVAILABLE",
       );
     }
+  }
+
+  private async contextDenial(context: {
+    bearer: string;
+    correlationId: string;
+  }): Promise<AnalysisTerminalReason | null> {
+    let consent: ConsentDecision;
+    try {
+      consent = (
+        await this.consent.snapshot(context.bearer, context.correlationId)
+      ).context;
+    } catch {
+      return "CONSENT_UNAVAILABLE";
+    }
+    if (consent.authorized) return null;
+    return consent.reason === "REVOKED"
+      ? "CONSENT_REVOKED"
+      : "CONSENT_REQUIRED";
   }
 
   private async withTimeout<T>(result: Promise<T>): Promise<T> {
@@ -844,22 +1007,21 @@ export class AnalysisService {
         await this.repository.findResult(existing._id),
       );
     }
+    const bearer = bearerToken(request);
+    const correlationId = request.id ?? randomUUID();
+    await this.assertContextConsent(bearer, correlationId);
     const source = await this.repository.source(
       ownerAccountId,
       journalId.data,
       revision.data,
+      async () => {
+        await this.assertContextConsent(bearer, correlationId);
+        return true;
+      },
     );
     if (source.state === "MISSING" || source.state === "DELETED")
       throw new NotFoundException();
     if (source.state !== "CURRENT") throw new ConflictException();
-    const bearer = bearerToken(request);
-    let decision: ConsentDecision;
-    try {
-      decision = await this.consent.check(bearer, request.id ?? randomUUID());
-    } catch {
-      throw new ServiceUnavailableException();
-    }
-    if (!decision.authorized) throw new ConflictException();
     const now = new Date();
     const job: AnalysisJob = {
       _id: randomUUID(),
@@ -887,11 +1049,11 @@ export class AnalysisService {
       const raced = await this.repository.findByKey(ownerAccountId, keyHash);
       if (raced?.fingerprint !== fingerprint) throw new ConflictException();
       if (raced.status === "QUEUED" || raced.status === "RUNNING") {
-        this.worker.dispatch(raced._id, bearer, request.id ?? randomUUID());
+        this.worker.dispatch(raced._id, bearer, correlationId);
       }
       return this.output(raced, await this.repository.findResult(raced._id));
     }
-    this.worker.dispatch(job._id, bearer, request.id ?? randomUUID());
+    this.worker.dispatch(job._id, bearer, correlationId);
     return this.output(job, null);
   }
 
@@ -907,14 +1069,23 @@ export class AnalysisService {
     bearer: string,
     correlationId: string,
   ): Promise<void> {
+    await this.assertContextConsent(bearer, correlationId);
+    this.worker.dispatch(jobId, bearer, correlationId);
+  }
+
+  private async assertContextConsent(
+    bearer: string,
+    correlationId: string,
+  ): Promise<void> {
     let decision: ConsentDecision;
     try {
-      decision = await this.consent.check(bearer, correlationId);
-    } catch {
-      throw new ServiceUnavailableException();
+      decision = (await this.consent.snapshot(bearer, correlationId)).context;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new ServiceUnavailableException({ code: "CONSENT_UNAVAILABLE" });
     }
-    if (!decision.authorized) throw new ConflictException();
-    this.worker.dispatch(jobId, bearer, correlationId);
+    if (!decision.authorized)
+      throw new ConflictException({ code: "AI_CONTEXT_CONSENT_REQUIRED" });
   }
 
   private output(job: AnalysisJob, result: AnalysisResult | null) {

@@ -53,6 +53,7 @@ class ChatGroupTransactions {
             UUID invitee, long expected, UUID key, UUID correlation) {
         var context = access.lock(conversation, authorization, true); access.active(context);
         if (!context.member().manager() || invitee.equals(context.actor().id()) || !access.visible(context, invitee)) throw ChatException.target();
+        if (!directAccess.friends(context.actor().id(), invitee)) throw ChatException.target();
         var normalized = conversation + ":" + invitee;
         var replay = commands.findByActorProfileIdAndOperationAndIdempotencyKey(context.actor().id(), "INVITE_GROUP", key);
         if (replay.isPresent()) {
@@ -138,7 +139,8 @@ class ChatGroupTransactions {
         return invite.state.equals("PENDING") && invite.expiresAt.isAfter(clock.instant()) && context.group().state.equals("ACTIVE")
                 && context.members().stream().anyMatch(m -> m.id.equals(invite.inviterMembershipId) && m.manager())
                 && context.eligible().containsKey(invite.inviterProfileId) && context.eligible().containsKey(invite.inviteeProfileId)
-                && !privacy.blocked(invite.inviterProfileId, invite.inviteeProfileId);
+                && !privacy.blocked(invite.inviterProfileId, invite.inviteeProfileId)
+                && directAccess.friends(invite.inviterProfileId, invite.inviteeProfileId);
     }
     ChatGroupModels.Invitation invitation(ChatInvitationEntity invite, ChatGroupAccess.Context context) {
         var inviter = context.eligible().get(invite.inviterProfileId);

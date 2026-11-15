@@ -14,6 +14,6 @@ public record AppointmentChatEligibility(UUID conversationId, UUID appointmentId
 	}
 
 	public enum Operation {
-		SUBSCRIBE, SEND, HISTORY, CHECK_IN
+		SUBSCRIBE, SEND, HISTORY, CHECK_IN, DELETE, REPORT
 	}
 }

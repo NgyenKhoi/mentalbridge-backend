@@ -135,6 +135,12 @@ jobs:
       - name: Migration validation
         working-directory: ${{ matrix.service }}
         run: npm run migration:check
+      - name: Build Content owner for Realtime integration
+        if: matrix.service == 'realtime-service'
+        working-directory: content-notification-service
+        run: |
+          npm ci
+          npm run build
       - name: Infrastructure integration tests
         if: matrix.integration
         working-directory: ${{ matrix.service }}

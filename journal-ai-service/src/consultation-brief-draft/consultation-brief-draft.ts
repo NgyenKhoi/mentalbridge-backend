@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Controller,
-  ForbiddenException,
   HttpCode,
   Inject,
   Injectable,
@@ -15,7 +14,11 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 
-import { CareConsentClient, type ConsentClient } from "../analysis/analysis.js";
+import {
+  CareConsentClient,
+  assertAiContextProcessingConsent,
+  type ConsentClient,
+} from "../analysis/analysis.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import {
   RoutedConsultationBriefDraftProvider,
@@ -113,13 +116,7 @@ export class ConsultationBriefDraftService {
       throw new UnauthorizedException();
     const bearer = authorization.slice("Bearer ".length);
     const correlationId = request.id ?? crypto.randomUUID();
-    let consent;
-    try {
-      consent = await this.consent.check(bearer, correlationId);
-    } catch {
-      throw new ServiceUnavailableException();
-    }
-    if (!consent.authorized) throw new ForbiddenException();
+    await assertAiContextProcessingConsent(this.consent, bearer, correlationId);
     let route;
     try {
       route = this.router.route(
@@ -128,6 +125,11 @@ export class ConsultationBriefDraftService {
     } catch {
       throw new ServiceUnavailableException();
     }
+    const consent = await assertAiContextProcessingConsent(
+      this.consent,
+      bearer,
+      correlationId,
+    );
     try {
       const generated = await this.provider.draft(
         {

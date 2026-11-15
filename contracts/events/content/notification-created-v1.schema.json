@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/events/content/notification-created-v1.schema.json",
+  "title": "Content notification created v1",
+  "description": "Committed specialist inbox creation pointer. Kafka key and aggregateId equal payload.notificationId. Immutable creation identity is retained on retries; DELIVERED means inbox availability, not socket receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageId",
+    "messageType",
+    "schemaVersion",
+    "producer",
+    "correlationId",
+    "causationId",
+    "occurredAt",
+    "aggregateId",
+    "aggregateVersion",
+    "payload"
+  ],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "content.notification.created" },
+    "schemaVersion": { "const": "1.0" },
+    "producer": { "const": "content-notification-service" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "causationId": { "type": "string", "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 0 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notificationId",
+        "recipientAccountId",
+        "recipientRole",
+        "expiresAt"
+      ],
+      "properties": {
+        "notificationId": { "type": "string", "format": "uuid" },
+        "recipientAccountId": { "type": "string", "format": "uuid" },
+        "recipientRole": { "const": "SPECIALIST" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

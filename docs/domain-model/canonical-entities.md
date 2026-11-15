@@ -40,7 +40,7 @@ access or fabricate external owner completion.
 | Entity | Owner service | Storage | Status | Key relationships |
 | --- | --- | --- | --- | --- |
 | `user_profile` | care-service | PostgreSQL | ACTIVE | `account_id` is a logical/external Identity reference, not a physical cross-service FK. |
-| `consent_decision` | care-service | PostgreSQL | ACTIVE | Physical many-to-one to `user_profile`; append-only versioned decisions. |
+| `consent_decision` | care-service | PostgreSQL | ACTIVE | Physical many-to-one to `user_profile`; append-only versioned privacy, L1 `AI_PROCESSING`, dependent L2 `AI_CONTEXT_PROCESSING`, and separate Voice decisions. No L2 backfill; shared profile lock and monotonic microsecond ordering; raw decisions are not effective authority. |
 | `anonymous_assessment_session` | care-service | PostgreSQL | ACTIVE | Physical optional owner of anonymous `assessment_submission`; never links to an account. |
 | `questionnaire_definition` | care-service | PostgreSQL | ACTIVE | Physical parent of questions, score bands, and assessment submissions. |
 | `questionnaire_question` | care-service | PostgreSQL | ACTIVE | Physical many-to-one to exact questionnaire definition. |
@@ -64,7 +64,7 @@ access or fabricate external owner completion.
 | `support_guide` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference; immutable all-tier guide snapshot. |
 | `support_guide_resource` | care-service | PostgreSQL | ACTIVE | Physical child of guide; resource/publication IDs are logical/external Content references with persisted display snapshots. |
 | `support_guide_request` | care-service | PostgreSQL | ACTIVE | Physical owner-scoped idempotency alias to guide. |
-| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. Proposal-v1 alone snapshots the cycle timezone, number, activation local date, accumulated paused local days and current pause date; explicit review-due continuation starts the next cycle. |
+| `support_plan` | care-service | PostgreSQL | ACTIVE | Physical owner/evaluation reference with explicit draft/current/terminal lifecycle; entitlement fields snapshot a logical/external Consultation decision. Proposal-v1 alone snapshots the cycle timezone, number, activation local date, accumulated paused local days and current pause date; explicit review-due continuation starts the next cycle. MB-808 optionally stores immutable Care-authored native-v3 checklist mapping provenance for confirmed exact replacement resources; it is owner-only and grants no Content eligibility. |
 | `support_plan_focus` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a plan; stores bounded plain-language focus/purpose and version provenance, never a diagnosis or score. |
 | `support_plan_action` | care-service | PostgreSQL | ACTIVE | Physical ordered native-v3 child of a focus; stores one canonical type, bounded presentation/provenance, capabilities, and logical source-owner/reference without a cross-service FK. |
 | `support_plan_template_family` | care-service | PostgreSQL | ACTIVE | Physical ordered child of `support_plan`. |
@@ -75,9 +75,9 @@ access or fabricate external owner completion.
 | `support_plan_command` | care-service | PostgreSQL | ACTIVE | Physical owner/plan reference; idempotent activation outcome with exact revalidation evidence. |
 | `support_plan_command_selection` | care-service | PostgreSQL | ACTIVE | Physical child preserving the ordered exact resource-version intent committed by activation. |
 | `support_plan_activity_schedule` | care-service | PostgreSQL | ACTIVE | Additive shared physical child of a plan; references either legacy v2 slot/resource provenance or one native v3 action and snapshots recurrence, local time, and IANA timezone without backfilling old rows. |
-| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. Native RESOURCE completion also accepts exact Content practice/completion references; the same owner fact revision can satisfy only one occurrence. |
-| `reassessment_self_report` | care-service | PostgreSQL | ACTIVE | Versioned owner-authored current-period experience with bounded optional context; deletion clears response content and retains only a minimal tombstone/provenance. |
-| `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, SupportPlan engagement, explicit self-reported experience, and separately labelled supporting activity reflection; never a combined score. |
+| `support_plan_activity_occurrence` | care-service | PostgreSQL | ACTIVE | Physical child of a schedule and owner-matched plan; preserves either legacy v2 provenance or native action/source/evidence provenance with deterministic dated state and policy-bounded engagement. Native RESOURCE completion accepts exact Content practice/completion references; proposal-cycle review completion accepts the explicit Care owner decision as evidence. The same owner fact revision can satisfy only one occurrence. |
+| `reassessment_self_report` | care-service | PostgreSQL | ACTIVE | Versioned owner-authored current-period experience with bounded optional context and optional closed-catalog symptom codes/revision (MB-808, max eight, no score); deletion clears private content and checklist while retaining a minimal tombstone/provenance. |
+| `reassessment_summary` | care-service | PostgreSQL | ACTIVE | Immutable owner-scoped snapshot of separate screening, minimized journal/context, SupportPlan engagement, explicit self-reported experience, and separately labelled supporting activity reflection; new MB-808 sources freeze checklist codes, catalog/map revisions and candidate reasons without hydrating old JSON or promising eligibility; never a combined score. |
 | Specialist access grants/scopes | care-service | PostgreSQL | PROPOSED | Approved consent concept; no Care owner migration exists yet. Selected Journal IDs would be logical/external Journal/AI references. |
 | Follow-up plan/check-in | care-service | PostgreSQL | PROPOSED | Broader clinical follow-up remains proposed; MB-513 SupportPlan wellbeing activity occurrences are the separate active aggregate above. |
 | `support_classification` / `intervention_plan` | care-service | PostgreSQL | HISTORICAL | Superseded logical names; active persistence uses versioned SupportEvaluation, Support Guide, and SupportPlan aggregates. |
@@ -153,6 +153,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | `achievement_preference` | content-notification-service | PostgreSQL | ACTIVE | Owner-scoped private-gallery visibility only; achievement status is a deterministic read model over minimized source-owner facts. |
 | `notification_preference` | content-notification-service | PostgreSQL | ACTIVE | One role-scoped atomic aggregate per external Identity owner covering channels, allowed content groups, quiet hours/timezone, and email cadence/opt-ins; specialist scope cannot enable user wellbeing categories. |
 | `notification` | content-notification-service | PostgreSQL | ACTIVE | Recipient ID is a logical/external Identity reference. Content owns durable delivery state and deduplicates producer facts by recipient, source, and versioned logical identity; MB-565 adds bounded assessment-result, SupportGuide, and USER account-status categories plus exact internal SupportGuide actions. |
+| `specialist_notification_live_outbox` | content-notification-service | PostgreSQL | ACTIVE | One physical creation pointer per newly delivered specialist appointment notification, committed with the inbox row; leased publication state never claims browser receipt and never scans legacy inbox rows. |
 | `community_notification_job` | content-notification-service | PostgreSQL | ACTIVE | Durable minimized Community notice work/receipts with recipient/source/action uniqueness, leased worker claims, quiet-hour/retry scheduling and an optional physical notification reference for atomic unread reaction grouping. |
 | `appointment_email_reminder` | content-notification-service | PostgreSQL | ACTIVE | One delivery-state row per external recipient, Consultation appointment, and appointment version; no email address or message body is persisted. |
 | `push_device_registration` | content-notification-service | PostgreSQL | ACTIVE | Encrypted Expo registration with one active owner per installation/token, natural PUT idempotence, permission, rotation, revocation, and invalidation lifecycle. |
@@ -231,3 +232,20 @@ the active model.
 All physical relationships remain inside Community PostgreSQL. Migration 0019 is runtime truth; logical SQL is never executed.
 
 - MB-687 `community_chat_report_case` — ACTIVE: exact actor/message OPEN intake, encrypted isolated message/details snapshot, safe reason/priority and bounded unresolved-review deadline. No ADMIN transcript access or resolution workflow is activated. Owner migration 0020; REPORT_MESSAGE command identities reuse the Community command table.
+
+## Community friendship extension
+
+`community_friendship` is ACTIVE under owner migration 0024. It is an unordered
+pair of Community profiles with one requester and PENDING/ACCEPTED state.
+Deletion cancels, declines or unfriends without deleting the separate chat.
+The [Community logical model](relational/community-service.sql) and
+[owner dictionary](../database/postgresql/community-service.md) define its fields.
+
+## Private Community publication groups (ADR 0052)
+
+CommunityCircle is the owner-controlled invitation-only publication space.
+CommunityCircleMember is a unique local profile/group relationship with explicit
+PENDING -> ACTIVE/DECLINED and ACTIVE -> REMOVED transitions. CommunityCircleEntry
+is a private text post or one-level comment, with author/group/parent references,
+encrypted body and actor-scoped retry identity. These entities belong solely to
+Community; no Care/Journal/AI profile relation or shared clinical meaning exists.

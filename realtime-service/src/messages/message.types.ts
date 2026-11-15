@@ -25,7 +25,9 @@ export interface MessageView {
   readonly senderId: string;
   readonly clientMessageId: string;
   readonly type: 'TEXT';
-  readonly content: string;
+  readonly content: string | null;
   readonly sentAt: string;
+  readonly state: 'VISIBLE' | 'DELETED';
+  readonly deletedAt: string | null;
   readonly schemaVersion: 1;
 }

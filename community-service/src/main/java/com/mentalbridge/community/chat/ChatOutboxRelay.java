@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(prefix = "mentalbridge.community.chat-relay", name = "enabled", havingValue = "true")
+@ConditionalOnProperty(prefix = "mentalbridge.community.chat", name = "enabled", havingValue = "true")
 class ChatOutboxRelay {
     private static final Logger LOG = LoggerFactory.getLogger(ChatOutboxRelay.class);
     private final ChatRelayPersistence persistence;

@@ -18,8 +18,8 @@ class VoiceConsentContractTests {
 		var api = new OpenAPIV3Parser().readLocation(Path.of("..", "contracts", "openapi", "care-service-v1.yaml")
 				.toAbsolutePath().toUri().toString(), null, options).getOpenAPI();
 		var schemas = api.getComponents().getSchemas();
-		assertThat(schemas.get("ConsentType").getEnum()).containsExactly("PRIVACY_POLICY", "AI_PROCESSING");
-		assertThat(((io.swagger.v3.oas.models.media.Schema<?>) schemas.get("ConsentCollection").getProperties().get("decisions")).getMaxItems()).isEqualTo(2);
+		assertThat(schemas.get("ConsentType").getEnum()).containsExactly("PRIVACY_POLICY", "AI_PROCESSING", "AI_CONTEXT_PROCESSING");
+		assertThat(((io.swagger.v3.oas.models.media.Schema<?>) schemas.get("ConsentCollection").getProperties().get("decisions")).getMaxItems()).isEqualTo(3);
 		for (var path : List.of("/api/v1/ai-voice-processing-disclosure", "/api/v1/consents/ai-voice-processing",
 				"/internal/v1/ai-companion/voice-consent-authorizations")) {
 			var item = api.getPaths().get(path);

@@ -1,6 +1,7 @@
 package com.mentalbridge.care.profile;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,10 +21,13 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.CareTestProperties;
 import com.mentalbridge.care.TestcontainersConfiguration;
+import com.mentalbridge.care.consent.ConsentService;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -34,6 +38,7 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 
 	@Autowired MockMvc mvc;
 	@Autowired ObjectMapper objectMapper;
+	@MockitoSpyBean ConsentService consents;
 
 	@Test
 	void firstTimeUserGetsProfileOnboardingStateAndEmptyConsents() throws Exception {
@@ -42,7 +47,63 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 		mvc.perform(get("/api/v1/profile").with(user(userId)))
 				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PROFILE_NOT_FOUND"));
 		mvc.perform(get("/api/v1/consents").with(user(userId)))
-				.andExpect(status().isOk()).andExpect(jsonPath("$.decisions.length()").value(0));
+				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.decisions.length()").value(0));
+		mvc.perform(get("/api/v1/consents/ai-authorizations").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.chat.consentType").value("AI_PROCESSING"))
+				.andExpect(jsonPath("$.chat.reason").value("MISSING"))
+				.andExpect(jsonPath("$.chat.policyVersion").isEmpty())
+				.andExpect(jsonPath("$.context.consentType").value("AI_CONTEXT_PROCESSING"))
+				.andExpect(jsonPath("$.context.reason").value("MISSING"))
+				.andExpect(jsonPath("$.context.decidedAt").isEmpty());
+	}
+
+	@Test
+	void contextDisclosureAndDependentSnapshotAreOwnedVersionedAndNonCacheable() throws Exception {
+		var userId = createProfile();
+		mvc.perform(get("/api/v1/ai-context-processing-disclosures/current"))
+				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.title").value("AI dùng bối cảnh"))
+				.andExpect(jsonPath("$.version").value("ai-context-processing-capstone-v1"));
+		mvc.perform(get("/api/v1/ai-context-processing-disclosures/current").param("locale", "en-US"))
+				.andExpect(status().isNotFound()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.code").value("AI_CONTEXT_DISCLOSURE_NOT_FOUND"));
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId)).header("Idempotency-Key", "context-needs-chat-0001")
+				.contentType(MediaType.APPLICATION_JSON).content(contextConsentBody(true)))
+				.andExpect(status().isConflict()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.code").value("AI_PROCESSING_CONSENT_REQUIRED"));
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId)).header("Idempotency-Key", "chat-before-context-001")
+				.contentType(MediaType.APPLICATION_JSON).content(aiConsentBody(true))).andExpect(status().isCreated());
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId)).header("Idempotency-Key", "context-grant-with-chat-01")
+				.contentType(MediaType.APPLICATION_JSON).content(contextConsentBody(true))).andExpect(status().isCreated());
+		mvc.perform(get("/api/v1/consents/ai-authorizations").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.chat.authorized").value(true))
+				.andExpect(jsonPath("$.context.authorized").value(true));
+		mvc.perform(post("/api/v1/consent-decisions").with(user(userId)).header("Idempotency-Key", "chat-suspend-context-001")
+				.contentType(MediaType.APPLICATION_JSON).content(aiConsentBody(false))).andExpect(status().isCreated());
+		mvc.perform(get("/api/v1/consents/ai-authorizations").with(user(userId)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.chat.reason").value("REVOKED"))
+				.andExpect(jsonPath("$.context.authorized").value(false))
+				.andExpect(jsonPath("$.context.reason").value("DEPENDENCY_REQUIRED"));
+		mvc.perform(get("/api/v1/consents/ai-authorizations").with(user(UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.context.reason").value("MISSING"));
+		mvc.perform(get("/api/v1/consents/ai-authorizations"))
+				.andExpect(status().isUnauthorized()).andExpect(header().string("Cache-Control", "no-store"));
+		mvc.perform(get("/api/v1/consents/ai-authorizations")
+				.with(jwt().jwt(token -> token.subject(userId.toString())).authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isForbidden()).andExpect(header().string("Cache-Control", "no-store"));
+	}
+
+	@Test
+	void unavailableConsentAuthorityReturns503WithoutDetails() throws Exception {
+		var owner = UUID.randomUUID();
+		doThrow(new CannotCreateTransactionException("synthetic private database address"))
+				.when(consents).authorizeAiPurposes(owner);
+		mvc.perform(get("/api/v1/consents/ai-authorizations").with(user(owner)))
+				.andExpect(status().isServiceUnavailable()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.code").value("CONSENT_UNAVAILABLE"))
+				.andExpect(jsonPath("$.detail").value("Current consent authority is unavailable"));
 	}
 
 	@Test
@@ -232,6 +293,10 @@ class ProfileConsentHistoryIntegrationTests extends CareTestProperties {
 	private String aiConsentBody(boolean granted) {
 		return "{\"consentType\":\"AI_PROCESSING\",\"policyVersion\":\"ai-processing-capstone-v2\",\"granted\":"
 				+ granted + "}";
+	}
+
+	private String contextConsentBody(boolean granted) {
+		return "{\"consentType\":\"AI_CONTEXT_PROCESSING\",\"policyVersion\":\"ai-context-processing-capstone-v1\",\"granted\":" + granted + "}";
 	}
 
 	private String assessmentBody(int itemNine) {

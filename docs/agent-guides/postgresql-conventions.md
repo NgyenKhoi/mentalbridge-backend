@@ -57,6 +57,14 @@ Do not use descriptions that merely repeat the name, such as â€œappointment ID.â
 
 ## Migration and query review
 
+Spring PostgreSQL pools set pgJDBC `tcpKeepAlive=true` and
+`options=-c idle_in_transaction_session_timeout=30s`.
+The server timeout ends a session left idle inside a transaction, releasing its locks;
+the pool then replaces the broken connection. It does not bound a running statement,
+so long reports and lock waits are unaffected. No global `socketTimeout`: if a service
+needs a read deadline, set it per query from a measured budget. Keep these settings
+consistent across Identity, Care, Consultation, and Community.
+
 - Migrations are append-only after merge and owned per service. Use expand/migrate/contract for rolling compatibility.
 - Never execute the canonical logical schema or wire it into provisioning, migration, startup, Compose, tests, or deployment tooling.
 - Store instants as `timestamptz`; keep an IANA timezone separately for human schedules. UUIDs cross REST/message boundaries as strings.

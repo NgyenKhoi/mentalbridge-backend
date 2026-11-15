@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "failedAt": "2026-11-07T09:01:00.000Z",
+  "sourceTopic": "mentalbridge.realtime.specialist-notification-retry.v1",
+  "sourcePartition": 0,
+  "sourceOffset": "42",
+  "sourceMessageDigest": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "attempt": 3,
+  "errorCode": "TRANSIENT_RETRIES_EXHAUSTED"
+}

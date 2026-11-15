@@ -12,15 +12,15 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 
 ## Use cases and acceptance
 
-| Capability | Main behavior | Acceptance |
-| --- | --- | --- |
-| Conversation eligibility | Create/open exactly one conversation for an eligible confirmed `IN_APP_CHAT` appointment | No unrestricted specialist direct message; every open/subscribe/send reauthorizes appointment status and `[scheduledStartAt, scheduledEndAt)`; dependency uncertainty fails closed |
-| Messaging | Persist message then acknowledge/fan out with client idempotency | Same sender/clientMessageId returns original; server assigns sender/context; Redis/Kafka failure cannot lose durable message |
-| History/reconnect | Cursor list and resynchronize missed state | Stable ordering/tie-breaker; reconnect recovers through REST; back-pressure and size limits explicit |
-| Receipts/presence | Maintain high-water delivered/read marks and TTL presence | Stale receipt cannot move backward; presence may become unknown on Redis failure; no durable content in Redis |
-| Completion evidence | Forward explicit check-in, bounded server-observed presence, and accepted-message metadata to Consultation | Subscribe alone never counts; no raw message content crosses; evidence failure is retryable and cannot fabricate completion |
-| Tombstone/moderation | Delete display content and process scoped report/action | Retention policy decides ciphertext removal; report grants no broad conversation access; evidence/action audited |
-| Live notification | Consume safe `NotificationCreated` and emit to existing session | Durable notification remains owned elsewhere; duplicate event does not duplicate side effect beyond defined delivery semantics |
+| Capability               | Main behavior                                                                                              | Acceptance                                                                                                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conversation eligibility | Create/open exactly one conversation for an eligible confirmed `IN_APP_CHAT` appointment                   | No unrestricted specialist direct message; every open/subscribe/send reauthorizes appointment status and `[scheduledStartAt, scheduledEndAt)`; dependency uncertainty fails closed |
+| Messaging                | Persist message then acknowledge/fan out with client idempotency                                           | Same sender/clientMessageId returns original; server assigns sender/context; Redis/Kafka failure cannot lose durable message                                                       |
+| History/reconnect        | Cursor list and resynchronize missed state                                                                 | Stable ordering/tie-breaker; reconnect recovers through REST; back-pressure and size limits explicit                                                                               |
+| Receipts/presence        | Maintain high-water delivered/read marks and TTL presence                                                  | Stale receipt cannot move backward; presence may become unknown on Redis failure; no durable content in Redis                                                                      |
+| Completion evidence      | Forward explicit check-in, bounded server-observed presence, and accepted-message metadata to Consultation | Subscribe alone never counts; no raw message content crosses; evidence failure is retryable and cannot fabricate completion                                                        |
+| Tombstone/moderation     | Delete display content and process scoped report/action                                                    | Retention policy decides ciphertext removal; report grants no broad conversation access; evidence/action audited                                                                   |
+| Live notification        | Consume safe `NotificationCreated` and emit to existing session                                            | Durable notification remains owned elsewhere; duplicate event does not duplicate side effect beyond defined delivery semantics                                                     |
 
 ## Implementation design
 
@@ -44,7 +44,7 @@ Realtime owns conversations, encrypted messages, attachments metadata, tombstone
 - [x] RT-05 Implement owner-authorized appointment conversation lifecycle and REST history.
 - [~] RT-06 Implement one-use credential authenticated WebSocket subscribe/send and idempotent persist-before-ack; cross-instance Redis fan-out remains.
 - [~] RT-07 Implement presence and client reconnect/resync; receipts and live notification delivery remain.
-- [ ] RT-08 Implement tombstone, scoped reporting and message moderation.
+- [x] RT-08 Implement appointment-message tombstones, scoped reporting, ADMIN review, and durable audit evidence (MB-694).
 - [ ] RT-09 Verify unauthorized subscription, duplicate send, ordering, reconnect, Redis loss, Kafka retry, dependency timeout and rate/back-pressure limits.
 - [ ] RT-10 Add observability/configuration, README, and pass Node/contract/Mongo/Redis/Kafka gates.
 

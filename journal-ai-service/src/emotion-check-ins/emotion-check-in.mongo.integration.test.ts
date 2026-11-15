@@ -1,10 +1,11 @@
+import { aiConsentAuthorizationsFixture } from "../analysis/consent.fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
 import { MongoClient } from "mongodb";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import request from "supertest";
 
 import type { ConsentDecision } from "../analysis/analysis.js";
@@ -18,18 +19,10 @@ const migration =
   };
 
 void test("persists owner-isolated daily emotion check-ins with real MongoDB", async () => {
-  const externalUri = process.env.JOURNAL_INTEGRATION_MONGODB_URI;
-  const mongo = externalUri ? undefined : await MongoMemoryServer.create();
-  const uri = externalUri ?? mongo?.getUri();
-  assert.ok(uri);
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  const uri = mongo.getUri();
   const client = new MongoClient(uri);
-  const databaseName = externalUri
-    ? `emotion_check_in_verify_${String(Date.now())}`
-    : "emotion_check_in_integration";
-  assert.match(
-    databaseName,
-    /^(?:emotion_check_in_integration|emotion_check_in_verify_\d+)$/,
-  );
+  const databaseName = "emotion_check_in_integration";
   const database = client.db(databaseName);
   assert.equal((await database.listCollections().toArray()).length, 0);
   await migration.up(database);
@@ -113,7 +106,7 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
   let consent: ConsentDecision = {
     authorized: true,
     reason: "GRANTED",
-    policyVersion: "ai-processing-capstone-v1",
+    policyVersion: "ai-context-processing-capstone-v1",
     decidedAt: "2026-09-16T09:00:00.000Z",
   };
   let consentFails = false;
@@ -122,6 +115,11 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     emotionCheckIns: {
       clock: { now: () => new Date("2026-09-16T17:30:00.000Z") },
       consentClient: {
+        snapshot: async function (bearer, correlationId) {
+          return aiConsentAuthorizationsFixture(
+            await this.check(bearer, correlationId),
+          );
+        },
         check: () =>
           consentFails
             ? Promise.reject(new Error("synthetic Care outage"))
@@ -331,7 +329,7 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     };
     assert.equal(
       contextBody.consent.policyVersion,
-      "ai-processing-capstone-v1",
+      "ai-context-processing-capstone-v1",
     );
     assert.equal(contextBody.consent.decidedAt, "2026-09-16T09:00:00.000Z");
     assert.equal(contextBody.items.length, 1);
@@ -385,8 +383,7 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
       .expect(404);
   } finally {
     await app.close();
-    if (externalUri) await database.dropDatabase();
     await client.close();
-    await mongo?.stop();
+    await mongo.stop();
   }
 });

@@ -34,6 +34,36 @@ afterEach(() => {
 });
 
 describe('Care resource actions HTTP client', () => {
+  it('accepts a slow but successful plan projection within its bounded default deadline', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: unknown, options: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(
+              () => resolve(new Response(JSON.stringify(projection), { status: 200 })),
+              2_500,
+            );
+            options.signal?.addEventListener('abort', () => {
+              clearTimeout(timer);
+              reject(new Error('aborted'));
+            });
+          }),
+      ),
+    );
+    const slowClient = new CareResourceActionsClient({
+      CONTENT_CARE_BASE_URL: 'https://care.test',
+    } as ServiceConfiguration);
+    const assertion = expect(
+      slowClient.get('Bearer owner-token', '2026-10-21'),
+    ).resolves.toMatchObject({
+      planState: 'ACTIVE',
+    });
+    await vi.advanceTimersByTimeAsync(2_500);
+    await assertion;
+  });
+
   it('forwards the owner bearer and correlation ID and consumes v2 adapter identities', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify(projection), { status: 200 }));
     vi.stubGlobal('fetch', fetcher);

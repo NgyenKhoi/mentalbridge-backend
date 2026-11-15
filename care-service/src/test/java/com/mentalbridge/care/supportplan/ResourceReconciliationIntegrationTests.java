@@ -214,9 +214,20 @@ class ResourceReconciliationIntegrationTests extends CareTestProperties {
 	@Test
 	void projectionIsMinimizedAndUsesNativeResourceActionsAndNoneIsSuccessful() throws Exception {
 		var target = target(1, UUID.randomUUID());
+		mvc.perform(get("/api/v2/support-plans/current/resource-actions").with(user(target.userId()))
+				.param("localDate", target.date().toString())).andExpect(status().isOk())
+				.andExpect(jsonPath("$.targetDomains").doesNotExist())
+				.andExpect(jsonPath("$.activatedAt").exists());
+		jdbc.sql("""
+				insert into support_plan_template_family (id, support_plan_id, ordinal, family, template_version, target_domain)
+				values (:id, :plan, 1, 'ANXIETY_SELF_HELP', 1, 'ANXIETY_SYMPTOMS')""")
+				.param("id", UUID.randomUUID()).param("plan", target.planId()).update();
 		var content = mvc.perform(get("/api/v2/support-plans/current/resource-actions").with(user(target.userId()))
 				.param("localDate", target.date().toString())).andExpect(status().isOk())
 				.andExpect(jsonPath("$.planState").value("ACTIVE"))
+				.andExpect(jsonPath("$.targetDomains[0]").value("ANXIETY_SYMPTOMS"))
+				.andExpect(jsonPath("$.targetDomains.length()").value(1))
+				.andExpect(jsonPath("$.activatedAt").exists())
 				.andExpect(jsonPath("$.timeZone").value("Asia/Ho_Chi_Minh"))
 				.andExpect(jsonPath("$.actions[0].resource.resourceVersion").value("7"))
 				.andExpect(jsonPath("$.actions[0].today.occurrenceVersion").value(0))
@@ -225,11 +236,13 @@ class ResourceReconciliationIntegrationTests extends CareTestProperties {
 		assertThat(content).doesNotContain("rationale", "purposeCode", "instructions", "summary", "Safety guidance");
 		mvc.perform(get("/api/v2/support-plans/current/resource-actions").with(user(UUID.randomUUID()))
 				.param("localDate", target.date().toString())).andExpect(status().isOk())
-				.andExpect(jsonPath("$.planState").value("NONE")).andExpect(jsonPath("$.actions").isEmpty());
+				.andExpect(jsonPath("$.planState").value("NONE")).andExpect(jsonPath("$.actions").isEmpty())
+				.andExpect(jsonPath("$.targetDomains").doesNotExist()).andExpect(jsonPath("$.activatedAt").doesNotExist());
 		jdbc.sql("update support_plan set status='PAUSED' where id=:id").param("id", target.planId()).update();
 		mvc.perform(get("/api/v2/support-plans/current/resource-actions").with(user(target.userId()))
 				.param("localDate", target.date().toString())).andExpect(status().isOk())
-				.andExpect(jsonPath("$.planState").value("PAUSED")).andExpect(jsonPath("$.actions.length()").value(1));
+				.andExpect(jsonPath("$.planState").value("PAUSED")).andExpect(jsonPath("$.actions.length()").value(1))
+				.andExpect(jsonPath("$.targetDomains[0]").value("ANXIETY_SYMPTOMS"));
 	}
 
 	private void stub(Target target) {

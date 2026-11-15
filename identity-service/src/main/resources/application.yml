@@ -5,6 +5,10 @@ spring:
     url: ${IDENTITY_DB_URL}
     username: ${IDENTITY_DB_USERNAME}
     password: ${IDENTITY_DB_PASSWORD}
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   jpa:
     hibernate:
       ddl-auto: validate

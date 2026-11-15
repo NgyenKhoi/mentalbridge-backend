@@ -135,7 +135,30 @@ output, and hidden reasoning are not fields. Migration
 `012_ai_companion_conversation_context.cjs` backfills the default context before
 enforcing the strict validator. Migration `017_companion_message_suggestion.cjs`
 adds an optional encrypted `suggestion` on assistant messages (destination,
-Resource ID and title; ADR 0049).
+Resource ID and title; ADR 0049). Under [ADR 0050](../../adr/0050-two-level-ai-consent.md),
+MB-806 changes no persisted shape or validator and needs no Mongo migration. New
+conversations select no sources; stored selections remain preferences and require
+effective L2 plus fresh source authorization. All four existing context kinds are
+personal. Memory excludes an entire pair with a disallowed kind before decryption;
+new message labels union actual fetched and retained-history kinds without
+rewriting historical labels or result provenance.
+
+MB-810's [ADR 0021 amendment](../../adr/0021-ai-companion-conversation-and-quota.md#mb-810-title-amendment--owner-decision-2026-11-06)
+adds optional `encryptedTitle`, using the existing AES-256-GCM envelope with
+owner/conversation/title-purpose AAD. Newly explicit, automatic and renamed
+titles are encrypted; mandatory `title` remains the neutral `Cuộc trò chuyện mới`
+on new title writes. Only documents without the envelope use their existing
+plaintext `title` as a legacy read fallback; a corrupt envelope reads neutral.
+The opaque HMAC `titleVersion` is derived from title state, never stored, and
+does not change when messages or context change. First-turn initialization is
+conditional on the persisted empty/default state; any encrypted title blocks it.
+
+The owner decision of 2026-11-06 authorizes migration
+`018_companion_conversation_title.cjs`: one strict/error validator-only `collMod`
+clones 017 and adds only the optional envelope. Existing documents, required
+fields and indexes remain unchanged. Deploy it before title-writing code;
+rollback refuses while any encrypted title exists and otherwise restores 017.
+There is no backfill, startup repair or shared-database execution authorization.
 
 ### AI Companion Command — ACTIVE
 
@@ -144,6 +167,15 @@ Collection: `ai_companion_commands`
 Key fields: owner and keyed idempotency identity, request fingerprint,
 conversation reference, lifecycle, quota reservation reference, and immutable
 success/failure response snapshot. Raw idempotency keys are not fields.
+
+MB-810 reuses this aggregate for completed title renames. The owner-scoped key
+hash is separated from send keys by the `rename-title:` prefix; its fingerprint
+binds operation, conversation, normalized title and precondition. A rename's
+result title is encrypted with owner/conversation/command/purpose AAD and keeps
+its original title version for exact replay, even after a later rename. The
+title update and completed command commit together. Send snapshots contain no
+new plaintext title copy: title metadata is hydrated from the current owned
+conversation and may be omitted together on read failure after success.
 
 ### AI Companion Daily Quota — ACTIVE
 
@@ -192,7 +224,8 @@ Relationships:
 - `ownerId` is a logical/external Identity reference;
 - `quotaDay` and owner logically identify the Voice Daily Usage document;
 - a held Voice Capacity slot logically identifies this session and its fence;
-- current consent and entitlement are REST decisions from Care and Consultation,
+- effective L1 (`AI_PROCESSING`) plus separate Voice v2 consent and entitlement
+  are current REST decisions from Care and Consultation; L2 cannot broaden Voice,
   not database relationships or reusable authorization cached in this document.
 
 No audio, transcript, prompt, model reply, old Journal/text context, bearer or
@@ -305,13 +338,21 @@ Key fields: message/conversation/sender/client IDs, type, AES-256-GCM envelope,
 key version, command fingerprint, lifecycle timestamps, moderation hold, and
 schema version.
 
+### Appointment Message Report — ACTIVE
+
+Collection: `appointment_message_reports`
+
+Key fields: report/conversation/message/reporter IDs, bounded reason, optional
+encrypted context, review state/resolution, resolver, timestamps, and schema
+version. `appointment_moderation_commands` owns actor-scoped retry fences and
+`appointment_moderation_audit` owns content-free action evidence.
+
 ## Proposed model
 
-| Entity              | Status   | Evidence and boundary                                                                             |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------- |
-| Message Receipt     | PROPOSED | Realtime module documentation defers high-water delivered/read persistence; no collection exists. |
-| Message Attachment  | PROPOSED | Deferred until object-storage, authorization, and retention contracts are accepted.               |
-| Moderation evidence | PROPOSED | No owner migration exists; `moderationHold` on Message is not a moderation-case aggregate.        |
+| Entity             | Status   | Evidence and boundary                                                                             |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------- |
+| Message Receipt    | PROPOSED | Realtime module documentation defers high-water delivered/read persistence; no collection exists. |
+| Message Attachment | PROPOSED | Deferred until object-storage, authorization, and retention contracts are accepted.               |
 
 Do not create SQL tables for these document models. Do not mark a proposed
 collection active until an owner migration, validator, implementation, and

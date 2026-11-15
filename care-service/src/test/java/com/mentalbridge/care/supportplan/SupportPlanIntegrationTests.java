@@ -1270,6 +1270,15 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.hidden").value(false))
 				.andExpect(jsonPath("$.summaryReuseApproved").value(false))
 				.andExpect(jsonPath("$.engagementUpdatedAt").isString());
+		Instant outcomeFrom = Instant.now().minus(1, ChronoUnit.DAYS);
+		Instant outcomeTo = Instant.now().plus(1, ChronoUnit.DAYS);
+		long occurrenceRows = jdbc.sql("select count(*) from support_plan_activity_occurrence where support_plan_id=:id")
+				.param("id", planId).query(Long.class).single();
+		assertThat(activityOccurrences.outcomes(userId, outcomeFrom, outcomeTo))
+				.extracting(SupportPlanActivityOccurrenceService.Outcome::state)
+				.containsExactlyInAnyOrder("COMPLETED", "SKIPPED");
+		assertThat(jdbc.sql("select count(*) from support_plan_activity_occurrence where support_plan_id=:id")
+				.param("id", planId).query(Long.class).single()).isEqualTo(occurrenceRows);
 		assertThat(jdbc.sql("""
 				select count(*) from outbox_event
 				where aggregate_id = :id and message_type = 'care.support-plan.engagement-changed'
@@ -1292,6 +1301,7 @@ class SupportPlanIntegrationTests extends CareTestProperties {
 				.content("{\"status\":\"PAUSED\"}"))
 				.andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
 				.andExpect(jsonPath("$.status").value("PAUSED"));
+		assertThat(activityOccurrences.outcomes(userId, outcomeFrom, outcomeTo)).hasSize(2);
 		assertThat(jdbc.sql("""
 				select count(*) from support_plan_activity_occurrence
 				where support_plan_id = :id and state = 'CANCELLED' and state_reason = 'PLAN_PAUSED'

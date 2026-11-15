@@ -32,18 +32,24 @@ Care-owned non-credential user profile. Locale, timezone, and reminders are fixe
 ### `public.consent_decision`
 
 Append-only evidence of a user grant or refusal for a versioned platform consent.
+MB-806 adds only the `AI_CONTEXT_PROCESSING` category; historical rows, versions,
+keys and grants are never rewritten or backfilled. Effective L2 is derived from
+its current true decision and effective L1, rather than stored as another grant.
+L1 withdrawal suspends L2, and L1 regrant restores an existing current true L2.
+Both AI level writes take the same owner profile lock before replay/dependency
+validation. The effective snapshot reads both streams at repeatable-read isolation.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable UUID used to cite this exact consent decision in audit and REST results. |
 | `user_id` | Care-owned user profile that made the consent decision. |
-| `consent_type` | Stable independent platform-consent category. Runtime accepts `PRIVACY_POLICY` and `AI_PROCESSING` through the unchanged generic API; `AI_VOICE_PROCESSING` has a separate voice API and immutable disclosure version. Voice authorization requires both current AI streams. Research/marketing remain unavailable, and specialist access uses a separate scoped grant. |
+| `consent_type` | Stable independent platform-consent category. The generic API exposes `PRIVACY_POLICY`, `AI_PROCESSING` (L1 active conversation, current v2 grants remain valid) and `AI_CONTEXT_PROCESSING` (new L2 personal-context processing, v1). L2 requires effective L1; no L1 grant implies L2. `AI_VOICE_PROCESSING` retains its separate voice API and immutable v2 disclosure and requires L1 plus Voice, without L2. Research/marketing remain unavailable; specialist access uses a separate scoped grant. |
 | `policy_version` | Exact approved policy text/version accepted or refused so the decision remains reproducible. |
-| `granted` | Authoritative decision value; false records an explicit refusal or withdrawal. |
+| `granted` | Authoritative explicit decision value; false records a refusal or withdrawal. Raw true is not effective authorization: the latest decision must use the current version, and L2 additionally depends on effective L1. |
 | `evidence` | Minimized JSON object such as approved channel or document hash; never raw health content. |
-| `idempotency_key` | Required retry fingerprint unique for one user and consent type so an uncertain retry returns the original decision. Voice stores a purpose- and owner-bound HMAC-SHA256 hex digest of the caller UUID using `CARE_IDEMPOTENCY_HMAC_KEY`; existing generic consent rows retain their original key semantics without backfill. |
+| `idempotency_key` | Required retry fingerprint unique for one user and consent type. Exact replay resolves before current-version/dependency validation and returns the original outcome without reinstating authority; changed intent/version conflicts. Historical AI-processing v1 accepts exact replay only. Voice stores a purpose- and owner-bound HMAC-SHA256 hex digest of the caller UUID using `CARE_IDEMPOTENCY_HMAC_KEY`; generic rows retain their original key semantics without backfill. |
 | `request_hash` | Lowercase SHA-256 digest used to reject reuse of the key with different consent content; request plaintext is not recoverable from it. |
-| `decided_at` | Server-issued UTC decision instant. Voice writes hold the profile row lock and advance at least one PostgreSQL microsecond beyond the previous voice decision when the clock ties or moves backward, so the latest withdrawal cannot lose to a random UUID tie-break. |
+| `decided_at` | Server-issued UTC decision instant, truncated to PostgreSQL microseconds. Under the profile lock, L1/L2 writes advance at least one microsecond beyond the latest decision across both AI levels when the clock ties or moves backward. Privacy does the same within its stream; Voice retains its own monotonic stream. Latest withdrawal therefore cannot lose to a random UUID tie-break. |
 | `created_at` | Immutable UTC insertion instant for storage and audit ordering. |
 
 ### `public.anonymous_assessment_session`
@@ -473,6 +479,7 @@ concurrent guards for one draft and one official current plan per owner.
 | `selection_policy_version` | Deterministic v2 Care composition version, fixed to `mb-support-plan-selection-v1`; null for v3. |
 | `resource_policy_version` / `resources_resolved_at` | Exact v2 Content eligibility policy and UTC resolution instant used before the Care transaction; both null for v3. |
 | `personalization_id` / `personalization_revision` / `personalization_schema_version` | Optional exact immutable preference revision snapshotted when the plan draft was composed. Later preference changes never rewrite this reference or the active plan. |
+| `checklist_provenance` | Nullable owner-only JSONB object, native model 3 only. Care persists the confirmed draft's immutable `symptomMapping`: exact summary/report ID and source revision, period, catalog/map revisions, complete sorted selections, and bounded resource-specific reasons including slot/resource/version/publication/role/eligibility-policy tuples. Care validates the closed mapping shape and approved slot map before storage/revalidation; the database enforces the native object envelope. It authorizes only those retained mapped tuples for template revalidation and never overrides fresh Content eligibility. It is excluded from logs, events, AI/specialist context and Content's minimized current-plan resource-action projection. Null on ordinary and historical plans; no backfill. |
 | `entitlement_package` / `entitlement_source` | Authoritative `PLUS`/`PREMIUM` and `DEMO`/`PAID` provenance returned by Consultation; never inferred from JWT/client state. |
 | `entitlement_policy_version` / `entitlement_version` / `entitlement_decided_at` | Exact Consultation read-model version and UTC decision evidence that admitted creation. |
 | `rationale_code` / `rationale_text` | Stable general-wellbeing explanation snapshot; not diagnosis, treatment, or AI reasoning. |
@@ -704,12 +711,18 @@ generation idempotent.
 | `summary_reuse_approved` | Explicit approval to reuse minimized coded facts in a later bounded summary; never broad checklist monitoring consent. |
 | `engagement_updated_at` | Latest accepted replacement or deletion instant. Deletion clears mutable values but retains provenance. |
 
+For a proposal-cycle `REASSESSMENT_SCREENING` reminder, an explicit owner keep/change
+may complete the open occurrence with Care `OWNER_REVIEW_DECISION` evidence. Its
+`evidence_id` is `<supportPlanId>:<reviewedCycleNumber>` (one decision per cycle),
+`evidence_revision` is null, and both evidence instants are the accepted command
+time. This is plan-review provenance, not an assessment-history claim.
+
 ### `public.reassessment_self_report`
 
 Versioned Care-owned source for the user's explicit, non-diagnostic account of
 the current comparison period. Only the authenticated owner may create, read,
-replace, or delete it. Deletion clears the categorical response and both
-optional contexts; the remaining tombstone prevents accidental resurrection
+replace, or delete it. Deletion clears the categorical response, both
+optional contexts and the symptom checklist; the remaining tombstone prevents accidental resurrection
 and preserves period/version provenance. Earlier immutable summary snapshots
 remain unchanged.
 
@@ -722,6 +735,8 @@ remain unchanged.
 | `current_period_start` / `current_period_end` | Half-open period the response describes. The canonical MB-559 flow uses the exact Care-issued 14-day policy window. |
 | `current_experience` | Required active categorical response: `BETTER`, `ABOUT_THE_SAME`, `MORE_DIFFICULT`, or `UNSURE`; cleared on deletion. |
 | `helpful_context` / `difficult_context` | Optional trimmed owner-authored context, each at most 500 characters; cleared on deletion. |
+| `symptom_catalog_revision` | Nullable immutable catalog bundle reference for the current source revision. Null means no checklist was authored; a present revision with zero codes means an explicitly empty selection. The bundle pins the mapping revision copied into response/snapshot provenance. PUT omission preserves this field; explicit replacement checks the supported catalog; deletion clears it. Care-owned sensitive self-report evidence, never an eligibility or diagnostic claim. |
+| `symptom_codes` | Non-null `text[]`, default empty, at most eight non-null codes. Care rejects unknown/duplicate codes before sorting and persists a complete canonical selection. Nonempty arrays require a nonblank catalog revision; deleted tombstones require no revision and an empty array. No selection never means no symptoms. No Content/AI call is needed for source CRUD or local evidence. |
 | `version` | Optimistic concurrency revision included in ETags and summary provenance. |
 | `authored_at` / `updated_at` | Original creation and latest accepted replacement/deletion instants. |
 | `deleted_at` | Null while active; deletion instant on a content-cleared tombstone. |
@@ -745,7 +760,7 @@ improvement verdict.
 | `journal_analysis_id` | Resolved analysis UUID when a v2 job succeeded, or the requested legacy v1 analysis UUID. It is nullable for failed/unavailable v2 jobs. |
 | `previous_period_start` / `previous_period_end` | Half-open UTC bounds for the prior evidence period. Database checks require 7-31 days. |
 | `current_period_start` / `current_period_end` | Half-open UTC bounds for the current evidence period. It must have the same duration and cannot overlap the prior period. |
-| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. V2 keeps explicit self-reported experience separate from supporting activity reflection, plus the other three dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. Reassessment composition is the only writer. |
+| `snapshot` | Authoritative derived JSON object returned by current/detail/history reads. V2 keeps explicit self-reported experience separate from supporting activity reflection, plus the other three dimensions, exact source/version/coverage data, explicit `UNAVAILABLE` or `INSUFFICIENT_DATA` states, and the no-combined-score disclaimer. New MB-808 explicit sources copy the exact sorted codes, catalog/map revisions, report revision/period and bounded candidate mapping reasons, including no-resource reasons; these are not admitted offers. Historical absent fields remain absent and are never hydrated from mutable sources, catalog or Content. Reassessment composition is the only writer. |
 | `composed_at` | Immutable UTC instant when Care completed local calculation, safe Journal/AI fallback, and snapshot persistence. |
 
 ### `care.intervention_plan`
@@ -882,4 +897,4 @@ Append-only content-free access facts. It stores actor, action, allowed/denied o
 
 ### `public.consultation_brief_ai_draft_job`
 
-Owner-private asynchronous AI suggestion state. `brief_version`, `support_evaluation_id`, `source_set_version`, and the request fingerprint bind the result to one exact saved draft. The nullable consent, entitlement, routing, provider, model, prompt, and schema fields record the successful provider decision. Suggested situation/goals exist only for `SUCCEEDED`; terminal failures retain a reason without generated content. Brief deletion marks jobs `SOURCE_DELETED` and clears both suggestion fields. The table contains no raw Journal content, screening answers, chat, diagnosis, or private specialist notes.
+Owner-private asynchronous AI suggestion state. `brief_version`, `support_evaluation_id`, `source_set_version`, and the request fingerprint bind the result to one exact saved draft. The nullable consent, entitlement, routing, provider, model, prompt, and schema fields record the successful provider decision. New MB-806 suggestions cite effective L2 `ai-context-processing-capstone-v1` in `consent_policy_version`; historical v2 provenance remains unchanged. Enqueue and every worker attempt require effective L2; denied work retains `CONSENT_REQUIRED` without a suggestion. A local consent database outage fails closed through the existing `PROVIDER_UNAVAILABLE` worker reason (enqueue returns `503 CONSENT_UNAVAILABLE`). Suggested situation/goals exist only for `SUCCEEDED`; terminal failures retain a reason without generated content. Brief deletion marks jobs `SOURCE_DELETED` and clears both suggestion fields. The table contains no raw Journal content, screening answers, chat, diagnosis, or private specialist notes.

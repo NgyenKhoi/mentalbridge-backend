@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mentalbridge.care.assessment.ScreeningLevel;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.Checklist;
+import com.mentalbridge.care.reassessment.ReassessmentSymptomCatalog.SelectionReason;
 
 public record ReassessmentSummaryView(
 		UUID summaryId,
@@ -70,5 +72,14 @@ public record ReassessmentSummaryView(
 
 	public record ExplicitSelfReport(UUID selfReportId, String sourceVersion, long sourceRevision,
 			Period currentPeriod, String currentExperience, String helpfulContext, String difficultContext,
-			Instant authoredAt, Instant updatedAt) { }
+			Instant authoredAt, Instant updatedAt,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Checklist symptomChecklist,
+			@JsonInclude(JsonInclude.Include.NON_NULL) List<SelectionReason> symptomSelectionReasons) {
+		public ExplicitSelfReport(UUID selfReportId, String sourceVersion, long sourceRevision,
+				Period currentPeriod, String currentExperience, String helpfulContext, String difficultContext,
+				Instant authoredAt, Instant updatedAt) {
+			this(selfReportId, sourceVersion, sourceRevision, currentPeriod, currentExperience, helpfulContext,
+					difficultContext, authoredAt, updatedAt, null, null);
+		}
+	}
 }

@@ -50,7 +50,10 @@ class CareLiquibaseChangelogTests {
 					"care-030-support-plan-schedule-generation-cutoff",
 					"care-031-support-plan-proposal-cycle",
 					"care-032-resource-completion-evidence",
-					"care-033-ai-voice-processing-consent");
+					"care-033-ai-voice-processing-consent",
+					"care-034-ai-consent-levels",
+					"care-035-reassessment-symptom-checklist",
+					"care-036-owner-cycle-review-evidence");
 		}
 	}
 
