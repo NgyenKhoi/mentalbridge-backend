@@ -1876,6 +1876,7 @@ export class RoutedChatProvider implements ChatProvider {
           if (route.model !== "global.anthropic.claude-sonnet-4-6")
             throw new Error("Voice pilot route unavailable");
           system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
+          options?.voiceObserver?.({ phase: "provider_prompt_prepared" });
           await authorizeVoiceInput(
             this.configuration.BEDROCK_API_KEY,
             system,
@@ -1893,6 +1894,10 @@ export class RoutedChatProvider implements ChatProvider {
           temperature,
         );
         const { outputConfig, ...plainRequest } = request;
+        const requestBody = JSON.stringify(
+          boundedVoice ? plainRequest : { ...plainRequest, outputConfig },
+        );
+        options?.voiceObserver?.({ phase: "bedrock_request_body_prepared" });
         options?.voiceObserver?.({ phase: "bedrock_requested" });
         response = await fetch(
           bedrockConverseUrl(this.configuration.BEDROCK_REGION, route.model),
@@ -1902,9 +1907,7 @@ export class RoutedChatProvider implements ChatProvider {
               "content-type": "application/json",
               authorization: `Bearer ${this.configuration.BEDROCK_API_KEY}`,
             },
-            body: JSON.stringify(
-              boundedVoice ? plainRequest : { ...plainRequest, outputConfig },
-            ),
+            body: requestBody,
             signal: requestSignal,
           },
         );
@@ -1958,6 +1961,8 @@ export class RoutedChatProvider implements ChatProvider {
         "AI response is invalid",
       );
     }
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({ phase: "bedrock_response_body_received" });
     if (
       !options?.voice &&
       options?.onUsage &&

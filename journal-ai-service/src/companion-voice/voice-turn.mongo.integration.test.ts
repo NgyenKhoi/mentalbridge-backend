@@ -451,6 +451,88 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   };
 
   await t.test(
+    "timings separate current authorization, context, provider and publication without private content",
+    async () => {
+      const f = await fixture();
+      const authorizationGate = hold();
+      const providerGate = hold();
+      let authorizations = 0;
+      const authorize = f.left.sessions.authorizeTurn.bind(f.left.sessions);
+      f.left.sessions.authorizeTurn = async (...args) => {
+        authorizations++;
+        if (authorizations === 1) await authorizationGate.wait;
+        return authorize(...args);
+      };
+      f.respond(async () => {
+        await providerGate.wait;
+        return reply();
+      });
+      const transcript = "Câu thử riêng để xác minh thời gian";
+      const generated = f.generate(f.input(1, transcript));
+      await waitFor(() => authorizations === 1);
+      assert.deepEqual(
+        f.metrics.map((metric) => metric.phase),
+        ["turn_request_received", "initial_authorization_started"],
+      );
+      assert.equal(f.calls(), 0);
+      authorizationGate.release();
+      await waitFor(() => f.calls() === 1);
+      assert.equal(f.metrics.at(-1)?.phase, "provider_reply_requested");
+      assert.equal(
+        f.metrics.some((metric) => metric.phase === "provider_reply_received"),
+        false,
+      );
+      providerGate.release();
+      await generated;
+      assert.deepEqual(
+        f.metrics
+          .filter((metric) => metric.outcome === "PHASE")
+          .map((metric) => metric.phase),
+        [
+          "turn_request_received",
+          "initial_authorization_started",
+          "turn_authorized",
+          "context_preparation_started",
+          "context_prepared",
+          "turn_claim_started",
+          "turn_claimed",
+          "speech_activity_recorded",
+          "pre_inference_authorization_started",
+          "pre_inference_authorized",
+          "provider_reply_requested",
+          "provider_reply_received",
+          "output_validated",
+          "publication_authorization_started",
+          "publication_authorized",
+          "reply_registration_started",
+          "reply_registered",
+          "turn_state_recheck_started",
+          "turn_state_rechecked",
+        ],
+      );
+      assert.equal(authorizations, 3);
+      assert.equal(
+        f.metrics.filter((metric) => metric.outcome === "PROVIDER_USAGE")
+          .length,
+        1,
+      );
+      for (const [index, metric] of f.metrics.entries()) {
+        assert.equal(metric.sequence, index + 1);
+        assert.equal(metric.turnSequence, 1);
+        assert.ok(Number.isFinite(metric.elapsedMs));
+        assert.ok((metric.elapsedMs ?? -1) >= 0);
+        assert.ok(
+          (metric.elapsedMs ?? -1) >= (f.metrics[index - 1]?.elapsedMs ?? 0),
+        );
+      }
+      assert.equal(JSON.stringify(f.metrics).includes(transcript), false);
+      assert.equal(JSON.stringify(f.metrics).includes(reply().message), false);
+      assert.equal(JSON.stringify(f.metrics).includes(f.token), false);
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
     "an accepted same-key retry can bind pending Text context without terminating or duplicating the first START",
     async () => {
       let retry: ReturnType<VoiceSessionsService["start"]> | undefined;

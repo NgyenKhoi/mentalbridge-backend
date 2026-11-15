@@ -1,8 +1,11 @@
 export type VoiceProviderPhase =
+  | "provider_prompt_prepared"
   | "token_count_requested"
   | "token_count_authorized"
+  | "bedrock_request_body_prepared"
   | "bedrock_requested"
   | "bedrock_response_received"
+  | "bedrock_response_body_received"
   | "provider_usage"
   | "bedrock_output_validation"
   | "bedrock_response_validated";

@@ -1,4 +1,5 @@
 import { decodeJwt } from "jose";
+import { performance } from "node:perf_hooks";
 import {
   AccessToken,
   AgentDispatchClient,
@@ -49,6 +50,13 @@ export interface VoiceMediaInspection {
   ownerConnected: boolean;
   agentConnected: boolean;
   agentAudioPublished: boolean;
+}
+
+export interface VoiceMediaDiagnostic {
+  attemptId: string;
+  operation: "ROOMS" | "DISPATCHES" | "PARTICIPANTS";
+  elapsedMs: number;
+  outcome: "SUCCESS" | "FAILED";
 }
 
 export interface VoiceMediaProvider {
@@ -108,6 +116,9 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
   constructor(
     private readonly configuration: VoiceMediaConfiguration,
     clients?: { rooms: RoomClient; agents: DispatchClient },
+    private readonly diagnostic: (value: VoiceMediaDiagnostic) => void = () =>
+      undefined,
+    private readonly monotonic: () => number = () => performance.now(),
   ) {
     if (
       !configuration.serverUrl ||
@@ -145,6 +156,40 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
     } catch {
       throw new VoiceMediaError();
     }
+  }
+
+  private inspectRead<T>(
+    reference: VoiceMediaReference,
+    operation: VoiceMediaDiagnostic["operation"],
+    read: () => Promise<T>,
+  ): Promise<T> {
+    const started = this.monotonic();
+    const observe = (outcome: VoiceMediaDiagnostic["outcome"]) => {
+      const elapsed = this.monotonic() - started;
+      if (!Number.isFinite(elapsed)) return;
+      try {
+        this.diagnostic({
+          attemptId: reference.attemptId,
+          operation,
+          elapsedMs: Math.max(0, Math.floor(elapsed)),
+          outcome,
+        });
+      } catch {
+        return;
+      }
+    };
+    return Promise.resolve()
+      .then(read)
+      .then(
+        (value) => {
+          observe("SUCCESS");
+          return value;
+        },
+        () => {
+          observe("FAILED");
+          throw new VoiceMediaError();
+        },
+      );
   }
 
   createRoom(reference: VoiceMediaReference): Promise<void> {
@@ -192,7 +237,18 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
 
   inspect(reference: VoiceMediaReference): Promise<VoiceMediaInspection> {
     return this.safe(reference, async () => {
-      const rooms = await this.rooms.listRooms([reference.roomName]);
+      const roomRead = this.inspectRead(reference, "ROOMS", () =>
+        this.rooms.listRooms([reference.roomName]),
+      );
+      const detailsRead = Promise.all([
+        this.inspectRead(reference, "DISPATCHES", () =>
+          this.agents.listDispatch(reference.roomName),
+        ),
+        this.inspectRead(reference, "PARTICIPANTS", () =>
+          this.rooms.listParticipants(reference.roomName),
+        ),
+      ]).catch(() => null);
+      const rooms = await roomRead;
       const room = rooms.find((value) => value.name === reference.roomName);
       if (!room)
         return {
@@ -207,10 +263,9 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
         await this.stop(reference);
         throw new VoiceMediaError();
       }
-      const [dispatches, participants] = await Promise.all([
-        this.agents.listDispatch(reference.roomName),
-        this.rooms.listParticipants(reference.roomName),
-      ]);
+      const details = await detailsRead;
+      if (!details) throw new VoiceMediaError();
+      const [dispatches, participants] = details;
       if (
         participants.some(
           (participant) =>

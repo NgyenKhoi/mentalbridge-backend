@@ -19,7 +19,8 @@
     "eval:companion-conversation": "npm run build && node dist/benchmarks/run-companion-conversation-eval.js",
     "bedrock:warm-structured-outputs": "npm run build && node dist/llm-providers/run-bedrock-warmup.js",
     "migrate:up": "migrate-mongo up -f migrate-mongo-config.cjs",
-    "migrate:down": "migrate-mongo down -f migrate-mongo-config.cjs"
+    "migrate:down": "migrate-mongo down -f migrate-mongo-config.cjs",
+    "benchmark:voice-media": "npm run build && node scripts/benchmark-voice-media.mjs"
   },
   "keywords": [],
   "author": "",
