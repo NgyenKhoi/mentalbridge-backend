@@ -36,7 +36,12 @@ export class PushDeviceService {
     body: unknown,
   ): Promise<PushDeviceRegistration> {
     await this.enforceRateLimit(ownerId);
-    if (!this.config.CONTENT_PUSH_TOKEN_ENCRYPTION_KEY) throw new ServiceUnavailableException();
+    // Registration must not report push as on while no worker sends it; revoke stays available.
+    if (
+      !this.config.CONTENT_PUSH_DELIVERY_ENABLED ||
+      !this.config.CONTENT_PUSH_TOKEN_ENCRYPTION_KEY
+    )
+      throw new ServiceUnavailableException();
     try {
       const input = PushDeviceRegistrationSchema.parse(body);
       return await this.repository.register(
