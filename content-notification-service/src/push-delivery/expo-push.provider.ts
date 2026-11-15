@@ -2,6 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { CONFIGURATION_TOKEN } from '../application.tokens.js';
 import type { ServiceConfiguration } from '../configuration/configuration.js';
+import type { NotificationItem } from '../notifications/notification.types.js';
+import { PUSH_CHANNEL_ID, PUSH_SOUND, pushCopy } from './push-copy.js';
 
 export class InvalidPushTokenError extends Error {}
 export class TransientPushProviderError extends Error {}
@@ -9,10 +11,11 @@ export class UnknownPushProviderOutcomeError extends Error {}
 
 export interface PushProviderMessage {
   readonly token: string;
-  readonly title: string;
   readonly notificationId: string;
-  readonly actionType: string | null;
-  readonly actionTargetId: string | null;
+  readonly kind: string;
+  readonly title: string;
+  readonly body: string;
+  readonly action: NotificationItem['action'];
 }
 
 export interface PushProvider {
@@ -45,14 +48,15 @@ export class ExpoPushProvider implements PushProvider {
         },
         body: JSON.stringify({
           to: message.token,
-          title: 'MentalBridge',
-          body: 'Bạn có một cập nhật mới trong MentalBridge.',
+          ...pushCopy(message.kind, message.title, message.body),
           data: {
             notificationId: message.notificationId,
-            actionType: message.actionType,
-            actionTargetId: message.actionTargetId,
+            kind: message.kind,
+            action: message.action,
           },
-          sound: 'default',
+          sound: PUSH_SOUND,
+          channelId: PUSH_CHANNEL_ID,
+          priority: 'high',
         }),
         signal: controller.signal,
       });

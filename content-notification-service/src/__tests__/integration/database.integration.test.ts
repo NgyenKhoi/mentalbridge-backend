@@ -546,6 +546,126 @@ describe('Database Integration', () => {
       expect(attempt.rows[0].receipt_attempt_count).toBe(1);
       expect(attempt.rows[0].receipt_checked_at).toBeInstanceOf(Date);
     });
+
+    it('lets a device registered during the local day receive that day reminders only', async () => {
+      const repository = new PushDeviceRepository(database());
+      const owner = randomUUID();
+      await repository.register(
+        owner,
+        {
+          installationId: randomUUID(),
+          platform: 'ANDROID',
+          provider: 'EXPO',
+          providerToken: 'not-persisted-by-repository',
+          permissionStatus: 'GRANTED',
+        },
+        { ciphertext: 'daily-token', iv: 'daily-iv', authTag: 'daily-tag', hash: '5'.repeat(64) },
+      );
+      await new NotificationPreferenceRepository(database()).getOrCreate(owner, 'USER');
+      await pool.query(
+        `UPDATE notification_preference SET channel_push_enabled = true, quiet_hours_enabled = false
+         WHERE user_id = $1`,
+        [owner],
+      );
+      await pool.query(
+        `UPDATE push_device_registration SET delivery_eligible_from_at = '2030-03-10T08:00:00Z'
+         WHERE owner_id = $1`,
+        [owner],
+      );
+      const insert = async (
+        category: string,
+        sourceIdentity: string,
+        localDayStart: string,
+        createdAt: string,
+      ): Promise<string> => {
+        const id = randomUUID();
+        await pool.query(
+          `INSERT INTO notification
+             (id, recipient_id, category, title, body, priority, expires_at, occurred_at,
+              created_at, source, source_identity, request_fingerprint, delivery_state, version)
+           VALUES ($1, $2, $3, 'Tiêu đề', 'Nội dung', 'NORMAL',
+                   $5::timestamptz + interval '30 days', $4, $5, 'CONTENT', $6, $7,
+                   'DELIVERED', 0)`,
+          [id, owner, category, localDayStart, createdAt, sourceIdentity, 'a'.repeat(64)],
+        );
+        return id;
+      };
+      const todayJournal = await insert(
+        'JOURNAL_REMINDER',
+        'JOURNAL_REMINDER:2030-03-10',
+        '2030-03-09T17:00:00Z',
+        '2030-03-09T17:00:00Z',
+      );
+      const todayEmotion = await insert(
+        'EMOTION_CHECKIN_REMINDER',
+        'EMOTION_CHECKIN_REMINDER:2030-03-10',
+        '2030-03-09T17:00:00Z',
+        '2030-03-09T17:00:00Z',
+      );
+      const yesterdayJournal = await insert(
+        'JOURNAL_REMINDER',
+        'JOURNAL_REMINDER:2030-03-09',
+        '2030-03-08T17:00:00Z',
+        '2030-03-08T17:00:00Z',
+      );
+      const earlierResource = await insert(
+        'SYSTEM_RESOURCE',
+        'resource-before-registration',
+        '2030-03-09T17:00:00Z',
+        '2030-03-09T17:00:00Z',
+      );
+
+      await repository.materializeCandidates(1000);
+
+      const attempts = await pool.query<{ notification_id: string }>(
+        `SELECT a.notification_id
+         FROM push_delivery_attempt a JOIN notification n ON n.id = a.notification_id
+         WHERE n.recipient_id = $1`,
+        [owner],
+      );
+      expect(attempts.rows.map((row) => row.notification_id).sort()).toEqual(
+        [todayJournal, todayEmotion].sort(),
+      );
+      expect(attempts.rows.map((row) => row.notification_id)).not.toContain(yesterdayJournal);
+      expect(attempts.rows.map((row) => row.notification_id)).not.toContain(earlierResource);
+
+      const claims = (await repository.claim(1000)).filter((claim) => claim.ownerId === owner);
+      expect(claims).toHaveLength(2);
+      const journalClaim = claims.find((claim) => claim.notificationId === todayJournal)!;
+      expect(journalClaim).toEqual(
+        expect.objectContaining({
+          kind: 'JOURNAL_REMINDER',
+          title: 'Tiêu đề',
+          body: 'Nội dung',
+          ownerId: owner,
+          timeZone: 'Asia/Ho_Chi_Minh',
+          sourceIdentity: 'JOURNAL_REMINDER:2030-03-10',
+          attemptCount: 1,
+        }),
+      );
+
+      await repository.deferClaim(
+        journalClaim.id,
+        new Date('2030-03-10T13:00:00.000Z'),
+        'REMINDER_NOT_DUE',
+      );
+      const deferred = await pool.query<{
+        state: string;
+        attempt_count: number;
+        failure_code: string;
+        available_at: Date;
+      }>(
+        `SELECT state, attempt_count, failure_code, available_at
+         FROM push_delivery_attempt WHERE id = $1`,
+        [journalClaim.id],
+      );
+      expect(deferred.rows[0]).toEqual({
+        state: 'FAILED',
+        attempt_count: 0,
+        failure_code: 'REMINDER_NOT_DUE',
+        available_at: new Date('2030-03-10T13:00:00.000Z'),
+      });
+    });
   });
 
   describe('resource engagement migration', () => {

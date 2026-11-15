@@ -151,6 +151,7 @@ import { PushDeviceController } from './push-delivery/push-device.controller.js'
 import { PushDeviceRepository } from './push-delivery/push-device.repository.js';
 import { PushDeviceService } from './push-delivery/push-device.service.js';
 import { ExpoPushProvider, type PushProvider } from './push-delivery/expo-push.provider.js';
+import { DailyReminderPushGate } from './push-delivery/daily-reminder-push.gate.js';
 import { PushDeliveryWorker } from './push-delivery/push-delivery.worker.js';
 import { SpecialistNotificationLiveController } from './specialist-notifications/specialist-notification-live.controller.js';
 import { SpecialistNotificationLiveRepository } from './specialist-notifications/specialist-notification-live.repository.js';
@@ -390,6 +391,7 @@ export const createAppModule = (
       dependencies.pushProvider
         ? { provide: PUSH_PROVIDER_TOKEN, useValue: dependencies.pushProvider }
         : { provide: PUSH_PROVIDER_TOKEN, useClass: ExpoPushProvider },
+      DailyReminderPushGate,
       PushDeliveryWorker,
       JwtStrategy,
       {

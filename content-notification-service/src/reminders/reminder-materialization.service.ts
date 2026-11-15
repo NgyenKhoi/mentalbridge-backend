@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
@@ -16,7 +17,7 @@ export interface ReminderClock {
   now(): Date;
 }
 
-const localParts = (instant: Date, timezone: string): { date: string; minutes: number } => {
+export const localParts = (instant: Date, timezone: string): { date: string; minutes: number } => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -34,14 +35,26 @@ const localParts = (instant: Date, timezone: string): { date: string; minutes: n
   };
 };
 
+export const reminderVariant = (ownerId: string, localDate: string): 0 | 1 =>
+  (createHash('sha256').update(`${ownerId}:${localDate}`).digest()[0] & 1) as 0 | 1;
+
+const JOURNAL_TITLES = [
+  'Bạn chưa viết nhật ký hôm nay',
+  'Đừng quên viết vài dòng nhật ký hôm nay nhé',
+] as const;
+const EMOTION_TITLES = [
+  'Bạn chưa ghi nhận cảm xúc hôm nay',
+  'Đừng quên ghi nhận cảm xúc hôm nay nhé',
+] as const;
+
 const timeMinutes = (value: string): number => {
   const [hour, minute] = value.split(':').map(Number);
   return hour * 60 + minute;
 };
 
-export const localDayStart = (localDate: string, timezone: string): string => {
+export const localDayStart = (localDate: string, timezone: string, minutes = 0): string => {
   const [year, month, day] = localDate.split('-').map(Number);
-  const target = Date.UTC(year, month - 1, day);
+  const target = Date.UTC(year, month - 1, day, 0, minutes);
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -158,6 +171,7 @@ export class ReminderMaterializationService {
     preferences: NotificationPreferences,
   ): NotificationCreate[] {
     const commands: NotificationCreate[] = [];
+    const variant = reminderVariant(ownerId, activity.asOfLocalDate);
     if (preferences.contentGroups.journalReminder && !activity.journal.completedToday) {
       commands.push(
         command(
@@ -165,7 +179,7 @@ export class ReminderMaterializationService {
           'JOURNAL_REMINDER',
           activity.asOfLocalDate,
           occurredAt,
-          'Bạn có thể viết vài dòng hôm nay',
+          JOURNAL_TITLES[variant],
           'Nhật ký hôm nay vẫn đang mở nếu bạn muốn ghi lại điều mình đang nghĩ.',
           { type: 'OPEN_JOURNAL' },
         ),
@@ -178,7 +192,7 @@ export class ReminderMaterializationService {
           'EMOTION_CHECKIN_REMINDER',
           activity.asOfLocalDate,
           occurredAt,
-          'Bạn có thể ghi nhận cảm xúc hôm nay',
+          EMOTION_TITLES[variant],
           'Một lần ghi nhận ngắn giúp bạn lưu lại cảm nhận của chính mình trong ngày.',
         ),
       );
