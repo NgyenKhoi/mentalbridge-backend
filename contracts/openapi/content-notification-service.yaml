@@ -1837,6 +1837,7 @@ components:
           ASSESSMENT_RESULT_AVAILABLE,
           SUPPORT_GUIDE_AVAILABLE,
           ACCOUNT_STATUS,
+          SUPPORT_PLAN_DAILY_REMINDER,
         ]
     NotificationPriority:
       type: string
@@ -1858,6 +1859,7 @@ components:
           OPEN_COMMUNITY_REQUEST,
           OPEN_COMMUNITY_INVITATION,
           OPEN_SUPPORT_GUIDE,
+          OPEN_SUPPORT_PLAN,
         ]
     NotificationAction:
       type: object
@@ -1953,6 +1955,7 @@ components:
           appointmentMessage,
           resourceSystem,
           communityInteraction,
+          supportPlanReminder,
         ]
       properties:
         journalReminder: { type: boolean }
@@ -1962,6 +1965,9 @@ components:
         appointmentMessage: { type: boolean }
         resourceSystem: { type: boolean }
         communityInteraction: { type: boolean }
+        supportPlanReminder:
+          type: boolean
+          description: USER opt-out for the generic daily SupportPlan reminder; always false for SPECIALIST owners.
     NotificationContentGroupsPatch:
       type: object
       additionalProperties: false
@@ -1974,6 +1980,9 @@ components:
         appointmentMessage: { type: boolean }
         resourceSystem: { type: boolean }
         communityInteraction: { type: boolean }
+        supportPlanReminder:
+          type: boolean
+          description: USER only; a SPECIALIST patch containing it is rejected with 422.
     QuietHours:
       type: object
       additionalProperties: false
@@ -2076,6 +2085,7 @@ components:
           contentGroups,
           quietHours,
           email,
+          dailyReminderTime,
           version,
           updatedAt,
         ]
@@ -2086,6 +2096,10 @@ components:
           { $ref: "#/components/schemas/NotificationContentGroups" }
         quietHours: { $ref: "#/components/schemas/QuietHours" }
         email: { $ref: "#/components/schemas/EmailPreferences" }
+        dailyReminderTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Local HH:mm in quietHours.timeZone from which daily journal, emotion and SupportPlan reminders are delivered; defaults to 20:00.
         version: { type: integer, format: int64, minimum: 0 }
         updatedAt: { type: string, format: date-time }
     PushDeviceRegistrationRequest:
@@ -2128,6 +2142,10 @@ components:
           { $ref: "#/components/schemas/NotificationContentGroupsPatch" }
         quietHours: { $ref: "#/components/schemas/QuietHoursPatch" }
         email: { $ref: "#/components/schemas/EmailPreferencesPatch" }
+        dailyReminderTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: USER only; a SPECIALIST patch containing it is rejected with 422.
     SafetyDirectoryEntryType:
       type: string
       enum: [FACILITY, HOTLINE]

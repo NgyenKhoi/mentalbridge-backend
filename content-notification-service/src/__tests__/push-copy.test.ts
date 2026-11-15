@@ -15,6 +15,13 @@ describe('push copy allowlist', () => {
     expect(pushCopy(kind, 'Tiêu đề', 'Nội dung')).toEqual({ title: 'Tiêu đề', body: 'Nội dung' });
   });
 
+  it('always pushes the fixed generic SupportPlan reminder copy', () => {
+    expect(pushCopy('SUPPORT_PLAN_DAILY_REMINDER', 'Thở chậm 5 phút', '3 hoạt động')).toEqual({
+      title: 'Bạn có hoạt động trong kế hoạch hôm nay',
+      body: 'Mở MentalBridge để xem kế hoạch hỗ trợ hôm nay.',
+    });
+  });
+
   it.each([
     'COMMUNITY_COMMENT',
     'COMMUNITY_MESSAGE',

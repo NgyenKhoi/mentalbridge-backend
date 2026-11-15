@@ -12,19 +12,34 @@ const claim = (overrides: Partial<PushDeliveryClaim> = {}): PushDeliveryClaim =>
     ownerId: OWNER,
     timeZone: 'Asia/Ho_Chi_Minh',
     sourceIdentity: 'JOURNAL_REMINDER:2026-09-24',
+    dailyReminderTime: '20:00',
     ...overrides,
   }) as PushDeliveryClaim;
+
+const planClaim = (overrides: Partial<PushDeliveryClaim> = {}): PushDeliveryClaim =>
+  claim({
+    kind: 'SUPPORT_PLAN_DAILY_REMINDER',
+    sourceIdentity: 'SUPPORT_PLAN_DAILY_REMINDER:2026-09-24',
+    ...overrides,
+  });
 
 function fixture(
   now: string,
   options: {
-    time?: string;
     asOfLocalDate?: string;
     journalDone?: boolean;
     emotionDone?: boolean;
     fail?: boolean;
+    planEligible?: boolean | Error;
+    planConfigured?: boolean;
   } = {},
 ) {
+  const eligible = vi.fn(async (_owner: string, _asOf: Date, _correlationId: string) => {
+    const outcome = options.planEligible ?? true;
+    if (outcome instanceof Error) throw outcome;
+    return outcome;
+  });
+  const plan = { isConfigured: () => options.planConfigured ?? true, eligible };
   const get = vi.fn(async (_owner: string, _timezone: string, _correlationId: string) => {
     if (options.fail) throw new Error('journal-ai unavailable');
     return {
@@ -33,12 +48,8 @@ function fixture(
       emotionCheckIn: { completedToday: options.emotionDone ?? false },
     } as never;
   });
-  const gate = new DailyReminderPushGate(
-    { CONTENT_PUSH_DAILY_REMINDER_TIME: options.time ?? '20:00' } as never,
-    { get },
-    { now: () => new Date(now) },
-  );
-  return { gate, get };
+  const gate = new DailyReminderPushGate({ get }, { now: () => new Date(now) }, plan as never);
+  return { gate, get, eligible };
 }
 
 describe('daily reminder push gate', () => {
@@ -181,14 +192,90 @@ describe('daily reminder push gate', () => {
   });
 
   it('honours a custom reminder time', async () => {
-    const early = fixture('2026-09-24T01:29:00.000Z', { time: '08:30' });
-    await expect(early.gate.authorizeClaim(claim())).resolves.toEqual({
+    const custom = claim({ dailyReminderTime: '08:30' });
+    const early = fixture('2026-09-24T01:29:00.000Z');
+    await expect(early.gate.authorizeClaim(custom)).resolves.toEqual({
       decision: 'DEFER',
       availableAt: new Date('2026-09-24T01:30:00.000Z'),
       code: 'REMINDER_NOT_DUE',
     });
-    const due = fixture('2026-09-24T01:30:00.000Z', { time: '08:30' });
-    await expect(due.gate.authorizeClaim(claim())).resolves.toEqual({ decision: 'SEND' });
+    const due = fixture('2026-09-24T01:30:00.000Z');
+    await expect(due.gate.authorizeClaim(custom)).resolves.toEqual({ decision: 'SEND' });
+  });
+
+  it('gate uses live preference time', async () => {
+    const { gate, get } = fixture('2026-09-24T13:30:00.000Z');
+
+    await expect(gate.authorizeClaim(claim({ dailyReminderTime: '21:00' }))).resolves.toEqual({
+      decision: 'DEFER',
+      availableAt: new Date('2026-09-24T14:00:00.000Z'),
+      code: 'REMINDER_NOT_DUE',
+    });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('defers the SupportPlan reminder until the owner time without asking Care', async () => {
+    const { gate, eligible } = fixture('2026-09-24T12:59:00.000Z');
+
+    await expect(gate.authorizeClaim(planClaim())).resolves.toEqual({
+      decision: 'DEFER',
+      availableAt: new Date('2026-09-24T13:00:00.000Z'),
+      code: 'REMINDER_NOT_DUE',
+    });
+    expect(eligible).not.toHaveBeenCalled();
+  });
+
+  it('sends the SupportPlan reminder when Care still reports a due open occurrence', async () => {
+    const { gate, eligible, get } = fixture('2026-09-24T13:00:00.000Z');
+
+    await expect(gate.authorizeClaim(planClaim())).resolves.toEqual({ decision: 'SEND' });
+    expect(eligible).toHaveBeenCalledWith(
+      OWNER,
+      new Date('2026-09-24T13:00:00.000Z'),
+      expect.any(String),
+    );
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('plan recheck suppresses', async () => {
+    const { gate } = fixture('2026-09-24T13:00:00.000Z', { planEligible: false });
+
+    await expect(gate.authorizeClaim(planClaim())).resolves.toEqual({
+      decision: 'SUPPRESS',
+      code: 'ACTIVITY_COMPLETED',
+    });
+  });
+
+  it('defers the SupportPlan reminder five minutes when Care is unavailable', async () => {
+    const { gate } = fixture('2026-09-24T13:10:00.000Z', {
+      planEligible: new Error('care unavailable'),
+    });
+
+    await expect(gate.authorizeClaim(planClaim())).resolves.toEqual({
+      decision: 'DEFER',
+      availableAt: new Date('2026-09-24T13:15:00.000Z'),
+      code: 'ACTIVITY_UNAVAILABLE',
+    });
+  });
+
+  it('suppresses the SupportPlan reminder when the Care credential is not configured', async () => {
+    const { gate, eligible } = fixture('2026-09-24T13:00:00.000Z', { planConfigured: false });
+
+    await expect(gate.authorizeClaim(planClaim())).resolves.toEqual({
+      decision: 'SUPPRESS',
+      code: 'ACTIVITY_COMPLETED',
+    });
+    expect(eligible).not.toHaveBeenCalled();
+  });
+
+  it('drops the SupportPlan reminder after its local midnight without asking Care', async () => {
+    const { gate, eligible } = fixture('2026-09-24T17:00:00.000Z');
+
+    await expect(gate.authorizeClaim(planClaim())).resolves.toEqual({
+      decision: 'SUPPRESS',
+      code: 'REMINDER_EXPIRED',
+    });
+    expect(eligible).not.toHaveBeenCalled();
   });
 
   it('sends every other kind without any I/O', async () => {

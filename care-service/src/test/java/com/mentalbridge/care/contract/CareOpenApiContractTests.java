@@ -25,6 +25,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/consents/ai-voice-processing",
 			"POST /api/v1/consents/ai-voice-processing",
 			"POST /internal/v1/ai-companion/voice-consent-authorizations",
+			"POST /internal/v1/support-plan-reminder-eligibility",
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
@@ -125,6 +126,7 @@ class CareOpenApiContractTests {
 			"/api/v1/ai-voice-processing-disclosure",
 			"/api/v1/consents/ai-voice-processing",
 			"/internal/v1/ai-companion/voice-consent-authorizations",
+			"/internal/v1/support-plan-reminder-eligibility",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"/api/v2/support-plans",
@@ -777,6 +779,10 @@ class CareOpenApiContractTests {
 		else if (key.equals("POST /internal/v1/ai-companion/voice-consent-authorizations")) {
 			assertThat(operation.getSecurity()).anySatisfy(requirement ->
 					assertThat(requirement).containsOnlyKeys("JournalVoiceCareToken"));
+		}
+		else if (key.equals("POST /internal/v1/support-plan-reminder-eligibility")) {
+			assertThat(operation.getSecurity()).singleElement().satisfies(requirement ->
+					assertThat(requirement).containsOnlyKeys("supportPlanReminderServiceToken"));
 		}
 		else if (ANONYMOUS_TOKEN_OPERATIONS.contains(key)) {
 			assertThat(operation.getSecurity())

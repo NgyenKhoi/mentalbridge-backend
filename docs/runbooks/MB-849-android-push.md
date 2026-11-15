@@ -22,23 +22,39 @@ Push is off unless `CONTENT_PUSH_DELIVERY_ENABLED=true`. This runbook holds no s
 | `CONTENT_PUSH_DELIVERY_ENABLED` | Starts the push worker | `false` |
 | `EXPO_ACCESS_TOKEN` | Expo push authorization | empty |
 | `CONTENT_PUSH_TOKEN_ENCRYPTION_KEY` | Base64 32-byte AES key for stored device tokens | empty |
-| `CONTENT_PUSH_DAILY_REMINDER_TIME` | Local `HH:MM` from which daily reminders push | `20:00` |
+| `CONTENT_CARE_BASE_URL` | Care base URL for the SupportPlan reminder eligibility read | `http://localhost:8081` |
+| `CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN` | Service token for the Care eligibility read (32+ chars); unset disables SupportPlan reminders | empty |
 | `CONTENT_PUSH_DELIVERY_INTERVAL_MS`, `_BATCH_SIZE`, `_PROVIDER_TIMEOUT_MS`, `_RECEIPT_*`, `_DEVICE_RATE_*`, `EXPO_PUSH_BASE_URL` | Worker tuning | see `compose.yml` |
 
 Enabling needs both `EXPO_ACCESS_TOKEN` and `CONTENT_PUSH_TOKEN_ENCRYPTION_KEY`; the service
 refuses to start without them. Empty values are fine while the flag is `false`.
 
+Care needs `CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN` set to the same value as the Content
+token. The retired `CONTENT_PUSH_DAILY_REMINDER_TIME` is ignored if still present; the reminder
+time is now each owner's `notification_preference.daily_reminder_time` (default `20:00`).
+
 ## Make a reminder due for a device test
 
 1. Register the phone from the app (preferences, "Thông báo đẩy") so a device row exists.
-2. Set `CONTENT_PUSH_DAILY_REMINDER_TIME` a few minutes ahead of the phone's local time and
-   restart content-notification. A device registered earlier the same local day still receives
-   that day's 00:00 reminder; a device registered after that day ends does not.
-3. The reminder must still exist and the activity must still be undone: no journal entry or emotion
-   check-in today. Keep quiet hours off or not covering the test time.
-4. Close the app, wait for the time. Expect the MentalBridge chime and the reminder title.
-   Tapping opens the matching screen and marks it read.
-5. Restore the setting to `20:00`.
+   Registering before turning push on is fine: daily reminders of the same local day still get an
+   attempt after opt-in.
+2. Set the owner's reminder time a few minutes ahead of the phone's local time, in the app
+   preferences or with
+   `UPDATE notification_preference SET daily_reminder_time = 'HH:MM' WHERE user_id = '<owner>'`.
+   No restart is needed; the push gate reads the current value at claim time. A device registered
+   earlier the same local day still receives that day's reminder; one registered after that day
+   ends does not.
+3. Journal/emotion: the reminder must still exist and the activity must still be undone (no journal
+   entry or emotion check-in today). SupportPlan: the owner needs an ACTIVE plan with an open,
+   reminder-enabled occurrence for today; the scheduler creates the inbox item once the time has
+   passed. Keep quiet hours off or not covering the test time.
+4. Send the app to the background with HOME, wait for the time. Expect the MentalBridge chime and
+   the reminder title. Tapping opens the matching screen and marks it read.
+5. Restore the owner's time to `20:00`.
+
+Xiaomi HyperOS: swiping the app away from recents leaves it in the Android `stopped=true` state, and
+FCM data then never reaches it until the app is opened again, unless Autostart is enabled for
+MentalBridge. Use HOME for tests and never force-stop before a push test.
 
 A reminder not sent by the owner's local midnight is dropped (`REMINDER_EXPIRED`) and never sent the
 next morning. Failure codes are on `push_delivery_attempt.failure_code`.

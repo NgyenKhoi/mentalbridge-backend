@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -120,6 +121,63 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 					assertThat(error.status().value()).isEqualTo(404);
 					assertThat(error.code()).isEqualTo("SUPPORT_PLAN_CURRENT_NOT_FOUND");
 				});
+	}
+
+	@Test
+	void reminderEligibilityAcceptsOnlyTheContentServiceTokenAndAnswersFalseForUnknownOwner() throws Exception {
+		String path = "/internal/v1/support-plan-reminder-eligibility";
+		String body = "{\"ownerAccountId\":\"" + UUID.randomUUID() + "\",\"asOf\":\"2026-11-15T13:00:00Z\"}";
+		mvc.perform(post(path).header("X-MentalBridge-Service-Token", REMINDER_SERVICE_TOKEN)
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(content().json("{\"eligible\":false}", true));
+		mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isUnauthorized()).andExpect(content().string(""))
+				.andExpect(header().string("Cache-Control", "no-store"));
+		mvc.perform(post(path).header("X-MentalBridge-Service-Token", REMINDER_SERVICE_TOKEN + "x")
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isUnauthorized()).andExpect(content().string(""));
+		mvc.perform(post(path).with(user(UUID.randomUUID())).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isUnauthorized()).andExpect(content().string(""));
+		mvc.perform(get(path).header("X-MentalBridge-Service-Token", REMINDER_SERVICE_TOKEN))
+				.andExpect(status().isUnauthorized());
+		mvc.perform(post(path).header("X-MentalBridge-Service-Token", REMINDER_SERVICE_TOKEN)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body.replace("}", ",\"extra\":true}")))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void reminderEligibilityFollowsTheCurrentActivePlanAndTodaysOpenReminderEnabledOccurrences() throws Exception {
+		UUID user = profile();
+		var active = activeAdaptivePlan(user);
+		UUID plan = UUID.fromString(active.path("supportPlanId").asText());
+		jdbc.sql("update user_profile set timezone='Asia/Ho_Chi_Minh' where account_id=:id").param("id", user).update();
+		Instant now = Instant.now();
+		LocalDate today = now.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate();
+		jdbc.sql("update support_plan_activity_schedule set recurrence_type='DAILY', recurrence_days_mask=null, "
+				+ "effective_from=:day, timezone='Asia/Ho_Chi_Minh' where support_plan_id=:plan and status='ACTIVE'")
+				.param("day", today.minusDays(2)).param("plan", plan).update();
+		jdbc.sql("delete from support_plan_activity_occurrence where support_plan_id=:plan and local_date between :from and :to")
+				.param("plan", plan).param("from", today.minusDays(1)).param("to", today.plusDays(1)).update();
+		assertThat(eligibleOverHttp(user, now)).isFalse();
+
+		jdbc.sql("update support_plan_activity_schedule set reminder_enabled=true where support_plan_id=:plan")
+				.param("plan", plan).update();
+		assertThat(eligibleOverHttp(user, now)).isTrue();
+
+		jdbc.sql("update support_plan_activity_occurrence set state='SKIPPED', skipped_at=now(), updated_at=now() "
+				+ "where support_plan_id=:plan and local_date=:day and state='SCHEDULED'")
+				.param("plan", plan).param("day", today).update();
+		assertThat(eligibleOverHttp(user, now)).isFalse();
+	}
+
+	private boolean eligibleOverHttp(UUID user, Instant asOf) throws Exception {
+		var result = mvc.perform(post("/internal/v1/support-plan-reminder-eligibility")
+				.header("X-MentalBridge-Service-Token", REMINDER_SERVICE_TOKEN).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"ownerAccountId\":\"" + user + "\",\"asOf\":\"" + asOf + "\"}"))
+				.andExpect(status().isOk()).andReturn();
+		return response(result.getResponse().getContentAsString()).path("eligible").booleanValue();
 	}
 
 	@Test

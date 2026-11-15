@@ -63,7 +63,11 @@ describe('notification inbox contract', () => {
       'ASSESSMENT_RESULT_AVAILABLE',
       'SUPPORT_GUIDE_AVAILABLE',
       'ACCOUNT_STATUS',
+      'SUPPORT_PLAN_DAILY_REMINDER',
     ]);
+    expect((schemas['NotificationActionType'] as { enum: string[] }).enum).toContain(
+      'OPEN_SUPPORT_PLAN',
+    );
     expect(notification.required).toEqual(
       expect.arrayContaining(['occurredAt', 'readAt', 'action', 'lifecycleState', 'expiresAt']),
     );

@@ -234,6 +234,8 @@ CREATE TABLE content.notification_preference (
     group_appointment_message_enabled boolean NOT NULL,
     group_resource_system_enabled boolean NOT NULL,
     group_community_interaction_enabled boolean NOT NULL,
+    group_support_plan_reminder_enabled boolean NOT NULL, -- USER opt-out; false for SPECIALIST defaults
+    daily_reminder_time time NOT NULL, -- local HH:mm in time_zone, default 20:00
     quiet_hours_enabled boolean NOT NULL,
     quiet_hours_start time NOT NULL,
     quiet_hours_end time NOT NULL,
@@ -277,7 +279,8 @@ CREATE TABLE content.notification (
         'EMOTION_CHECKIN_REMINDER', 'JOURNAL_STREAK_MILESTONE',
         'EMOTION_STREAK_MILESTONE', 'COMMUNITY_COMMENT', 'COMMUNITY_REPLY',
         'COMMUNITY_REACTION', 'COMMUNITY_MESSAGE', 'COMMUNITY_REQUEST', 'COMMUNITY_INVITATION', 'ASSESSMENT_RESULT_AVAILABLE',
-        'SUPPORT_GUIDE_AVAILABLE', 'ACCOUNT_STATUS', 'ASSESSMENT', 'CHAT',
+        'SUPPORT_GUIDE_AVAILABLE', 'ACCOUNT_STATUS', 'SUPPORT_PLAN_DAILY_REMINDER',
+        'ASSESSMENT', 'CHAT',
         'FOLLOW_UP', 'SAFETY', 'SYSTEM'
     )),
     title varchar(255) NOT NULL,
@@ -301,7 +304,8 @@ CREATE TABLE content.notification (
         (action_type IS NULL AND action_target_id IS NULL)
         OR (action_type IN (
             'OPEN_JOURNAL', 'OPEN_MESSAGES', 'OPEN_APPOINTMENTS',
-            'OPEN_RESOURCES', 'OPEN_ASSESSMENTS', 'OPEN_SPECIALIST_APPOINTMENTS'
+            'OPEN_RESOURCES', 'OPEN_ASSESSMENTS', 'OPEN_SPECIALIST_APPOINTMENTS',
+            'OPEN_SUPPORT_PLAN'
         ) AND action_target_id IS NULL)
         OR (action_type IN (
             'OPEN_RESOURCE', 'OPEN_COMMUNITY_POST', 'OPEN_SUPPORT_GUIDE',

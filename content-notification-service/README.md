@@ -227,9 +227,14 @@ three-attempt/start-time bound; an expired final processing lease is reconciled
 to a timestamped terminal failure and cannot be sent later. The provider
 payload remains generic and carries only the
 notification UUID plus `OPEN_APPOINTMENT` and the opaque appointment UUID.
-SupportPlan activity push is deferred because Care's current occurrence v2
-event does not publish an approved reminder instant, timezone or reminder
-choice; Content does not poll private Care state to infer them.
+MB-855 adds one generic `SUPPORT_PLAN_DAILY_REMINDER` per owner and local day
+at the owner's `dailyReminderTime` (default `20:00`). The reminder scheduler asks
+Care's service-authenticated `POST /internal/v1/support-plan-reminder-eligibility`
+(`CONTENT_CARE_BASE_URL`, `CONTENT_CARE_TIMEOUT_MS`,
+`CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN`; blank disables it) for a
+boolean only, and the push gate asks again before sending. No action title,
+count or clinical detail reaches the inbox or push. See ADR 0044 amendment
+MB-855.
 MB-548 adds a separate, opt-in appointment email reminder. A minimized
 Consultation status event materializes at most one row per
 recipient/appointment/version, and rejection, expiry, cancellation, reschedule,

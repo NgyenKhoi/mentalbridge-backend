@@ -30,6 +30,9 @@ const environmentSchema = z
     JOURNAL_AI_SERVICE_URL: z.url().default('http://localhost:3005'),
     CONTENT_CARE_BASE_URL: z.url().optional(),
     CONTENT_CARE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).optional(),
+    CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN: z
+      .union([z.literal(''), z.string().min(32)])
+      .optional(),
     JOURNAL_AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(5_000).default(2_000),
     JOURNAL_AI_REMINDER_SERVICE_TOKEN: z.string().min(32).optional(),
     REMINDER_SCHEDULER_ENABLED: z.enum(['true', 'false']).default('false'),
@@ -96,10 +99,6 @@ const environmentSchema = z
       .default(300),
     CONTENT_PUSH_DEVICE_RATE_LIMIT: z.coerce.number().int().min(1).max(1_000).default(30),
     CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
-    CONTENT_PUSH_DAILY_REMINDER_TIME: z
-      .string()
-      .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/)
-      .default('20:00'),
     EXPO_PUSH_BASE_URL: z.url().default('https://exp.host'),
     EXPO_ACCESS_TOKEN: z.string().optional(),
     CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: z.string().optional(),

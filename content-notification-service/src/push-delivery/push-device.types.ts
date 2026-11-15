@@ -35,6 +35,7 @@ export interface PushDeliveryClaim {
   readonly kind: string;
   readonly ownerId: string;
   readonly timeZone: string;
+  readonly dailyReminderTime: string;
   readonly sourceIdentity: string;
   readonly notificationId: string;
   readonly actionType: NotificationActionType | null;
