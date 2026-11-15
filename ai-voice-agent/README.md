@@ -91,7 +91,7 @@ in a client, dispatch, Jira, repository, command-line value or build argument.
 | `AI_VOICE_AGENT_ENABLED`                | Defaults to `false`; explicit `true` is rejected in CI/test                                                          |
 | `AI_VOICE_PILOT`                        | Defaults to `false`; pilot mode pins Nova-3/Sonic 3 and an explicitly approved voice, with the configured TTS budget |
 | `AI_VOICE_PILOT_TTS_MAX_CHARACTERS`     | Integer 1..8000, default 1200; approved pilot TTS input budget, including interrupted/failed/unknown speech          |
-| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 1500; pause joining adjacent valid STT finals before requesting a Journal turn            |
+| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 750; pause joining adjacent valid STT finals before requesting a Journal turn             |
 | `AI_VOICE_AGENT_APPROVAL_VERSION`       | Reviewed account/privacy/speech QA record identifier, required when enabled                                          |
 | `LIVEKIT_URL`                           | Existing mentalbridge project's `wss://…livekit.cloud` origin                                                        |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-only existing project credentials, also used for LiveKit Inference                                            |
@@ -154,10 +154,15 @@ newly published owner tracks follow the same gate. This is distinct from
 
 Every job owns one session and current-turn RAM. Silero VAD is CPU-local and
 ships its model with the plugin. Endpointing plus a final-segment aggregation
-pause accommodates hesitant Vietnamese speech. The pause defaults to 1,500 ms;
+pause accommodates hesitant Vietnamese speech. The pause defaults to 750 ms;
 `AI_VOICE_FINAL_AGGREGATION_MS` can bound it between 500 and 1,500 ms for an
-approved latency setting. A shorter pause may split hesitant speech sooner and
-does not change confidence validation, quota or provider deadlines. Interim words can
+approved latency setting, including rollback to 1,500 ms. A new nonempty
+Vietnamese interim suspends dispatch of a pending final until a fresh final
+arrives; replayed accepted segment IDs cannot stall it. Interim text never
+enters a Journal request. Missing subsequent finals remain fail-closed under
+existing idle/session deadlines. The worker checks due work every 50 ms; lease
+renewals retain their existing independent deadlines and serialized controls.
+The shorter pause does not change confidence validation, quota or provider deadlines. Interim words can
 interrupt after 500 ms/two words but cannot call Journal. A finite, in-range
 Vietnamese final below confidence 0.8 is discarded with the unsubmitted pending
 utterance. It cannot call Journal, generate TTS, interrupt an approved reply or
@@ -207,7 +212,7 @@ Ordinary turns and playback preserve the same recognition stream. Coordinator
 pending text is cleared locally; SDK `clearUserTurn()` is not used because it
 restarts recognition in the pinned SDK. Microphone mute/end still disable input,
 and terminal cleanup closes the session. Nova-3 endpointing is 500ms; the worker
-defaults to 1500ms aggregation for adjacent finals. Diagnostic HTTP status is limited
+defaults to 750ms aggregation for adjacent finals. Diagnostic HTTP status is limited
 to numeric 400–599, without raw SDK messages or payloads.
 
 The caller must enable acoustic echo cancellation and browser/device noise
@@ -217,6 +222,13 @@ background speech and hesitant pauses require MB-760 real-device benchmarks.
 No paid managed noise filter is enabled without allowance/quality evidence.
 
 ## Privacy and operational evidence
+
+MB-854 adds numeric per-turn dispatch and Journal round-trip timings, Agent
+playout delays, and finite SDK TTS first-byte/synthesis timings. Match Agent
+`turnSequence` with Journal's numeric turn sequence within the same attempt.
+Agent `playout_first_audio` is not browser audibility; SDK TTS first-byte time
+is not end-to-end latency. Missing metrics stay absent, never zero-filled.
+Existing full response and publication checks still precede speech.
 
 `AgentSession.start({record:false})` disables SDK session recording and content
 observability. Text/video input, transcription output/sync, preemptive generation,
