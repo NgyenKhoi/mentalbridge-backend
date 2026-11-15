@@ -245,6 +245,16 @@ Only `end_turn` is accepted for Voice completion. Missing reasons and
 configured by the Voice request. Valid JSON alone does not authorize speech.
 See [the MB-790 output-validation follow-up](../docs/mb-790-voice-output-validation.md).
 
+MB-854 adds metadata-only milestones for context, each authorization boundary,
+provider request preparation, response headers/body, registration and recheck.
+`bedrock_response_received` marks headers and is not token TTFT. Each LiveKit
+media inspection starts its independent room/dispatch/participant reads together
+and reports only a closed operation/outcome, duration and validated attempt ID;
+room binding and recording guards still precede a successful result. No fresh
+authority check is cached or removed. See the [latency investigation and controlled
+benchmark](../docs/story-mb-854-voice-latency.md); run `npm run benchmark:voice-media`
+for the isolated before/after read comparison without provider calls.
+
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
 can be counted before inference. Bedrock Runtime token counting at the Singapore

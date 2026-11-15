@@ -1,0 +1,416 @@
+{
+  "task": "MB-854",
+  "date": "2026-11-15",
+  "sourceBinding": "OPERATOR_VERIFIED_BUILD_METADATA",
+  "runtimeSource": {
+    "backend": "81ee08bd5ced530cc461459793b5917b48f59a06",
+    "frontend": "2d0847182ccd8a7a12772269c5b83a3805084aea",
+    "agentHosting": "SELF_HOSTED_EC2_AP_SOUTHEAST_1A",
+    "aggregationMs": 1500
+  },
+  "stagingBefore": {
+    "oneCall": true,
+    "turns": [
+      {
+        "turn": 1,
+        "finalMs": 34488,
+        "requestedMs": 36155,
+        "ttsMs": 42096,
+        "playoutMs": 42305,
+        "acceptedFinalToRequestMs": 1667,
+        "requestToAgentPlayoutMs": 6150,
+        "acceptedFinalToAgentPlayoutMs": 7817,
+        "ttsToAgentPlayoutMs": 209,
+        "initialAuthorizationMs": 841,
+        "preProviderAfterInitialAuthorizationMs": 748,
+        "bedrockHeaderResponseMs": 2559,
+        "headersToValidatedMs": 7,
+        "publicationAuthorizationMs": 1159,
+        "registrationAndRecheckMs": 25,
+        "journalTotalMs": 5339,
+        "agentOutsideJournalToTtsMs": 602,
+        "inputTokens": 1054,
+        "outputTokens": 102,
+        "stopReason": "END_TURN"
+      },
+      {
+        "turn": 2,
+        "finalMs": 49238,
+        "requestedMs": 50916,
+        "ttsMs": 55643,
+        "playoutMs": 55831,
+        "acceptedFinalToRequestMs": 1678,
+        "requestToAgentPlayoutMs": 4915,
+        "acceptedFinalToAgentPlayoutMs": 6593,
+        "ttsToAgentPlayoutMs": 188,
+        "initialAuthorizationMs": 1219,
+        "preProviderAfterInitialAuthorizationMs": 757,
+        "bedrockHeaderResponseMs": 1543,
+        "headersToValidatedMs": 1,
+        "publicationAuthorizationMs": 1171,
+        "registrationAndRecheckMs": 29,
+        "journalTotalMs": 4720,
+        "agentOutsideJournalToTtsMs": 7,
+        "inputTokens": 1119,
+        "outputTokens": 105,
+        "stopReason": "END_TURN"
+      },
+      {
+        "turn": 3,
+        "finalMs": 80554,
+        "requestedMs": 82181,
+        "ttsMs": 86704,
+        "playoutMs": 86886,
+        "acceptedFinalToRequestMs": 1627,
+        "requestToAgentPlayoutMs": 4705,
+        "acceptedFinalToAgentPlayoutMs": 6332,
+        "ttsToAgentPlayoutMs": 182,
+        "initialAuthorizationMs": 1164,
+        "preProviderAfterInitialAuthorizationMs": 749,
+        "bedrockHeaderResponseMs": 1398,
+        "headersToValidatedMs": 0,
+        "publicationAuthorizationMs": 1164,
+        "registrationAndRecheckMs": 41,
+        "journalTotalMs": 4516,
+        "agentOutsideJournalToTtsMs": 7,
+        "inputTokens": 1183,
+        "outputTokens": 109,
+        "stopReason": "END_TURN"
+      }
+    ],
+    "summary": {
+      "acceptedFinalToRequestMs": {
+        "n": 3,
+        "p50Ms": 1667,
+        "p95Ms": 1678,
+        "worstMs": 1678
+      },
+      "requestToAgentPlayoutMs": {
+        "n": 3,
+        "p50Ms": 4915,
+        "p95Ms": 6150,
+        "worstMs": 6150
+      },
+      "acceptedFinalToAgentPlayoutMs": {
+        "n": 3,
+        "p50Ms": 6593,
+        "p95Ms": 7817,
+        "worstMs": 7817
+      },
+      "initialAuthorizationMs": {
+        "n": 3,
+        "p50Ms": 1164,
+        "p95Ms": 1219,
+        "worstMs": 1219
+      },
+      "bedrockHeaderResponseMs": {
+        "n": 3,
+        "p50Ms": 1543,
+        "p95Ms": 2559,
+        "worstMs": 2559
+      },
+      "publicationAuthorizationMs": {
+        "n": 3,
+        "p50Ms": 1164,
+        "p95Ms": 1171,
+        "worstMs": 1171
+      },
+      "ttsToAgentPlayoutMs": {
+        "n": 3,
+        "p50Ms": 188,
+        "p95Ms": 209,
+        "worstMs": 209
+      }
+    },
+    "scope": "Accepted final reception to Agent playout; not physical end-of-speech to browser-audible response."
+  },
+  "videoBefore": {
+    "samples": [
+      {
+        "turn": 1,
+        "userEndSeconds": [10.38, 10.6],
+        "responseOnsetSeconds": [20.46, 20.58],
+        "gapSeconds": [9.86, 10.2]
+      },
+      {
+        "turn": 2,
+        "userEndSeconds": [25.82, 26.16],
+        "responseOnsetSeconds": [33.54, 33.98],
+        "gapSeconds": [7.38, 8.16]
+      }
+    ],
+    "summary": {
+      "n": 2,
+      "quantileMethod": "Linear interpolation of interval midpoints; descriptive only, not representative staging percentiles",
+      "p50Seconds": 8.9,
+      "p95Seconds": 9.917,
+      "worstSeconds": 10.03,
+      "p50IntervalSeconds": [8.62, 9.18],
+      "p95IntervalSeconds": [9.736, 10.098],
+      "worstIntervalSeconds": [9.86, 10.2]
+    },
+    "scope": "Approximate acoustic/UI attribution from a mixed recording; n=2 descriptive only. Video-log identity unverified."
+  },
+  "controlledWorker": {
+    "before": {
+      "kind": "CONTROLLED_ACTUAL_WORKER_SCHEDULING_BENCHMARK",
+      "label": "baseline",
+      "createdAt": "2026-11-15T11:06:16.138Z",
+      "configuration": {
+        "finalAggregationMs": 1500,
+        "timerPeriodMs": 250
+      },
+      "method": {
+        "samplesPerScenario": 250,
+        "quantiles": "nearest-rank",
+        "clock": "injected virtual wall clock",
+        "phaseRangeMs": [0, 249],
+        "journalAndMedia": "synthetic in-process, immediate successful replies",
+        "providerCalls": 0,
+        "microphone": false,
+        "stagingCalls": 0,
+        "rawConversationSaved": false,
+        "interimResumptionAssertion": false
+      },
+      "scenarios": {
+        "single": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1624,
+            "p95Ms": 1737,
+            "worstMs": 1749,
+            "minimumMs": 1500
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1624,
+            "p95Ms": 1737,
+            "worstMs": 1749,
+            "minimumMs": 1500
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        },
+        "adjacent-finals": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 2024,
+            "p95Ms": 2137,
+            "worstMs": 2149,
+            "minimumMs": 1900
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1624,
+            "p95Ms": 1737,
+            "worstMs": 1749,
+            "minimumMs": 1500
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        },
+        "duplicate-final": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1624,
+            "p95Ms": 1737,
+            "worstMs": 1749,
+            "minimumMs": 1500
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1624,
+            "p95Ms": 1737,
+            "worstMs": 1749,
+            "minimumMs": 1500
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        },
+        "interim-resumption": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1624,
+            "p95Ms": 1737,
+            "worstMs": 1749,
+            "minimumMs": 1500
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": -176,
+            "p95Ms": -63,
+            "worstMs": -51,
+            "minimumMs": -300
+          },
+          "turnCountRange": [2, 2],
+          "turnsBeforeLastFinal": 250,
+          "syntheticDownstreamLatencyMs": 0
+        }
+      },
+      "scope": "Measures final transcript reception to Journal dispatch using actual compiled VoiceWorker. Does not measure STT endpointing, provider latency, TTFT/TTFA, browser playback, or T6-T0 perceived latency.",
+      "sourceFingerprint": {
+        "voiceWorkerSha256": "a2c115dfbee6919718941df5af82aafcb239942dd89fc942c50d199cde755b00",
+        "configurationSha256": "89922ea44fe16840079ceaab6b5954e10b37f02baccd2756c8ae20e18424e1ab",
+        "compiledVoiceWorkerSha256": "fbef1994f1b0ef38a253b51429060c4b67e4b79e694b3fe8d4ab75c51904e803",
+        "compiledConfigurationSha256": "4241aa750ff91b3947d4c4bdb1fc514b827412a8157baf8b843f525c6b464911"
+      }
+    },
+    "after": {
+      "kind": "CONTROLLED_ACTUAL_WORKER_SCHEDULING_BENCHMARK",
+      "label": "candidate",
+      "createdAt": "2026-11-15T11:04:33.676Z",
+      "configuration": {
+        "finalAggregationMs": 750,
+        "timerPeriodMs": 50
+      },
+      "method": {
+        "samplesPerScenario": 250,
+        "quantiles": "nearest-rank",
+        "clock": "injected virtual wall clock",
+        "phaseRangeMs": [0, 249],
+        "journalAndMedia": "synthetic in-process, immediate successful replies",
+        "providerCalls": 0,
+        "microphone": false,
+        "stagingCalls": 0,
+        "rawConversationSaved": false,
+        "interimResumptionAssertion": true
+      },
+      "scenarios": {
+        "single": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 774,
+            "p95Ms": 797,
+            "worstMs": 799,
+            "minimumMs": 750
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 774,
+            "p95Ms": 797,
+            "worstMs": 799,
+            "minimumMs": 750
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        },
+        "adjacent-finals": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 1174,
+            "p95Ms": 1197,
+            "worstMs": 1199,
+            "minimumMs": 1150
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 774,
+            "p95Ms": 797,
+            "worstMs": 799,
+            "minimumMs": 750
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        },
+        "duplicate-final": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 774,
+            "p95Ms": 797,
+            "worstMs": 799,
+            "minimumMs": 750
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 774,
+            "p95Ms": 797,
+            "worstMs": 799,
+            "minimumMs": 750
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        },
+        "interim-resumption": {
+          "firstFinalToTurn": {
+            "n": 250,
+            "p50Ms": 2574,
+            "p95Ms": 2597,
+            "worstMs": 2599,
+            "minimumMs": 2550
+          },
+          "lastDistinctFinalToTurn": {
+            "n": 250,
+            "p50Ms": 774,
+            "p95Ms": 797,
+            "worstMs": 799,
+            "minimumMs": 750
+          },
+          "turnCountRange": [1, 1],
+          "turnsBeforeLastFinal": 0,
+          "syntheticDownstreamLatencyMs": 0
+        }
+      },
+      "scope": "Measures final transcript reception to Journal dispatch using actual compiled VoiceWorker. Does not measure STT endpointing, provider latency, TTFT/TTFA, browser playback, or T6-T0 perceived latency.",
+      "sourceFingerprint": {
+        "voiceWorkerSha256": "b07d32146cd14c21a4d193c633885e1a57e9120a20f6ba447a88ecb57aa93e9d",
+        "configurationSha256": "89c756498276d24a0ddbe281ce3fe11a9ccd6fac06d7ce347e2cfdeab92ddaa8",
+        "compiledVoiceWorkerSha256": "702f6612211e4eae6739df067e962be4cb5d7105bfa1dfeec280fea0a940f9b5",
+        "compiledConfigurationSha256": "1e13fb47d784f3d8f22eb3ecc05bd21e0648a57c8eb6bbe3b45a72672791de59"
+      }
+    }
+  },
+  "controlledMediaInspection": {
+    "kind": "CONTROLLED_ACTUAL_MEDIA_INSPECTION_VIRTUAL_RPC_BENCHMARK",
+    "createdAt": "2026-11-15T11:18:59.759Z",
+    "before": {
+      "n": 200,
+      "p50Ms": 318,
+      "p95Ms": 376,
+      "worstMs": 392
+    },
+    "after": {
+      "n": 200,
+      "p50Ms": 178,
+      "p95Ms": 198,
+      "worstMs": 199
+    },
+    "method": {
+      "samples": 200,
+      "rpcDelayRangeMs": [100, 199],
+      "clock": "virtual deterministic provider-read completions",
+      "baselineSource": "81ee08bd5ced530cc461459793b5917b48f59a06",
+      "providerCalls": 0,
+      "stagingCalls": 0,
+      "mutations": 0,
+      "assertedChecks": "same successful bound room/dispatch/participants; exactly three reads per sample"
+    },
+    "scope": "Measures actual LiveKitVoiceMedia.inspect with identical synthetic RPC delays before/after. Does not claim actual staging RPC decomposition or end-to-end saving.",
+    "sourceFingerprint": {
+      "beforeSha256": "084c8112a939d7be5662ef261e8a56845fa00f4e199fae8e74ca19197c0cf8fb",
+      "afterSha256": "e4c30dba7b876c6849963481fab662a11b75d40e5cc45db5820fa605104288ac"
+    }
+  },
+  "stagingAfter": {
+    "status": "NOT_RUN",
+    "endToEndP50Ms": null,
+    "endToEndP95Ms": null
+  },
+  "privacy": {
+    "suppliedRawFilesCommitted": false,
+    "audioCommitted": false,
+    "transcriptsCommitted": false,
+    "credentialsCommitted": false,
+    "realProviderCallsByInvestigation": 0
+  },
+  "targets": {
+    "proposedP50Ms": 1500,
+    "proposedP95Ms": 3000,
+    "verified": false
+  }
+}

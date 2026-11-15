@@ -229,6 +229,8 @@ playout delays, and finite SDK TTS first-byte/synthesis timings. Match Agent
 Agent `playout_first_audio` is not browser audibility; SDK TTS first-byte time
 is not end-to-end latency. Missing metrics stay absent, never zero-filled.
 Existing full response and publication checks still precede speech.
+`schedulerLagMs` can include waiting for a busy prior turn or coordination,
+not only timer jitter. See the [MB-854 investigation and benchmark](../docs/story-mb-854-voice-latency.md).
 
 `AgentSession.start({record:false})` disables SDK session recording and content
 observability. Text/video input, transcription output/sync, preemptive generation,
