@@ -32,6 +32,8 @@ export function speechUsage(metrics: {
   audioDurationMs?: number;
   charactersCount?: number;
   cancelled?: boolean;
+  ttfbMs?: number;
+  durationMs?: number;
 }): AgentDiagnostic | null {
   if (
     !["stt_metrics", "tts_metrics"].includes(metrics.type) ||
@@ -59,6 +61,16 @@ export function speechUsage(metrics: {
     audioDurationMs: metrics.audioDurationMs,
     charactersCount: metrics.charactersCount,
     cancelled: metrics.cancelled,
+    ...(typeof metrics.ttfbMs === "number" &&
+    Number.isFinite(metrics.ttfbMs) &&
+    metrics.ttfbMs >= 0
+      ? { ttsFirstByteMs: metrics.ttfbMs }
+      : {}),
+    ...(typeof metrics.durationMs === "number" &&
+    Number.isFinite(metrics.durationMs) &&
+    metrics.durationMs >= 0
+      ? { synthesisDurationMs: metrics.durationMs }
+      : {}),
   };
 }
 

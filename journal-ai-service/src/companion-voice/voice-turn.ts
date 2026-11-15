@@ -72,15 +72,30 @@ export interface VoiceTurnMetric {
   correlationId?: string;
   phase?:
     | VoiceProviderPhase
+    | "turn_request_received"
+    | "initial_authorization_started"
     | "turn_authorized"
+    | "context_preparation_started"
+    | "context_prepared"
+    | "turn_claim_started"
+    | "turn_claimed"
+    | "speech_activity_recorded"
+    | "pre_inference_authorization_started"
+    | "pre_inference_authorized"
+    | "provider_reply_requested"
+    | "provider_reply_received"
     | "output_validated"
+    | "publication_authorization_started"
     | "publication_authorized"
+    | "reply_registration_started"
+    | "turn_state_recheck_started"
     | "turn_state_rechecked"
     | "reply_registered";
   code?: VoiceFailureCode;
   stopReason?: VoiceStopReason;
   countedInputTokens?: number;
   sequence?: number;
+  turnSequence?: number;
   elapsedMs?: number;
   inputTokens?: number;
   outputTokens?: number;
@@ -210,6 +225,7 @@ export class VoiceTurnService {
         turnId: input.turnId,
         ...(z.uuid().safeParse(correlationId).success ? { correlationId } : {}),
         sequence: ++diagnosticSequence,
+        turnSequence: input.sequence,
         elapsedMs: Math.max(0, Math.floor(performance.now() - diagnosticStart)),
       });
     };
@@ -217,6 +233,7 @@ export class VoiceTurnService {
       phase = value;
       report({ outcome: "PHASE", phase });
     };
+    stage("turn_request_received");
     if (
       !/\p{L}/u.test(input.finalTranscript) ||
       hasControlCharacters(input.finalTranscript) ||
@@ -224,6 +241,7 @@ export class VoiceTurnService {
     )
       throw new VoiceTurnError("INVALID_FINAL_TRANSCRIPT");
     if (signal?.aborted) throw new VoiceLedgerError("SESSION_EXPIRED");
+    stage("initial_authorization_started");
     const { session, entitlement } = await this.sessions.authorizeTurn(
       id,
       input.attemptId,
@@ -239,6 +257,7 @@ export class VoiceTurnService {
       this.discard(id);
       throw new VoiceLedgerError("QUOTA_EXHAUSTED");
     }
+    stage("context_preparation_started");
     let route: ReturnType<typeof selectVoiceProviderRoute>;
     try {
       route = this.route(entitlement.packageCode);
@@ -301,6 +320,7 @@ export class VoiceTurnService {
     const recent = history(context.pairs, input.finalTranscript);
     trimSelectedText(context.textPairs, recent, input.finalTranscript);
     const textHandoff = context.textPairs.length > 0;
+    stage("context_prepared");
     context.busy = true;
     let claimed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -311,6 +331,7 @@ export class VoiceTurnService {
     };
     const active = context;
     try {
+      stage("turn_claim_started");
       claimed = await this.store.claim({
         _id: keyHash,
         operation: "turn",
@@ -325,12 +346,14 @@ export class VoiceTurnService {
         expiresAt: session.expiresAt,
       });
       if (!claimed) throw new VoiceLedgerError("STALE_ATTEMPT");
+      stage("turn_claimed");
       context.sequence = input.sequence;
       await this.sessions.recordSpeechActivity(
         id,
         input.attemptId,
         input.leaseId,
       );
+      stage("speech_activity_recorded");
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
       let checking = false;
@@ -352,12 +375,14 @@ export class VoiceTurnService {
       ]);
       if (this.isAborted(requestSignal))
         throw new VoiceLedgerError("SESSION_EXPIRED");
+      stage("pre_inference_authorization_started");
       const dispatch = await this.sessions.authorizeTurn(
         id,
         input.attemptId,
         input.leaseId,
         correlationId,
       );
+      stage("pre_inference_authorized");
       if (
         this.digest(
           JSON.stringify(this.route(dispatch.entitlement.packageCode)),
@@ -375,6 +400,7 @@ export class VoiceTurnService {
       });
       let reply: ProviderReply;
       try {
+        stage("provider_reply_requested");
         reply = await Promise.race([
           this.provider.reply(
             input.finalTranscript,
@@ -419,6 +445,7 @@ export class VoiceTurnService {
           ),
           cancelled,
         ]);
+        stage("provider_reply_received");
       } finally {
         requestSignal.removeEventListener("abort", rejectAbort);
       }
@@ -434,6 +461,7 @@ export class VoiceTurnService {
         ? "neutral"
         : (expressionSchema.safeParse(reply.expression).data ?? "neutral");
       stage("output_validated");
+      stage("publication_authorization_started");
       const publication = await this.sessions.authorizeTurn(
         id,
         input.attemptId,
@@ -450,6 +478,7 @@ export class VoiceTurnService {
       )
         throw new VoiceMediaError();
       const replyId = randomUUID();
+      stage("reply_registration_started");
       await this.sessions.registerReply(
         id,
         input.attemptId,
@@ -458,6 +487,7 @@ export class VoiceTurnService {
         correlationId,
       );
       stage("reply_registered");
+      stage("turn_state_recheck_started");
       const latest = await this.sessions.turnState(
         id,
         input.attemptId,

@@ -50,8 +50,8 @@ void test("pilot TTS configuration defaults safely and accepts only bounded inte
   }
 });
 
-void test("final aggregation configuration preserves the default and bounds a shorter speech pause", () => {
-  assert.equal(loadConfiguration({}).finalAggregationMs, 1500);
+void test("final aggregation defaults to 750 ms and retains the explicit rollback range", () => {
+  assert.equal(loadConfiguration({}).finalAggregationMs, 750);
   for (const milliseconds of [500, 750, 1500]) {
     assert.equal(
       loadConfiguration({

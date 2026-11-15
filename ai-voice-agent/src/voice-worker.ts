@@ -67,6 +67,8 @@ export class VoiceWorker {
   private readonly life = new AbortController();
   private readonly seen = new Set<string>();
   private pending = "";
+  private pendingInterim = false;
+  private finalReceivedAt = 0;
   private pauseUntil = 0;
   private speaking: Reply | null = null;
   private playbackStarted = false;
@@ -92,7 +94,7 @@ export class VoiceWorker {
     ) => void = () => undefined,
     private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
       undefined,
-    private readonly finalAggregationMs = 1500,
+    private readonly finalAggregationMs = 750,
   ) {
     this.finished = new Promise((resolve) => {
       this.finish = resolve;
@@ -266,20 +268,19 @@ export class VoiceWorker {
       if (value.final) reject("PENDING_TOO_LARGE");
       return;
     }
-    if (value.confidence < 0.8) {
-      if (value.final) {
-        this.pending = "";
-        this.pauseUntil = 0;
-        this.diagnostic({
-          phase: "stt_final",
-          transcriptResult: "DISCARDED",
-          rejection: "LOW_CONFIDENCE",
-          confidenceValid: true,
-          confidence: value.confidence,
-          languageAccepted: true,
-        });
-        if (!this.busy) this.setState("LISTENING");
-      }
+    if (value.confidence < 0.8 && value.final) {
+      this.pending = "";
+      this.pendingInterim = false;
+      this.pauseUntil = 0;
+      this.diagnostic({
+        phase: "stt_final",
+        transcriptResult: "DISCARDED",
+        rejection: "LOW_CONFIDENCE",
+        confidenceValid: true,
+        confidence: value.confidence,
+        languageAccepted: true,
+      });
+      if (!this.busy) this.setState("LISTENING");
       return;
     }
     const clean = normalized(text);
@@ -289,8 +290,12 @@ export class VoiceWorker {
       (this.lastEcho.includes(clean) || clean.includes(this.lastEcho))
     )
       return;
+    const key = digest(value.segmentId);
+    if (this.seen.has(key)) return;
     if (!value.final) {
+      if (this.pending) this.pendingInterim = true;
       if (
+        value.confidence >= 0.8 &&
         this.speaking &&
         value.durationMs >= 500 &&
         clean.split(" ").length >= 2
@@ -298,8 +303,6 @@ export class VoiceWorker {
         void this.bargeIn();
       return;
     }
-    const key = digest(value.segmentId);
-    if (this.seen.has(key)) return;
     if (this.seen.size >= 256) {
       reject("SEGMENT_LIMIT");
       return;
@@ -307,11 +310,13 @@ export class VoiceWorker {
     this.seen.add(key);
     if (this.speaking) void this.bargeIn();
     this.pending = [this.pending, text].filter(Boolean).join(" ");
+    this.pendingInterim = false;
     if (Buffer.byteLength(this.pending, "utf8") > 1800) {
       reject("PENDING_TOO_LARGE");
       return;
     }
-    this.pauseUntil = this.clock() + this.finalAggregationMs;
+    this.finalReceivedAt = this.clock();
+    this.pauseUntil = this.finalReceivedAt + this.finalAggregationMs;
     this.diagnostic({ phase: "stt_final", transcriptResult: "PENDING" });
     if (!this.busy) this.setState("TRANSCRIBING");
   }
@@ -356,6 +361,7 @@ export class VoiceWorker {
     }
     if (
       this.pending &&
+      !this.pendingInterim &&
       !this.busy &&
       this.connected &&
       !this.muted &&
@@ -363,6 +369,13 @@ export class VoiceWorker {
     ) {
       const text = this.pending;
       this.pending = "";
+      this.diagnostic({
+        phase: "turn_dispatch_timing",
+        turnSequence: this.turnSequence + 1,
+        finalToDispatchMs: Math.max(0, this.clock() - this.finalReceivedAt),
+        aggregationMs: this.finalAggregationMs,
+        schedulerLagMs: Math.max(0, this.clock() - this.pauseUntil),
+      });
       await this.turn(text);
     }
   }
@@ -371,6 +384,7 @@ export class VoiceWorker {
     this.busy = true;
     this.interrupted = false;
     this.setState("WAITING_FOR_REPLY");
+    const requestedAt = this.clock();
     try {
       this.diagnostic({ phase: "turn_requested" });
       const reply = await this.journal.turn(
@@ -387,6 +401,11 @@ export class VoiceWorker {
         randomUUID(),
         this.life.signal,
       );
+      this.diagnostic({
+        phase: "journal_reply_received",
+        turnSequence: this.turnSequence,
+        journalRoundTripMs: Math.max(0, this.clock() - requestedAt),
+      });
       await this.controls;
       if (
         !this.live() ||
@@ -399,11 +418,17 @@ export class VoiceWorker {
       this.playback = new AbortController();
       this.lastEcho = normalized(reply.spokenText);
       this.echoUntil = this.clock() + 60000;
-      this.diagnostic({ phase: "tts_begin" });
+      const ttsStartedAt = this.clock();
+      this.diagnostic({ phase: "tts_begin", turnSequence: this.turnSequence });
       await this.media.speak(
         reply.spokenText,
         async () => {
-          this.diagnostic({ phase: "playout_first_audio" });
+          this.diagnostic({
+            phase: "playout_first_audio",
+            turnSequence: this.turnSequence,
+            requestToPlayoutMs: Math.max(0, this.clock() - requestedAt),
+            ttsToPlayoutMs: Math.max(0, this.clock() - ttsStartedAt),
+          });
           if (
             !this.live() ||
             !this.connected ||
@@ -482,6 +507,7 @@ export class VoiceWorker {
   private async mute(value: boolean) {
     this.muted = value;
     this.pending = "";
+    this.pendingInterim = false;
     this.media.input(this.ready && this.live() && this.connected && !value);
     if (value && this.speaking) await this.bargeIn();
     if (this.ready && !this.life.signal.aborted)
@@ -497,6 +523,7 @@ export class VoiceWorker {
     }
     this.connected = value;
     this.pending = "";
+    this.pendingInterim = false;
     this.media.input(false);
     if (!value) {
       this.reconnectUntil = this.clock() + 30000;
@@ -531,6 +558,7 @@ export class VoiceWorker {
     this.diagnostic({ phase: "agent_stopped", reason });
     this.ready = false;
     this.pending = "";
+    this.pendingInterim = false;
     this.seen.clear();
     this.lastEcho = "";
     this.speaking = null;
@@ -584,10 +612,11 @@ export class VoiceWorker {
     return this.stopWork;
   }
 }
+export const workerTickIntervalMs = 50;
 export function startWorkerTimer(worker: Pick<VoiceWorker, "tick" | "fail">) {
   const timer = setInterval(() => {
     void worker.tick().catch(() => worker.fail());
-  }, 250);
+  }, workerTickIntervalMs);
   timer.unref();
   return () => {
     clearInterval(timer);

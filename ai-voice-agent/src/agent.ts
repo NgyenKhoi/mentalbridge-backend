@@ -35,7 +35,7 @@ export default defineAgent({
         Date.now,
         undefined,
         diagnostic,
-        configuration.finalAggregationMs ?? 1500,
+        configuration.finalAggregationMs ?? 750,
       );
       const active = worker;
       context.addShutdownCallback(() => active.stop("AGENT_FAILURE"));

@@ -165,7 +165,9 @@ export const registerCompanionVoiceModule = (
     (mediaConfiguration?.serverUrl &&
     mediaConfiguration.apiKey &&
     mediaConfiguration.apiSecret
-      ? new LiveKitVoiceMedia(mediaConfiguration)
+      ? new LiveKitVoiceMedia(mediaConfiguration, undefined, (diagnostic) => {
+          logger.info({ event: "voice_media_inspection", ...diagnostic });
+        })
       : {
           createRoom: disabled,
           dispatch: disabled,
