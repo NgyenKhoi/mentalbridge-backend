@@ -96,8 +96,12 @@ const environmentSchema = z
       .default(300),
     CONTENT_PUSH_DEVICE_RATE_LIMIT: z.coerce.number().int().min(1).max(1_000).default(30),
     CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
+    CONTENT_PUSH_DAILY_REMINDER_TIME: z
+      .string()
+      .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/)
+      .default('20:00'),
     EXPO_PUSH_BASE_URL: z.url().default('https://exp.host'),
-    EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
+    EXPO_ACCESS_TOKEN: z.string().optional(),
     CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: z.string().optional(),
     APPOINTMENT_REMINDER_APP_URL: z.url().default('http://localhost:3000/appointments'),
     E2E_TEST_MODE: z.coerce.boolean().default(false),

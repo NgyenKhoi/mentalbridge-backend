@@ -7,6 +7,7 @@ import {
   ReminderMaterializationService,
   isQuietHour,
   localDayStart,
+  reminderVariant,
 } from '../reminders/reminder-materialization.service.js';
 
 const OWNER = 'dc8b2305-9ba0-42f8-a98d-7aa93dd2dbdf';
@@ -132,6 +133,37 @@ describe('ReminderMaterializationService', () => {
     ]);
   });
 
+  it('titles daily reminders with the owner-day variant and keeps the bodies', async () => {
+    const variants = new Set<0 | 1>();
+    for (const localDate of [
+      '2026-09-24',
+      '2026-09-25',
+      '2026-09-26',
+      '2026-09-27',
+      '2026-09-28',
+    ]) {
+      const subject = fixture(preferences(), activity({ asOfLocalDate: localDate }));
+      subject.setNow(new Date(`${localDate}T13:00:00.000Z`));
+      await subject.service.materialize(OWNER, subject.preferences, 'correlation');
+      const variant = reminderVariant(OWNER, localDate);
+      variants.add(variant);
+      const byKind = (kind: string) => subject.created.get(`${kind}:${localDate}`);
+      expect(byKind('JOURNAL_REMINDER')).toMatchObject({
+        title: ['Bạn chưa viết nhật ký hôm nay', 'Đừng quên viết vài dòng nhật ký hôm nay nhé'][
+          variant
+        ],
+        body: 'Nhật ký hôm nay vẫn đang mở nếu bạn muốn ghi lại điều mình đang nghĩ.',
+      });
+      expect(byKind('EMOTION_CHECKIN_REMINDER')).toMatchObject({
+        title: ['Bạn chưa ghi nhận cảm xúc hôm nay', 'Đừng quên ghi nhận cảm xúc hôm nay nhé'][
+          variant
+        ],
+        body: 'Một lần ghi nhận ngắn giúp bạn lưu lại cảm nhận của chính mình trong ngày.',
+      });
+    }
+    expect(variants).toEqual(new Set([0, 1]));
+  });
+
   it('uses stable local-day commands so later duplicate retries retain one identity and payload', async () => {
     const subject = fixture();
 
@@ -247,6 +279,17 @@ describe('ReminderMaterializationService', () => {
       subject.service.materialize(OWNER, subject.preferences, 'correlation'),
     ).rejects.toThrow('unavailable');
     expect(subject.created.size).toBe(0);
+  });
+});
+
+describe('reminder variant', () => {
+  it('is stable for one owner and local date and covers both variants across dates', () => {
+    expect(reminderVariant(OWNER, '2026-09-24')).toBe(reminderVariant(OWNER, '2026-09-24'));
+    const dates = Array.from(
+      { length: 14 },
+      (_, day) => `2026-10-${String(day + 1).padStart(2, '0')}`,
+    );
+    expect(new Set(dates.map((date) => reminderVariant(OWNER, date)))).toEqual(new Set([0, 1]));
   });
 });
 

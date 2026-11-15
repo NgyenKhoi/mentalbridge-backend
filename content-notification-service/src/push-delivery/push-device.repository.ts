@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { DatabaseService } from '../database/database.service.js';
+import type { NotificationActionType } from '../notifications/notification.types.js';
 import type {
   PushDeliveryClaim,
   PushReceiptClaim,
@@ -207,7 +208,12 @@ export class PushDeviceRepository {
        JOIN notification_preference p ON p.user_id = n.recipient_id
        JOIN push_device_registration d ON d.owner_id = n.recipient_id
        WHERE n.delivery_state = 'DELIVERED' AND n.deleted_at IS NULL AND n.expires_at > now()
-         AND n.created_at >= d.delivery_eligible_from_at
+         -- shortcut: occurred_at + 1 day approximates local midnight (+-1 h on DST days); the gate drops expired reminders anyway.
+         AND (CASE
+           WHEN n.category IN ('JOURNAL_REMINDER', 'EMOTION_CHECKIN_REMINDER')
+             THEN d.delivery_eligible_from_at < n.occurred_at + interval '1 day'
+           ELSE n.created_at >= d.delivery_eligible_from_at
+         END)
          AND NOT EXISTS (
            SELECT 1 FROM push_delivery_attempt a
            WHERE a.notification_id = n.id AND a.device_registration_id = d.id
@@ -268,7 +274,12 @@ export class PushDeviceRepository {
           token_iv: string;
           token_auth_tag: string;
           notification_id: string;
-          action_type: string | null;
+          kind: string;
+          body: string;
+          owner_id: string;
+          time_zone: string;
+          source_identity: string;
+          action_type: NotificationActionType | null;
           action_target_id: string | null;
           attempt_count: number | string;
           reminder_recipient_id: string | null;
@@ -314,11 +325,14 @@ export class PushDeviceRepository {
          SET state = 'PROCESSING', attempt_count = a.attempt_count + 1, claimed_at = now(),
              last_attempt_at = now(), failure_code = NULL, updated_at = now()
          FROM due, push_device_registration d, notification n
+         JOIN notification_preference p ON p.user_id = n.recipient_id
          LEFT JOIN appointment_push_reminder r ON r.notification_id=n.id
          WHERE a.id = due.id AND d.id = a.device_registration_id AND n.id = a.notification_id
          RETURNING a.id, d.id AS device_id, d.provider_token_ciphertext AS token_ciphertext,
                    d.provider_token_iv AS token_iv, d.provider_token_auth_tag AS token_auth_tag,
-                   n.title, n.id AS notification_id, n.action_type, n.action_target_id,
+                   n.title, n.body, n.category AS kind, n.recipient_id AS owner_id,
+                   p.time_zone, n.source_identity,
+                   n.id AS notification_id, n.action_type, n.action_target_id,
                    a.attempt_count, r.recipient_id AS reminder_recipient_id,
                    r.appointment_id AS reminder_appointment_id,
                    r.appointment_version AS reminder_appointment_version,
@@ -333,6 +347,11 @@ export class PushDeviceRepository {
         tokenIv: row.token_iv,
         tokenAuthTag: row.token_auth_tag,
         title: row.title,
+        body: row.body,
+        kind: row.kind,
+        ownerId: row.owner_id,
+        timeZone: row.time_zone,
+        sourceIdentity: row.source_identity,
         notificationId: row.notification_id,
         actionType: row.action_type,
         actionTargetId: row.action_target_id,
@@ -393,7 +412,8 @@ export class PushDeviceRepository {
   async deferClaim(id: string, availableAt: Date, code: string): Promise<void> {
     await this.db.query(
       `UPDATE push_delivery_attempt
-       SET state='FAILED', available_at=$2, failure_code=$3, updated_at=now()
+       SET state='FAILED', available_at=$2, failure_code=$3, updated_at=now(),
+           attempt_count=GREATEST(attempt_count - 1, 0)
        WHERE id=$1 AND state='PROCESSING'`,
       [id, availableAt, code],
     );

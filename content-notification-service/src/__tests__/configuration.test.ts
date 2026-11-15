@@ -81,6 +81,7 @@ describe('configuration', () => {
     expect(configuration.CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS).toBe(300);
     expect(configuration.CONTENT_PUSH_DEVICE_RATE_LIMIT).toBe(30);
     expect(configuration.CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS).toBe(60);
+    expect(configuration.CONTENT_PUSH_DAILY_REMINDER_TIME).toBe('20:00');
   });
 
   it('normalizes configured CORS origins', () => {
@@ -222,6 +223,34 @@ describe('configuration', () => {
     });
 
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(true);
+  });
+
+  it('validates the daily reminder push time and tolerates empty push secrets while push is off', () => {
+    expect(
+      loadConfiguration({ ...requiredEnvironment, CONTENT_PUSH_DAILY_REMINDER_TIME: '08:30' })
+        .CONTENT_PUSH_DAILY_REMINDER_TIME,
+    ).toBe('08:30');
+    for (const invalid of ['25:00', '8:30', '20:60', '']) {
+      expect(() =>
+        loadConfiguration({ ...requiredEnvironment, CONTENT_PUSH_DAILY_REMINDER_TIME: invalid }),
+      ).toThrow();
+    }
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'false',
+        EXPO_ACCESS_TOKEN: '',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: '',
+      }).CONTENT_PUSH_DELIVERY_ENABLED,
+    ).toBe(false);
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+        EXPO_ACCESS_TOKEN: '',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
+      }),
+    ).toThrow();
   });
 
   it('requires push credentials and a valid encryption key when delivery is enabled', () => {
