@@ -177,6 +177,9 @@ CREATE TABLE consultation.user_subscription (
     current_period_start timestamptz,
     current_period_end timestamptz,
     ended_at timestamptz,
+    cancellation_requested_at timestamptz,
+    cancellation_effective_at timestamptz,
+    cancellation_live_appointment_id uuid, -- logical -> consultation.appointment.id
     idempotency_key varchar(128) NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -190,7 +193,26 @@ CREATE TABLE consultation.subscription_status_history (
     from_status varchar(24),
     to_status varchar(24) NOT NULL,
     reason_code varchar(64) NOT NULL,
+    changed_by uuid, -- external -> identity.account.id
+    outcome_code varchar(64),
     changed_at timestamptz NOT NULL
+);
+
+CREATE TABLE consultation.subscription_cancellation_command (
+    id uuid PRIMARY KEY,
+    actor_account_id uuid NOT NULL, -- external -> identity.account.id
+    subscription_id uuid NOT NULL REFERENCES consultation.user_subscription(id),
+    idempotency_key varchar(128) NOT NULL,
+    request_fingerprint char(64) NOT NULL,
+    from_status varchar(24) NOT NULL,
+    accepted_status varchar(32) NOT NULL,
+    requested_at timestamptz NOT NULL,
+    effective_at timestamptz NOT NULL,
+    live_appointment_id uuid, -- logical -> consultation.appointment.id
+    cancelled_appointment_count integer NOT NULL,
+    revoked_credit_count integer NOT NULL,
+    outcome_code varchar(64) NOT NULL,
+    UNIQUE (actor_account_id, idempotency_key)
 );
 
 CREATE TABLE consultation.payment_transaction (
