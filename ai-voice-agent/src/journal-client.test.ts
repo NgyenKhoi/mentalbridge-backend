@@ -10,6 +10,196 @@ import {
   type Signal,
 } from "./contract.js";
 import { JournalClient } from "./journal-client.js";
+import { speechUnitCapability } from "./speech-units.js";
+
+void test("real loopback Journal JSON stream delivers a bound speech unit before response completion", async () => {
+  const turn = {
+    attemptId: dispatch.attemptId,
+    leaseId: randomUUID(),
+    turnId: randomUUID(),
+    sequence: 1,
+    language: "vi-VN" as const,
+    isFinal: true as const,
+    finalTranscript: "Câu thử tổng hợp.",
+  };
+  const unit = {
+    type: "SPEECH_UNIT",
+    voiceSessionId: dispatch.voiceSessionId,
+    turnId: turn.turnId,
+    replyId: randomUUID(),
+    unitSequence: 1,
+    language: "vi-VN",
+    spokenText: "Mình đang lắng nghe bạn.",
+    expiresAt: new Date(Date.now() + 9000).toISOString(),
+    reservedCharacters: 500,
+    policyVersion: "companion-voice-speech-unit-v1",
+  };
+  let finish: (() => void) | undefined;
+  let calls = 0,
+    completed = false;
+  const server = createServer((req, res) => {
+    calls++;
+    assert.equal(
+      req.headers["x-mentalbridge-voice-capabilities"],
+      speechUnitCapability,
+    );
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "X-MentalBridge-Voice-Protocol": speechUnitCapability,
+    });
+    const text = `[${JSON.stringify(unit)}`;
+    for (const byte of Buffer.from(text)) res.write(Buffer.from([byte]));
+    finish = () => {
+      res.end(',{"type":"COMPLETED","stopReason":"END_TURN"}]');
+    };
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const units: string[] = [];
+  try {
+    const client = new JournalClient({
+      ...configuration(),
+      speechUnitsEnabled: true,
+      journalUrl: `http://127.0.0.1:${String(address.port)}`,
+    });
+    const work = client
+      .turnSpeechUnits(
+        dispatch,
+        turn,
+        randomUUID(),
+        AbortSignal.timeout(2000),
+        (value) => {
+          units.push(value.spokenText);
+        },
+      )
+      .then(() => {
+        completed = true;
+      });
+    const until = Date.now() + 1500;
+    while (units.length === 0 && Date.now() < until)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(units, [unit.spokenText]);
+    assert.equal(completed, false);
+    assert(finish);
+    finish();
+    await work;
+    assert.equal(calls, 1);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve();
+      }),
+    );
+  }
+});
+
+void test("speech stream denies mismatched, truncated, replayed, invalid UTF8 and failed envelopes without retry", async () => {
+  const turn = {
+    attemptId: dispatch.attemptId,
+    leaseId: randomUUID(),
+    turnId: randomUUID(),
+    sequence: 1,
+    language: "vi-VN" as const,
+    isFinal: true as const,
+    finalTranscript: "Câu thử tổng hợp.",
+  };
+  const first = {
+    type: "SPEECH_UNIT",
+    voiceSessionId: dispatch.voiceSessionId,
+    turnId: turn.turnId,
+    replyId: randomUUID(),
+    unitSequence: 1,
+    language: "vi-VN",
+    spokenText: "Mình đang lắng nghe bạn.",
+    expiresAt: new Date(Date.now() + 9000).toISOString(),
+    reservedCharacters: 500,
+    policyVersion: "companion-voice-speech-unit-v1",
+  };
+  for (const text of [
+    JSON.stringify([
+      { ...first, voiceSessionId: randomUUID() },
+      { type: "COMPLETED", stopReason: "END_TURN" },
+    ]),
+    JSON.stringify([{ ...first, unitSequence: 2 }]),
+    JSON.stringify([first, first]),
+    JSON.stringify([first, { type: "COMPLETED", stopReason: "MAX_TOKENS" }]),
+    JSON.stringify([first, { type: "FAILED", code: "TURN_FAILED" }]),
+    `[${JSON.stringify(first)}`,
+    JSON.stringify([first, { type: "COMPLETED", stopReason: "END_TURN" }]) +
+      "PRIVATE",
+  ]) {
+    let calls = 0;
+    const client = new JournalClient(
+      { ...configuration(), speechUnitsEnabled: true },
+      () => {
+        calls++;
+        return Promise.resolve(
+          new Response(text, {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+              "x-mentalbridge-voice-protocol": speechUnitCapability,
+            },
+          }),
+        );
+      },
+    );
+    await assert.rejects(
+      client.turnSpeechUnits(
+        dispatch,
+        turn,
+        randomUUID(),
+        AbortSignal.timeout(500),
+        () => undefined,
+      ),
+      (error: unknown) =>
+        error instanceof AgentFailure && !/PRIVATE|lắng/u.test(error.message),
+    );
+    assert.equal(calls, 1);
+  }
+  let cancelled = 0;
+  const controller = new AbortController();
+  const client = new JournalClient(
+    { ...configuration(), speechUnitsEnabled: true },
+    () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled++;
+            },
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+              "x-mentalbridge-voice-protocol": speechUnitCapability,
+            },
+          },
+        ),
+      ),
+  );
+  const work = client.turnSpeechUnits(
+    dispatch,
+    turn,
+    randomUUID(),
+    controller.signal,
+    () => undefined,
+  );
+  setTimeout(() => {
+    controller.abort();
+  }, 10);
+  await assert.rejects(
+    work,
+    (error: unknown) =>
+      error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  assert.equal(cancelled, 1);
+});
 
 const dispatch = {
   voiceSessionId: randomUUID(),
@@ -21,6 +211,26 @@ const configuration = () =>
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
   });
+void test("Agent speech-unit opt-in requires a measurement policy before registration", () => {
+  assert.equal(configuration().speechUnitsEnabled, false);
+  assert.equal(
+    loadConfiguration({
+      AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+      AI_VOICE_PILOT: "true",
+      AI_VOICE_MEASUREMENT_POLICY_HASH: "h".repeat(43),
+      AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+    }).speechUnitsEnabled,
+    true,
+  );
+  assert.throws(
+    () => loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "true" }),
+    AgentFailure,
+  );
+  assert.throws(
+    () => loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "invalid" }),
+    AgentFailure,
+  );
+});
 void test("measurement claim binds Agent policy and effective TTS reservation before media with one request", async () => {
   const configHash = "h".repeat(43);
   const config = {

@@ -75,6 +75,7 @@ export interface AgentDiagnostic {
     | "turn_requested"
     | "turn_dispatch_timing"
     | "journal_reply_received"
+    | "speech_unit_received"
     | "turn_failed"
     | "tts_begin"
     | "playout_first_audio"
@@ -84,6 +85,7 @@ export interface AgentDiagnostic {
     | "media_failed"
     | "agent_stopped";
   code?: FailureCode;
+  unitSequence?: number;
   statusCode?: number;
   remainingMs?: number;
   delayMs?: number;

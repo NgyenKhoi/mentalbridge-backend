@@ -41,6 +41,7 @@ import {
   type VoiceObserver,
 } from "../llm-providers/voice-diagnostics.js";
 import { authorizeVoiceInput } from "../llm-providers/bedrock-voice-token-budget.js";
+import { VoiceJsonObjectArray } from "../llm-providers/voice-json-array.js";
 import {
   bedrockConverseStreamUrl,
   readBedrockConverseStream,
@@ -436,6 +437,10 @@ export const validatedAssistantMessage = (
   return message;
 };
 
+export interface ProviderSpeechUnit {
+  message: string;
+  expression: "neutral" | "comfort";
+}
 export interface ChatProvider {
   reply(
     userMessage: string,
@@ -446,6 +451,7 @@ export interface ChatProvider {
       voice?: boolean;
       textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
+      onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
       friend?: FriendInput;
       requestTitle?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
@@ -1718,12 +1724,23 @@ export class RoutedChatProvider implements ChatProvider {
       voice?: boolean;
       textHandoff?: boolean;
       voiceObserver?: VoiceObserver;
+      onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
       friend?: FriendInput;
       requestTitle?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
-  ) {
+  ): Promise<ProviderReply> {
     options?.signal?.throwIfAborted();
+    const speechUnits = options?.onSpeechUnit;
+    if (
+      speechUnits &&
+      (!options.voice ||
+        route.provider !== "BEDROCK" ||
+        !this.configuration.VOICE_CONVERSE_STREAM_ENABLED ||
+        !this.configuration.VOICE_SPEECH_UNITS_ENABLED ||
+        !this.configuration.VOICE_PILOT?.measurement)
+    )
+      throw new VoiceProviderFailure("AUTHORITY_OR_STATE");
     const friend = options?.voice ? undefined : options?.friend;
     if (options?.voice && context.kinds.length !== 0)
       throw new VoiceProviderFailure("INVALID_RESPONSE");
@@ -1751,6 +1768,9 @@ export class RoutedChatProvider implements ChatProvider {
       ...(friend ? { friend: true } : {}),
     });
     const requestTitle = options?.requestTitle === true && !options.voice;
+    if (speechUnits)
+      system +=
+        "\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. All messages combined must fit 500 characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.";
     if (requestTitle) system += `\n${providerTitleInstruction}`;
     const input = companionUserInput({
       message: userMessage,
@@ -1781,6 +1801,9 @@ export class RoutedChatProvider implements ChatProvider {
           }
         : coreOutputJsonSchema;
     const temperature = friend ? 0.7 : 0.2;
+    const wireOutputJsonSchema = speechUnits
+      ? { type: "array", minItems: 1, maxItems: 2, items: outputJsonSchema }
+      : outputJsonSchema;
     const providerId: string = route.provider;
     if (
       !options?.voice &&
@@ -1883,7 +1906,7 @@ export class RoutedChatProvider implements ChatProvider {
         if (boundedVoice) {
           if (route.model !== "global.anthropic.claude-sonnet-4-6")
             throw new Error("Voice pilot route unavailable");
-          system += `\nReturn the JSON object directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
+          system += `\nReturn the JSON ${speechUnits ? "array" : "object"} directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(wireOutputJsonSchema)}`;
           options?.voiceObserver?.({ phase: "provider_prompt_prepared" });
           await authorizeVoiceInput(
             this.configuration.BEDROCK_API_KEY,
@@ -1896,7 +1919,7 @@ export class RoutedChatProvider implements ChatProvider {
         const request = bedrockConverseRequest(
           system,
           input,
-          outputJsonSchema,
+          wireOutputJsonSchema,
           "mentalbridge_companion_reply",
           limits.outputTokenLimit,
           temperature,
@@ -1969,12 +1992,55 @@ export class RoutedChatProvider implements ChatProvider {
     if (options?.voice && route.provider === "BEDROCK")
       options.voiceObserver?.({ phase: "bedrock_response_received" });
     let body: unknown;
+    const spokenUnits: ProviderSpeechUnit[] = [];
+    const unitCollector = speechUnits
+      ? new VoiceJsonObjectArray((value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value))
+            throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
+          const { expression: rawExpression, ...rest } = value as Record<
+            string,
+            unknown
+          >;
+          const parsed = providerOutputSchema.safeParse(rest);
+          if (!parsed.success)
+            throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
+          let message: string;
+          try {
+            message = validatedAssistantMessage(parsed.data.message, {
+              rejectLinks: true,
+            });
+            if (
+              Buffer.from(message, "utf8").toString("utf8") !== message ||
+              !/[.!?…]$/u.test(message)
+            )
+              throw new Error();
+            validatedAssistantMessage(
+              [...spokenUnits.map((unit) => unit.message), message].join(" "),
+              { rejectLinks: true },
+            );
+          } catch {
+            throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+          }
+          const unit: ProviderSpeechUnit = {
+            message,
+            expression:
+              voiceExpressionSchema.safeParse(rawExpression).data ?? "neutral",
+          };
+          spokenUnits.push(unit);
+          speechUnits(unit);
+        })
+      : undefined;
     try {
       body = streamSignal
         ? await readBedrockConverseStream(
             response,
             streamSignal,
             options?.voiceObserver,
+            unitCollector
+              ? (text) => {
+                  unitCollector.accept(text);
+                }
+              : undefined,
           )
         : await response.json();
     } catch (error) {
@@ -2107,6 +2173,20 @@ export class RoutedChatProvider implements ChatProvider {
       );
     }
     let output: unknown;
+    if (unitCollector) {
+      unitCollector.finish();
+      if (inputTokens === null || outputTokens === null)
+        throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
+      const joined = spokenUnits.map((unit) => unit.message).join(" ");
+      options?.voiceObserver?.({ phase: "bedrock_response_validated" });
+      return {
+        message: joined,
+        expression: spokenUnits[0]?.expression ?? "neutral",
+        inputTokens,
+        outputTokens,
+        usageSource: "PROVIDER" as const,
+      };
+    }
     try {
       if (options?.voice && responseProvider === "BEDROCK" && message) {
         const fenced = /^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/iu.exec(

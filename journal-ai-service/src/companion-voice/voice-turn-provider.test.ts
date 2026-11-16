@@ -5,6 +5,7 @@ import { crc32 } from "node:zlib";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { readBedrockConverseStream } from "../llm-providers/bedrock-converse-stream.js";
+import { VoiceJsonObjectArray } from "../llm-providers/voice-json-array.js";
 import {
   VoiceProviderFailure,
   type VoiceProviderObservation,
@@ -47,6 +48,231 @@ const streamMessage = {
   businessAction: "NONE",
   thirdPartyAction: "NONE",
 };
+void test("speech-unit JSON framing rejects incomplete, oversized, excessive and malformed arrays", () => {
+  for (const value of [
+    "[]",
+    "{}",
+    '[{"x":1},]',
+    '[{"x":1}]x',
+    '[{"x":1}',
+    '[{"x":1},{"x":2},{"x":3}]',
+    "[true]",
+    `[${"[".repeat(18)}]`,
+  ]) {
+    const parser = new VoiceJsonObjectArray(() => undefined);
+    assert.throws(() => {
+      parser.accept(value);
+      parser.finish();
+    }, VoiceProviderFailure);
+  }
+  assert.throws(() => {
+    new VoiceJsonObjectArray(() => undefined, 2, 5).accept('[{"x":1}]');
+  }, VoiceProviderFailure);
+  const values: unknown[] = [];
+  const parser = new VoiceJsonObjectArray((value) => values.push(value));
+  const input = JSON.stringify([
+    { message: 'Tiếng Việt "rõ" [đủ].' },
+    { message: "Đã xong!" },
+  ]);
+  for (const character of input) parser.accept(character);
+  parser.finish();
+  assert.equal(values.length, 2);
+});
+
+void test("opt-in speech units are fully schema/safety validated before model completion while usage stays once-only", async () => {
+  const original = globalThis.fetch;
+  const first = { ...streamMessage, message: "Mình đang lắng nghe bạn." };
+  const second = {
+    ...streamMessage,
+    message: "Bạn muốn chia sẻ thêm điều gì?",
+  };
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let calls = 0;
+  let resolved = false;
+  const observations: VoiceProviderObservation[] = [];
+  const units: string[] = [];
+  globalThis.fetch = (url, init) => {
+    calls++;
+    if (
+      new URL(url instanceof Request ? url.url : url).pathname.endsWith(
+        "/count-tokens",
+      )
+    )
+      return Promise.resolve(Response.json({ inputTokens: 100 }));
+    assert.equal(typeof init?.body, "string");
+    assert.equal(
+      (
+        JSON.parse(init?.body as string) as {
+          inferenceConfig: { maxTokens: number };
+        }
+      ).inferenceConfig.maxTokens,
+      300,
+    );
+    return Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(value) {
+            controller = value;
+            value.enqueue(eventFrame("messageStart", { role: "assistant" }));
+            value.enqueue(
+              eventFrame("contentBlockDelta", {
+                contentBlockIndex: 0,
+                delta: { text: `[${JSON.stringify(first)},` },
+              }),
+            );
+          },
+        }),
+        { headers: { "content-type": "application/vnd.amazon.eventstream" } },
+      ),
+    );
+  };
+  const provider = new RoutedChatProvider({
+    ...configuration,
+    BEDROCK_API_KEY: "PRIVATE_KEY",
+    VOICE_CONVERSE_STREAM_ENABLED: true,
+    VOICE_SPEECH_UNITS_ENABLED: true,
+    VOICE_PILOT: {
+      startsAt: new Date(),
+      endsAt: new Date(Date.now() + 60000),
+      ownerIds: [randomUUID()],
+      measurement: {
+        campaignId: randomUUID(),
+        maxSessions: 2,
+        maxConcurrentSessions: 1,
+        maxTurns: 12,
+        maxVoiceSeconds: 480,
+        maxTtsCharacters: 4000,
+        voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+      },
+    },
+  });
+  try {
+    const work = provider
+      .reply("PRIVATE_INPUT", { kinds: [], prompt: "PRIVATE_CONTEXT" }, route, {
+        voice: true,
+        voiceObserver: (value) => observations.push(value),
+        onSpeechUnit: (value) => units.push(value.message),
+      })
+      .then((value) => {
+        resolved = true;
+        return value;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(units, [first.message]);
+    assert.equal(resolved, false);
+    assert(
+      !observations.some(
+        (value) => value.phase === "bedrock_stream_message_stopped",
+      ),
+    );
+    controller.enqueue(
+      eventFrame("contentBlockDelta", {
+        contentBlockIndex: 0,
+        delta: { text: `${JSON.stringify(second)}]` },
+      }),
+    );
+    controller.enqueue(
+      eventFrame("contentBlockStop", { contentBlockIndex: 0 }),
+    );
+    controller.enqueue(eventFrame("messageStop", { stopReason: "end_turn" }));
+    controller.enqueue(
+      eventFrame("metadata", { usage: { inputTokens: 100, outputTokens: 60 } }),
+    );
+    controller.close();
+    assert.equal((await work).message, `${first.message} ${second.message}`);
+    assert.equal(calls, 2);
+    assert.equal(
+      observations.filter((value) => value.phase === "provider_usage").length,
+      1,
+    );
+    assert.doesNotMatch(JSON.stringify(observations), /PRIVATE|lắng|chia sẻ/u);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("speech-unit mode rejects unsafe/schema/prefix and abnormal outer completions without retry or fallback", async () => {
+  const original = globalThis.fetch;
+  const pilot = {
+    startsAt: new Date(),
+    endsAt: new Date(Date.now() + 60000),
+    ownerIds: [randomUUID()],
+    measurement: {
+      campaignId: randomUUID(),
+      maxSessions: 2,
+      maxConcurrentSessions: 1 as const,
+      maxTurns: 12,
+      maxVoiceSeconds: 480,
+      maxTtsCharacters: 4000,
+      voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d" as const,
+    },
+  };
+  try {
+    for (const item of [
+      {
+        output: [{ ...streamMessage, authority: "PRIVATE" }],
+        stop: "end_turn",
+        units: 0,
+      },
+      {
+        output: [
+          { ...streamMessage, message: "Tôi chẩn đoán bạn bị trầm cảm." },
+        ],
+        stop: "end_turn",
+        units: 0,
+      },
+      {
+        output: [{ ...streamMessage, message: "Mình đang lắng nghe" }],
+        stop: "end_turn",
+        units: 0,
+      },
+      { output: [streamMessage], stop: "stop_sequence", units: 1 },
+      { output: [streamMessage], stop: undefined, units: 1 },
+    ]) {
+      let calls = 0,
+        units = 0;
+      const observed: VoiceProviderObservation[] = [];
+      globalThis.fetch = (url) => {
+        calls++;
+        if (
+          new URL(url instanceof Request ? url.url : url).pathname.endsWith(
+            "/count-tokens",
+          )
+        )
+          return Promise.resolve(Response.json({ inputTokens: 100 }));
+        const frames = streamFrames(JSON.stringify(item.output));
+        frames[3] = eventFrame("messageStop", { stopReason: item.stop });
+        return Promise.resolve(streamResponse(frames));
+      };
+      const provider = new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "PRIVATE_KEY",
+        VOICE_CONVERSE_STREAM_ENABLED: true,
+        VOICE_SPEECH_UNITS_ENABLED: true,
+        VOICE_PILOT: pilot,
+      });
+      await assert.rejects(
+        provider.reply("PRIVATE_INPUT", { kinds: [], prompt: "" }, route, {
+          voice: true,
+          onSpeechUnit: () => {
+            units++;
+          },
+          voiceObserver: (value) => observed.push(value),
+        }),
+        VoiceProviderFailure,
+      );
+      assert.equal(units, item.units);
+      assert.equal(calls, 2);
+      assert(
+        observed.filter((value) => value.phase === "provider_usage").length <=
+          1,
+      );
+      assert.doesNotMatch(JSON.stringify(observed), /PRIVATE|trầm|lắng/u);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 function eventFrame(event: string, body: unknown, kind = "event") {
   const header = (name: string, value: string) => {
     const prefix = Buffer.from([

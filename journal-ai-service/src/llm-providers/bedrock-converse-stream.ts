@@ -110,6 +110,7 @@ export async function readBedrockConverseStream(
   response: Response,
   signal: AbortSignal,
   observer?: VoiceObserver,
+  onText?: (text: string) => void,
 ): Promise<unknown> {
   if (
     response.headers
@@ -216,6 +217,7 @@ export async function readBedrockConverseStream(
             }
             text += body.delta.text;
             if (text.length > 65536) invalid();
+            onText?.(body.delta.text);
           }
         } else if (event === "contentBlockStop") {
           if (
