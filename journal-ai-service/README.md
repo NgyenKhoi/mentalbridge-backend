@@ -858,6 +858,25 @@ events, metrics, and logs; delete erases them with the encrypted revisions.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
 
+## Voice measurement configuration snapshot
+
+Run `node dist/companion-voice/voice-measurement-preflight.js` after building
+the reviewed revision, inside the existing production service environment.
+The command requires `NODE_ENV=production` and loads the actual configuration
+without dotenv, service bootstrap, database access or provider requests. Exit 0
+means snapshot export only; invalid configuration exits 1 with a fixed safe code.
+
+The version-1 snapshot reports the same effective input/output limits used by
+the Bedrock request path. Non-pilot Voice still has the existing 2,000-token
+output ceiling; Friend-only enables the existing input guard without reducing
+that output ceiling. Pilot defaults/overrides and Text behavior are unchanged.
+Owner count is exported, never owner IDs, credentials or endpoint URLs.
+
+Use the [MB-861 runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+to combine fresh snapshots with approval metadata. The combined command remains
+BLOCKED until aggregate enforcement and external authority gates are implemented
+and verified separately; it cannot grant live approval.
+
 ## Graceful shutdown
 
 The service stops accepting new connections after receiving `SIGINT` or `SIGTERM`. Existing connections have up to 10 seconds to close before they are terminated.
