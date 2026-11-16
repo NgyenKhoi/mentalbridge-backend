@@ -42,6 +42,10 @@ import {
 } from "../llm-providers/voice-diagnostics.js";
 import { authorizeVoiceInput } from "../llm-providers/bedrock-voice-token-budget.js";
 import {
+  bedrockConverseStreamUrl,
+  readBedrockConverseStream,
+} from "../llm-providers/bedrock-converse-stream.js";
+import {
   companionMaxOutputTokens,
   effectiveBedrockRequestLimits,
 } from "../llm-providers/bedrock-request-limits.js";
@@ -1798,6 +1802,7 @@ export class RoutedChatProvider implements ChatProvider {
         "AI provider is unavailable",
       );
     let response: Response;
+    let streamSignal: AbortSignal | undefined;
     try {
       if (providerId === "GEMINI") {
         response = await fetch(
@@ -1902,8 +1907,18 @@ export class RoutedChatProvider implements ChatProvider {
         );
         options?.voiceObserver?.({ phase: "bedrock_request_body_prepared" });
         options?.voiceObserver?.({ phase: "bedrock_requested" });
+        if (options?.voice && this.configuration.VOICE_CONVERSE_STREAM_ENABLED)
+          streamSignal = requestSignal;
         response = await fetch(
-          bedrockConverseUrl(this.configuration.BEDROCK_REGION, route.model),
+          streamSignal
+            ? bedrockConverseStreamUrl(
+                this.configuration.BEDROCK_REGION,
+                route.model,
+              )
+            : bedrockConverseUrl(
+                this.configuration.BEDROCK_REGION,
+                route.model,
+              ),
           {
             method: "POST",
             headers: {
@@ -1912,6 +1927,7 @@ export class RoutedChatProvider implements ChatProvider {
             },
             body: requestBody,
             signal: requestSignal,
+            ...(streamSignal ? { redirect: "error" as const } : {}),
           },
         );
       } else {
@@ -1954,8 +1970,15 @@ export class RoutedChatProvider implements ChatProvider {
       options.voiceObserver?.({ phase: "bedrock_response_received" });
     let body: unknown;
     try {
-      body = await response.json();
-    } catch {
+      body = streamSignal
+        ? await readBedrockConverseStream(
+            response,
+            streamSignal,
+            options?.voiceObserver,
+          )
+        : await response.json();
+    } catch (error) {
+      if (error instanceof VoiceProviderFailure) throw error;
       if (options?.voice && route.provider === "BEDROCK")
         throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
       throw new ChatProblem(
@@ -2011,10 +2034,11 @@ export class RoutedChatProvider implements ChatProvider {
         );
     }
     if (options?.voice && route.provider === "BEDROCK") {
-      options.voiceObserver?.({
-        phase: "provider_usage",
-        ...providerUsage(body),
-      });
+      if (!streamSignal)
+        options.voiceObserver?.({
+          phase: "provider_usage",
+          ...providerUsage(body),
+        });
       const stopReason = voiceStopReason(body);
       options.voiceObserver?.({
         phase: "bedrock_output_validation",

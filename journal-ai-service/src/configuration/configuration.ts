@@ -110,6 +110,9 @@ const environmentSchema = z
     JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_ENABLED: z.enum(["true", "false"]).default("false"),
     JOURNAL_AI_VOICE_FRIEND_ENABLED: z.enum(["true", "false"]).default("false"),
+    JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
     JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: z
       .enum(["true", "false"])
       .default("false"),
@@ -604,6 +607,8 @@ const environmentSchema = z
     VOICE_PILOT: environment.JOURNAL_AI_VOICE_PILOT,
     VOICE_FRIEND_ENABLED:
       environment.JOURNAL_AI_VOICE_FRIEND_ENABLED === "true",
+    VOICE_CONVERSE_STREAM_ENABLED:
+      environment.JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED === "true",
     VOICE_TEXT_HANDOFF_ENABLED:
       environment.JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED === "true",
     COMPANION_GUIDANCE_V2_ENABLED:
@@ -704,11 +709,13 @@ export type ServiceConfiguration = Omit<
   | "VOICE_BEDROCK_ROUTE"
   | "VOICE_PILOT"
   | "VOICE_FRIEND_ENABLED"
+  | "VOICE_CONVERSE_STREAM_ENABLED"
   | "VOICE_TEXT_HANDOFF_ENABLED"
   | "COMPANION_GUIDANCE_V2_ENABLED"
 > & {
   readonly VOICE_PILOT?: z.infer<typeof environmentSchema>["VOICE_PILOT"];
   readonly VOICE_FRIEND_ENABLED?: boolean;
+  readonly VOICE_CONVERSE_STREAM_ENABLED?: boolean;
   readonly VOICE_TEXT_HANDOFF_ENABLED?: boolean;
   readonly COMPANION_GUIDANCE_V2_ENABLED?: boolean;
   readonly VOICE_BEDROCK_ROUTE?: z.infer<
