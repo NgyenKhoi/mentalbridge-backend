@@ -249,11 +249,24 @@ MB-854 adds metadata-only milestones for context, each authorization boundary,
 provider request preparation, response headers/body, registration and recheck.
 `bedrock_response_received` marks headers and is not token TTFT. Each LiveKit
 media inspection starts its independent room/dispatch/participant reads together
-and reports only a closed operation/outcome, duration and validated attempt ID;
+and reports closed operations/outcomes, durations and validated correlation IDs;
 room binding and recording guards still precede a successful result. No fresh
 authority check is cached or removed. See the [latency investigation and controlled
 benchmark](../docs/story-mb-854-voice-latency.md); run `npm run benchmark:voice-media`
 for the isolated before/after read comparison without provider calls.
+
+MB-863 correlates each INITIAL, PRE_INFERENCE and PUBLICATION authorization
+round with its current owner checks, local state reads and unique media
+inspection. Native-fetch request/send/headers/body milestones distinguish SDK
+preparation and parsing from the HTTP wait without changing requests, deadlines,
+pooling or retries. Missing native milestones remain UNKNOWN; first-observed
+sockets are not claimed to be cold connections. No request URL, headers, body,
+raw error, account/room identity or conversation content enters these events.
+All three fresh authorization rounds and complete response/publication checks
+remain mandatory. See the [profiling scope and measurement definitions](../docs/story-mb-863-authorization-profiling.md).
+After building, `node scripts/benchmark-voice-authorization.mjs` compares the
+unchanged base adapters and profiled build against paired synthetic loopback
+HTTP delays. It measures profiling overhead, not real Voice E2E improvement.
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
@@ -857,6 +870,40 @@ from AI context, notification activity, SupportPlan, reassessment, analytics,
 events, metrics, and logs; delete erases them with the encrypted revisions.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
+
+## Voice measurement configuration snapshot
+
+MB-862 adds opt-in `measurement` to the existing pilot JSON. The approved source
+design reserves a full fixed allocation per admission, atomically with ordinary
+quota/session/capacity writes. With two sessions and 12 turns/480 seconds/4,000
+TTS characters, each allocation is at most 6 turns/240 seconds/2,000 characters.
+Existing smaller pilot/product/window bounds still apply. Campaign spend is
+never refunded; only confirmed settlement releases concurrency. No normal Text
+or Voice allowance is changed. Migration 020 adds the content-free campaign
+collection; it creates no campaign or approval window.
+
+The [MB-862 runbook](../docs/story-mb-862-voice-measurement-fence.md) defines
+approved provisioning, replica/Agent binding, owner-derived preflight evidence,
+restart/unknown-outcome behavior and the remaining external gates. Its separate
+operator command reads the owner database; it does not accept manually asserted
+counters. The original MB-861 offline coordinator remains conservatively BLOCKED.
+
+Run `node dist/companion-voice/voice-measurement-preflight.js` after building
+the reviewed revision, inside the existing production service environment.
+The command requires `NODE_ENV=production` and loads the actual configuration
+without dotenv, service bootstrap, database access or provider requests. Exit 0
+means snapshot export only; invalid configuration exits 1 with a fixed safe code.
+
+The version-1 snapshot reports the same effective input/output limits used by
+the Bedrock request path. Non-pilot Voice still has the existing 2,000-token
+output ceiling; Friend-only enables the existing input guard without reducing
+that output ceiling. Pilot defaults/overrides and Text behavior are unchanged.
+Owner count is exported, never owner IDs, credentials or endpoint URLs.
+
+Use the [MB-861 runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+to combine fresh snapshots with approval metadata. The combined command remains
+BLOCKED until aggregate enforcement and external authority gates are implemented
+and verified separately; it cannot grant live approval.
 
 ## Graceful shutdown
 

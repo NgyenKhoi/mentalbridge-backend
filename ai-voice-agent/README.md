@@ -82,6 +82,17 @@ packaged Silero VAD with `--network none`; revisit the override when ONNX update
 
 ## Configuration and startup
 
+MB-862 optionally binds a measurement worker with
+`AI_VOICE_MEASUREMENT_POLICY_HASH`, the non-secret digest exported by Journal's
+approved measurement configuration. It requires pilot mode and exactly the
+server-allocated TTS cap/approved voice. The claim sends `measurementHash` and
+validates the optional lease `measurement` object before starting media.
+Missing, unexpected or mismatched policy/cap/voice fails closed without retry.
+Journal allows only one measurement worker claim per attempt, including after
+an unknown response or process restart. Normal unbound claims are unchanged.
+No environment value enables a campaign or supplies consent. See the
+[MB-862 operator and verification runbook](../docs/story-mb-862-voice-measurement-fence.md).
+
 Use exactly the keys in [.env.example](.env.example), injected into the server
 through managed secrets. No dotenv file is loaded automatically. Never put keys
 in a client, dispatch, Jira, repository, command-line value or build argument.
@@ -222,6 +233,21 @@ background speech and hesitant pauses require MB-760 real-device benchmarks.
 No paid managed noise filter is enabled without allowance/quality evidence.
 
 ## Privacy and operational evidence
+
+### Measurement configuration snapshot
+
+After building the reviewed revision, run
+`node dist/measurement-preflight.js` inside the Agent's existing environment.
+This command only loads configuration and prints the version-1 allowlisted
+snapshot; it does not register a worker or contact Journal/LiveKit. Exit 0 means
+the snapshot was exported, not that a measurement is authorized. Invalid
+configuration exits 1 with a fixed code and no configuration values.
+
+`configuredTtsCharactersPerAttempt` is only a configured number. The effective
+`ttsCharactersPerAttempt` is null when pilot reservations are off. No voice UUID,
+owner, credential or endpoint is exported. See the
+[MB-861 preflight runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+for the combined blocking check and the remaining aggregate-enforcement gate.
 
 MB-854 adds numeric per-turn dispatch and Journal round-trip timings, Agent
 playout delays, and finite SDK TTS first-byte/synthesis timings. Match Agent

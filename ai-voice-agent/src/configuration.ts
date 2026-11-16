@@ -24,6 +24,9 @@ const secret = z.string().regex(/^[\x21-\x7e]{32,256}$/);
 const environmentSchema = z.object({
   AI_VOICE_AGENT_ENABLED: z.enum(["true", "false"]).default("false"),
   AI_VOICE_PILOT: z.enum(["true", "false"]).default("false"),
+  AI_VOICE_MEASUREMENT_POLICY_HASH: optional(
+    z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  ),
   AI_VOICE_PILOT_TTS_MAX_CHARACTERS: z.coerce
     .number()
     .int()
@@ -82,6 +85,7 @@ const environmentSchema = z.object({
   AI_VOICE_TTS_VOICE_ID: optional(z.uuid()),
 });
 export interface AgentConfiguration {
+  measurementPolicyHash?: string | null;
   pilot?: boolean;
   pilotTtsMaxCharacters?: number;
   finalAggregationMs?: number;
@@ -106,6 +110,9 @@ export function loadConfiguration(
   const optionalString = (input: unknown): string | null =>
     typeof input === "string" ? input : null;
   const configuration: AgentConfiguration = {
+    measurementPolicyHash: optionalString(
+      value.AI_VOICE_MEASUREMENT_POLICY_HASH,
+    ),
     pilot: value.AI_VOICE_PILOT === "true",
     pilotTtsMaxCharacters: value.AI_VOICE_PILOT_TTS_MAX_CHARACTERS,
     finalAggregationMs: value.AI_VOICE_FINAL_AGGREGATION_MS,
@@ -120,6 +127,8 @@ export function loadConfiguration(
     ttsModel: value.AI_VOICE_TTS_MODEL,
     voiceId: optionalString(value.AI_VOICE_TTS_VOICE_ID),
   };
+  if (configuration.measurementPolicyHash && !configuration.pilot)
+    throw new AgentFailure("CONFIGURATION_INVALID");
   if (
     configuration.pilot &&
     (configuration.sttModel !== "deepgram/nova-3" ||

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { performance } from "node:perf_hooks";
 import { setTimeout as pause } from "node:timers/promises";
+import type { VoiceAuthorizationProfile } from "./voice-authorization-profile.js";
 
 const ownerBinding = {
   ownerId: z.uuid(),
@@ -52,6 +53,7 @@ export interface VoiceOwnerAuthorizer {
     ownerId: string,
     voiceSessionId: string,
     correlationId: string,
+    profile?: VoiceAuthorizationProfile,
   ): Promise<VoiceOwnerDecision>;
 }
 
@@ -105,29 +107,38 @@ export class CurrentVoiceOwnerAuthorizer implements VoiceOwnerAuthorizer {
     ownerId: string,
     voiceSessionId: string,
     correlationId: string,
+    profile?: VoiceAuthorizationProfile,
   ): Promise<VoiceOwnerDecision> {
+    const measured = <T>(
+      stage: "CARE" | "CONSULTATION",
+      read: () => Promise<T>,
+    ) => (profile ? profile.measure(stage, read) : read());
     const [consent, entitlement] = await Promise.all([
-      this.read(
-        "/internal/v1/ai-companion/voice-consent-authorizations",
-        this.configuration.careBaseUrl,
-        "X-MentalBridge-Voice-Care-Token",
-        this.configuration.careToken,
-        "CONSENT_UNAVAILABLE",
-        consentSchema,
-        ownerId,
-        voiceSessionId,
-        correlationId,
+      measured("CARE", () =>
+        this.read(
+          "/internal/v1/ai-companion/voice-consent-authorizations",
+          this.configuration.careBaseUrl,
+          "X-MentalBridge-Voice-Care-Token",
+          this.configuration.careToken,
+          "CONSENT_UNAVAILABLE",
+          consentSchema,
+          ownerId,
+          voiceSessionId,
+          correlationId,
+        ),
       ),
-      this.read(
-        "/internal/v1/ai-companion/voice-entitlement-authorizations",
-        this.configuration.consultationBaseUrl,
-        "X-MentalBridge-Voice-Entitlement-Token",
-        this.configuration.entitlementToken,
-        "ENTITLEMENT_UNAVAILABLE",
-        entitlementSchema,
-        ownerId,
-        voiceSessionId,
-        correlationId,
+      measured("CONSULTATION", () =>
+        this.read(
+          "/internal/v1/ai-companion/voice-entitlement-authorizations",
+          this.configuration.consultationBaseUrl,
+          "X-MentalBridge-Voice-Entitlement-Token",
+          this.configuration.entitlementToken,
+          "ENTITLEMENT_UNAVAILABLE",
+          entitlementSchema,
+          ownerId,
+          voiceSessionId,
+          correlationId,
+        ),
       ),
     ]);
     const now = this.clock().getTime();

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { voiceMaxInputTokens } from "./bedrock-request-limits.js";
 import {
   VoiceProviderFailure,
   type VoiceObserver,
@@ -46,7 +47,7 @@ export async function authorizeVoiceInput(
     .object({ inputTokens: z.number().int().min(1) })
     .safeParse(body);
   if (!count.success) throw new VoiceProviderFailure("INVALID_RESPONSE");
-  if (count.data.inputTokens > 1900)
+  if (count.data.inputTokens > voiceMaxInputTokens)
     throw new VoiceProviderFailure("INPUT_BUDGET_EXCEEDED");
   signal.throwIfAborted();
   observe?.({

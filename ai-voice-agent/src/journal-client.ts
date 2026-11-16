@@ -109,7 +109,13 @@ export class JournalClient {
     const value = await this.post(
       dispatch.voiceSessionId,
       "agent-claim",
-      { attemptId: dispatch.attemptId, dispatchId: dispatch.dispatchId },
+      {
+        attemptId: dispatch.attemptId,
+        dispatchId: dispatch.dispatchId,
+        ...(this.configuration.measurementPolicyHash
+          ? { measurementHash: this.configuration.measurementPolicyHash }
+          : {}),
+      },
       leaseSchema,
       signal,
     );
@@ -122,6 +128,18 @@ export class JournalClient {
       Date.parse(value.hardStopAt) > this.clock() + 600000
     )
       throw new AgentFailure("INVALID_RESPONSE");
+    const measurement = value.measurement;
+    if (this.configuration.measurementPolicyHash || measurement) {
+      if (
+        !measurement ||
+        !this.configuration.pilot ||
+        measurement.configHash !== this.configuration.measurementPolicyHash ||
+        measurement.ttsCharacters !==
+          this.configuration.pilotTtsMaxCharacters ||
+        measurement.voiceId !== this.configuration.voiceId
+      )
+        throw new AgentFailure("INVALID_RESPONSE");
+    }
     return value;
   }
   async control(dispatch: Dispatch, signal: Signal, abort?: AbortSignal) {

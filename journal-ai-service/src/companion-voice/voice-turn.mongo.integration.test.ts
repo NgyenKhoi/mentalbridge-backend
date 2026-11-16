@@ -40,6 +40,9 @@ import {
   type VoiceTurnMetric,
 } from "./voice-turn.js";
 import type { VoicePilot } from "./voice-pilot.js";
+import { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
+import { measurementPolicy } from "./voice-measurement-policy.js";
+import type { VoiceAuthorizationDiagnostic } from "./voice-authorization-profile.js";
 
 type RawRecord = Record<string, unknown> & { _id: string };
 const require = createRequire(import.meta.url);
@@ -48,6 +51,7 @@ const migrations = [
   "014_companion_voice_media.cjs",
   "015_companion_voice_turn_fences.cjs",
   "016_companion_voice_context_handoff.cjs",
+  "020_voice_measurement_campaigns.cjs",
 ].map(
   (file) =>
     require(`../../migrations/${file}`) as {
@@ -120,7 +124,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
   });
   let count = 0;
   const fixture = async (
-    pilot: boolean | Pick<VoicePilot, "maxSessionSeconds" | "maxTurns"> = false,
+    pilot:
+      | boolean
+      | Pick<
+          VoicePilot,
+          "maxSessionSeconds" | "maxTurns" | "measurement"
+        > = false,
     withHandoff = false,
     beforeStart?: (state: {
       app: INestApplication;
@@ -158,6 +167,8 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     let paid = true;
     let connected = true;
     const metrics: VoiceTurnMetric[] = [];
+    const profiles: VoiceAuthorizationDiagnostic[] = [];
+    let throwingProfiler = false;
     const room = new Map<string, VoiceMediaReference>();
     const media: VoiceMediaProvider = {
       createRoom: (ref) => {
@@ -217,7 +228,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         ? {
             JOURNAL_AI_VOICE_PILOT: JSON.stringify({
               startsAt: new Date(now.getTime() - 1000).toISOString(),
-              endsAt: new Date(now.getTime() + 3600000).toISOString(),
+              endsAt: new Date(
+                now.getTime() +
+                  (typeof pilot === "object" && pilot.measurement
+                    ? 1_799_000
+                    : 3600000),
+              ).toISOString(),
               ownerIds: [owner],
               ...(typeof pilot === "object" ? pilot : {}),
             }),
@@ -228,6 +244,12 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       ...configuration,
       PROVIDER_TIMEOUT_MS: 2500,
     };
+    if (configuration.VOICE_PILOT?.measurement)
+      await new MongoVoiceMeasurementStore(
+        client,
+        name,
+        configuration.VOICE_PILOT,
+      ).provision(now);
     const build = async () => {
       const app = await createApplication(config, {
         readinessProbe: { check: () => Promise.resolve() },
@@ -237,6 +259,10 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           turnProvider: provider,
           turnTelemetry: (metric) => {
             metrics.push(metric);
+          },
+          authorizationTelemetry: (metric) => {
+            profiles.push(metric);
+            if (throwingProfiler) throw new Error("PRIVATE_OBSERVER");
           },
           maintenance: false,
           providerReady: () => true,
@@ -367,6 +393,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         document.attemptId,
         document.dispatchId,
         randomUUID(),
+        measurementPolicy(config.VOICE_PILOT)?.configHash,
       );
       await left.sessions.control(
         id,
@@ -425,6 +452,10 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       contexts,
       clock,
       metrics,
+      profiles,
+      throwProfiler: () => {
+        throwingProfiler = true;
+      },
       token,
       handoffToken,
       connected: (value: boolean) => {
@@ -450,6 +481,104 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     };
   };
 
+  await t.test(
+    "measurement caps provider turns and persists speech reservations through terminal teardown",
+    async () => {
+      const f = await fixture({
+        maxTurns: 30,
+        maxSessionSeconds: 600,
+        measurement: {
+          campaignId: randomUUID(),
+          maxSessions: 2,
+          maxConcurrentSessions: 1,
+          maxTurns: 12,
+          maxVoiceSeconds: 480,
+          maxTtsCharacters: 4000,
+          voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+        },
+      });
+      const session = await f.db
+        .collection<{ _id: string; admittedSeconds: number }>(
+          "ai_voice_sessions",
+        )
+        .findOne({ _id: f.active.id });
+      assert.equal(session?.admittedSeconds, 240);
+      const media = await f.db
+        .collection<{ _id: string; dispatchId: string }>("ai_voice_media")
+        .findOne({ _id: f.active.id });
+      assert.ok(media);
+      for (const measurementHash of [
+        undefined,
+        "x".repeat(43),
+        measurementPolicy(f.config.VOICE_PILOT)?.configHash,
+      ])
+        await request(f.left.app.getHttpServer() as Server)
+          .post(
+            `/internal/v1/ai-companion/voice-sessions/${f.active.id}/agent-claim`,
+          )
+          .set("X-MentalBridge-Voice-Worker-Token", f.token)
+          .send({
+            attemptId: f.active.attemptId,
+            dispatchId: media.dispatchId,
+            ...(measurementHash ? { measurementHash } : {}),
+          })
+          .expect(429);
+      assert.equal(f.calls(), 0);
+      for (let i = 1; i <= 6; i++) await f.generate(f.input(i));
+      assert.equal(f.calls(), 6);
+      await assert.rejects(f.generate(f.input(7)), rejected("QUOTA_EXHAUSTED"));
+      assert.equal(f.calls(), 6);
+      const policy = measurementPolicy(f.config.VOICE_PILOT);
+      assert.ok(policy);
+      const row = await f.db
+        .collection<{
+          _id: string;
+          reservations: {
+            releasedAt: Date | null;
+            turns: number;
+            speechReservations: unknown[];
+          }[];
+        }>("ai_voice_measurement_campaigns")
+        .findOne({ _id: policy.campaignId });
+      assert.equal(row?.reservations[0]?.turns, 6);
+      assert.equal(row.reservations[0].speechReservations.length, 6);
+      assert.ok(row.reservations[0].releasedAt);
+      assert.equal(
+        (
+          await f.db
+            .collection("ai_voice_daily_usage")
+            .findOne({ ownerId: f.owner })
+        )?.reservedSeconds,
+        0,
+      );
+    },
+  );
+  await t.test(
+    "measurement denies oversized speech after provider but before publication and never refunds its allocation",
+    async () => {
+      const f = await fixture({
+        maxTurns: 6,
+        maxSessionSeconds: 240,
+        measurement: {
+          campaignId: randomUUID(),
+          maxSessions: 2,
+          maxConcurrentSessions: 1,
+          maxTurns: 12,
+          maxVoiceSeconds: 480,
+          maxTtsCharacters: 2,
+          voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+        },
+      });
+      await assert.rejects(f.generate(f.input()), rejected("QUOTA_EXHAUSTED"));
+      assert.equal(f.calls(), 1);
+      assert.equal(
+        f.metrics.some((m) => m.phase === "reply_registered"),
+        false,
+      );
+      await assert.rejects(f.start(), rejected("QUOTA_EXHAUSTED"));
+      assert.equal(f.calls(), 1);
+    },
+  );
   await t.test(
     "timings separate current authorization, context, provider and publication without private content",
     async () => {
@@ -511,6 +640,37 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         ],
       );
       assert.equal(authorizations, 3);
+      const rounds = f.profiles.filter((metric) => metric.stage === "TOTAL");
+      assert.deepEqual(
+        rounds.map((metric) => metric.purpose),
+        ["INITIAL", "PRE_INFERENCE", "PUBLICATION"],
+      );
+      assert.equal(
+        new Set(rounds.map((metric) => metric.authorizationId)).size,
+        3,
+      );
+      for (const round of rounds) {
+        assert.equal(round.attemptId, f.active.attemptId);
+        assert.equal(round.turnId, f.metrics[0]?.turnId);
+        assert.equal(round.turnSequence, 1);
+        assert.equal(round.outcome, "SUCCESS");
+        assert.deepEqual(
+          f.profiles
+            .filter(
+              (metric) => metric.authorizationId === round.authorizationId,
+            )
+            .map((metric) => metric.stage)
+            .sort(),
+          [
+            "MEDIA_DOCUMENT",
+            "MEDIA_INSPECTION",
+            "OWNER_AUTHORITY",
+            "STATE_AFTER",
+            "STATE_BEFORE",
+            "TOTAL",
+          ],
+        );
+      }
       assert.equal(
         f.metrics.filter((metric) => metric.outcome === "PROVIDER_USAGE")
           .length,
@@ -528,7 +688,46 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       assert.equal(JSON.stringify(f.metrics).includes(transcript), false);
       assert.equal(JSON.stringify(f.metrics).includes(reply().message), false);
       assert.equal(JSON.stringify(f.metrics).includes(f.token), false);
+      for (const privateValue of [
+        transcript,
+        reply().message,
+        f.token,
+        f.owner,
+        f.active.id,
+      ])
+        assert.equal(JSON.stringify(f.profiles).includes(privateValue), false);
       await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "throwing profiling cannot bypass consent revoked before publication",
+    async () => {
+      const f = await fixture();
+      f.throwProfiler();
+      f.respond(() => {
+        f.revoke();
+        return Promise.resolve(reply());
+      });
+      await assert.rejects(
+        f.generate(f.input()),
+        rejected("VOICE_CONSENT_REQUIRED"),
+      );
+      assert.equal(f.calls(), 1);
+      const final = f.profiles.find(
+        (event) => event.purpose === "PUBLICATION" && event.stage === "TOTAL",
+      );
+      assert.equal(final?.outcome, "FAILED");
+      assert.equal(
+        f.metrics.some((event) => event.phase === "reply_registered"),
+        false,
+      );
+      const stored = await f.db
+        .collection("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(stored?.state, "FAILED");
+      assert.ok(stored.settledAt);
+      assert.equal(JSON.stringify(f.profiles).includes("PRIVATE"), false);
     },
   );
 

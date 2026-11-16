@@ -1,0 +1,33 @@
+{
+  "task": "MB-862",
+  "approval": "Jira #10461 source/test design only",
+  "sourceBase": "61e2814f6366b2f1e4b435b7640ce6368a4485b6",
+  "command": "node journal-ai-service/scripts/benchmark-voice-measurement.mjs",
+  "scope": "same-source ordinary pilot versus fenced admission on disposable loopback Mongo; not pre-change or Voice E2E",
+  "quantileMethod": "NEAREST_RANK",
+  "ordinaryPilotAdmissionMs": {
+    "samples": 20,
+    "p50": 31.2113,
+    "p95": 90.7808,
+    "worst": 122.1096
+  },
+  "fencedAdmissionMs": {
+    "samples": 20,
+    "p50": 28.3188,
+    "p95": 53.2345,
+    "worst": 82.8759
+  },
+  "ownerPreflightMs": {
+    "samples": 20,
+    "p50": 2.1957,
+    "p95": 9.9005,
+    "worst": 10.6525
+  },
+  "interpretation": "Local setup/load variance and small n prevent a speedup claim; these numbers only characterize enforcement overhead",
+  "localSyntheticFixtureAdmissions": 40,
+  "liveProviderCalls": 0,
+  "liveAdmissions": 0,
+  "newLiveWindows": 0,
+  "browserAudibleE2E": "NOT_MEASURED",
+  "liveApproved": false
+}

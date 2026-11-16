@@ -14,6 +14,7 @@ import {
   voiceResetAt,
 } from "./voice-policy.js";
 import { VoiceLedgerError } from "./voice-ledger.js";
+import "./voice-measurement.test.js";
 
 void test("voice limits remain aligned with the approved independent voice policy", async () => {
   const policy = JSON.parse(

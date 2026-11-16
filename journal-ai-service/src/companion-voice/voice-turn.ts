@@ -11,6 +11,7 @@ import { VoiceLedgerError } from "./voice-ledger.js";
 import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
+import { measurementPolicy } from "./voice-measurement-policy.js";
 import { selectVoiceProviderRoute } from "./voice-provider.js";
 import type { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import {
@@ -111,7 +112,13 @@ type Sessions = Pick<
   | "recordSpeechActivity"
   | "failTurn"
   | "onTermination"
->;
+> &
+  Partial<
+    Pick<
+      VoiceSessionsService,
+      "reserveMeasurementTurn" | "reserveMeasurementSpeech"
+    >
+  >;
 const injection =
   /(?:ignore|disregard).{0,35}(?:instructions?|system|developer)|(?:bỏ qua|phớt lờ).{0,40}(?:chỉ dẫn|hướng dẫn|system|developer)|system prompt|developer message|chain.of.thought|hidden reasoning|<\/?(?:system|assistant|developer)>/iu;
 const fits = (pairs: Pair[], input = "") =>
@@ -247,11 +254,19 @@ export class VoiceTurnService {
       input.attemptId,
       input.leaseId,
       correlationId,
+      {
+        purpose: "INITIAL",
+        turnId: input.turnId,
+        turnSequence: input.sequence,
+      },
     );
     stage("turn_authorized");
     if (
       this.configuration.VOICE_PILOT &&
-      input.sequence > (this.configuration.VOICE_PILOT.maxTurns ?? 4)
+      input.sequence >
+        (measurementPolicy(this.configuration.VOICE_PILOT)?.allocation.turns ??
+          this.configuration.VOICE_PILOT.maxTurns ??
+          4)
     ) {
       await this.sessions.failTurn(id, "QUOTA_EXHAUSTED");
       this.discard(id);
@@ -348,6 +363,18 @@ export class VoiceTurnService {
       if (!claimed) throw new VoiceLedgerError("STALE_ATTEMPT");
       stage("turn_claimed");
       context.sequence = input.sequence;
+      if (this.configuration.VOICE_PILOT?.measurement) {
+        if (
+          !this.sessions.reserveMeasurementTurn ||
+          !this.sessions.reserveMeasurementSpeech
+        )
+          throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+        await this.sessions.reserveMeasurementTurn(
+          id,
+          input.turnId,
+          input.sequence,
+        );
+      }
       await this.sessions.recordSpeechActivity(
         id,
         input.attemptId,
@@ -381,6 +408,11 @@ export class VoiceTurnService {
         input.attemptId,
         input.leaseId,
         correlationId,
+        {
+          purpose: "PRE_INFERENCE",
+          turnId: input.turnId,
+          turnSequence: input.sequence,
+        },
       );
       stage("pre_inference_authorized");
       if (
@@ -467,6 +499,11 @@ export class VoiceTurnService {
         input.attemptId,
         input.leaseId,
         correlationId,
+        {
+          purpose: "PUBLICATION",
+          turnId: input.turnId,
+          turnSequence: input.sequence,
+        },
       );
       stage("publication_authorized");
       if (
@@ -478,6 +515,16 @@ export class VoiceTurnService {
       )
         throw new VoiceMediaError();
       const replyId = randomUUID();
+      if (this.configuration.VOICE_PILOT?.measurement) {
+        if (!this.sessions.reserveMeasurementSpeech)
+          throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+        await this.sessions.reserveMeasurementSpeech(
+          id,
+          input.turnId,
+          replyId,
+          spokenText.length,
+        );
+      }
       stage("reply_registration_started");
       await this.sessions.registerReply(
         id,
@@ -544,7 +591,13 @@ export class VoiceTurnService {
                   : "INVALID_RESPONSE",
         });
         try {
-          await this.sessions.failTurn(id);
+          await this.sessions.failTurn(
+            id,
+            error instanceof VoiceLedgerError &&
+              error.code === "QUOTA_EXHAUSTED"
+              ? "QUOTA_EXHAUSTED"
+              : "PROVIDER_FAILURE",
+          );
         } catch {
           report({ outcome: "FAILED", phase, code: "INTERNAL" });
         }

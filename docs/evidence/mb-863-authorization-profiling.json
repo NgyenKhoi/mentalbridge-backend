@@ -1,0 +1,111 @@
+{
+  "task": "MB-863",
+  "baseline": "a51edb8f580be326fbfd23ef0e1f6936e1ea4cc1",
+  "profiledRuntimeCommit": "d009c4df3f430172806b705551adeebba602810b",
+  "scope": "SIMULATED delays over real loopback HTTP/native fetch/pinned SDK; three owner+media bundles, not full Voice/session/LLM/audio E2E",
+  "order": "PAIRED_ALTERNATING_AFTER_WARMUP",
+  "quantileMethod": "NEAREST_RANK",
+  "workload": {
+    "samplesPerVariant": 20,
+    "roundsPerSample": 3,
+    "readsPerRound": 5,
+    "roomHeaderDelayMs": "45 + (sample % 7) * 5",
+    "roomBodyDelayMs": 4,
+    "otherReadDelayMs": 5,
+    "measuredLoopbackRequests": 600,
+    "warmupLoopbackRequests": 30,
+    "sink": "RAM_ONLY"
+  },
+  "threeRoundBundleMs": {
+    "before": {
+      "samples": 20,
+      "p50": 250.7941,
+      "p95": 300.587,
+      "worst": 301.5926
+    },
+    "after": {
+      "samples": 20,
+      "p50": 251.866,
+      "p95": 301.4009,
+      "worst": 317.0611
+    }
+  },
+  "operationStats": {
+    "ROOMS": {
+      "operationMs": {
+        "samples": 60,
+        "p50": 83,
+        "p95": 100,
+        "worst": 118
+      },
+      "sendToHeadersMs": {
+        "samples": 60,
+        "p50": 65,
+        "p95": 81,
+        "worst": 82
+      },
+      "headersToBodyMs": {
+        "samples": 60,
+        "p50": 16,
+        "p95": 19,
+        "worst": 35
+      }
+    },
+    "DISPATCHES": {
+      "operationMs": {
+        "samples": 60,
+        "p50": 17,
+        "p95": 19,
+        "worst": 23
+      },
+      "sendToHeadersMs": {
+        "samples": 60,
+        "p50": 15,
+        "p95": 17,
+        "worst": 22
+      },
+      "headersToBodyMs": {
+        "samples": 60,
+        "p50": 0,
+        "p95": 0,
+        "worst": 0
+      }
+    },
+    "PARTICIPANTS": {
+      "operationMs": {
+        "samples": 60,
+        "p50": 17,
+        "p95": 19,
+        "worst": 24
+      },
+      "sendToHeadersMs": {
+        "samples": 60,
+        "p50": 16,
+        "p95": 18,
+        "worst": 22
+      },
+      "headersToBodyMs": {
+        "samples": 60,
+        "p50": 0,
+        "p95": 0,
+        "worst": 0
+      }
+    }
+  },
+  "correlations": {
+    "rootRounds": 60,
+    "uniqueInspections": 60,
+    "operationObservations": 180,
+    "observedNativeRequests": 180,
+    "reusedObservedSockets": 180
+  },
+  "interpretation": "Profiling overhead/control-path parity only. Slow ListRooms HTTP wait is fixture-injected, not a discovered Cloud root cause or runtime latency optimization.",
+  "dnsTlsOrCloudProcessing": "UNKNOWN",
+  "stagingAfter": "NOT_RUN",
+  "browserAudibleE2E": "NOT_MEASURED",
+  "modelTTFT": "UNKNOWN",
+  "liveProviderCalls": 0,
+  "liveAdmissions": 0,
+  "newLiveWindows": 0,
+  "creditUsed": 0
+}
