@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0026-community-supportive-reactions
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_post_reaction
+                  DROP CONSTRAINT ck_community_post_reaction;
+              ALTER TABLE community_post_reaction
+                  ADD CONSTRAINT ck_community_post_reaction
+                  CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH'));
+
+              ALTER TABLE community_comment_reaction
+                  DROP CONSTRAINT community_comment_reaction_reaction_check;
+              ALTER TABLE community_comment_reaction
+                  ADD CONSTRAINT ck_community_comment_reaction
+                  CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH'));

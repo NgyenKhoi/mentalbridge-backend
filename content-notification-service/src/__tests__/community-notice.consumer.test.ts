@@ -173,6 +173,22 @@ describe('Community notice transport and privacy contract', () => {
       postId: event.deepLink.postId,
     });
   });
+  it.each(['SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH'])(
+    'accepts %s as a supportive comment reaction',
+    async (interactionKind) => {
+      const { consumer, enqueue, parked } = fixture();
+      const event = { ...commentReaction(), interactionKind };
+      await consumer.handle(
+        COMMUNITY_COMMENT_REACTION_TOPIC,
+        0,
+        '1',
+        Buffer.from(JSON.stringify(event)),
+        Buffer.from(event.targetId),
+      );
+      expect(parked).toHaveLength(0);
+      expect(enqueue).toHaveBeenCalledTimes(1);
+    },
+  );
   it('retains a retryable offset on database failure and parks changed identity reuse', async () => {
     const { consumer, enqueue, parked } = fixture();
     const event = chatFact();

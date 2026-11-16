@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Community comment reactions",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
     "/api/v1/community/comments/{commentId}/reaction": {
@@ -87,7 +87,11 @@
                     "enum": [
                       "SUPPORT",
                       "RELATE",
-                      "THANK_YOU"
+                      "THANK_YOU",
+                      "LIKE",
+                      "EMPATHY",
+                      "CHEER",
+                      "GROWTH"
                     ]
                   }
                 }
@@ -192,7 +196,11 @@
               null,
               "SUPPORT",
               "RELATE",
-              "THANK_YOU"
+              "THANK_YOU",
+              "LIKE",
+              "EMPATHY",
+              "CHEER",
+              "GROWTH"
             ]
           },
           "reactionCount": {

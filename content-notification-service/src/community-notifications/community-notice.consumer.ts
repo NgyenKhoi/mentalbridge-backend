@@ -70,7 +70,7 @@ export const CommunityChatFactSchema = z
 
 export const CommunityCommentReactionSchema = CommunityInteractionEnvelopeSchema.extend({
   targetType: z.literal('COMMENT'),
-  interactionKind: z.enum(['SUPPORT', 'RELATE', 'THANK_YOU']),
+  interactionKind: z.enum(['SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH']),
 });
 
 export function communityChatProjection(

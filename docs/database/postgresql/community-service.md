@@ -82,7 +82,7 @@ removal and re-add never repeat that logical notification.
 | --- | --- |
 | `comment_id` | Physical comment FK and first composite-key component; cascades on physical comment purge, not soft deletion. |
 | `profile_id` | Physical Community profile FK identifying the reacting actor; one reaction per actor/comment and cascade on profile purge. |
-| `reaction` | Current supportive value, closed to `SUPPORT`, `RELATE`, `THANK_YOU`; no negative/voting or clinical meaning. |
+| `reaction` | Current supportive value, closed to `SUPPORT`, `RELATE`, `THANK_YOU`, `LIKE`, `EMPATHY`, `CHEER`, `GROWTH`; no negative/voting or clinical meaning. |
 | `created_at` | UTC insertion time of the current reaction row; a remove/re-add gets a new row but retains first-action outbox dedupe. |
 | `updated_at` | UTC last replacement time; duplicate PUT is a no-op and never changes the comment authoring ETag. |
 
@@ -94,7 +94,7 @@ One owner-scoped supportive reaction per post. This interaction is a Community p
 | --- | --- |
 | `post_id` | Physical active Community post target; paired with `profile_id` as the natural idempotency key. |
 | `profile_id` | Private Community actor reference used to enforce one reaction per profile without exposing the linked account subject. |
-| `reaction` | Current bounded supportive value `SUPPORT`, `RELATE`, or `THANK_YOU`; replacement changes the value without incrementing the post count. |
+| `reaction` | Current bounded supportive value `SUPPORT`, `RELATE`, `THANK_YOU`, `LIKE`, `EMPATHY`, `CHEER`, or `GROWTH`; replacement changes the value without incrementing the post count. No negative or clinical meaning. |
 | `created_at` | Immutable UTC instant when this profile first reacted to the post. |
 | `updated_at` | UTC instant when the profile last replaced its reaction; unchanged retries are no-ops. |
 

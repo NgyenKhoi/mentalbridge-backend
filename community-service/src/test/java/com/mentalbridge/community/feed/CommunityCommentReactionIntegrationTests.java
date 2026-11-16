@@ -94,8 +94,21 @@ class CommunityCommentReactionIntegrationTests extends CommunityTestProperties {
         assertThat(jdbc.sql("select count(*) from community_comment_reaction").query(Long.class).single()).isZero();
         mvc.perform(put(PATH, comment).with(user(actor)).contentType(MediaType.APPLICATION_JSON).content("{\"reaction\":\"SUPPORT\",\"actorId\":\"spoof\"}"))
                 .andExpect(status().isBadRequest());
-        react(actor, comment, "LIKE").andExpect(status().isBadRequest());
+        react(actor, comment, "ANGRY").andExpect(status().isBadRequest());
         mvc.perform(get(PATH, comment)).andExpect(status().isUnauthorized());
+    }
+    @Test void sevenSupportiveValuesReplaceOneCommentReactionAndDatabaseRejectsNegativeValues() throws Exception {
+        for (var value : List.of("SUPPORT", "RELATE", "THANK_YOU", "LIKE", "EMPATHY", "CHEER", "GROWTH")) {
+            react(actor, comment, value).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.reaction").value(value)).andExpect(jsonPath("$.reactionCount").value(1));
+        }
+        assertThat(jdbc.sql("select count(*) from community_comment_reaction where comment_id=:id")
+                .param("id", comment).query(Long.class).single()).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.sql("update community_comment_reaction set reaction='ANGRY' where comment_id=:id")
+                .param("id", comment).update()).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(jdbc.sql("select reaction from community_comment_reaction where comment_id=:id")
+                .param("id", comment).query(String.class).single()).isEqualTo("GROWTH");
+        assertThat(jdbc.sql("select count(*) from community_interaction_outbox").query(Long.class).single()).isEqualTo(1);
     }
     UUID comment(UUID parent) throws Exception {
         var body = mapper.createObjectNode().put("content", "synthetic comment");
