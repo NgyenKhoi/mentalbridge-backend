@@ -1,0 +1,17 @@
+{
+  "task": "MB-861",
+  "sourceBase": "e1477eea668e1876f67d683bb9944ba352361332",
+  "command": "node scripts/benchmark-voice-measurement-preflight.mjs",
+  "scope": "local synthetic preflight evaluator; not Voice E2E or a new window",
+  "samples": 10000,
+  "blocked": 10000,
+  "p50Ms": 0.0401,
+  "p95Ms": 0.0641,
+  "worstMs": 4.7314,
+  "networkCalls": 0,
+  "liveCalls": 0,
+  "admissions": 0,
+  "voiceLatencyImprovement": "NOT_MEASURED",
+  "aggregateEnforcement": "UNVERIFIED",
+  "liveApproved": false
+}

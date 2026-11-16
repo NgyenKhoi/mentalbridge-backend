@@ -223,6 +223,21 @@ No paid managed noise filter is enabled without allowance/quality evidence.
 
 ## Privacy and operational evidence
 
+### Measurement configuration snapshot
+
+After building the reviewed revision, run
+`node dist/measurement-preflight.js` inside the Agent's existing environment.
+This command only loads configuration and prints the version-1 allowlisted
+snapshot; it does not register a worker or contact Journal/LiveKit. Exit 0 means
+the snapshot was exported, not that a measurement is authorized. Invalid
+configuration exits 1 with a fixed code and no configuration values.
+
+`configuredTtsCharactersPerAttempt` is only a configured number. The effective
+`ttsCharactersPerAttempt` is null when pilot reservations are off. No voice UUID,
+owner, credential or endpoint is exported. See the
+[MB-861 preflight runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+for the combined blocking check and the remaining aggregate-enforcement gate.
+
 MB-854 adds numeric per-turn dispatch and Journal round-trip timings, Agent
 playout delays, and finite SDK TTS first-byte/synthesis timings. Match Agent
 `turnSequence` with Journal's numeric turn sequence within the same attempt.
