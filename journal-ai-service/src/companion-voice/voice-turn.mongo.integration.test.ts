@@ -24,6 +24,7 @@ import {
   type Conversation,
   type ChatProvider,
   type ProviderReply,
+  type ProviderSpeechUnit,
 } from "../companion-chat/companion-chat.js";
 import { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import type {
@@ -38,6 +39,7 @@ import {
   VoiceTurnService,
   type VoiceTurn,
   type VoiceTurnMetric,
+  type AuthorizedSpeechUnit,
 } from "./voice-turn.js";
 import type { VoicePilot } from "./voice-pilot.js";
 import { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
@@ -145,6 +147,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         policyVersion: string;
       };
     }) => Promise<string>,
+    speechUnits = false,
   ) => {
     const name = `voice_turn_verify_${String(Date.now())}_${String(count++)}`;
     assert.match(name, /^voice_turn_verify_\d+_\d+$/);
@@ -193,8 +196,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     let calls = 0;
     let cancelled = 0;
     const contexts: string[] = [];
-    let respond: (observe?: VoiceObserver) => Promise<ProviderReply> = () =>
-      Promise.resolve(reply());
+    let respond: (
+      observe?: VoiceObserver,
+      unit?: (value: ProviderSpeechUnit) => void,
+      signal?: AbortSignal,
+    ) => Promise<ProviderReply> = () => Promise.resolve(reply());
     const provider: ChatProvider = {
       reply: (_text, context, _route, options) => {
         calls++;
@@ -206,7 +212,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           },
           { once: true },
         );
-        return respond(options?.voiceObserver);
+        return respond(
+          options?.voiceObserver,
+          options?.onSpeechUnit,
+          options?.signal,
+        );
       },
     };
     const token = "synthetic-worker-voice-turn-credential-32-characters";
@@ -243,6 +253,8 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     const config: ServiceConfiguration = {
       ...configuration,
       PROVIDER_TIMEOUT_MS: 2500,
+      VOICE_SPEECH_UNITS_ENABLED: speechUnits,
+      VOICE_CONVERSE_STREAM_ENABLED: speechUnits,
     };
     if (configuration.VOICE_PILOT?.measurement)
       await new MongoVoiceMeasurementStore(
@@ -463,7 +475,13 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
       calls: () => calls,
       cancelled: () => cancelled,
-      respond: (fn: (observe?: VoiceObserver) => Promise<ProviderReply>) => {
+      respond: (
+        fn: (
+          observe?: VoiceObserver,
+          unit?: (value: ProviderSpeechUnit) => void,
+          signal?: AbortSignal,
+        ) => Promise<ProviderReply>,
+      ) => {
         respond = fn;
       },
       advance: (ms: number) => {
@@ -480,6 +498,442 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     };
   };
+
+  const streamingFixture = () =>
+    fixture(
+      {
+        maxTurns: 6,
+        maxSessionSeconds: 240,
+        measurement: {
+          campaignId: randomUUID(),
+          maxSessions: 2,
+          maxConcurrentSessions: 1,
+          maxTurns: 12,
+          maxVoiceSeconds: 480,
+          maxTtsCharacters: 4000,
+          voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+        },
+      },
+      false,
+      undefined,
+      true,
+    );
+  await t.test(
+    "unconfirmed provider cancellation closes the session instead of admitting a next turn",
+    async () => {
+      const f = await streamingFixture();
+      const ignoredCancellation = hold();
+      let delivered = false;
+      f.respond(async (_observe, send) => {
+        assert(send);
+        send({ message: "Mình đang lắng nghe bạn.", expression: "neutral" });
+        await ignoredCancellation.wait;
+        return reply();
+      });
+      const input = f.input();
+      const work = f.left.turns.generate(
+        f.active.id,
+        randomUUID(),
+        input,
+        randomUUID(),
+        undefined,
+        () => {
+          delivered = true;
+          return Promise.resolve();
+        },
+      );
+      const failure = assert.rejects(work);
+      await waitFor(() => delivered);
+      await assert.rejects(
+        f.left.turns.cancelSpeechTurn(
+          f.active.id,
+          input.turnId,
+          input.attemptId,
+          input.leaseId,
+        ),
+        rejected("STALE_ATTEMPT"),
+      );
+      await failure;
+      ignoredCancellation.release();
+      await assert.rejects(
+        f.left.turns.generate(
+          f.active.id,
+          randomUUID(),
+          f.input(2),
+          randomUUID(),
+          undefined,
+          () => Promise.resolve(),
+        ),
+      );
+      assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "consent revoked between speech units denies the later unit and retains spent reservation",
+    async () => {
+      const f = await streamingFixture();
+      const units: AuthorizedSpeechUnit[] = [];
+      f.respond((_observe, send) => {
+        assert(send);
+        send({ message: "Mình đang lắng nghe bạn.", expression: "neutral" });
+        send({
+          message: "Bạn muốn chia sẻ thêm điều gì?",
+          expression: "neutral",
+        });
+        return Promise.resolve(reply());
+      });
+      const input = f.input();
+      const work = f.left.turns.generate(
+        f.active.id,
+        randomUUID(),
+        input,
+        randomUUID(),
+        undefined,
+        (unit) => {
+          units.push(unit);
+          return Promise.resolve();
+        },
+      );
+      const failure = assert.rejects(work);
+      await waitFor(() => units.length === 1);
+      f.revoke();
+      const first = units[0];
+      assert(first);
+      await f.left.turns.acknowledgeSpeechUnit(
+        f.active.id,
+        input.turnId,
+        input.attemptId,
+        input.leaseId,
+        1,
+        first.replyId,
+      );
+      await failure;
+      assert.equal(units.length, 1);
+      assert.equal(f.calls(), 1);
+      const policy = measurementPolicy(f.config.VOICE_PILOT);
+      assert(policy);
+      const row = await f.db
+        .collection<{
+          _id: string;
+          reservations: { speechReservations: { characters: number }[] }[];
+        }>("ai_voice_measurement_campaigns")
+        .findOne({ _id: policy.campaignId });
+      assert.equal(
+        row?.reservations[0]?.speechReservations[0]?.characters,
+        500,
+      );
+    },
+  );
+
+  await t.test(
+    "native HTTP speech-unit stream is incremental, token/capability guarded and cannot silently fall back",
+    async () => {
+      const off = await fixture();
+      await request(off.left.app.getHttpServer() as Server)
+        .post(
+          `/internal/v1/ai-companion/voice-sessions/${off.active.id}/turns/speech-units`,
+        )
+        .set("X-MentalBridge-Voice-Worker-Token", off.token)
+        .set("X-MentalBridge-Voice-Capabilities", "voice-speech-units-v1")
+        .set("Idempotency-Key", randomUUID())
+        .send(off.input())
+        .expect(403);
+      assert.equal(off.calls(), 0);
+      const f = await streamingFixture();
+      const model = hold();
+      let modelFinished = false;
+      f.respond(async (_observe, send) => {
+        assert(send);
+        send({ message: "Mình đang lắng nghe bạn.", expression: "neutral" });
+        await model.wait;
+        modelFinished = true;
+        return reply();
+      });
+      await f.left.app.listen(0, "127.0.0.1");
+      const address = (f.left.app.getHttpServer() as Server).address();
+      assert(address && typeof address === "object");
+      const root = `http://127.0.0.1:${String(address.port)}/internal/v1/ai-companion/voice-sessions/${f.active.id}`;
+      const input = f.input();
+      const response = await fetch(`${root}/turns/speech-units`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-MentalBridge-Voice-Worker-Token": f.token,
+          "X-MentalBridge-Voice-Capabilities": "voice-speech-units-v1",
+          "Idempotency-Key": randomUUID(),
+        },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(2000),
+      });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("x-accel-buffering"), "no");
+      assert.equal(
+        response.headers.get("x-mentalbridge-voice-protocol"),
+        "voice-speech-units-v1",
+      );
+      const reader = response.body?.getReader();
+      assert(reader);
+      let text = "",
+        unit: AuthorizedSpeechUnit | undefined;
+      const decoder = new TextDecoder();
+      while (!unit) {
+        const chunk = await reader.read();
+        assert(!chunk.done);
+        text += decoder.decode(chunk.value, { stream: true });
+        try {
+          unit = (JSON.parse(text + "]") as AuthorizedSpeechUnit[])[0];
+        } catch {
+          /* partial HTTP body */
+        }
+      }
+      assert.equal(modelFinished, false);
+      const ack = await fetch(`${root}/turns/${input.turnId}/speech-unit-ack`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-MentalBridge-Voice-Worker-Token": f.token,
+          "X-MentalBridge-Voice-Capabilities": "voice-speech-units-v1",
+        },
+        body: JSON.stringify({
+          attemptId: input.attemptId,
+          leaseId: input.leaseId,
+          unitSequence: 1,
+          replyId: unit.replyId,
+        }),
+      });
+      assert.equal(ack.status, 200);
+      await ack.body?.cancel();
+      model.release();
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += decoder.decode(chunk.value, { stream: true });
+      }
+      text += decoder.decode();
+      reader.releaseLock();
+      const output = JSON.parse(text) as { type: string }[];
+      assert.deepEqual(
+        output.map((value) => value.type),
+        ["SPEECH_UNIT", "COMPLETED"],
+      );
+      assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "speech units reserve before first publication, await exact acknowledgement and reauthorize each next unit",
+    async () => {
+      const f = await streamingFixture();
+      const finishModel = hold();
+      const units: AuthorizedSpeechUnit[] = [];
+      let modelFinished = false;
+      f.respond(async (observe, send) => {
+        assert(send);
+        send({ message: "Mình đang lắng nghe bạn.", expression: "neutral" });
+        send({
+          message: "Bạn muốn chia sẻ thêm điều gì?",
+          expression: "neutral",
+        });
+        await finishModel.wait;
+        modelFinished = true;
+        observe?.({
+          phase: "bedrock_stream_message_stopped",
+          stopReason: "END_TURN",
+        });
+        return reply();
+      });
+      const input = f.input(),
+        key = randomUUID();
+      const work = f.left.turns.generate(
+        f.active.id,
+        key,
+        input,
+        randomUUID(),
+        undefined,
+        (unit) => {
+          units.push(unit);
+          return Promise.resolve();
+        },
+      );
+      await waitFor(() => units.length === 1);
+      assert.equal(modelFinished, false);
+      const policy = measurementPolicy(f.config.VOICE_PILOT);
+      assert(policy);
+      const record = await f.db
+        .collection<{
+          _id: string;
+          reservations: { speechReservations: { characters: number }[] }[];
+        }>("ai_voice_measurement_campaigns")
+        .findOne({ _id: policy.campaignId });
+      assert.equal(
+        record?.reservations[0]?.speechReservations[0]?.characters,
+        500,
+      );
+      assert.equal(units[0]?.policyVersion, "companion-voice-speech-unit-v1");
+      await assert.rejects(
+        f.right.turns.generate(
+          f.active.id,
+          key,
+          input,
+          randomUUID(),
+          undefined,
+          () => Promise.resolve(),
+        ),
+        rejected("STALE_ATTEMPT"),
+      );
+      assert.equal(f.calls(), 1);
+      const first = units[0];
+      assert(first);
+      await assert.rejects(
+        f.left.turns.acknowledgeSpeechUnit(
+          f.active.id,
+          input.turnId,
+          input.attemptId,
+          input.leaseId,
+          2,
+          first.replyId,
+        ),
+        rejected("STALE_ATTEMPT"),
+      );
+      await f.left.turns.acknowledgeSpeechUnit(
+        f.active.id,
+        input.turnId,
+        input.attemptId,
+        input.leaseId,
+        1,
+        first.replyId,
+      );
+      await waitFor(() => units.length === 2);
+      const second = units[1];
+      assert(second);
+      assert.equal(second.replyId, first.replyId);
+      assert.equal(modelFinished, false);
+      await f.left.turns.acknowledgeSpeechUnit(
+        f.active.id,
+        input.turnId,
+        input.attemptId,
+        input.leaseId,
+        2,
+        second.replyId,
+      );
+      finishModel.release();
+      await work;
+      assert.equal(
+        f.profiles.filter(
+          (value) => value.purpose === "PUBLICATION" && value.stage === "TOTAL",
+        ).length,
+        2,
+      );
+      const noContent = await f.db
+        .collection<{ _id: string }>("ai_voice_measurement_campaigns")
+        .findOne({ _id: policy.campaignId });
+      assert.doesNotMatch(JSON.stringify(noContent), /lắng nghe|chia sẻ/u);
+      assert.doesNotMatch(JSON.stringify(f.metrics), /lắng nghe|chia sẻ/u);
+    },
+  );
+
+  await t.test(
+    "stream cancellation keeps spent turn/TTS reservation and permits a later turn; revoked consent never publishes",
+    async () => {
+      const f = await streamingFixture();
+      const input = f.input();
+      let delivered = 0;
+      f.respond((_observe, send, signal) => {
+        assert(send && signal);
+        send({ message: "Mình đang lắng nghe bạn.", expression: "neutral" });
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject(new VoiceProviderFailure("ABORTED"));
+            },
+            { once: true },
+          );
+        });
+      });
+      const work = f.left.turns.generate(
+        f.active.id,
+        randomUUID(),
+        input,
+        randomUUID(),
+        undefined,
+        () => {
+          delivered++;
+          return Promise.resolve();
+        },
+      );
+      const rejectedWork = assert.rejects(work, rejected("STALE_ATTEMPT"));
+      await waitFor(() => delivered === 1);
+      await f.left.turns.cancelSpeechTurn(
+        f.active.id,
+        input.turnId,
+        input.attemptId,
+        input.leaseId,
+      );
+      await rejectedWork;
+      f.respond((_observe, send) => {
+        assert(send);
+        send({ message: "Mình nghe bạn chia sẻ.", expression: "neutral" });
+        return Promise.resolve(reply());
+      });
+      const next = f.input(2);
+      await f.left.turns.generate(
+        f.active.id,
+        randomUUID(),
+        next,
+        randomUUID(),
+        undefined,
+        async (unit) => {
+          await f.left.turns.acknowledgeSpeechUnit(
+            f.active.id,
+            next.turnId,
+            next.attemptId,
+            next.leaseId,
+            unit.unitSequence,
+            unit.replyId,
+          );
+        },
+      );
+      const policy = measurementPolicy(f.config.VOICE_PILOT);
+      assert(policy);
+      const row = await f.db
+        .collection<{
+          _id: string;
+          reservations: {
+            turnReservations: unknown[];
+            speechReservations: { characters: number }[];
+          }[];
+        }>("ai_voice_measurement_campaigns")
+        .findOne({ _id: policy.campaignId });
+      assert(row);
+      assert.equal(row.reservations.length, 1);
+      assert.equal(row.reservations[0]?.turnReservations.length, 2);
+      assert.equal(
+        row.reservations[0].speechReservations.reduce(
+          (sum, value) => sum + value.characters,
+          0,
+        ),
+        1000,
+      );
+      f.revoke();
+      await assert.rejects(
+        f.left.turns.generate(
+          f.active.id,
+          randomUUID(),
+          f.input(3),
+          randomUUID(),
+          undefined,
+          () => {
+            delivered++;
+            return Promise.resolve();
+          },
+        ),
+      );
+      assert.equal(delivered, 1);
+      assert.equal(f.calls(), 2);
+    },
+  );
 
   await t.test(
     "measurement caps provider turns and persists speech reservations through terminal teardown",

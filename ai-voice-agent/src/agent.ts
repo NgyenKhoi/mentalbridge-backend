@@ -36,6 +36,7 @@ export default defineAgent({
         undefined,
         diagnostic,
         configuration.finalAggregationMs ?? 750,
+        configuration.speechUnitsEnabled === true,
       );
       const active = worker;
       context.addShutdownCallback(() => active.stop("AGENT_FAILURE"));
