@@ -14,6 +14,7 @@ const longitudinalMigration = require("../migrations/009_longitudinal_context_an
 const companionChatMigration = require("../migrations/010_ai_companion_chat_quotas.cjs");
 const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
 const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
+const benchmarkGovernanceMigration = require("../migrations/019_benchmark_dataset_governance.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -260,6 +261,20 @@ assert.equal(
   titleValidator.$jsonSchema.required.includes("encryptedTitle"),
   false,
 );
+assert.equal(
+  benchmarkGovernanceMigration.commandCollection,
+  "benchmark_admin_commands",
+);
+assert.equal(
+  benchmarkGovernanceMigration.datasetValidator.$jsonSchema.properties.cases
+    .maxItems,
+  200,
+);
+assert.equal(
+  benchmarkGovernanceMigration.commandValidator.$jsonSchema.properties
+    .fingerprint.pattern,
+  "^[0-9a-f]{64}$",
+);
 assert.deepEqual(
   titleValidator.$jsonSchema.properties.encryptedTitle,
   suggestionMessage.properties.content,
@@ -318,5 +333,5 @@ assert.deepEqual(titleCommands, [
   },
 ]);
 console.log(
-  "Validated Mongo migrations: 001 through 018_companion_conversation_title.cjs",
+  "Validated Mongo migrations: 001 through 019_benchmark_dataset_governance.cjs",
 );

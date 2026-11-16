@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.20.0
+  version: 1.21.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -27,6 +27,209 @@ tags:
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
+  /api/v1/admin/ai-benchmarks/datasets:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    get:
+      operationId: listGovernedBenchmarkDatasets
+      summary: List approved synthetic evaluation dataset versions.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Bounded dataset catalogue.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 100
+                    items: { $ref: "#/components/schemas/GovernedBenchmarkDataset" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+      tags: [AI benchmark administration]
+    post:
+      operationId: createGovernedBenchmarkDataset
+      summary: Register one immutable synthetic evaluation dataset version.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/BenchmarkCommandKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGovernedBenchmarkDataset" }
+      responses:
+        "201":
+          description: Dataset version registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkDataset" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+      tags: [AI benchmark administration]
+  /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    get:
+      operationId: inspectGovernedBenchmarkDataset
+      summary: Inspect one synthetic dataset version and its approved cases.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/BenchmarkDatasetId" }
+        - { $ref: "#/components/parameters/BenchmarkDatasetVersion" }
+      responses:
+        "200":
+          description: Dataset version detail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkDatasetDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+      tags: [AI benchmark administration]
+    post:
+      operationId: createGovernedBenchmarkDatasetVersion
+      summary: Create a new immutable version from an existing dataset lineage.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/BenchmarkDatasetId" }
+        - { $ref: "#/components/parameters/BenchmarkDatasetVersion" }
+        - { $ref: "#/components/parameters/BenchmarkCommandKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGovernedBenchmarkDatasetVersion" }
+      responses:
+        "201":
+          description: New immutable version registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkDataset" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+      tags: [AI benchmark administration]
+  /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}/archive:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    post:
+      operationId: archiveGovernedBenchmarkDatasetVersion
+      summary: Archive a version while retaining it for historical audit.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/BenchmarkDatasetId" }
+        - { $ref: "#/components/parameters/BenchmarkDatasetVersion" }
+        - { $ref: "#/components/parameters/BenchmarkCommandKey" }
+      responses:
+        "200":
+          description: Archived dataset version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkDataset" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+      tags: [AI benchmark administration]
+  /api/v1/admin/ai-benchmarks/runs:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    get:
+      operationId: listGovernedBenchmarkRuns
+      summary: List benchmark runs with pinned provenance and aggregate outcomes.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Bounded benchmark run history.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 100
+                    items: { $ref: "#/components/schemas/GovernedBenchmarkRun" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+      tags: [AI benchmark administration]
+    post:
+      operationId: runGovernedBenchmark
+      summary: Run an approved provider model against one active pinned dataset version.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/BenchmarkCommandKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunGovernedBenchmark" }
+      responses:
+        "201":
+          description: Completed benchmark receipt.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BenchmarkExecutionReceipt" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+      tags: [AI benchmark administration]
+  /api/v1/admin/ai-benchmarks/runs/{runId}:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    get:
+      operationId: inspectGovernedBenchmarkRun
+      summary: Inspect one benchmark run and its aggregate provenance.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Benchmark run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkRun" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+      tags: [AI benchmark administration]
+  /api/v1/admin/ai-benchmarks/runs/{runId}/export:
+    x-mentalbridge-status: implemented
+    x-mentalbridge-owner: journal-ai-service
+    get:
+      operationId: exportGovernedBenchmarkRun
+      summary: Export aggregate synthetic benchmark evidence without case text, secrets, or personal data.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Aggregate benchmark evidence export.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkExport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+      tags: [AI benchmark administration]
   /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns:
     x-mentalbridge-status: implemented
     x-mentalbridge-owner: journal-ai-service
@@ -1597,6 +1800,22 @@ components:
       name: x-mentalbridge-service-token
       description: Dedicated Care-to-Journal/AI credential required together with the forwarded end-user bearer.
   parameters:
+    BenchmarkDatasetId:
+      name: datasetId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._-]{1,96}$" }
+    BenchmarkDatasetVersion:
+      name: version
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$" }
+    BenchmarkCommandKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+      description: Stable per-admin command key; changed intent returns a conflict.
     LocalDate:
       name: localDate
       in: path
@@ -1899,6 +2118,193 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    GovernedBenchmarkCase:
+      type: object
+      additionalProperties: false
+      required: [id, text, acceptableSuggestedActions, requiredSignalTerms, forbiddenClaims]
+      properties:
+        id: { type: string, pattern: "^[a-z0-9-]{1,64}$" }
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: Approved synthetic evaluation input; production personal-health content is prohibited.
+        acceptableSuggestedActions:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [NONE, OFFER_RESOURCE_EXPLANATION, GUIDE_APPROVED_ACTIVITY, REQUEST_ALLOWED_ALTERNATIVE, REQUEST_PLAN_REVIEW, OPEN_PROFESSIONAL_SUPPORT, OPEN_SAFETY_GUIDANCE]
+        requiredSignalTerms:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 64 }
+        forbiddenClaims:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 128 }
+    CreateGovernedBenchmarkDataset:
+      type: object
+      additionalProperties: false
+      required: [datasetId, version, workload, language, source, license, description, cases]
+      properties:
+        datasetId: { type: string, pattern: "^[A-Za-z0-9._-]{1,96}$" }
+        version: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$" }
+        workload: { type: string, const: EXACT_REVISION }
+        language: { type: string, const: vi }
+        source: { type: string, const: MENTALBRIDGE_SYNTHETIC_V1 }
+        license: { type: string, const: CC0-1.0 }
+        description: { type: string, minLength: 1, maxLength: 300 }
+        cases:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: "#/components/schemas/GovernedBenchmarkCase" }
+    CreateGovernedBenchmarkDatasetVersion:
+      type: object
+      additionalProperties: false
+      required: [version, description, cases]
+      properties:
+        version: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$" }
+        description: { type: string, minLength: 1, maxLength: 300 }
+        cases:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: "#/components/schemas/GovernedBenchmarkCase" }
+    GovernedBenchmarkDataset:
+      type: object
+      additionalProperties: false
+      required: [datasetId, version, workload, language, source, license, description, sha256, caseCount, registeredAt, archivedAt, previousVersion]
+      properties:
+        datasetId: { type: string, maxLength: 96 }
+        version: { type: string, maxLength: 32 }
+        workload: { type: string, const: EXACT_REVISION }
+        language: { type: string, const: vi }
+        source: { type: string, const: MENTALBRIDGE_SYNTHETIC_V1 }
+        license: { type: string, const: CC0-1.0 }
+        description: { type: string, maxLength: 300 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        caseCount: { type: integer, minimum: 1, maximum: 200 }
+        registeredAt: { type: string, format: date-time }
+        archivedAt: { type: [string, "null"], format: date-time }
+        previousVersion: { type: [string, "null"], maxLength: 32 }
+    GovernedBenchmarkDatasetDetail:
+      allOf:
+        - { $ref: "#/components/schemas/GovernedBenchmarkDataset" }
+        - type: object
+          required: [cases]
+          properties:
+            cases:
+              type: array
+              minItems: 1
+              maxItems: 200
+              items: { $ref: "#/components/schemas/GovernedBenchmarkCase" }
+      unevaluatedProperties: false
+    RunGovernedBenchmark:
+      type: object
+      additionalProperties: false
+      required: [datasetId, datasetVersion, provider, model]
+      properties:
+        datasetId: { type: string, pattern: "^[A-Za-z0-9._-]{1,96}$" }
+        datasetVersion: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$" }
+        provider: { type: string, enum: [GEMINI, OPENAI, BEDROCK] }
+        model: { type: string, minLength: 1, maxLength: 128 }
+    GovernedBenchmarkCandidate:
+      type: object
+      additionalProperties: true
+      required: [provider, model]
+      properties:
+        provider: { type: string, enum: [GEMINI, OPENAI, BEDROCK] }
+        model: { type: string, maxLength: 128 }
+    GovernedBenchmarkAggregate:
+      type: object
+      additionalProperties: false
+      required: [provider, model, caseCount, successCount, errorCount, qualityPassRate, safetyPassRate, averageQualityScore, averageLatencyMs, totalInputTokens, totalOutputTokens, totalEstimatedCostMicroUsd]
+      properties:
+        provider: { type: string, enum: [GEMINI, OPENAI, BEDROCK] }
+        model: { type: string, maxLength: 128 }
+        caseCount: { type: integer, minimum: 1, maximum: 200 }
+        successCount: { type: integer, minimum: 0, maximum: 200 }
+        errorCount: { type: integer, minimum: 0, maximum: 200 }
+        qualityPassRate: { type: number, minimum: 0, maximum: 1 }
+        safetyPassRate: { type: number, minimum: 0, maximum: 1 }
+        averageQualityScore: { type: number, minimum: 0, maximum: 1 }
+        averageLatencyMs: { type: [integer, "null"], minimum: 0 }
+        totalInputTokens: { type: integer, minimum: 0 }
+        totalOutputTokens: { type: integer, minimum: 0 }
+        totalEstimatedCostMicroUsd: { type: integer, minimum: 0 }
+    GovernedBenchmarkRun:
+      type: object
+      additionalProperties: false
+      required: [runId, datasetId, datasetVersion, datasetSha256, promptVersion, status, candidates, aggregates, startedAt, completedAt]
+      properties:
+        runId: { type: string, format: uuid }
+        datasetId: { type: string, maxLength: 96 }
+        datasetVersion: { type: string, maxLength: 32 }
+        datasetSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        promptVersion: { type: string, maxLength: 96 }
+        status: { type: string, enum: [RUNNING, COMPLETED, FAILED] }
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items: { $ref: "#/components/schemas/GovernedBenchmarkCandidate" }
+        aggregates:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/GovernedBenchmarkAggregate" }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    BenchmarkExecutionReceipt:
+      type: object
+      additionalProperties: false
+      required: [runId, aggregates, failures]
+      properties:
+        runId: { type: string, format: uuid }
+        aggregates:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items: { $ref: "#/components/schemas/GovernedBenchmarkAggregate" }
+        failures:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: true
+            required: [caseId, provider, model, errorClassification]
+            properties:
+              caseId: { type: string, maxLength: 64 }
+              provider: { type: string, enum: [GEMINI, OPENAI, BEDROCK] }
+              model: { type: string, maxLength: 128 }
+              errorClassification: { type: string, maxLength: 64 }
+    GovernedBenchmarkExport:
+      type: object
+      additionalProperties: false
+      required: [exportVersion, runId, dataset, promptVersion, candidates, startedAt, completedAt, status, aggregates]
+      properties:
+        exportVersion: { type: string, const: benchmark-aggregate-v1 }
+        runId: { type: string, format: uuid }
+        dataset:
+          type: object
+          additionalProperties: false
+          required: [datasetId, version, sha256]
+          properties:
+            datasetId: { type: string, maxLength: 96 }
+            version: { type: string, maxLength: 32 }
+            sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        promptVersion: { type: string, maxLength: 96 }
+        candidates:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/GovernedBenchmarkCandidate" }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [RUNNING, COMPLETED, FAILED] }
+        aggregates:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/GovernedBenchmarkAggregate" }
     VoiceTurn:
       type: object
       additionalProperties: false

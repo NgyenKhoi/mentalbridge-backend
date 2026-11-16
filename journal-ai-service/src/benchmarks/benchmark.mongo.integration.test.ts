@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { createRequire } from "node:module";
 
@@ -8,11 +9,20 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { ExactRevisionProvider } from "../llm-providers/llm-providers.js";
 import { BenchmarkRunner } from "./benchmark.js";
+import {
+  BenchmarkAdministrationService,
+  MongoBenchmarkAdministrationStore,
+  type BenchmarkAdministrationExecutor,
+} from "./benchmark-administration.js";
 
 const require = createRequire(import.meta.url);
 const migration = require("../../migrations/008_ai_benchmark_metadata.cjs") as {
   up(database: unknown): Promise<void>;
 };
+const governanceMigration =
+  require("../../migrations/019_benchmark_dataset_governance.cjs") as {
+    up(database: unknown): Promise<void>;
+  };
 
 void test("persists reproducible benchmark evidence without raw provider responses or source text", async () => {
   const mongo = await MongoMemoryServer.create();
@@ -91,6 +101,86 @@ void test("persists reproducible benchmark evidence without raw provider respons
     assert.doesNotMatch(persisted, /Hôm nay tôi đi làm đúng giờ/);
     assert.doesNotMatch(persisted, /rawResponse|chainOfThought/);
   } finally {
+    await client.close();
+    await mongo.stop();
+  }
+});
+
+void test("reserves concurrent admin commands and persists immutable governed versions", async () => {
+  const mongo = await MongoMemoryServer.create();
+  const databaseName = "benchmark_mb697_integration";
+  const client = new MongoClient(mongo.getUri());
+  const database = client.db(databaseName);
+  await migration.up(database);
+  await governanceMigration.up(database);
+  const configuration = {
+    MONGODB_URI: mongo.getUri(),
+    MONGODB_DATABASE: databaseName,
+    MONGODB_CONNECTION_TIMEOUT_MS: 2_000,
+  } as ServiceConfiguration;
+  const executor: BenchmarkAdministrationExecutor = {
+    run: () => Promise.reject(new Error("not used")),
+  };
+  const store = new MongoBenchmarkAdministrationStore(configuration);
+  const service = new BenchmarkAdministrationService(store, executor);
+  const request = {
+    headers: {},
+    principal: { accountId: randomUUID(), roles: ["ADMIN"] },
+  };
+  const key = randomUUID();
+  const body = {
+    datasetId: "governed-synthetic",
+    version: "v1",
+    workload: "EXACT_REVISION",
+    language: "vi",
+    source: "MENTALBRIDGE_SYNTHETIC_V1",
+    license: "CC0-1.0",
+    description: "Synthetic governance integration fixture",
+    cases: [
+      {
+        id: "case-one",
+        text: "Tình huống tổng hợp không thuộc người dùng thật.",
+        acceptableSuggestedActions: ["NONE"],
+        requiredSignalTerms: ["tổng hợp"],
+        forbiddenClaims: ["chẩn đoán"],
+      },
+    ],
+  };
+
+  try {
+    const [first, conflicting] = await Promise.allSettled([
+      service.create(request, key, body),
+      service.create(request, key, { ...body, description: "Changed intent" }),
+    ]);
+    assert.equal(
+      [first, conflicting].filter((result) => result.status === "fulfilled")
+        .length,
+      1,
+    );
+    assert.equal(
+      await database.collection("benchmark_datasets").countDocuments(),
+      1,
+    );
+    assert.equal(
+      await database.collection("benchmark_admin_commands").countDocuments(),
+      1,
+    );
+    const stored = await database
+      .collection("benchmark_datasets")
+      .findOne({ datasetId: "governed-synthetic", version: "v1" });
+    assert.ok(stored);
+    const storedDataset = stored as unknown as {
+      source: unknown;
+      archivedAt: unknown;
+      cases: unknown;
+    };
+    assert.equal(storedDataset.source, "MENTALBRIDGE_SYNTHETIC_V1");
+    assert.equal(storedDataset.archivedAt, null);
+    const storedCases = storedDataset.cases;
+    assert.ok(Array.isArray(storedCases));
+    assert.equal(storedCases.length, 1);
+  } finally {
+    await store.onModuleDestroy();
     await client.close();
     await mongo.stop();
   }

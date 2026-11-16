@@ -24,7 +24,7 @@ import {
   type NormalizedExactRevision,
 } from "../prompts/exact-revision.js";
 
-const benchmarkCaseSchema = z
+export const benchmarkCaseSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9-]{1,64}$/),
     text: z.string().min(1).max(10_000),
@@ -34,7 +34,7 @@ const benchmarkCaseSchema = z
   })
   .strict();
 
-const benchmarkDatasetSchema = z
+export const benchmarkDatasetSchema = z
   .object({
     datasetId: z.string().regex(/^[A-Za-z0-9._-]{1,96}$/),
     version: z.string().regex(/^[A-Za-z0-9._-]{1,32}$/),
@@ -385,6 +385,10 @@ export class BenchmarkRunner {
       new Promise((resolveWait) => {
         setTimeout(resolveWait, milliseconds);
       }),
+    private readonly datasetLoader?: () => Promise<{
+      dataset: BenchmarkDataset;
+      sha256: string;
+    }>,
   ) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
@@ -493,6 +497,7 @@ export class BenchmarkRunner {
     dataset: BenchmarkDataset;
     sha256: string;
   }> {
+    if (this.datasetLoader) return this.datasetLoader();
     const bytes = await readFile(
       resolve(this.configuration.BENCHMARK_DATASET_PATH),
     );

@@ -819,11 +819,13 @@ One high-water mark per participant is preferable to one receipt per message for
 ## `benchmark_datasets`, `benchmark_runs`, and `benchmark_case_results`
 
 MB-369 uses one committed, project-authored synthetic Vietnamese dataset and
-does not reuse production journals. `benchmark_datasets` stores immutable
-metadata only: dataset/version identity, workload, language, source, license,
-SHA-256 content digest, case count, and registration time. The raw synthetic
-cases remain version-controlled input rather than copied into operational
-MongoDB.
+does not reuse production journals. MB-697 adds governed administrator-created
+versions. `benchmark_datasets` stores immutable dataset/version identity,
+workload, language, synthetic source, license, description, bounded synthetic
+cases, SHA-256 content digest, case count, creator, lineage, archive time, and
+registration time. Legacy CLI-registered datasets remain metadata-only;
+governed versions carry their approved cases so an exact historical version can
+be inspected and rerun without production data.
 
 `benchmark_runs` binds the exact dataset digest, prompt/schema version, one to
 three pinned provider/model candidates, lifecycle, and aggregate quality, safety,
@@ -854,6 +856,15 @@ Changing dataset content without a new version is rejected by its stored
 digest. Running the paid benchmark requires an explicit enable flag and at
 least one complete candidate with its credential, pinned model, and explicit
 cost configuration; test and CI environments reject the enable flag.
+
+Migration `019_benchmark_dataset_governance.cjs` adds the optional governed
+dataset fields and `benchmark_admin_commands`. The command collection uniquely
+indexes `{ actorId, operation, key }`, stores a SHA-256 intent fingerprint, and
+persists only a bounded response receipt. Exact completed retries replay;
+changed, pending, or failed command reuse is rejected. Archive is a timestamp,
+not deletion: historical runs and exports remain available, while selection for
+a new run is blocked. Aggregate exports exclude cases, normalized outputs,
+provider errors that contain payloads, credentials, journals, and personal data.
 
 ## Retention and encryption
 
