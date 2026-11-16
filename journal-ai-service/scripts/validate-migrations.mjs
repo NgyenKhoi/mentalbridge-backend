@@ -15,6 +15,7 @@ const companionChatMigration = require("../migrations/010_ai_companion_chat_quot
 const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
 const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
 const benchmarkGovernanceMigration = require("../migrations/019_benchmark_dataset_governance.cjs");
+const benchmarkExecutionMigration = require("../migrations/020_benchmark_execution_governance.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -276,6 +277,36 @@ assert.equal(
   "^[0-9a-f]{64}$",
 );
 assert.deepEqual(
+  benchmarkExecutionMigration.runValidator.$jsonSchema.properties.candidates
+    .items.properties.provider.enum,
+  ["GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.equal(
+  benchmarkExecutionMigration.runValidator.$jsonSchema.required.includes(
+    "rubricSha256",
+  ),
+  true,
+);
+assert.deepEqual(
+  benchmarkExecutionMigration.caseResultValidator.$jsonSchema.properties
+    .provider.enum,
+  ["GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.equal(
+  benchmarkExecutionMigration.approvalCollection,
+  "benchmark_dataset_approvals",
+);
+assert.equal(
+  benchmarkExecutionMigration.approvalValidator.$jsonSchema.properties.registry
+    .enum[0],
+  "MB369_CURATED_REGISTRY",
+);
+assert.equal(
+  benchmarkExecutionMigration.datasetValidator.$jsonSchema.properties
+    .activeRunCount.minimum,
+  0,
+);
+assert.deepEqual(
   titleValidator.$jsonSchema.properties.encryptedTitle,
   suggestionMessage.properties.content,
 );
@@ -333,5 +364,5 @@ assert.deepEqual(titleCommands, [
   },
 ]);
 console.log(
-  "Validated Mongo migrations: 001 through 019_benchmark_dataset_governance.cjs",
+  "Validated Mongo migrations: 001 through 020_benchmark_execution_governance.cjs",
 );

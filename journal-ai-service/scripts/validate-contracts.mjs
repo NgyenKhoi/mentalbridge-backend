@@ -208,7 +208,7 @@ const implementedResponses = new Map([
   ["GET /api/v1/admin/ai-benchmarks/runs", new Set(["200", "401", "403"])],
   [
     "POST /api/v1/admin/ai-benchmarks/runs",
-    new Set(["201", "400", "401", "403", "409", "422", "503"]),
+    new Set(["202", "400", "401", "403", "409", "422", "503"]),
   ],
   [
     "GET /api/v1/admin/ai-benchmarks/runs/{runId}",
@@ -563,7 +563,7 @@ const careContractPath = fileURLToPath(
 const care = await SwaggerParser.validate(careContractPath);
 const careSchemas = care.components.schemas;
 assert.equal(care.info.version, "1.12.0");
-assert.equal(contract.info.version, "1.21.0");
+assert.equal(contract.info.version, "1.22.0");
 assert.deepEqual(careSchemas.ConsentType.enum, [
   "PRIVACY_POLICY",
   "AI_PROCESSING",

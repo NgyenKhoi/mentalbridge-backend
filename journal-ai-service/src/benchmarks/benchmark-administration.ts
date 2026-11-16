@@ -28,6 +28,8 @@ import type { ServiceConfiguration } from "../configuration/configuration.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
 import {
   BenchmarkRunner,
+  BENCHMARK_RUBRIC_SHA256,
+  BENCHMARK_RUBRIC_VERSION,
   benchmarkCaseSchema,
   benchmarkDatasetSchema,
   type BenchmarkAggregate,
@@ -41,12 +43,24 @@ const EXECUTOR = Symbol("BENCHMARK_ADMINISTRATION_EXECUTOR");
 const identifier = z.string().regex(/^[A-Za-z0-9._-]{1,96}$/);
 const version = z.string().regex(/^[A-Za-z0-9._-]{1,32}$/);
 const idempotencyKey = z.uuid();
-const createDatasetSchema = benchmarkDatasetSchema;
+const privacyApprovalSchema = z
+  .object({
+    registry: z.literal("MB369_CURATED_REGISTRY"),
+    approvalId: z.uuid(),
+    approvedBy: z.string().trim().min(1).max(128),
+    approvedAt: z.iso.datetime(),
+    contentSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+const createDatasetSchema = benchmarkDatasetSchema.extend({
+  privacyApproval: privacyApprovalSchema,
+});
 const createVersionSchema = z
   .object({
     version,
     description: z.string().trim().min(1).max(300),
     cases: z.array(benchmarkCaseSchema).min(1).max(200),
+    privacyApproval: privacyApprovalSchema,
   })
   .strict();
 const runSchema = z
@@ -69,9 +83,17 @@ export interface GovernedDataset extends BenchmarkDataset {
   readonly createdBy: string;
   readonly archivedAt: Date | null;
   readonly previousVersion: string | null;
+  readonly activeRunCount: number;
+  readonly privacyApproval: z.infer<typeof privacyApprovalSchema>;
 }
 
 interface DatasetDocument extends GovernedDataset {
+  readonly _id: string;
+}
+
+type BenchmarkPrivacyApproval = z.infer<typeof privacyApprovalSchema>;
+
+interface PrivacyApprovalDocument extends BenchmarkPrivacyApproval {
   readonly _id: string;
 }
 
@@ -81,6 +103,8 @@ export interface GovernedBenchmarkRun {
   readonly datasetVersion: string;
   readonly datasetSha256: string;
   readonly promptVersion: string;
+  readonly rubricVersion: string;
+  readonly rubricSha256: string;
   readonly schemaVersion: 1;
   readonly status: "RUNNING" | "COMPLETED" | "FAILED";
   readonly candidates: readonly {
@@ -90,6 +114,8 @@ export interface GovernedBenchmarkRun {
   readonly aggregates?: readonly BenchmarkAggregate[];
   readonly startedAt: Date;
   readonly completedAt: Date | null;
+  readonly failureClassification:
+    "ALL_CASES_PROVIDER_FAILED" | "EXECUTION_FAILED" | null;
 }
 
 interface CommandDocument {
@@ -103,6 +129,9 @@ interface CommandDocument {
 }
 
 export interface BenchmarkAdministrationStore {
+  findPrivacyApproval(
+    approvalId: string,
+  ): Promise<BenchmarkPrivacyApproval | null>;
   listDatasets(): Promise<GovernedDataset[]>;
   findDataset(
     datasetId: string,
@@ -114,6 +143,16 @@ export interface BenchmarkAdministrationStore {
     datasetVersion: string,
     at: Date,
   ): Promise<GovernedDataset | null>;
+  claimDatasetForRun(
+    datasetId: string,
+    datasetVersion: string,
+  ): Promise<GovernedDataset | null>;
+  releaseDatasetRun(datasetId: string, datasetVersion: string): Promise<void>;
+  insertRun(run: GovernedBenchmarkRun): Promise<void>;
+  markRunFailed(
+    runId: string,
+    classification: "EXECUTION_FAILED",
+  ): Promise<void>;
   listRuns(): Promise<GovernedBenchmarkRun[]>;
   findRun(runId: string): Promise<GovernedBenchmarkRun | null>;
   reserveCommand(command: CommandDocument): Promise<CommandDocument | null>;
@@ -122,12 +161,25 @@ export interface BenchmarkAdministrationStore {
 }
 
 export interface BenchmarkAdministrationExecutor {
+  prepare(
+    provider: "GEMINI" | "OPENAI" | "BEDROCK",
+    model: string,
+  ): {
+    provider: "GEMINI" | "OPENAI" | "BEDROCK";
+    model: string;
+    inputCostMicroUsdPerMillionTokens: number;
+    outputCostMicroUsdPerMillionTokens: number;
+  };
   run(
+    runId: string,
     dataset: GovernedDataset,
     provider: "GEMINI" | "OPENAI" | "BEDROCK",
     model: string,
   ): Promise<{
     runId: string;
+    status: "COMPLETED" | "FAILED";
+    failureClassification:
+      "ALL_CASES_PROVIDER_FAILED" | "EXECUTION_FAILED" | null;
     aggregates: BenchmarkAggregate[];
     failures: BenchmarkFailureDiagnostic[];
   }>;
@@ -146,10 +198,23 @@ const datasetResponse = (dataset: GovernedDataset) => ({
   registeredAt: dataset.registeredAt.toISOString(),
   archivedAt: dataset.archivedAt?.toISOString() ?? null,
   previousVersion: dataset.previousVersion,
+  privacyApproval: dataset.privacyApproval,
 });
 
 const fingerprint = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+const deterministicRunId = (actorId: string, key: string): string => {
+  const value = createHash("sha256")
+    .update(`${actorId}:RUN_BENCHMARK:${key}`)
+    .digest("hex")
+    .slice(0, 32)
+    .split("");
+  value[12] = "4";
+  value[16] = "8";
+  const hex = value.join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 @Injectable()
 export class MongoBenchmarkAdministrationStore
@@ -157,6 +222,7 @@ export class MongoBenchmarkAdministrationStore
 {
   private readonly client: MongoClient;
   private readonly datasets: Collection<DatasetDocument>;
+  private readonly approvals: Collection<PrivacyApprovalDocument>;
   private readonly runs: Collection<GovernedBenchmarkRun>;
   private readonly commands: Collection<CommandDocument>;
 
@@ -166,6 +232,7 @@ export class MongoBenchmarkAdministrationStore
     });
     const database = this.client.db(configuration.MONGODB_DATABASE);
     this.datasets = database.collection("benchmark_datasets");
+    this.approvals = database.collection("benchmark_dataset_approvals");
     this.runs = database.collection("benchmark_runs");
     this.commands = database.collection("benchmark_admin_commands");
   }
@@ -174,9 +241,26 @@ export class MongoBenchmarkAdministrationStore
     await this.client.close();
   }
 
+  async findPrivacyApproval(
+    approvalId: string,
+  ): Promise<BenchmarkPrivacyApproval | null> {
+    const document = await this.approvals.findOne({ _id: approvalId });
+    if (!document) return null;
+    return {
+      registry: document.registry,
+      approvalId: document.approvalId,
+      approvedBy: document.approvedBy,
+      approvedAt: document.approvedAt,
+      contentSha256: document.contentSha256,
+    };
+  }
+
   async listDatasets(): Promise<GovernedDataset[]> {
     return this.datasets
-      .find({ createdBy: { $exists: true } })
+      .find({
+        createdBy: { $exists: true },
+        "privacyApproval.registry": "MB369_CURATED_REGISTRY",
+      })
       .sort({ datasetId: 1, registeredAt: -1 })
       .limit(100)
       .toArray();
@@ -186,7 +270,11 @@ export class MongoBenchmarkAdministrationStore
     datasetId: string,
     datasetVersion: string,
   ): Promise<GovernedDataset | null> {
-    return this.datasets.findOne({ datasetId, version: datasetVersion });
+    return this.datasets.findOne({
+      datasetId,
+      version: datasetVersion,
+      "privacyApproval.registry": "MB369_CURATED_REGISTRY",
+    });
   }
 
   async insertDataset(dataset: GovernedDataset): Promise<void> {
@@ -202,9 +290,60 @@ export class MongoBenchmarkAdministrationStore
     at: Date,
   ): Promise<GovernedDataset | null> {
     return this.datasets.findOneAndUpdate(
-      { datasetId, version: datasetVersion },
+      {
+        datasetId,
+        version: datasetVersion,
+        archivedAt: null,
+        activeRunCount: 0,
+      },
       { $set: { archivedAt: at } },
       { returnDocument: "after" },
+    );
+  }
+
+  async claimDatasetForRun(
+    datasetId: string,
+    datasetVersion: string,
+  ): Promise<GovernedDataset | null> {
+    return this.datasets.findOneAndUpdate(
+      {
+        datasetId,
+        version: datasetVersion,
+        archivedAt: null,
+        "privacyApproval.registry": "MB369_CURATED_REGISTRY",
+      },
+      { $inc: { activeRunCount: 1 } },
+      { returnDocument: "after" },
+    );
+  }
+
+  async releaseDatasetRun(
+    datasetId: string,
+    datasetVersion: string,
+  ): Promise<void> {
+    await this.datasets.updateOne(
+      { datasetId, version: datasetVersion, activeRunCount: { $gt: 0 } },
+      { $inc: { activeRunCount: -1 } },
+    );
+  }
+
+  async insertRun(run: GovernedBenchmarkRun): Promise<void> {
+    await this.runs.insertOne(run);
+  }
+
+  async markRunFailed(
+    runId: string,
+    classification: "EXECUTION_FAILED",
+  ): Promise<void> {
+    await this.runs.updateOne(
+      { _id: runId, status: "RUNNING" },
+      {
+        $set: {
+          status: "FAILED",
+          completedAt: new Date(),
+          failureClassification: classification,
+        },
+      },
     );
   }
 
@@ -253,11 +392,9 @@ export class MongoBenchmarkAdministrationStore
 export class ConfiguredBenchmarkAdministrationExecutor implements BenchmarkAdministrationExecutor {
   constructor(private readonly configuration: ServiceConfiguration) {}
 
-  async run(
-    dataset: GovernedDataset,
-    provider: "GEMINI" | "OPENAI" | "BEDROCK",
-    model: string,
-  ) {
+  prepare(provider: "GEMINI" | "OPENAI" | "BEDROCK", model: string) {
+    if (!this.configuration.BENCHMARK_ENABLED)
+      throw new ServiceUnavailableException("Benchmark execution is disabled");
     const gemini =
       provider === "GEMINI" ? this.configuration.BENCHMARK_GEMINI_ROUTE : null;
     const openAi =
@@ -271,18 +408,40 @@ export class ConfiguredBenchmarkAdministrationExecutor implements BenchmarkAdmin
       throw new UnprocessableEntityException(
         "The requested provider model is not an approved benchmark candidate",
       );
+    return { ...selected, provider };
+  }
+
+  async run(
+    runId: string,
+    dataset: GovernedDataset,
+    provider: "GEMINI" | "OPENAI" | "BEDROCK",
+    model: string,
+  ) {
+    this.prepare(provider, model);
+    const gemini =
+      provider === "GEMINI" ? this.configuration.BENCHMARK_GEMINI_ROUTE : null;
+    const openAi =
+      provider === "OPENAI" ? this.configuration.BENCHMARK_OPENAI_ROUTE : null;
+    const bedrock =
+      provider === "BEDROCK"
+        ? this.configuration.BENCHMARK_BEDROCK_ROUTE
+        : null;
     const scopedConfiguration: ServiceConfiguration = {
       ...this.configuration,
-      BENCHMARK_ENABLED: true,
       BENCHMARK_GEMINI_ROUTE: gemini,
       BENCHMARK_OPENAI_ROUTE: openAi,
       BENCHMARK_BEDROCK_ROUTE: bedrock,
     };
-    return new BenchmarkRunner(scopedConfiguration, undefined, undefined, () =>
-      Promise.resolve({
-        dataset,
-        sha256: dataset.sha256,
-      }),
+    return new BenchmarkRunner(
+      scopedConfiguration,
+      undefined,
+      undefined,
+      () =>
+        Promise.resolve({
+          dataset,
+          sha256: dataset.sha256,
+        }),
+      { runId, precreated: true },
     ).run();
   }
 }
@@ -316,6 +475,7 @@ export class BenchmarkAdministrationService {
   ) {
     const actorId = this.assertAdmin(request);
     const parsed = this.parse(createDatasetSchema, body);
+    await this.assertPrivacyApproval(parsed.cases, parsed.privacyApproval);
     return this.command(actorId, "CREATE_DATASET", key, parsed, async () => {
       const sha256 = fingerprint(parsed);
       const dataset: GovernedDataset = {
@@ -326,6 +486,8 @@ export class BenchmarkAdministrationService {
         createdBy: actorId,
         archivedAt: null,
         previousVersion: null,
+        activeRunCount: 0,
+        privacyApproval: parsed.privacyApproval,
       };
       try {
         await this.store.insertDataset(dataset);
@@ -352,6 +514,7 @@ export class BenchmarkAdministrationService {
   ) {
     const actorId = this.assertAdmin(request);
     const parsed = this.parse(createVersionSchema, body);
+    await this.assertPrivacyApproval(parsed.cases, parsed.privacyApproval);
     const intent = { datasetId, sourceVersion, ...parsed };
     return this.command(
       actorId,
@@ -380,6 +543,8 @@ export class BenchmarkAdministrationService {
           createdBy: actorId,
           archivedAt: null,
           previousVersion: sourceVersion,
+          activeRunCount: 0,
+          privacyApproval: parsed.privacyApproval,
         };
         try {
           await this.store.insertDataset(dataset);
@@ -414,7 +579,10 @@ export class BenchmarkAdministrationService {
         datasetVersion,
         new Date(),
       );
-      if (!archived) throw new NotFoundException();
+      if (!archived)
+        throw new ConflictException(
+          "Dataset has an active benchmark selection and cannot be archived",
+        );
       return datasetResponse(archived);
     });
   }
@@ -426,20 +594,89 @@ export class BenchmarkAdministrationService {
   ) {
     const actorId = this.assertAdmin(request);
     const parsed = this.parse(runSchema, body);
-    return this.command(actorId, "RUN_BENCHMARK", key, parsed, async () => {
-      const dataset = await this.requiredDataset(
-        parsed.datasetId,
-        parsed.datasetVersion,
-      );
-      if (dataset.archivedAt)
-        throw new ConflictException("Archived datasets cannot be selected");
-      try {
-        return await this.executor.run(dataset, parsed.provider, parsed.model);
-      } catch (error) {
-        if (error instanceof UnprocessableEntityException) throw error;
-        throw new ServiceUnavailableException("Benchmark provider failed");
-      }
-    });
+    const parsedKey = this.parse(idempotencyKey, key);
+    const candidate = this.executor.prepare(parsed.provider, parsed.model);
+    const runId = deterministicRunId(actorId, parsedKey);
+    return this.command(
+      actorId,
+      "RUN_BENCHMARK",
+      parsedKey,
+      parsed,
+      async () => {
+        const dataset = await this.store.claimDatasetForRun(
+          parsed.datasetId,
+          parsed.datasetVersion,
+        );
+        if (!dataset) {
+          const current = await this.requiredDataset(
+            parsed.datasetId,
+            parsed.datasetVersion,
+          );
+          if (current.archivedAt)
+            throw new ConflictException("Archived datasets cannot be selected");
+          throw new ConflictException("Dataset selection is unavailable");
+        }
+        const run: GovernedBenchmarkRun = {
+          _id: runId,
+          datasetId: dataset.datasetId,
+          datasetVersion: dataset.version,
+          datasetSha256: dataset.sha256,
+          promptVersion: "exact-revision-v1",
+          rubricVersion: BENCHMARK_RUBRIC_VERSION,
+          rubricSha256: BENCHMARK_RUBRIC_SHA256,
+          schemaVersion: 1,
+          status: "RUNNING",
+          candidates: [candidate],
+          startedAt: new Date(),
+          completedAt: null,
+          failureClassification: null,
+        };
+        try {
+          await this.store.insertRun(run);
+        } catch (error) {
+          await this.store.releaseDatasetRun(
+            dataset.datasetId,
+            dataset.version,
+          );
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === 11000
+          ) {
+            const existing = await this.store.findRun(runId);
+            if (existing) return this.runResponse(existing);
+          }
+          throw error;
+        }
+        void this.executeAcceptedRun(
+          runId,
+          dataset,
+          parsed.provider,
+          parsed.model,
+        );
+        return this.runResponse(run);
+      },
+      async () => {
+        const existing = await this.store.findRun(runId);
+        return existing ? this.runResponse(existing) : null;
+      },
+    );
+  }
+
+  private async executeAcceptedRun(
+    runId: string,
+    dataset: GovernedDataset,
+    provider: "GEMINI" | "OPENAI" | "BEDROCK",
+    model: string,
+  ): Promise<void> {
+    try {
+      await this.executor.run(runId, dataset, provider, model);
+    } catch {
+      await this.store.markRunFailed(runId, "EXECUTION_FAILED");
+    } finally {
+      await this.store.releaseDatasetRun(dataset.datasetId, dataset.version);
+    }
   }
 
   async listRuns(request: AdministrationRequest) {
@@ -467,10 +704,13 @@ export class BenchmarkAdministrationService {
         sha256: run.datasetSha256,
       },
       promptVersion: run.promptVersion,
+      rubricVersion: run.rubricVersion,
+      rubricSha256: run.rubricSha256,
       candidates: run.candidates,
       startedAt: run.startedAt.toISOString(),
       completedAt: run.completedAt?.toISOString() ?? null,
       status: run.status,
+      failureClassification: run.failureClassification,
       aggregates: run.aggregates ?? [],
     };
   }
@@ -481,7 +721,10 @@ export class BenchmarkAdministrationService {
     datasetVersion: run.datasetVersion,
     datasetSha256: run.datasetSha256,
     promptVersion: run.promptVersion,
+    rubricVersion: run.rubricVersion,
+    rubricSha256: run.rubricSha256,
     status: run.status,
+    failureClassification: run.failureClassification,
     candidates: run.candidates,
     aggregates: run.aggregates ?? [],
     startedAt: run.startedAt.toISOString(),
@@ -501,6 +744,23 @@ export class BenchmarkAdministrationService {
     return parsed.data;
   }
 
+  private async assertPrivacyApproval(
+    cases: readonly unknown[],
+    approval: BenchmarkPrivacyApproval,
+  ): Promise<void> {
+    if (fingerprint(cases) !== approval.contentSha256)
+      throw new ForbiddenException(
+        "Dataset content does not match the curated privacy approval",
+      );
+    const registered = await this.store.findPrivacyApproval(
+      approval.approvalId,
+    );
+    if (!registered || fingerprint(registered) !== fingerprint(approval))
+      throw new ForbiddenException(
+        "Dataset privacy approval is not present in the curated registry",
+      );
+  }
+
   private async requiredDataset(datasetId: string, datasetVersion: string) {
     const parsedId = this.parse(identifier, datasetId);
     const parsedVersion = this.parse(version, datasetVersion);
@@ -515,6 +775,7 @@ export class BenchmarkAdministrationService {
     key: string | undefined,
     intent: unknown,
     action: () => Promise<T>,
+    recover?: () => Promise<T | null>,
   ): Promise<T> {
     const parsedKey = this.parse(idempotencyKey, key);
     const commandId = `${actorId}:${operation}:${parsedKey}`;
@@ -531,7 +792,13 @@ export class BenchmarkAdministrationService {
       if (existing.fingerprint !== intentFingerprint)
         throw new ConflictException("IDEMPOTENCY_CONFLICT");
       if (existing.state === "COMPLETED") return existing.response as T;
-      throw new ConflictException("IDEMPOTENCY_COMMAND_UNAVAILABLE");
+      const recovered = recover ? await recover() : null;
+      if (recovered !== null) {
+        await this.store.completeCommand(commandId, recovered);
+        return recovered;
+      }
+      if (!recover)
+        throw new ConflictException("IDEMPOTENCY_COMMAND_UNAVAILABLE");
     }
     try {
       const response = await action();
@@ -605,6 +872,7 @@ export class BenchmarkAdministrationController {
   }
 
   @Post("runs")
+  @HttpCode(202)
   run(
     @Req() request: AdministrationRequest,
     @Headers("idempotency-key") key: string | undefined,

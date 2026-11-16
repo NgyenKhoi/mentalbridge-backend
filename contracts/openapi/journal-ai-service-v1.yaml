@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.21.0
+  version: 1.22.0
   description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
 servers:
   - url: http://localhost:3000
@@ -174,11 +174,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/RunGovernedBenchmark" }
       responses:
-        "201":
-          description: Completed benchmark receipt.
+        "202":
+          description: Authoritative asynchronous benchmark job accepted; poll the run resource until terminal.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/BenchmarkExecutionReceipt" }
+              schema: { $ref: "#/components/schemas/GovernedBenchmarkRun" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -2142,10 +2142,21 @@ components:
         forbiddenClaims:
           type: array
           items: { type: string, minLength: 1, maxLength: 128 }
+    BenchmarkPrivacyApproval:
+      type: object
+      additionalProperties: false
+      description: Exact approval that must already exist in the server-owned MB-369 curated registry; client self-attestation is rejected.
+      required: [registry, approvalId, approvedBy, approvedAt, contentSha256]
+      properties:
+        registry: { type: string, const: MB369_CURATED_REGISTRY }
+        approvalId: { type: string, format: uuid }
+        approvedBy: { type: string, minLength: 1, maxLength: 128 }
+        approvedAt: { type: string, format: date-time }
+        contentSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
     CreateGovernedBenchmarkDataset:
       type: object
       additionalProperties: false
-      required: [datasetId, version, workload, language, source, license, description, cases]
+      required: [datasetId, version, workload, language, source, license, description, cases, privacyApproval]
       properties:
         datasetId: { type: string, pattern: "^[A-Za-z0-9._-]{1,96}$" }
         version: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$" }
@@ -2159,10 +2170,11 @@ components:
           minItems: 1
           maxItems: 200
           items: { $ref: "#/components/schemas/GovernedBenchmarkCase" }
+        privacyApproval: { $ref: "#/components/schemas/BenchmarkPrivacyApproval" }
     CreateGovernedBenchmarkDatasetVersion:
       type: object
       additionalProperties: false
-      required: [version, description, cases]
+      required: [version, description, cases, privacyApproval]
       properties:
         version: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$" }
         description: { type: string, minLength: 1, maxLength: 300 }
@@ -2171,10 +2183,11 @@ components:
           minItems: 1
           maxItems: 200
           items: { $ref: "#/components/schemas/GovernedBenchmarkCase" }
+        privacyApproval: { $ref: "#/components/schemas/BenchmarkPrivacyApproval" }
     GovernedBenchmarkDataset:
       type: object
       additionalProperties: false
-      required: [datasetId, version, workload, language, source, license, description, sha256, caseCount, registeredAt, archivedAt, previousVersion]
+      required: [datasetId, version, workload, language, source, license, description, sha256, caseCount, registeredAt, archivedAt, previousVersion, privacyApproval]
       properties:
         datasetId: { type: string, maxLength: 96 }
         version: { type: string, maxLength: 32 }
@@ -2188,6 +2201,7 @@ components:
         registeredAt: { type: string, format: date-time }
         archivedAt: { type: [string, "null"], format: date-time }
         previousVersion: { type: [string, "null"], maxLength: 32 }
+        privacyApproval: { $ref: "#/components/schemas/BenchmarkPrivacyApproval" }
     GovernedBenchmarkDatasetDetail:
       allOf:
         - { $ref: "#/components/schemas/GovernedBenchmarkDataset" }
@@ -2236,14 +2250,19 @@ components:
     GovernedBenchmarkRun:
       type: object
       additionalProperties: false
-      required: [runId, datasetId, datasetVersion, datasetSha256, promptVersion, status, candidates, aggregates, startedAt, completedAt]
+      required: [runId, datasetId, datasetVersion, datasetSha256, promptVersion, rubricVersion, rubricSha256, status, failureClassification, candidates, aggregates, startedAt, completedAt]
       properties:
         runId: { type: string, format: uuid }
         datasetId: { type: string, maxLength: 96 }
         datasetVersion: { type: string, maxLength: 32 }
         datasetSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         promptVersion: { type: string, maxLength: 96 }
+        rubricVersion: { type: string, maxLength: 96 }
+        rubricSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         status: { type: string, enum: [RUNNING, COMPLETED, FAILED] }
+        failureClassification:
+          type: [string, "null"]
+          enum: [ALL_CASES_PROVIDER_FAILED, EXECUTION_FAILED, null]
         candidates:
           type: array
           minItems: 1
@@ -2281,7 +2300,7 @@ components:
     GovernedBenchmarkExport:
       type: object
       additionalProperties: false
-      required: [exportVersion, runId, dataset, promptVersion, candidates, startedAt, completedAt, status, aggregates]
+      required: [exportVersion, runId, dataset, promptVersion, rubricVersion, rubricSha256, candidates, startedAt, completedAt, status, failureClassification, aggregates]
       properties:
         exportVersion: { type: string, const: benchmark-aggregate-v1 }
         runId: { type: string, format: uuid }
@@ -2294,6 +2313,8 @@ components:
             version: { type: string, maxLength: 32 }
             sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         promptVersion: { type: string, maxLength: 96 }
+        rubricVersion: { type: string, maxLength: 96 }
+        rubricSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         candidates:
           type: array
           maxItems: 3
@@ -2301,6 +2322,9 @@ components:
         startedAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
         status: { type: string, enum: [RUNNING, COMPLETED, FAILED] }
+        failureClassification:
+          type: [string, "null"]
+          enum: [ALL_CASES_PROVIDER_FAILED, EXECUTION_FAILED, null]
         aggregates:
           type: array
           maxItems: 3
