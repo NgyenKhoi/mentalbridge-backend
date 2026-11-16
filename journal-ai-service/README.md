@@ -1,5 +1,14 @@
 # Journal and AI Service
 
+MB-854 independently publishable speech units are a default-OFF review proposal:
+`JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`. Enabling requires reviewed policy,
+ConverseStream enabled and an approved bound measurement pilot. Each complete
+unit retains schema/safety, fresh publication authorization, state/lease checks,
+and a conservative500-character turn reservation. No raw token reaches TTS.
+Read [the prospective policy](../docs/policies/companion-voice-speech-unit-v1.md)
+before considering activation; source approval is not a live window. Text and
+ordinary Voice remain on their existing contracts while the flag isOFF.
+
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
 ## MB-854 incoming Voice ConverseStream
