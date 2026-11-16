@@ -77,7 +77,9 @@ describe('Community interaction notification consumer', () => {
     ['GROWTH', 'Một thành viên đã chọn “Đang lớn lên” cho chia sẻ của bạn.'],
   ] as const)('projects %s with its supportive copy', async (interactionKind, body) => {
     const enqueue = vi.fn().mockResolvedValue(undefined);
-    const projector = new CommunityInteractionProjector({ enqueue } as unknown as CommunityNotificationJobs);
+    const projector = new CommunityInteractionProjector({
+      enqueue,
+    } as unknown as CommunityNotificationJobs);
     await projector.project({ ...event, interactionKind });
     expect(enqueue.mock.calls[0]?.[0]).toMatchObject({ kind: 'COMMUNITY_REACTION', body });
   });

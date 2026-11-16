@@ -13,7 +13,17 @@ export const CommunityInteractionEnvelopeSchema = z
     targetOwnerRoutingReference: z.uuid(),
     targetType: z.enum(['POST', 'COMMENT']),
     targetId: z.uuid(),
-    interactionKind: z.enum(['COMMENT', 'REPLY', 'SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH']),
+    interactionKind: z.enum([
+      'COMMENT',
+      'REPLY',
+      'SUPPORT',
+      'RELATE',
+      'THANK_YOU',
+      'LIKE',
+      'EMPATHY',
+      'CHEER',
+      'GROWTH',
+    ]),
     occurredAt: z.iso.datetime({ offset: true }),
     deepLink: z
       .object({
