@@ -560,6 +560,7 @@ export class VoiceWorker {
     };
     this.streamCurrent = turn;
     let queue = Promise.resolve();
+    let echoedText = "";
     const failure: { playback?: Error } = {};
     const interrupted = () => this.interrupted;
     try {
@@ -583,7 +584,8 @@ export class VoiceWorker {
               throw new AgentFailure("AUTHORITY_EXPIRED");
             this.speaking = reply;
             this.playbackStarted = false;
-            this.lastEcho = normalized(reply.spokenText);
+            echoedText = [echoedText, reply.spokenText].join(" ").trim();
+            this.lastEcho = normalized(echoedText);
             this.echoUntil = this.clock() + 60000;
             const ttsStartedAt = this.clock();
             this.diagnostic({

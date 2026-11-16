@@ -33,7 +33,11 @@ const hold = () => {
   return { wait, release };
 };
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
-function fixture(finalAggregationMs = 1500, speechUnits = false) {
+function fixture(
+  finalAggregationMs = 1500,
+  speechUnits = false,
+  unitCount = 1,
+) {
   let now = Date.now();
   const hardStopAt = new Date(now + 300000).toISOString();
   const dispatch: Dispatch = {
@@ -94,18 +98,23 @@ function fixture(finalAggregationMs = 1500, speechUnits = false) {
     },
     turnSpeechUnits: async (_dispatch, turn, _key, signal, receive) => {
       turns.push(turn);
-      receive(
-        {
-          voiceSessionId: dispatch.voiceSessionId,
-          turnId: turn.turnId,
-          replyId: randomUUID(),
-          language: "vi-VN",
-          spokenText: "Mình đang lắng nghe bạn.",
-          expiresAt: new Date(expires).toISOString(),
-          policyVersion,
-        },
-        1,
-      );
+      const replyId = randomUUID();
+      for (let unit = 1; unit <= unitCount; unit++)
+        receive(
+          {
+            voiceSessionId: dispatch.voiceSessionId,
+            turnId: turn.turnId,
+            replyId,
+            language: "vi-VN",
+            spokenText:
+              unit === 1
+                ? "Mình đang lắng nghe bạn."
+                : "Bạn muốn chia sẻ thêm điều gì?",
+            expiresAt: new Date(expires).toISOString(),
+            policyVersion,
+          },
+          unit,
+        );
       if (generation)
         await Promise.race([
           generation,
@@ -359,6 +368,30 @@ void test("speech-unit worker plays before model completion and maintains indepe
   assert.equal(f.turns.length, 1);
   await f.worker.stop("USER_ENDED");
   assert.equal(f.closes(), 1);
+});
+
+void test("speaker echo from an earlier speech unit cannot interrupt a later unit in the same reply", async () => {
+  const f = fixture(750, true, 2);
+  const secondPlayback = hold();
+  const speak = f.media.speak.bind(f.media);
+  f.media.speak = async (text, started, signal) => {
+    await speak(text, started, signal);
+    if (f.played.length === 2) await secondPlayback.wait;
+  };
+  await f.start();
+  f.emit("Xin chào, đây là câu thử tổng hợp.");
+  f.advance(800);
+  const work = f.tick();
+  await flush();
+  assert.equal(f.played.length, 2);
+  f.emit("Mình đang lắng nghe bạn.");
+  await flush();
+  assert.equal(f.streamCancelled(), 0);
+  assert.equal(f.turns.length, 1);
+  secondPlayback.release();
+  await work;
+  assert.deepEqual(f.acknowledgements, [1, 2]);
+  await f.worker.stop("USER_ENDED");
 });
 
 void test("streaming barge-in cancels the model turn without consuming a replacement admission or ending the session", async () => {
