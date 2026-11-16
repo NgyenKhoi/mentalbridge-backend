@@ -18,6 +18,7 @@ import {
 } from "./voice-ledger.js";
 import { VOICE_RETENTION_MS } from "./voice-policy.js";
 import { VoiceAccessService } from "./voice-access.js";
+import "./voice-measurement.mongo.integration.test.js";
 
 const require = createRequire(import.meta.url);
 const migration = require("../../migrations/013_companion_voice_quota.cjs") as {

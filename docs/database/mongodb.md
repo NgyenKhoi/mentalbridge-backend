@@ -1,5 +1,13 @@
 # MongoDB Collection Definitions
 
+MB-862 adds optional Journal/AI `ai_voice_measurement_campaigns` through
+append-only migration 020. Its complete field/index/retention dictionary is
+[Voice measurement campaign](voice-measurement-campaign.md). It stores only
+irreversible operational reservations, not product quota or financial credits.
+Source design is approved in MB-862 #10461; activation and shared migration
+execution require separate authority. Merge after PR #299 and retain both
+independent Mongo additions when synchronizing the shared files.
+
 Start with the [canonical MongoDB logical model](../domain-model/document/mongodb-logical-model.md) for active/proposed status, ownership, and relationships. This document supplies detailed field and index rationale. MongoDB stores variable, write-heavy content where document access follows an aggregate. PostgreSQL remains authoritative for identity, Care consent, scoring, safety/support policy, appointments, and relational audit. Journal/AI uses MongoDB as its only operational database, including durable analysis jobs and benchmark metadata. MongoDB-owning Node.js services use the official MongoDB driver and apply collection validation, indexes, and controlled data changes through append-only `migrate-mongo` migrations; application startup must not mutate schemas implicitly.
 
 All collections require MongoDB JSON Schema validation in deployment migrations. Examples omit ciphertext details for readability.
