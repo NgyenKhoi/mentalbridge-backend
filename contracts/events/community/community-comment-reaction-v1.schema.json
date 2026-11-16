@@ -42,7 +42,11 @@
       "enum": [
         "SUPPORT",
         "RELATE",
-        "THANK_YOU"
+        "THANK_YOU",
+        "LIKE",
+        "EMPATHY",
+        "CHEER",
+        "GROWTH"
       ]
     },
     "occurredAt": {
