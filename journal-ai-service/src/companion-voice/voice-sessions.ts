@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import { VoiceAuthorizationError } from "./voice-authorization.js";
 import {
@@ -131,6 +132,8 @@ export class VoiceSessionsService {
     private readonly clock: () => Date = () => new Date(),
     private readonly telemetry: (outcome: string) => void = () => undefined,
     private readonly handoffs?: VoiceContextHandoffs,
+    private readonly measurements:
+      MongoVoiceMeasurementStore | undefined = ledger.measurements,
   ) {}
 
   private digest(value: string) {
@@ -182,6 +185,7 @@ export class VoiceSessionsService {
       throw new VoiceLedgerError("STALE_ATTEMPT");
     if (closed(session) || this.clock() >= session.authorityExpiresAt)
       throw new VoiceLedgerError("SESSION_EXPIRED");
+    await this.measurements?.authorize(id, this.clock());
     return session;
   }
 
@@ -543,6 +547,7 @@ export class VoiceSessionsService {
     attemptId: string,
     dispatchId: string,
     correlationId: string,
+    measurementHash?: string,
   ) {
     let session = await this.current(id);
     const document = await this.store.find(id, this.clock());
@@ -553,6 +558,14 @@ export class VoiceSessionsService {
       !["DISPATCHING", "READY"].includes(document.phase)
     )
       throw new VoiceLedgerError("STALE_ATTEMPT");
+    const policy = await this.measurements?.authorize(id, this.clock());
+    if (
+      policy
+        ? measurementHash !== policy.configHash
+        : measurementHash !== undefined
+    )
+      throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+    if (policy) await this.measurements?.claimWorker(id, this.clock());
     session = document.claimedAt
       ? await this.access.inspectSession(session.ownerId, id, correlationId)
       : await this.access.authorizeSession(session.ownerId, id, correlationId);
@@ -566,6 +579,15 @@ export class VoiceSessionsService {
       validUntil: session.leaseExpiresAt.toISOString(),
       hardStopAt: session.hardStopAt.toISOString(),
       policyVersion: session.policyVersion,
+      ...(policy
+        ? {
+            measurement: {
+              configHash: policy.configHash,
+              ttsCharacters: policy.allocation.ttsCharacters,
+              voiceId: policy.voiceId,
+            },
+          }
+        : {}),
     };
   }
 
@@ -760,6 +782,25 @@ export class VoiceSessionsService {
       attemptId,
       turnId,
       replyId,
+      this.clock(),
+    );
+  }
+
+  async reserveMeasurementTurn(id: string, turnId: string, sequence: number) {
+    await this.measurements?.reserveTurn(id, turnId, sequence, this.clock());
+  }
+
+  async reserveMeasurementSpeech(
+    id: string,
+    turnId: string,
+    replyId: string,
+    characters: number,
+  ) {
+    await this.measurements?.reserveSpeech(
+      id,
+      turnId,
+      replyId,
+      characters,
       this.clock(),
     );
   }

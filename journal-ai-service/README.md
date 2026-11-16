@@ -858,6 +858,40 @@ events, metrics, and logs; delete erases them with the encrypted revisions.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
 
+## Voice measurement configuration snapshot
+
+MB-862 adds opt-in `measurement` to the existing pilot JSON. The approved source
+design reserves a full fixed allocation per admission, atomically with ordinary
+quota/session/capacity writes. With two sessions and 12 turns/480 seconds/4,000
+TTS characters, each allocation is at most 6 turns/240 seconds/2,000 characters.
+Existing smaller pilot/product/window bounds still apply. Campaign spend is
+never refunded; only confirmed settlement releases concurrency. No normal Text
+or Voice allowance is changed. Migration 020 adds the content-free campaign
+collection; it creates no campaign or approval window.
+
+The [MB-862 runbook](../docs/story-mb-862-voice-measurement-fence.md) defines
+approved provisioning, replica/Agent binding, owner-derived preflight evidence,
+restart/unknown-outcome behavior and the remaining external gates. Its separate
+operator command reads the owner database; it does not accept manually asserted
+counters. The original MB-861 offline coordinator remains conservatively BLOCKED.
+
+Run `node dist/companion-voice/voice-measurement-preflight.js` after building
+the reviewed revision, inside the existing production service environment.
+The command requires `NODE_ENV=production` and loads the actual configuration
+without dotenv, service bootstrap, database access or provider requests. Exit 0
+means snapshot export only; invalid configuration exits 1 with a fixed safe code.
+
+The version-1 snapshot reports the same effective input/output limits used by
+the Bedrock request path. Non-pilot Voice still has the existing 2,000-token
+output ceiling; Friend-only enables the existing input guard without reducing
+that output ceiling. Pilot defaults/overrides and Text behavior are unchanged.
+Owner count is exported, never owner IDs, credentials or endpoint URLs.
+
+Use the [MB-861 runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+to combine fresh snapshots with approval metadata. The combined command remains
+BLOCKED until aggregate enforcement and external authority gates are implemented
+and verified separately; it cannot grant live approval.
+
 ## Graceful shutdown
 
 The service stops accepting new connections after receiving `SIGINT` or `SIGTERM`. Existing connections have up to 10 seconds to close before they are terminated.

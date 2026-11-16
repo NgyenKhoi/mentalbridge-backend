@@ -184,6 +184,7 @@ export const registerCompanionVoiceModule = (
     dependencies.clock,
     telemetry,
     handoffs,
+    coreLedger.measurements,
   );
   const turns = new VoiceTurnService(
     sessions,

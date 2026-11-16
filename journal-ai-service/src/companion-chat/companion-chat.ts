@@ -41,6 +41,10 @@ import {
   type VoiceObserver,
 } from "../llm-providers/voice-diagnostics.js";
 import { authorizeVoiceInput } from "../llm-providers/bedrock-voice-token-budget.js";
+import {
+  companionMaxOutputTokens,
+  effectiveBedrockRequestLimits,
+} from "../llm-providers/bedrock-request-limits.js";
 import { companionGuidanceSystem } from "./companion-guidance-policy.js";
 import {
   SUGGESTION_DESTINATIONS,
@@ -296,7 +300,7 @@ export interface ProviderReply {
   title?: string;
 }
 
-export const companionMaxOutputTokens = 2_000;
+export { companionMaxOutputTokens };
 
 export const providerOutputJsonSchema = {
   type: "object",
@@ -1860,12 +1864,11 @@ export class RoutedChatProvider implements ChatProvider {
       } else if (providerId === "BEDROCK") {
         if (!this.configuration.BEDROCK_API_KEY)
           throw new Error("Bedrock credentials are unavailable");
-        const pilot = options?.voice
-          ? this.configuration.VOICE_PILOT
-          : undefined;
-        const boundedVoice =
-          pilot !== undefined ||
-          (options?.voice === true && this.configuration.VOICE_FRIEND_ENABLED);
+        const limits = effectiveBedrockRequestLimits(
+          this.configuration,
+          options?.voice === true,
+        );
+        const boundedVoice = limits.inputGuardEnabled;
         const requestSignal = options?.signal
           ? AbortSignal.any([
               options.signal,
@@ -1890,7 +1893,7 @@ export class RoutedChatProvider implements ChatProvider {
           input,
           outputJsonSchema,
           "mentalbridge_companion_reply",
-          pilot ? (pilot.maxOutputTokens ?? 300) : companionMaxOutputTokens,
+          limits.outputTokenLimit,
           temperature,
         );
         const { outputConfig, ...plainRequest } = request;

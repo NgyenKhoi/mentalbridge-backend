@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfiguration } from "../configuration/configuration.js";
 import { selectCompanionProviderRoute } from "../companion-chat/companion-chat.js";
 import {
   createVoiceProvider,
   selectVoiceProviderRoute,
 } from "./voice-provider.js";
+import {
+  journalVoiceMeasurementSnapshot,
+  runJournalVoiceMeasurementSnapshot,
+} from "./voice-measurement-preflight.js";
+import { effectiveBedrockRequestLimits } from "../llm-providers/bedrock-request-limits.js";
 
 const identity = {
   NODE_ENV: "test",
@@ -23,6 +33,283 @@ const approved = {
   JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION: "mb762-po-20261029-sonnet",
   AWS_BEARER_TOKEN_BEDROCK: "synthetic-bedrock-credential",
 };
+
+const pilotWindow = {
+  startsAt: "2026-11-16T00:00:00.000Z",
+  endsAt: "2026-11-16T00:30:00.000Z",
+  ownerIds: ["00000000-0000-4000-8000-000000000001"],
+};
+void test("measurement snapshot reports effective fixed allocations instead of the larger pilot values", () => {
+  const config = loadConfiguration({
+    ...approved,
+    JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+      ...pilotWindow,
+      maxSessionSeconds: 600,
+      maxTurns: 30,
+      measurement: {
+        campaignId: "00000000-0000-4000-8000-000000000003",
+        maxSessions: 2,
+        maxConcurrentSessions: 1,
+        maxTurns: 12,
+        maxVoiceSeconds: 480,
+        maxTtsCharacters: 4000,
+        voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+      },
+    }),
+  });
+  const snapshot = journalVoiceMeasurementSnapshot(config);
+  assert.equal(snapshot.pilot?.maxSessionSeconds, 240);
+  assert.equal(snapshot.pilot.maxTurnsPerSession, 6);
+  assert.equal(snapshot.outputTokenLimit, 300);
+});
+
+void test("Journal measurement snapshots report actual default, Friend and pilot limits without normalizing them", () => {
+  const now = new Date("2026-11-16T00:10:00.000Z");
+  const configuration = loadConfiguration(approved);
+  assert.deepEqual(journalVoiceMeasurementSnapshot(configuration, now), {
+    schemaVersion: 1,
+    component: "JOURNAL",
+    capturedAt: now.toISOString(),
+    voiceEnabled: false,
+    providerEnabled: true,
+    inputGuardEnabled: false,
+    inputTokenLimit: null,
+    outputTokenLimit: 2000,
+    pilot: null,
+    concurrencyLimit: 2,
+  });
+  const friend = loadConfiguration({
+    ...approved,
+    JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
+  });
+  const friendSnapshot = journalVoiceMeasurementSnapshot(friend, now);
+  assert.equal(friendSnapshot.inputGuardEnabled, true);
+  assert.equal(friendSnapshot.inputTokenLimit, 1900);
+  assert.equal(friendSnapshot.outputTokenLimit, 2000);
+  const pilot = loadConfiguration({
+    ...approved,
+    JOURNAL_AI_VOICE_PILOT: JSON.stringify(pilotWindow),
+  });
+  assert.deepEqual(journalVoiceMeasurementSnapshot(pilot, now), {
+    schemaVersion: 1,
+    component: "JOURNAL",
+    capturedAt: now.toISOString(),
+    voiceEnabled: false,
+    providerEnabled: true,
+    inputGuardEnabled: true,
+    inputTokenLimit: 1900,
+    outputTokenLimit: 300,
+    pilot: {
+      startsAt: pilotWindow.startsAt,
+      endsAt: pilotWindow.endsAt,
+      ownerCount: 1,
+      maxSessionSeconds: 90,
+      maxTurnsPerSession: 4,
+    },
+    concurrencyLimit: 2,
+  });
+  assert.equal(
+    journalVoiceMeasurementSnapshot(loadConfiguration(identity), now)
+      .providerEnabled,
+    false,
+  );
+});
+
+void test("effective Bedrock limits preserve Text, pilot overrides and scoped request counting", () => {
+  for (const maxOutputTokens of [undefined, 300, 450, 600]) {
+    const configuration = loadConfiguration({
+      ...approved,
+      JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
+      JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+        ...pilotWindow,
+        maxOutputTokens,
+      }),
+    });
+    assert.deepEqual(effectiveBedrockRequestLimits(configuration, false), {
+      inputGuardEnabled: false,
+      inputTokenLimit: null,
+      outputTokenLimit: 2000,
+    });
+    assert.deepEqual(effectiveBedrockRequestLimits(configuration, true), {
+      inputGuardEnabled: true,
+      inputTokenLimit: 1900,
+      outputTokenLimit: maxOutputTokens ?? 300,
+    });
+    assert.equal(
+      journalVoiceMeasurementSnapshot(configuration).outputTokenLimit,
+      maxOutputTokens ?? 300,
+    );
+  }
+});
+
+void test("measurement snapshot is allowlisted and makes no provider or activation call", () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls++;
+    throw new Error("UNEXPECTED_NETWORK_REQUEST");
+  };
+  try {
+    const configuration = loadConfiguration({
+      ...approved,
+      AWS_BEARER_TOKEN_BEDROCK: "private-canary-bedrock-credential",
+      JOURNAL_AI_CARE_BASE_URL: "https://private-canary.invalid",
+      JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+        ...pilotWindow,
+        ownerIds: [
+          ...pilotWindow.ownerIds,
+          "00000000-0000-4000-8000-000000000002",
+        ],
+        maxSessionSeconds: 240,
+        maxTurns: 6,
+      }),
+    });
+    const snapshot = journalVoiceMeasurementSnapshot(configuration);
+    assert.ok(snapshot.pilot);
+    assert.ok(configuration.VOICE_PILOT);
+    assert.equal(snapshot.pilot.ownerCount, 2);
+    assert.equal(snapshot.pilot.maxSessionSeconds, 240);
+    assert.equal(snapshot.pilot.maxTurnsPerSession, 6);
+    const serialized = JSON.stringify(snapshot);
+    for (const privateValue of [
+      "private-canary",
+      ...configuration.VOICE_PILOT.ownerIds,
+      "apiKey",
+      "serverUrl",
+      "approvedVersion",
+      "LIVE_APPROVED",
+    ])
+      assert.equal(serialized.includes(privateValue), false);
+    assert.equal(calls, 0);
+    assert.equal(configuration.VOICE_MEDIA?.enabled, false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("snapshot command rejects non-production before loading dotenv and redacts invalid production configuration", () => {
+  const output: object[] = [];
+  for (const environment of [
+    {},
+    { NODE_ENV: "test" },
+    { NODE_ENV: "development" },
+  ]) {
+    assert.equal(
+      runJournalVoiceMeasurementSnapshot(environment, (value) =>
+        output.push(value),
+      ),
+      1,
+    );
+  }
+  assert.deepEqual(output, [
+    { code: "PRODUCTION_ENV_REQUIRED" },
+    { code: "PRODUCTION_ENV_REQUIRED" },
+    { code: "PRODUCTION_ENV_REQUIRED" },
+  ]);
+  const invalidOutput: object[] = [];
+  assert.equal(
+    runJournalVoiceMeasurementSnapshot(
+      {
+        NODE_ENV: "production",
+        JOURNAL_AI_VOICE_PILOT: "private-canary-invalid-json",
+        AWS_BEARER_TOKEN_BEDROCK: "private-canary-credential",
+      },
+      (value) => invalidOutput.push(value),
+    ),
+    1,
+  );
+  assert.deepEqual(invalidOutput, [{ code: "CONFIGURATION_INVALID" }]);
+  assert.doesNotMatch(JSON.stringify(invalidOutput), /private-canary/);
+});
+
+void test("snapshot command reads valid production configuration without starting Voice or contacting dependencies", () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls++;
+    throw new Error("UNEXPECTED_NETWORK_REQUEST");
+  };
+  try {
+    const output: object[] = [];
+    assert.equal(
+      runJournalVoiceMeasurementSnapshot(
+        {
+          ...approved,
+          NODE_ENV: "production",
+          JOURNAL_AI_MONGODB_URI: "mongodb://private-canary.invalid:27017",
+          JOURNAL_AI_MONGODB_DATABASE: "synthetic_mb861",
+          JOURNAL_AI_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+          JOURNAL_AI_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2).toString(
+            "base64",
+          ),
+          JOURNAL_AI_CARE_BASE_URL: "https://private-canary-care.invalid",
+          JOURNAL_AI_CONTENT_BASE_URL: "https://private-canary-content.invalid",
+          JOURNAL_AI_CONSULTATION_BASE_URL:
+            "https://private-canary-consultation.invalid",
+          JOURNAL_AI_VOICE_ENABLED: "true",
+          JOURNAL_AI_VOICE_APPROVAL_VERSION: "mb861-synthetic-config-only",
+          JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN: "synthetic-care-".padEnd(
+            40,
+            "a",
+          ),
+          JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN:
+            "synthetic-entitlement-".padEnd(40, "b"),
+          JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: "synthetic-worker-".padEnd(
+            40,
+            "c",
+          ),
+          JOURNAL_AI_VOICE_LIVEKIT_URL: "wss://synthetic.livekit.cloud",
+          JOURNAL_AI_VOICE_LIVEKIT_API_KEY: "synthetic-livekit-key",
+          JOURNAL_AI_VOICE_LIVEKIT_API_SECRET:
+            "synthetic-livekit-secret-".padEnd(40, "d"),
+        },
+        (value) => output.push(value),
+      ),
+      0,
+    );
+    assert.equal(output.length, 1);
+    const snapshot = output[0] as ReturnType<
+      typeof journalVoiceMeasurementSnapshot
+    >;
+    assert.equal(snapshot.voiceEnabled, true);
+    assert.equal(snapshot.providerEnabled, true);
+    assert.equal(snapshot.inputGuardEnabled, false);
+    assert.equal(snapshot.outputTokenLimit, 2000);
+    assert.equal(snapshot.pilot, null);
+    assert.equal(calls, 0);
+    assert.doesNotMatch(JSON.stringify(output), /private-canary|synthetic-/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("standalone snapshot CLI refuses dotenv-based activation without reading the local file", () => {
+  const directory = mkdtempSync(join(tmpdir(), "mb861-journal-preflight-"));
+  try {
+    writeFileSync(
+      join(directory, ".env"),
+      "NODE_ENV=production\nJOURNAL_AI_VOICE_ENABLED=true\nAWS_BEARER_TOKEN_BEDROCK=private-canary\n",
+    );
+    const cli = fileURLToPath(
+      new URL("./voice-measurement-preflight.js", import.meta.url),
+    );
+    const result = spawnSync(process.execPath, [cli], {
+      cwd: directory,
+      env: { NODE_ENV: "development" },
+      encoding: "utf8",
+      timeout: 10000,
+      windowsHide: true,
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      code: "PRODUCTION_ENV_REQUIRED",
+    });
+    assert.equal(result.stderr, "");
+    assert.doesNotMatch(result.stdout, /private-canary/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 void test("Voice friend tone defaults off and accepts only its explicit boolean flag", () => {
   assert.equal(loadConfiguration(identity).VOICE_FRIEND_ENABLED, false);

@@ -28,7 +28,7 @@ const governanceMigration =
     up(database: unknown): Promise<void>;
   };
 const executionMigration =
-  require("../../migrations/020_benchmark_execution_governance.cjs") as {
+  require("../../migrations/021_benchmark_execution_governance.cjs") as {
     up(database: unknown): Promise<void>;
   };
 

@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
+const measurementMigration = createRequire(import.meta.url)(
+  "../migrations/020_voice_measurement_campaigns.cjs",
+);
+assert.equal(
+  measurementMigration.collectionName,
+  "ai_voice_measurement_campaigns",
+);
+assert.equal(
+  measurementMigration.validator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  measurementMigration.validator.$jsonSchema.properties.reservations.maxItems,
+  2,
+);
+assert.equal(typeof measurementMigration.up, "function");
+assert.equal(typeof measurementMigration.down, "function");
+
 const require = createRequire(import.meta.url);
 const migration = require("../migrations/001_journal_entries_baseline.cjs");
 const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
@@ -15,7 +33,7 @@ const companionChatMigration = require("../migrations/010_ai_companion_chat_quot
 const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
 const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
 const benchmarkGovernanceMigration = require("../migrations/019_benchmark_dataset_governance.cjs");
-const benchmarkExecutionMigration = require("../migrations/020_benchmark_execution_governance.cjs");
+const benchmarkExecutionMigration = require("../migrations/021_benchmark_execution_governance.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -364,5 +382,5 @@ assert.deepEqual(titleCommands, [
   },
 ]);
 console.log(
-  "Validated Mongo migrations: 001 through 020_benchmark_execution_governance.cjs",
+  "Validated Mongo migrations: 001 through 021, including voice measurement and benchmark execution governance",
 );
