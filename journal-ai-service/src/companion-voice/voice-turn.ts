@@ -254,6 +254,11 @@ export class VoiceTurnService {
       input.attemptId,
       input.leaseId,
       correlationId,
+      {
+        purpose: "INITIAL",
+        turnId: input.turnId,
+        turnSequence: input.sequence,
+      },
     );
     stage("turn_authorized");
     if (
@@ -403,6 +408,11 @@ export class VoiceTurnService {
         input.attemptId,
         input.leaseId,
         correlationId,
+        {
+          purpose: "PRE_INFERENCE",
+          turnId: input.turnId,
+          turnSequence: input.sequence,
+        },
       );
       stage("pre_inference_authorized");
       if (
@@ -489,6 +499,11 @@ export class VoiceTurnService {
         input.attemptId,
         input.leaseId,
         correlationId,
+        {
+          purpose: "PUBLICATION",
+          turnId: input.turnId,
+          turnSequence: input.sequence,
+        },
       );
       stage("publication_authorized");
       if (
