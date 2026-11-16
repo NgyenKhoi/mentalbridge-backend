@@ -2,6 +2,40 @@
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-854 incoming Voice ConverseStream
+
+`JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED=false` is an independent, explicit
+Voice-only opt-in. When enabled on a reviewed deployment, Journal sends the
+unchanged bounded request to Bedrock `/converse-stream`, using the existing
+Bearer credential and pinned Sonnet route. Text and default Voice still use
+`/converse`. CountTokens, request deadline, input/output ceilings and current
+authorization remain unchanged. The API requires the separate AWS permission
+`bedrock:InvokeModelWithResponseStream`; source or a working Converse key does
+not prove that permission or current credit. Never probe it without an approved
+live window or fall back to Converse after a stream failure.
+
+The Node22 adapter incrementally decodes Amazon EventStream frames, validates
+prelude/message CRC32, event order/role/text-only blocks, bounded headers/frames/
+response bytes and usage. It uses no new dependency and never exposes delta
+text to telemetry or a consumer. Cancellation/deadline closes the reader; a
+broken body, provider exception or invalid protocol has a closed diagnostic.
+Usage is observed once before output validation, including abnormal stops;
+there is no retry, redirect or fallback for this opt-in path.
+
+New metadata-only phases distinguish `bedrock_stream_first_text` (first nonempty
+model text delta), `bedrock_stream_message_stopped` (model stop, closed reason)
+and `bedrock_stream_completed` (complete wire stream/metadata). None means
+speech is authorized or audible. Existing elapsed timers and attempt/turn IDs
+provide correlation; actual TTFT remains NOT_MEASURED until a permitted real run.
+
+**This is an incoming model-stream foundation, not early-audio completion.**
+Journal still waits for complete END_TURN, JSON/schema/full-message safety and
+fresh publication authorization before returning the existing single Voice
+reply to Agent/TTS. Partial JSON, an apparently safe prefix or a provider's NONE
+field is not proof that the entire response is acceptable. No REST, persistence,
+consent, quota, TTS/voice, Agent, retry or streaming-speech policy is changed.
+See [the implementation and early-playback gate](../docs/story-mb-854-converse-stream.md).
+
 ## MB-806 two AI consent levels
 
 [ADR 0050](../docs/adr/0050-two-level-ai-consent.md) narrows the existing
