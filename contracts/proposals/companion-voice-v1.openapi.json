@@ -1968,6 +1968,11 @@
           "dispatchId": {
             "type": "string",
             "format": "uuid"
+          },
+          "measurementHash": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "Optional MB-862 policy binding; required for measurement attempts. Missing/mismatched capability denies before media."
           }
         }
       },
@@ -2005,6 +2010,26 @@
           },
           "policyVersion": {
             "const": "companion-voice-policy-v1"
+          },
+          "measurement": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["configHash", "ttsCharacters", "voiceId"],
+            "properties": {
+              "configHash": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{43}$"
+              },
+              "ttsCharacters": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4000
+              },
+              "voiceId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
           }
         }
       },

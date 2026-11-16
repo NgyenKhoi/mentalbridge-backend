@@ -21,6 +21,73 @@ const configuration = () =>
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
   });
+void test("measurement claim binds Agent policy and effective TTS reservation before media with one request", async () => {
+  const configHash = "h".repeat(43);
+  const config = {
+    ...configuration(),
+    pilot: true,
+    pilotTtsMaxCharacters: 2000,
+    measurementPolicyHash: configHash,
+    voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  };
+  for (const mode of [
+    "MATCH",
+    "MISSING",
+    "HASH",
+    "CAP",
+    "VOICE",
+    "UNEXPECTED",
+  ] as const) {
+    let calls = 0;
+    const client = new JournalClient(
+      mode === "UNEXPECTED" ? configuration() : config,
+      (_url, init) => {
+        calls++;
+        assert.equal(typeof init?.body, "string");
+        const body = JSON.parse(init?.body as string) as {
+          measurementHash?: string;
+        };
+        assert.equal(
+          body.measurementHash,
+          mode === "UNEXPECTED" ? undefined : configHash,
+        );
+        return Promise.resolve(
+          Response.json(
+            {
+              voiceSessionId: dispatch.voiceSessionId,
+              attemptId: dispatch.attemptId,
+              leaseId: randomUUID(),
+              validUntil: new Date(Date.now() + 9000).toISOString(),
+              hardStopAt: new Date(Date.now() + 240000).toISOString(),
+              policyVersion,
+              ...(mode === "MISSING"
+                ? {}
+                : {
+                    measurement: {
+                      configHash: mode === "HASH" ? "x".repeat(43) : configHash,
+                      ttsCharacters: mode === "CAP" ? 4000 : 2000,
+                      voiceId: mode === "VOICE" ? randomUUID() : config.voiceId,
+                    },
+                  }),
+            },
+            { headers: { "cache-control": "no-store" } },
+          ),
+        );
+      },
+    );
+    if (mode === "MATCH")
+      assert.equal(
+        (await client.claim(dispatch)).measurement?.ttsCharacters,
+        2000,
+      );
+    else await assert.rejects(client.claim(dispatch), AgentFailure);
+    assert.equal(calls, 1);
+  }
+  assert.throws(
+    () => loadConfiguration({ AI_VOICE_MEASUREMENT_POLICY_HASH: configHash }),
+    AgentFailure,
+  );
+});
 void test("Journal HTTP timeout/refusal/malformed responses fail closed without retry", async () => {
   let calls = 0;
   let mode = "timeout";

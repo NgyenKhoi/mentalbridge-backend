@@ -860,6 +860,21 @@ Run `npm run contract:check` and `npm run migration:check` for static validation
 
 ## Voice measurement configuration snapshot
 
+MB-862 adds opt-in `measurement` to the existing pilot JSON. The approved source
+design reserves a full fixed allocation per admission, atomically with ordinary
+quota/session/capacity writes. With two sessions and 12 turns/480 seconds/4,000
+TTS characters, each allocation is at most 6 turns/240 seconds/2,000 characters.
+Existing smaller pilot/product/window bounds still apply. Campaign spend is
+never refunded; only confirmed settlement releases concurrency. No normal Text
+or Voice allowance is changed. Migration 020 adds the content-free campaign
+collection; it creates no campaign or approval window.
+
+The [MB-862 runbook](../docs/story-mb-862-voice-measurement-fence.md) defines
+approved provisioning, replica/Agent binding, owner-derived preflight evidence,
+restart/unknown-outcome behavior and the remaining external gates. Its separate
+operator command reads the owner database; it does not accept manually asserted
+counters. The original MB-861 offline coordinator remains conservatively BLOCKED.
+
 Run `node dist/companion-voice/voice-measurement-preflight.js` after building
 the reviewed revision, inside the existing production service environment.
 The command requires `NODE_ENV=production` and loads the actual configuration

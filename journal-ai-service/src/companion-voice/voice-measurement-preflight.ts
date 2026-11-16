@@ -4,6 +4,7 @@ import {
   type ServiceConfiguration,
 } from "../configuration/configuration.js";
 import { effectiveBedrockRequestLimits } from "../llm-providers/bedrock-request-limits.js";
+import { measurementPolicy } from "./voice-measurement-policy.js";
 
 export interface JournalVoiceMeasurementSnapshot {
   schemaVersion: 1;
@@ -30,6 +31,7 @@ export function journalVoiceMeasurementSnapshot(
 ): JournalVoiceMeasurementSnapshot {
   const limits = effectiveBedrockRequestLimits(configuration, true);
   const pilot = configuration.VOICE_PILOT;
+  const measurement = measurementPolicy(pilot);
   const ownerCount = pilot?.ownerIds.length;
   if (pilot && ownerCount !== 1 && ownerCount !== 2)
     throw new Error("CONFIGURATION_INVALID");
@@ -47,8 +49,12 @@ export function journalVoiceMeasurementSnapshot(
           startsAt: pilot.startsAt.toISOString(),
           endsAt: pilot.endsAt.toISOString(),
           ownerCount: ownerCount as 1 | 2,
-          maxSessionSeconds: pilot.maxSessionSeconds ?? 90,
-          maxTurnsPerSession: pilot.maxTurns ?? 4,
+          maxSessionSeconds:
+            measurement?.allocation.voiceSeconds ??
+            pilot.maxSessionSeconds ??
+            90,
+          maxTurnsPerSession:
+            measurement?.allocation.turns ?? pilot.maxTurns ?? 4,
         }
       : null,
     concurrencyLimit: 2,
