@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
+import { crc32 } from "node:zlib";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { readBedrockConverseStream } from "../llm-providers/bedrock-converse-stream.js";
 import {
   VoiceProviderFailure,
   type VoiceProviderObservation,
@@ -32,6 +36,579 @@ const route: ChatRoute = {
   provider: "BEDROCK",
   model: "global.anthropic.claude-sonnet-4-6",
 };
+
+const streamMessage = {
+  message: "Mình đang lắng nghe bạn. Bạn muốn bắt đầu từ điều gì?",
+  language: "vi",
+  authority: "SUPPORT_ONLY",
+  clinicalAssessment: "NONE",
+  safetyDecision: "NONE",
+  eligibilityDecision: "NONE",
+  businessAction: "NONE",
+  thirdPartyAction: "NONE",
+};
+function eventFrame(event: string, body: unknown, kind = "event") {
+  const header = (name: string, value: string) => {
+    const prefix = Buffer.from([
+      Buffer.byteLength(name),
+      ...Buffer.from(name),
+      7,
+      0,
+      0,
+    ]);
+    prefix.writeUInt16BE(Buffer.byteLength(value), prefix.length - 2);
+    return Buffer.concat([prefix, Buffer.from(value)]);
+  };
+  const headers = Buffer.concat([
+    header(":message-type", kind),
+    header(":event-type", event),
+    header(":content-type", "application/json"),
+  ]);
+  const payload = Buffer.from(JSON.stringify(body));
+  const frame = Buffer.alloc(headers.length + payload.length + 16);
+  frame.writeUInt32BE(frame.length, 0);
+  frame.writeUInt32BE(headers.length, 4);
+  frame.writeUInt32BE(crc32(frame.subarray(0, 8)), 8);
+  headers.copy(frame, 12);
+  payload.copy(frame, 12 + headers.length);
+  frame.writeUInt32BE(
+    crc32(frame.subarray(0, frame.length - 4)),
+    frame.length - 4,
+  );
+  return frame;
+}
+function streamFrames(
+  text = JSON.stringify(streamMessage),
+  stopReason: string | undefined = "end_turn",
+): [Buffer, Buffer, Buffer, Buffer, Buffer] {
+  return [
+    eventFrame("messageStart", { role: "assistant" }),
+    eventFrame("contentBlockDelta", { contentBlockIndex: 0, delta: { text } }),
+    eventFrame("contentBlockStop", { contentBlockIndex: 0 }),
+    eventFrame("messageStop", { stopReason }),
+    eventFrame("metadata", {
+      usage: { inputTokens: 100, outputTokens: 70, totalTokens: 170 },
+    }),
+  ];
+}
+const streamResponse = (chunks: Uint8Array[]) =>
+  new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk);
+        controller.close();
+      },
+    }),
+    { headers: { "content-type": "application/vnd.amazon.eventstream" } },
+  );
+
+void test("ConverseStream verifies wire CRCs across byte-split UTF8 and buffers until complete", async () => {
+  const bytes = Buffer.concat(streamFrames());
+  const chunks = [...bytes].map((byte) => Uint8Array.of(byte));
+  const observations: VoiceProviderObservation[] = [];
+  const result = await readBedrockConverseStream(
+    streamResponse(chunks),
+    AbortSignal.timeout(2000),
+    (value) => observations.push(value),
+  );
+  assert.deepEqual(result, {
+    output: { message: { content: [{ text: JSON.stringify(streamMessage) }] } },
+    stopReason: "end_turn",
+    usage: { inputTokens: 100, outputTokens: 70 },
+  });
+  assert.deepEqual(
+    observations.map((value) => value.phase),
+    [
+      "bedrock_stream_first_text",
+      "bedrock_stream_message_stopped",
+      "provider_usage",
+      "bedrock_stream_completed",
+    ],
+  );
+  assert.doesNotMatch(
+    JSON.stringify(observations),
+    /lắng nghe|delta|authorization|"text"|"body"/i,
+  );
+});
+
+void test("ConverseStream rejects corrupt, truncated, duplicate and out-of-order frames with closed diagnostics", async () => {
+  const frames = streamFrames();
+  const corrupt = Buffer.from(frames[1]);
+  corrupt[corrupt.length - 1] = (corrupt[corrupt.length - 1] ?? 0) ^ 1;
+  const corruptPrelude = Buffer.from(frames[0]);
+  corruptPrelude[8] = (corruptPrelude[8] ?? 0) ^ 1;
+  const oversized = Buffer.from(frames[0]);
+  oversized.writeUInt32BE(1024 * 1024 + 1, 0);
+  oversized.writeUInt32BE(crc32(oversized.subarray(0, 8)), 8);
+  const cases = [
+    [corruptPrelude],
+    [oversized],
+    [frames[0], corrupt],
+    [Buffer.concat(frames).subarray(0, Buffer.concat(frames).length - 1)],
+    frames.slice(0, -1),
+    [frames[1], ...frames],
+    [frames[0], ...frames],
+    [...frames, frames[4]],
+    [
+      frames[0],
+      eventFrame("contentBlockDelta", {
+        contentBlockIndex: 0,
+        delta: { toolUse: { input: "PRIVATE" } },
+      }),
+    ],
+    [
+      frames[0],
+      eventFrame("contentBlockStart", {
+        contentBlockIndex: 0,
+        start: { toolUse: { name: "PRIVATE" } },
+      }),
+    ],
+    [frames[0], eventFrame("unknown", { private: "PRIVATE" })],
+    [
+      frames[0],
+      eventFrame("contentBlockDelta", {
+        contentBlockIndex: 0,
+        delta: { text: "x".repeat(65537) },
+      }),
+    ],
+    [frames[0], frames[1], frames[3], frames[4]],
+    [frames[0], frames[1], frames[2], frames[1]],
+  ];
+  for (const candidate of cases) {
+    const seen: VoiceProviderObservation[] = [];
+    await assert.rejects(
+      readBedrockConverseStream(
+        streamResponse(candidate),
+        AbortSignal.timeout(2000),
+        (value) => seen.push(value),
+      ),
+      (error: unknown) =>
+        error instanceof VoiceProviderFailure &&
+        error.code === "STREAM_PROTOCOL_INVALID" &&
+        !error.message.includes("PRIVATE"),
+    );
+    assert.ok(
+      seen.filter((value) => value.phase === "provider_usage").length <= 1,
+    );
+    assert.doesNotMatch(JSON.stringify(seen), /PRIVATE/);
+  }
+  await assert.rejects(
+    readBedrockConverseStream(
+      Response.json({ private: "PRIVATE" }),
+      AbortSignal.timeout(1000),
+    ),
+    (error: unknown) =>
+      error instanceof VoiceProviderFailure &&
+      error.code === "STREAM_PROTOCOL_INVALID",
+  );
+  let rejectedBodyCancelled = 0;
+  const rejectedBody = new ReadableStream<Uint8Array>({
+    cancel() {
+      rejectedBodyCancelled++;
+    },
+  });
+  await assert.rejects(
+    readBedrockConverseStream(
+      new Response(rejectedBody, { headers: { "content-type": "text/plain" } }),
+      AbortSignal.timeout(1000),
+    ),
+  );
+  assert.equal(rejectedBodyCancelled, 1);
+});
+
+void test("ConverseStream cancellation and deadline cancel a stalled body with no late completion", async () => {
+  for (const timeout of [false, true]) {
+    let cancelled = 0;
+    const observations: VoiceProviderObservation[] = [];
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(streamFrames()[0]);
+      },
+      cancel() {
+        cancelled++;
+      },
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(
+        timeout
+          ? new DOMException("PRIVATE", "TimeoutError")
+          : new Error("PRIVATE"),
+      );
+    }, 10);
+    try {
+      await assert.rejects(
+        readBedrockConverseStream(
+          new Response(body, {
+            headers: { "content-type": "application/vnd.amazon.eventstream" },
+          }),
+          controller.signal,
+          (value) => observations.push(value),
+        ),
+        (error: unknown) =>
+          error instanceof VoiceProviderFailure &&
+          error.code === (timeout ? "TIMEOUT" : "ABORTED"),
+      );
+      assert.equal(cancelled, 1);
+      assert.deepEqual(observations, []);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+});
+
+void test("ConverseStream provider exceptions remain closed and do not expose the error payload", async () => {
+  await assert.rejects(
+    readBedrockConverseStream(
+      streamResponse([
+        eventFrame(
+          "modelStreamErrorException",
+          { message: "PRIVATE_PROVIDER_ERROR", originalStatusCode: 500 },
+          "exception",
+        ),
+      ]),
+      AbortSignal.timeout(1000),
+    ),
+    (error: unknown) =>
+      error instanceof VoiceProviderFailure &&
+      error.code === "STREAM_PROVIDER_EXCEPTION" &&
+      error.message === "STREAM_PROVIDER_EXCEPTION",
+  );
+});
+
+void test("Voice ConverseStream preserves CountTokens, strict final validation, usage and no retry", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const item of [
+      { reason: "end_turn", text: JSON.stringify(streamMessage), code: null },
+      {
+        reason: "max_tokens",
+        text: JSON.stringify(streamMessage),
+        code: "OUTPUT_TOKEN_LIMIT",
+      },
+      {
+        reason: "stop_sequence",
+        text: JSON.stringify(streamMessage),
+        code: "UNEXPECTED_STOP_REASON",
+      },
+      {
+        reason: undefined,
+        text: JSON.stringify(streamMessage),
+        code: "UNEXPECTED_STOP_REASON",
+      },
+      {
+        reason: "end_turn",
+        text: "PRIVATE_BROKEN_JSON",
+        code: "OUTPUT_JSON_INVALID",
+      },
+      {
+        reason: "end_turn",
+        text: JSON.stringify({ ...streamMessage, authority: "PRIVATE" }),
+        code: "OUTPUT_SCHEMA_INVALID",
+      },
+      {
+        reason: "end_turn",
+        text: JSON.stringify({
+          ...streamMessage,
+          message: "Tôi chẩn đoán bạn đang mắc trầm cảm",
+        }),
+        code: "OUTPUT_SAFETY_REJECTED",
+      },
+    ]) {
+      const calls: string[] = [];
+      const observations: VoiceProviderObservation[] = [];
+      globalThis.fetch = (url, init) => {
+        const path = new URL(url instanceof Request ? url.url : url).pathname;
+        calls.push(path);
+        if (path.endsWith("/count-tokens"))
+          return Promise.resolve(Response.json({ inputTokens: 100 }));
+        assert.ok(path.endsWith("/converse-stream"));
+        assert.ok(init);
+        assert.equal(init.redirect, "error");
+        assert.equal(
+          new Headers(init.headers).get("authorization"),
+          "Bearer PRIVATE_KEY",
+        );
+        assert.ok(typeof init.body === "string");
+        const request = JSON.parse(init.body) as {
+          inferenceConfig: { maxTokens: number };
+        };
+        assert.equal(request.inferenceConfig.maxTokens, 300);
+        const frames = streamFrames(item.text);
+        frames[3] = eventFrame("messageStop", { stopReason: item.reason });
+        return Promise.resolve(streamResponse(frames));
+      };
+      const work = new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "PRIVATE_KEY",
+        VOICE_CONVERSE_STREAM_ENABLED: true,
+        VOICE_PILOT: {
+          startsAt: new Date("2026-11-16T00:00:00.000Z"),
+          endsAt: new Date("2026-11-16T00:30:00.000Z"),
+          ownerIds: [randomUUID()],
+        },
+      }).reply(
+        "PRIVATE_INPUT",
+        { kinds: [], prompt: "PRIVATE_CONTEXT" },
+        route,
+        { voice: true, voiceObserver: (value) => observations.push(value) },
+      );
+      if (item.code === null)
+        assert.equal((await work).message, streamMessage.message);
+      else
+        await assert.rejects(
+          work,
+          (error: unknown) =>
+            error instanceof VoiceProviderFailure && error.code === item.code,
+        );
+      assert.equal(calls.length, 2);
+      assert.equal(
+        observations.filter((value) => value.phase === "provider_usage").length,
+        1,
+      );
+      if (item.reason === undefined || item.reason === "stop_sequence")
+        assert.deepEqual(
+          observations.find(
+            (value) => value.phase === "bedrock_output_validation",
+          ),
+          {
+            phase: "bedrock_output_validation",
+            stopReason: item.reason === undefined ? "MISSING" : "STOP_SEQUENCE",
+          },
+        );
+      assert.doesNotMatch(
+        JSON.stringify(observations),
+        /PRIVATE|lắng nghe|chẩn đoán/,
+      );
+      assert.equal(
+        observations.some(
+          (value) => value.phase === "bedrock_response_validated",
+        ),
+        item.code === null,
+      );
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("Voice stream never releases a partial reply before messageStop, metadata and EOF", async () => {
+  const original = globalThis.fetch;
+  const observations: VoiceProviderObservation[] = [];
+  let streamController!: ReadableStreamDefaultController<Uint8Array>;
+  const frames = streamFrames();
+  globalThis.fetch = () =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller;
+            controller.enqueue(frames[0]);
+            controller.enqueue(frames[1]);
+          },
+        }),
+        { headers: { "content-type": "application/vnd.amazon.eventstream" } },
+      ),
+    );
+  try {
+    let settled = false;
+    const work = new RoutedChatProvider({
+      ...configuration,
+      BEDROCK_API_KEY: "PRIVATE",
+      VOICE_CONVERSE_STREAM_ENABLED: true,
+    }).reply("PRIVATE", { kinds: [], prompt: "" }, route, {
+      voice: true,
+      voiceObserver: (value) => observations.push(value),
+    });
+    void work.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(settled, false);
+    assert.equal(
+      observations.some((value) => value.phase === "bedrock_stream_first_text"),
+      true,
+    );
+    assert.equal(
+      observations.some(
+        (value) => value.phase === "bedrock_response_validated",
+      ),
+      false,
+    );
+    for (const frame of frames.slice(2)) streamController.enqueue(frame);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(settled, false);
+    streamController.close();
+    assert.equal((await work).message, streamMessage.message);
+    assert.ok(
+      observations.findIndex(
+        (value) => value.phase === "bedrock_stream_message_stopped",
+      ) <
+        observations.findIndex(
+          (value) => value.phase === "bedrock_response_validated",
+        ),
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("Voice stream opt-in preserves Text and default Voice Converse requests", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const voice of [false, true]) {
+      let calls = 0;
+      globalThis.fetch = (url, init) => {
+        calls++;
+        assert.ok(
+          new URL(url instanceof Request ? url.url : url).pathname.endsWith(
+            "/converse",
+          ),
+        );
+        assert.equal(init?.redirect, undefined);
+        assert.ok(init);
+        assert.ok(typeof init.body === "string");
+        const request = JSON.parse(init.body) as { outputConfig?: unknown };
+        assert.ok(request.outputConfig);
+        return Promise.resolve(
+          Response.json({
+            stopReason: "end_turn",
+            output: {
+              message: { content: [{ text: JSON.stringify(streamMessage) }] },
+            },
+            usage: { inputTokens: 100, outputTokens: 70 },
+          }),
+        );
+      };
+      const result = await new RoutedChatProvider({
+        ...configuration,
+        BEDROCK_API_KEY: "PRIVATE",
+        VOICE_CONVERSE_STREAM_ENABLED: !voice,
+      }).reply("PRIVATE", { kinds: [], prompt: "" }, route, { voice });
+      assert.equal(result.message, streamMessage.message);
+      assert.equal(calls, 1);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("stream usage is observed once even if later protocol evidence fails; observer failures preserve results", async () => {
+  const seen: VoiceProviderObservation[] = [];
+  await assert.rejects(
+    readBedrockConverseStream(
+      streamResponse([
+        ...streamFrames(),
+        eventFrame("unknown", { message: "PRIVATE" }),
+      ]),
+      AbortSignal.timeout(1000),
+      (value) => seen.push(value),
+    ),
+    (error: unknown) =>
+      error instanceof VoiceProviderFailure &&
+      error.code === "STREAM_PROTOCOL_INVALID",
+  );
+  assert.equal(
+    seen.filter((value) => value.phase === "provider_usage").length,
+    1,
+  );
+  assert.doesNotMatch(JSON.stringify(seen), /PRIVATE|lắng nghe/);
+  await readBedrockConverseStream(
+    streamResponse(streamFrames()),
+    AbortSignal.timeout(1000),
+    () => {
+      throw new Error("PRIVATE_OBSERVER");
+    },
+  );
+  const broken = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.error(new Error("PRIVATE_NETWORK"));
+    },
+  });
+  await assert.rejects(
+    readBedrockConverseStream(
+      new Response(broken, {
+        headers: { "content-type": "application/vnd.amazon.eventstream" },
+      }),
+      AbortSignal.timeout(1000),
+    ),
+    (error: unknown) =>
+      error instanceof VoiceProviderFailure &&
+      error.code === "TRANSPORT" &&
+      error.message === "TRANSPORT",
+  );
+});
+
+void test("native HTTP eventstream integration observes first delta before EOF without releasing unvalidated output", async () => {
+  let release: () => void = () => undefined;
+  const finish = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markFirst: () => void = () => undefined;
+  const first = new Promise<void>((resolve) => {
+    markFirst = resolve;
+  });
+  const frames = streamFrames();
+  const server = createServer((_request, response) => {
+    response.writeHead(200, {
+      "content-type": "application/vnd.amazon.eventstream",
+    });
+    response.write(frames[0]);
+    response.write(frames[1]);
+    void finish.then(() => {
+      for (const frame of frames.slice(2)) response.write(frame);
+      response.end();
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, 5000);
+  try {
+    const response = await fetch(`http://127.0.0.1:${String(address.port)}`, {
+      signal: controller.signal,
+    });
+    let completed = false;
+    const result = readBedrockConverseStream(
+      response,
+      controller.signal,
+      (value) => {
+        if (value.phase === "bedrock_stream_first_text") markFirst();
+      },
+    );
+    void result.then(
+      () => {
+        completed = true;
+        markFirst();
+      },
+      () => {
+        completed = true;
+        markFirst();
+      },
+    );
+    await first;
+    assert.equal(completed, false);
+    release();
+    const body = (await result) as { usage: { outputTokens: number } };
+    assert.equal(body.usage.outputTokens, 70);
+  } finally {
+    clearTimeout(timer);
+    release();
+    controller.abort();
+    server.closeAllConnections();
+    server.close();
+    await once(server, "close");
+  }
+});
 
 void test("Voice classifies stopped and invalid output without leaking content or retrying", async () => {
   const original = globalThis.fetch;

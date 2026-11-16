@@ -328,6 +328,26 @@ void test("Voice friend tone defaults off and accepts only its explicit boolean 
   );
 });
 
+void test("Voice ConverseStream defaults off and rejects nonboolean activation", () => {
+  assert.equal(
+    loadConfiguration(identity).VOICE_CONVERSE_STREAM_ENABLED,
+    false,
+  );
+  assert.equal(
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
+    }).VOICE_CONVERSE_STREAM_ENABLED,
+    true,
+  );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "yes",
+    }),
+  );
+});
+
 void test("Voice pins Sonnet independently of fake/Gemini Text while admission remains disabled", () => {
   const configuration = loadConfiguration(approved);
   assert.equal(configuration.VOICE_MEDIA?.enabled, false);
