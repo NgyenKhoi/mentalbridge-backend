@@ -1,5 +1,15 @@
 # MentalBridge AI Voice agent — MB-759
 
+MB-854 speech units use the independently versioned
+[internal JSON contract](../contracts/openapi/journal-ai-voice-speech-units-v1.json).
+`AI_VOICE_SPEECH_UNITS_ENABLED=false` stays OFF until source/policy review,
+deployment preflight and a separate live window. Opt-in requires the bound
+measurement hash; Journal must enable the matching mode or reject the claim.
+The client reads complete authorized objects incrementally, plays one unit at a
+time, ACKs successful complete playback and cancels the exact provider turn on
+barge-in. No retry/fallback, text/audio persistence or raw token speech is added.
+See [policy and rollout limits](../docs/policies/companion-voice-speech-unit-v1.md).
+
 Journal/AI owns this independently deployable Node 22 worker. The accepted
 [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md) permits LiveKit's
 media SDK; every synchronous business call still uses

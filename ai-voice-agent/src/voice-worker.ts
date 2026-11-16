@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AgentFailure } from "./configuration.js";
-import type { Dispatch, Lease, Reply, Signal, StopReason } from "./contract.js";
+import type {
+  Dispatch,
+  Lease,
+  Reply,
+  Signal,
+  StopReason,
+  Turn,
+} from "./contract.js";
 import type { JournalClient } from "./journal-client.js";
 import type {
   AgentDiagnostic,
@@ -45,7 +52,13 @@ export interface MediaPort {
   interrupt(): void;
   close(): Promise<void>;
 }
-type Journal = Pick<JournalClient, "claim" | "control" | "turn">;
+type Journal = Pick<JournalClient, "claim" | "control" | "turn"> &
+  Partial<
+    Pick<
+      JournalClient,
+      "turnSpeechUnits" | "cancelSpeechTurn" | "acknowledgeSpeechUnit"
+    >
+  >;
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const normalized = (value: string) =>
@@ -84,6 +97,8 @@ export class VoiceWorker {
   private stopWork: Promise<void> | undefined;
   private lastEcho = "";
   private echoUntil = 0;
+  private streamCurrent: Turn | null = null;
+  private streamCancellation: Promise<void> | undefined;
   constructor(
     private readonly dispatch: Dispatch,
     private readonly journal: Journal,
@@ -95,6 +110,7 @@ export class VoiceWorker {
     private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
       undefined,
     private readonly finalAggregationMs = 750,
+    private readonly speechUnitsEnabled = false,
   ) {
     this.finished = new Promise((resolve) => {
       this.finish = resolve;
@@ -380,6 +396,7 @@ export class VoiceWorker {
     }
   }
   private async turn(text: string) {
+    if (this.speechUnitsEnabled) return this.streamTurn(text);
     if (!this.live() || !this.lease) return;
     this.busy = true;
     this.interrupted = false;
@@ -489,6 +506,17 @@ export class VoiceWorker {
     this.media.interrupt();
     this.interrupted = true;
     this.playback.abort();
+    const current = this.streamCurrent;
+    if (current && !this.streamCancellation) {
+      const cancel = this.journal.cancelSpeechTurn;
+      this.streamCancellation = cancel
+        ? cancel
+            .call(this.journal, this.dispatch, current, this.life.signal)
+            .catch(async () => {
+              await this.fail();
+            })
+        : this.fail();
+    }
     this.setState(
       this.muted ? "MUTED" : this.connected ? "INTERRUPTED" : "DISCONNECTED",
     );
@@ -503,6 +531,168 @@ export class VoiceWorker {
         await this.fail();
       }
     }
+  }
+  private async streamTurn(text: string) {
+    if (!this.live() || !this.lease) return;
+    const receive = this.journal.turnSpeechUnits;
+    const acknowledge = this.journal.acknowledgeSpeechUnit;
+    if (!receive || !acknowledge || !this.journal.cancelSpeechTurn) {
+      await this.fail();
+      return;
+    }
+    this.busy = true;
+    this.interrupted = false;
+    this.streamCancellation = undefined;
+    this.setState("WAITING_FOR_REPLY");
+    const requestedAt = this.clock();
+    const playback = new AbortController();
+    this.playback = playback;
+    const signal = AbortSignal.any([this.life.signal, playback.signal]);
+    const aborted = () => signal.aborted;
+    const turn: Turn = {
+      attemptId: this.dispatch.attemptId,
+      leaseId: this.lease.leaseId,
+      turnId: randomUUID(),
+      sequence: ++this.turnSequence,
+      language: "vi-VN",
+      isFinal: true,
+      finalTranscript: text,
+    };
+    this.streamCurrent = turn;
+    let queue = Promise.resolve();
+    const failure: { playback?: Error } = {};
+    const interrupted = () => this.interrupted;
+    try {
+      this.diagnostic({ phase: "turn_requested" });
+      await receive.call(
+        this.journal,
+        this.dispatch,
+        turn,
+        randomUUID(),
+        signal,
+        (reply, unitSequence) => {
+          queue = queue.then(async () => {
+            await this.controls;
+            if (
+              !this.live() ||
+              !this.lease ||
+              signal.aborted ||
+              Date.parse(reply.expiresAt) > Date.parse(this.lease.validUntil) ||
+              Date.parse(reply.expiresAt) <= this.clock()
+            )
+              throw new AgentFailure("AUTHORITY_EXPIRED");
+            this.speaking = reply;
+            this.playbackStarted = false;
+            this.lastEcho = normalized(reply.spokenText);
+            this.echoUntil = this.clock() + 60000;
+            const ttsStartedAt = this.clock();
+            this.diagnostic({
+              phase: "speech_unit_received",
+              unitSequence,
+              turnSequence: this.turnSequence,
+            });
+            this.diagnostic({
+              phase: "tts_begin",
+              unitSequence,
+              turnSequence: this.turnSequence,
+            });
+            await this.media.speak(
+              reply.spokenText,
+              async () => {
+                if (
+                  !this.live() ||
+                  !this.connected ||
+                  this.muted ||
+                  signal.aborted ||
+                  Date.parse(reply.expiresAt) <= this.clock()
+                )
+                  throw new AgentFailure("AUTHORITY_EXPIRED");
+                this.diagnostic({
+                  phase: "playout_first_audio",
+                  unitSequence,
+                  turnSequence: this.turnSequence,
+                  requestToPlayoutMs: Math.max(0, this.clock() - requestedAt),
+                  ttsToPlayoutMs: Math.max(0, this.clock() - ttsStartedAt),
+                });
+                await this.control("PLAYBACK_STARTED", {
+                  turnId: reply.turnId,
+                  replyId: reply.replyId,
+                });
+                this.playbackStarted = true;
+                if (interrupted()) {
+                  this.playbackStarted = false;
+                  await this.control("INTERRUPTED", {
+                    turnId: reply.turnId,
+                    replyId: reply.replyId,
+                  });
+                } else this.setState("SPEAKING", reply.expression);
+              },
+              signal,
+            );
+            if (aborted())
+              throw new AgentFailure("JOURNAL_UNAVAILABLE", "ABORTED");
+            await acknowledge.call(
+              this.journal,
+              this.dispatch,
+              turn,
+              unitSequence,
+              reply.replyId,
+              signal,
+            );
+            this.playbackStarted = false;
+            this.speaking = null;
+            this.setState("WAITING_FOR_REPLY");
+          });
+          void queue.catch((error: unknown) => {
+            if (!signal.aborted) {
+              failure.playback =
+                error instanceof AgentFailure
+                  ? error
+                  : new AgentFailure("PROVIDER_FAILED");
+              playback.abort();
+              this.media.interrupt();
+            }
+          });
+        },
+      );
+      await queue;
+      if (failure.playback) throw failure.playback;
+      this.echoUntil = this.clock() + 1000;
+      this.setState(
+        this.muted
+          ? "MUTED"
+          : !this.connected
+            ? "DISCONNECTED"
+            : this.pending
+              ? "TRANSCRIBING"
+              : "LISTENING",
+      );
+    } catch (error) {
+      playback.abort();
+      this.media.interrupt();
+      await queue.catch(() => undefined);
+      await this.waitForStreamCancellation();
+      this.diagnostic({
+        phase: "turn_failed",
+        code:
+          interrupted() && !failure.playback
+            ? "ABORTED"
+            : error instanceof AgentFailure
+              ? (error.failure ?? "INVALID_RESPONSE")
+              : "PROVIDER_FAILED",
+      });
+      if (!this.life.signal.aborted && (!interrupted() || failure.playback))
+        await this.fail();
+    } finally {
+      this.streamCurrent = null;
+      this.streamCancellation = undefined;
+      this.busy = false;
+      this.speaking = null;
+      this.playback = null;
+    }
+  }
+  private async waitForStreamCancellation() {
+    await this.streamCancellation;
   }
   private async mute(value: boolean) {
     this.muted = value;
