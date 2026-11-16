@@ -97,6 +97,41 @@ function positiveExample(schema) {
   return structuredClone(example.value);
 }
 
+test("measurement binding is optional for legacy claims and strict for bounded worker leases", () => {
+  const claim = component("AgentClaim"),
+    lease = component("AgentLease");
+  const id = "11111111-1111-4111-8111-111111111111";
+  const oldClaim = { attemptId: id, dispatchId: id };
+  const oldLease = {
+    voiceSessionId: id,
+    attemptId: id,
+    leaseId: id,
+    validUntil: "2030-01-01T00:00:10Z",
+    hardStopAt: "2030-01-01T00:04:00Z",
+    policyVersion: "companion-voice-policy-v1",
+  };
+  assertValid(claim, oldClaim, "legacy claim");
+  assertValid(lease, oldLease, "legacy lease");
+  assertValid(
+    claim,
+    { ...oldClaim, measurementHash: "h".repeat(43) },
+    "bound claim",
+  );
+  const measurement = {
+    configHash: "h".repeat(43),
+    ttsCharacters: 2000,
+    voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  };
+  assertValid(lease, { ...oldLease, measurement }, "bound lease");
+  for (const changed of [
+    { ...measurement, configHash: "short" },
+    { ...measurement, ttsCharacters: 4001 },
+    { ...measurement, voiceId: "invalid" },
+    { ...measurement, transcript: "synthetic-private-canary" },
+  ])
+    assert.equal(lease({ ...oldLease, measurement: changed }), false);
+});
+
 test("Voice proposal resolves OpenAPI 3.1 and strict-compiles every component", () => {
   assert.equal(api.openapi, "3.1.0");
   for (const name of Object.keys(api.components.schemas))

@@ -39,6 +39,29 @@ const pilotWindow = {
   endsAt: "2026-11-16T00:30:00.000Z",
   ownerIds: ["00000000-0000-4000-8000-000000000001"],
 };
+void test("measurement snapshot reports effective fixed allocations instead of the larger pilot values", () => {
+  const config = loadConfiguration({
+    ...approved,
+    JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+      ...pilotWindow,
+      maxSessionSeconds: 600,
+      maxTurns: 30,
+      measurement: {
+        campaignId: "00000000-0000-4000-8000-000000000003",
+        maxSessions: 2,
+        maxConcurrentSessions: 1,
+        maxTurns: 12,
+        maxVoiceSeconds: 480,
+        maxTtsCharacters: 4000,
+        voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+      },
+    }),
+  });
+  const snapshot = journalVoiceMeasurementSnapshot(config);
+  assert.equal(snapshot.pilot?.maxSessionSeconds, 240);
+  assert.equal(snapshot.pilot.maxTurnsPerSession, 6);
+  assert.equal(snapshot.outputTokenLimit, 300);
+});
 
 void test("Journal measurement snapshots report actual default, Friend and pilot limits without normalizing them", () => {
   const now = new Date("2026-11-16T00:10:00.000Z");

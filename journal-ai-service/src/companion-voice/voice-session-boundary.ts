@@ -431,7 +431,14 @@ export class VoiceWorkerController {
   ) {
     this.json(request);
     const parsed = z
-      .object({ attemptId: z.uuid(), dispatchId: z.uuid() })
+      .object({
+        attemptId: z.uuid(),
+        dispatchId: z.uuid(),
+        measurementHash: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{43}$/)
+          .optional(),
+      })
       .strict()
       .safeParse(body);
     if (!parsed.success) throw new VoiceBoundaryError("INVALID_REQUEST");
@@ -440,6 +447,7 @@ export class VoiceWorkerController {
       parsed.data.attemptId,
       parsed.data.dispatchId,
       request.id ?? randomUUID(),
+      parsed.data.measurementHash,
     );
   }
   @Post(":voiceSessionId/agent-control")

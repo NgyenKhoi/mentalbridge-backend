@@ -82,6 +82,17 @@ packaged Silero VAD with `--network none`; revisit the override when ONNX update
 
 ## Configuration and startup
 
+MB-862 optionally binds a measurement worker with
+`AI_VOICE_MEASUREMENT_POLICY_HASH`, the non-secret digest exported by Journal's
+approved measurement configuration. It requires pilot mode and exactly the
+server-allocated TTS cap/approved voice. The claim sends `measurementHash` and
+validates the optional lease `measurement` object before starting media.
+Missing, unexpected or mismatched policy/cap/voice fails closed without retry.
+Journal allows only one measurement worker claim per attempt, including after
+an unknown response or process restart. Normal unbound claims are unchanged.
+No environment value enables a campaign or supplies consent. See the
+[MB-862 operator and verification runbook](../docs/story-mb-862-voice-measurement-fence.md).
+
 Use exactly the keys in [.env.example](.env.example), injected into the server
 through managed secrets. No dotenv file is loaded automatically. Never put keys
 in a client, dispatch, Jira, repository, command-line value or build argument.

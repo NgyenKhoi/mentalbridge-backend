@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { voicePilotSchema } from "./voice-pilot.js";
 import { measurementPolicy } from "./voice-measurement-policy.js";
+import { runMeasurementOperator } from "./voice-measurement-operator.js";
 
 const config = () => ({
   startsAt: "2030-01-01T00:00:00Z",
@@ -21,6 +22,36 @@ const config = () => ({
     maxTtsCharacters: 4000,
     voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
   },
+});
+void test("operator preflight rejects nonproduction or arbitrary actions before any configuration/network access and never accepts counters", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls++;
+    throw new Error("NETWORK_FORBIDDEN");
+  };
+  const output: object[] = [];
+  try {
+    for (const [environment, action] of [
+      [{}, "status"],
+      [{ NODE_ENV: "test" }, "provision"],
+      [{ NODE_ENV: "production" }, "{aggregateEnforced:true}"],
+    ] as const)
+      assert.equal(
+        await runMeasurementOperator(environment, action, (value) =>
+          output.push(value),
+        ),
+        1,
+      );
+    assert.equal(calls, 0);
+    assert.equal(output.length, 3);
+    assert.equal(
+      output.some((value) => JSON.stringify(value).includes("true")),
+      false,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 void test("measurement partitions full conservative allocations without expanding legacy pilot bounds", () => {
   const p = measurementPolicy(voicePilotSchema.parse(config()));

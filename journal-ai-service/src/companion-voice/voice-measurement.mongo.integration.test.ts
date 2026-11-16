@@ -6,7 +6,7 @@ import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
 import { voicePilotSchema } from "./voice-pilot.js";
-import { VoiceLedgerError, type VoiceSession } from "./voice-ledger.js";
+import { MongoVoiceLedger, VoiceLedgerError } from "./voice-ledger.js";
 const require = createRequire(import.meta.url);
 const capacityMigration =
   require("../../migrations/013_companion_voice_quota.cjs") as {
@@ -85,7 +85,16 @@ void test("measurement reservations use real replica-set transactions", async (t
       const transaction = first.startSession();
       try {
         await transaction.withTransaction(() =>
-          a.release({ voiceSessionId: id } as VoiceSession, at, transaction),
+          a.release(
+            {
+              voiceSessionId: id,
+              state: "FAILED",
+              dispatchState: "STOPPED",
+              settledAt: at,
+            },
+            at,
+            transaction,
+          ),
         );
       } finally {
         await transaction.endSession();
@@ -100,6 +109,10 @@ void test("measurement reservations use real replica-set transactions", async (t
       await assert.rejects(f.reserve(f.a, randomUUID()), denied);
       await f.a.provision(at);
       await f.a.provision(at);
+      const evidence = await f.a.preflight(at);
+      assert.equal(evidence.reservedSessions, 0);
+      for (const owner of f.config.ownerIds)
+        assert.equal(JSON.stringify(evidence).includes(owner), false);
       assert.equal(
         await f.db
           .collection("ai_voice_measurement_campaigns")
@@ -120,6 +133,128 @@ void test("measurement reservations use real replica-set transactions", async (t
         denied,
       );
       await assert.rejects(migration.down(f.db));
+      await f.db
+        .collection<{ _id: string }>("ai_voice_measurement_campaigns")
+        .updateOne(
+          {
+            _id:
+              evidence.configHash === f.a.policy?.configHash
+                ? f.a.policy.campaignId
+                : "",
+          },
+          { $set: { "caps.ttsCharacters": 3999 } },
+        );
+      await assert.rejects(f.a.preflight(at), denied);
+    },
+  );
+  await t.test(
+    "campaign admission, product quota and concurrency commit atomically and reconcile only confirmed settlement",
+    async () => {
+      const f = await fixture();
+      await f.a.provision(at);
+      const [left, right] = clients;
+      assert.ok(left && right);
+      const ledgers = [
+        new MongoVoiceLedger(left, f.name, f.config),
+        new MongoVoiceLedger(right, f.name, f.config),
+      ];
+      const input = (owner: string, now = at) => ({
+        voiceSessionId: randomUUID(),
+        ownerId: owner,
+        keyHash: Buffer.from(randomUUID()).toString("base64url").slice(0, 43),
+        fingerprint: "f".repeat(43),
+        now,
+        entitlement: {
+          packageCode: "PLUS" as const,
+          source: "DEMO" as const,
+          entitlementVersion: "synthetic-v1",
+          checkedAt: now,
+          validUntil: new Date(now.getTime() + 3600000),
+        },
+      });
+      const requests = f.config.ownerIds.map((owner) => input(owner));
+      const results = await Promise.allSettled(
+        requests.map((request, i) => {
+          const ledger = ledgers[i];
+          assert.ok(ledger);
+          return ledger.reserve(request);
+        }),
+      );
+      assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+      for (const result of results)
+        if (result.status === "rejected")
+          assert.equal(denied(result.reason), true);
+      const accepted = results.find((r) => r.status === "fulfilled");
+      assert.ok(accepted?.status === "fulfilled");
+      const session = accepted.value;
+      assert.equal(session.admittedSeconds, 240);
+      const ledger = ledgers[0];
+      assert.ok(ledger);
+      const retry = requests.find((r) => r.ownerId === session.ownerId);
+      assert.ok(retry);
+      assert.equal(
+        (await ledger.reserve(retry)).voiceSessionId,
+        session.voiceSessionId,
+      );
+      const changed = new MongoVoiceLedger(right, f.name, {
+        ...f.config,
+        maxTurns: 5,
+      });
+      await assert.rejects(
+        changed.renewAuthority(session.ownerId, session.voiceSessionId, at),
+        denied,
+      );
+      await ledger.requestEnd(
+        session.ownerId,
+        session.voiceSessionId,
+        "PROVIDER_FAILURE",
+        at,
+      );
+      await assert.rejects(
+        ledger.settle(
+          session.voiceSessionId,
+          null,
+          "PROVIDER_CONFIRMED_STOPPED",
+          at,
+        ),
+      );
+      const remainingOwner = f.config.ownerIds.find(
+        (owner) => owner !== session.ownerId,
+      );
+      assert.ok(remainingOwner);
+      await assert.rejects(ledger.reserve(input(remainingOwner)), denied);
+      await ledger.reconcile(at);
+      const snapshot = await ledger.snapshot(session.ownerId, "PLUS", at);
+      assert.equal(snapshot.remainingSessions, 2);
+      assert.equal(snapshot.remainingSeconds, 600);
+      const second = await ledger.reserve(input(remainingOwner));
+      assert.equal(second.admittedSeconds, 240);
+      await ledger.claimDispatch(second.voiceSessionId, at);
+      const old = new MongoVoiceLedger(right, f.name);
+      await assert.rejects(
+        old.renewAuthority(remainingOwner, second.voiceSessionId, at),
+        denied,
+      );
+      await ledger.requestEnd(
+        remainingOwner,
+        second.voiceSessionId,
+        "AGENT_FAILURE",
+        at,
+      );
+      await ledger.reconcile(new Date(at.getTime() + 20000));
+      assert.equal(
+        (await f.a.snapshot(at))?.reservations.filter(
+          (r) => r.releasedAt === null,
+        ).length,
+        1,
+      );
+      const rows = (await f.a.snapshot(at))?.reservations;
+      assert.ok(rows);
+      assert.equal(rows.length, 2);
+      assert.equal(
+        rows.reduce((n, r) => n + r.ttsCharacters, 0),
+        4000,
+      );
     },
   );
   await t.test(
