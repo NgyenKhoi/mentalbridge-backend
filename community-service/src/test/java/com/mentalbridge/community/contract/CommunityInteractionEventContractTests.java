@@ -34,7 +34,7 @@ class CommunityInteractionEventContractTests {
 		assertThat(properties.path("targetType").path("enum")).extracting(node -> node.asText())
 				.containsExactlyInAnyOrder("POST", "COMMENT");
 		assertThat(properties.path("interactionKind").path("enum")).extracting(node -> node.asText())
-				.containsExactlyInAnyOrder("COMMENT", "REPLY", "SUPPORT", "RELATE", "THANK_YOU");
+				.containsExactlyInAnyOrder("COMMENT", "REPLY", "SUPPORT", "RELATE", "THANK_YOU", "LIKE", "EMPATHY", "CHEER", "GROWTH");
 		assertThat(properties.path("deepLink").path("additionalProperties").asBoolean()).isFalse();
 		assertThat(properties.path("deepLink").path("properties").propertyStream()
 				.map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet()))

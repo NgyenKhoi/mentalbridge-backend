@@ -23,7 +23,7 @@
     "targetType": { "enum": ["POST", "COMMENT"] },
     "targetId": { "type": "string", "format": "uuid" },
     "interactionKind": {
-      "enum": ["COMMENT", "REPLY", "SUPPORT", "RELATE", "THANK_YOU"]
+      "enum": ["COMMENT", "REPLY", "SUPPORT", "RELATE", "THANK_YOU", "LIKE", "EMPATHY", "CHEER", "GROWTH"]
     },
     "occurredAt": { "type": "string", "format": "date-time" },
     "deepLink": {
