@@ -42,6 +42,7 @@ import {
 import type { VoicePilot } from "./voice-pilot.js";
 import { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
 import { measurementPolicy } from "./voice-measurement-policy.js";
+import type { VoiceAuthorizationDiagnostic } from "./voice-authorization-profile.js";
 
 type RawRecord = Record<string, unknown> & { _id: string };
 const require = createRequire(import.meta.url);
@@ -166,6 +167,8 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     let paid = true;
     let connected = true;
     const metrics: VoiceTurnMetric[] = [];
+    const profiles: VoiceAuthorizationDiagnostic[] = [];
+    let throwingProfiler = false;
     const room = new Map<string, VoiceMediaReference>();
     const media: VoiceMediaProvider = {
       createRoom: (ref) => {
@@ -256,6 +259,10 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           turnProvider: provider,
           turnTelemetry: (metric) => {
             metrics.push(metric);
+          },
+          authorizationTelemetry: (metric) => {
+            profiles.push(metric);
+            if (throwingProfiler) throw new Error("PRIVATE_OBSERVER");
           },
           maintenance: false,
           providerReady: () => true,
@@ -445,6 +452,10 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       contexts,
       clock,
       metrics,
+      profiles,
+      throwProfiler: () => {
+        throwingProfiler = true;
+      },
       token,
       handoffToken,
       connected: (value: boolean) => {
@@ -629,6 +640,37 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         ],
       );
       assert.equal(authorizations, 3);
+      const rounds = f.profiles.filter((metric) => metric.stage === "TOTAL");
+      assert.deepEqual(
+        rounds.map((metric) => metric.purpose),
+        ["INITIAL", "PRE_INFERENCE", "PUBLICATION"],
+      );
+      assert.equal(
+        new Set(rounds.map((metric) => metric.authorizationId)).size,
+        3,
+      );
+      for (const round of rounds) {
+        assert.equal(round.attemptId, f.active.attemptId);
+        assert.equal(round.turnId, f.metrics[0]?.turnId);
+        assert.equal(round.turnSequence, 1);
+        assert.equal(round.outcome, "SUCCESS");
+        assert.deepEqual(
+          f.profiles
+            .filter(
+              (metric) => metric.authorizationId === round.authorizationId,
+            )
+            .map((metric) => metric.stage)
+            .sort(),
+          [
+            "MEDIA_DOCUMENT",
+            "MEDIA_INSPECTION",
+            "OWNER_AUTHORITY",
+            "STATE_AFTER",
+            "STATE_BEFORE",
+            "TOTAL",
+          ],
+        );
+      }
       assert.equal(
         f.metrics.filter((metric) => metric.outcome === "PROVIDER_USAGE")
           .length,
@@ -646,7 +688,46 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       assert.equal(JSON.stringify(f.metrics).includes(transcript), false);
       assert.equal(JSON.stringify(f.metrics).includes(reply().message), false);
       assert.equal(JSON.stringify(f.metrics).includes(f.token), false);
+      for (const privateValue of [
+        transcript,
+        reply().message,
+        f.token,
+        f.owner,
+        f.active.id,
+      ])
+        assert.equal(JSON.stringify(f.profiles).includes(privateValue), false);
       await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+    },
+  );
+
+  await t.test(
+    "throwing profiling cannot bypass consent revoked before publication",
+    async () => {
+      const f = await fixture();
+      f.throwProfiler();
+      f.respond(() => {
+        f.revoke();
+        return Promise.resolve(reply());
+      });
+      await assert.rejects(
+        f.generate(f.input()),
+        rejected("VOICE_CONSENT_REQUIRED"),
+      );
+      assert.equal(f.calls(), 1);
+      const final = f.profiles.find(
+        (event) => event.purpose === "PUBLICATION" && event.stage === "TOTAL",
+      );
+      assert.equal(final?.outcome, "FAILED");
+      assert.equal(
+        f.metrics.some((event) => event.phase === "reply_registered"),
+        false,
+      );
+      const stored = await f.db
+        .collection("ai_voice_sessions")
+        .findOne({ voiceSessionId: f.active.id });
+      assert.equal(stored?.state, "FAILED");
+      assert.ok(stored.settledAt);
+      assert.equal(JSON.stringify(f.profiles).includes("PRIVATE"), false);
     },
   );
 

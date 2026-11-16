@@ -1,5 +1,10 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  VoiceAuthorizationProfile,
+  type VoiceAuthorizationCall,
+  type VoiceAuthorizationDiagnostic,
+} from "./voice-authorization-profile.js";
 import type { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import { VoiceAuthorizationError } from "./voice-authorization.js";
@@ -134,6 +139,9 @@ export class VoiceSessionsService {
     private readonly handoffs?: VoiceContextHandoffs,
     private readonly measurements:
       MongoVoiceMeasurementStore | undefined = ledger.measurements,
+    private readonly authorizationTelemetry: (
+      value: VoiceAuthorizationDiagnostic,
+    ) => void = () => undefined,
   ) {}
 
   private digest(value: string) {
@@ -201,47 +209,69 @@ export class VoiceSessionsService {
     attemptId: string,
     leaseId: string,
     correlationId: string,
+    profiling?: VoiceAuthorizationCall,
   ) {
-    const session = await this.turnState(id, attemptId, leaseId);
-    const document = await this.store.find(id, this.clock());
-    if (
-      document?.phase !== "READY" ||
-      !document.claimedAt ||
-      document.attemptId !== attemptId
-    )
-      throw new VoiceLedgerError("STALE_ATTEMPT");
-    try {
-      const [authority, observed] = await Promise.all([
-        this.access.authorizeTurn(session.ownerId, id, correlationId),
-        this.media.inspect(document),
-      ]);
-      if (
-        !observed.roomExists ||
-        !observed.ownerConnected ||
-        !observed.agentConnected
-      )
-        throw new VoiceLedgerError("INVALID_SESSION_STATE");
-      await this.turnState(id, attemptId, leaseId);
-      const now = this.clock().getTime();
-      for (const [decision, failure] of [
-        [authority.consent, "CONSENT_UNAVAILABLE"],
-        [authority.entitlement, "ENTITLEMENT_UNAVAILABLE"],
-      ] as const) {
-        const age = now - Date.parse(decision.checkedAt);
-        if (!Number.isFinite(age) || age < 0 || age > 2000)
-          throw new VoiceAuthorizationError(failure);
-      }
-      const entitlementExpiry = Date.parse(
-        authority.entitlement.validUntil ?? "",
+    const profile = new VoiceAuthorizationProfile(
+      { ...(profiling ?? { purpose: "UNSCOPED" }), attemptId },
+      this.authorizationTelemetry,
+    );
+    return profile.measure("TOTAL", async () => {
+      const session = await profile.measure("STATE_BEFORE", () =>
+        this.turnState(id, attemptId, leaseId),
       );
-      if (!Number.isFinite(entitlementExpiry) || entitlementExpiry <= now)
-        throw new VoiceAuthorizationError("ENTITLEMENT_UNAVAILABLE");
-      return authority;
-    } catch (error) {
-      this.discardContext(id);
-      await this.failTurn(id);
-      throw error;
-    }
+      const document = await profile.measure("MEDIA_DOCUMENT", () =>
+        this.store.find(id, this.clock()),
+      );
+      if (
+        document?.phase !== "READY" ||
+        !document.claimedAt ||
+        document.attemptId !== attemptId
+      )
+        throw new VoiceLedgerError("STALE_ATTEMPT");
+      try {
+        const [authority, observed] = await Promise.all([
+          profile.measure("OWNER_AUTHORITY", () =>
+            this.access.authorizeTurn(
+              session.ownerId,
+              id,
+              correlationId,
+              profile,
+            ),
+          ),
+          profile.measure("MEDIA_INSPECTION", () =>
+            this.media.inspect(document, profile),
+          ),
+        ]);
+        if (
+          !observed.roomExists ||
+          !observed.ownerConnected ||
+          !observed.agentConnected
+        )
+          throw new VoiceLedgerError("INVALID_SESSION_STATE");
+        await profile.measure("STATE_AFTER", () =>
+          this.turnState(id, attemptId, leaseId),
+        );
+        const now = this.clock().getTime();
+        for (const [decision, failure] of [
+          [authority.consent, "CONSENT_UNAVAILABLE"],
+          [authority.entitlement, "ENTITLEMENT_UNAVAILABLE"],
+        ] as const) {
+          const age = now - Date.parse(decision.checkedAt);
+          if (!Number.isFinite(age) || age < 0 || age > 2000)
+            throw new VoiceAuthorizationError(failure);
+        }
+        const entitlementExpiry = Date.parse(
+          authority.entitlement.validUntil ?? "",
+        );
+        if (!Number.isFinite(entitlementExpiry) || entitlementExpiry <= now)
+          throw new VoiceAuthorizationError("ENTITLEMENT_UNAVAILABLE");
+        return authority;
+      } catch (error) {
+        this.discardContext(id);
+        await profile.measure("DENIAL_CLEANUP", () => this.failTurn(id));
+        throw error;
+      }
+    });
   }
 
   async recordSpeechActivity(id: string, attemptId: string, leaseId: string) {

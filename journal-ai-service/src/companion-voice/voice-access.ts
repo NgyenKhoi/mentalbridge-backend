@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { voicePilotAllows, type VoicePilot } from "./voice-pilot.js";
 import { z } from "zod";
+import type { VoiceAuthorizationProfile } from "./voice-authorization-profile.js";
 
 import {
   VoiceLedgerError,
@@ -348,8 +349,15 @@ export class VoiceAccessService {
     ownerId: string,
     voiceSessionId: string,
     correlationId: string,
+    profile?: VoiceAuthorizationProfile,
   ) {
-    return this.sessionAuthority(ownerId, voiceSessionId, correlationId, false);
+    return this.sessionAuthority(
+      ownerId,
+      voiceSessionId,
+      correlationId,
+      false,
+      profile,
+    );
   }
 
   private async sessionAuthority(
@@ -357,6 +365,7 @@ export class VoiceAccessService {
     voiceSessionId: string,
     correlationId: string,
     renew: boolean,
+    profile?: VoiceAuthorizationProfile,
   ): Promise<{
     session: VoiceSession;
     consent: VoiceOwnerDecision["consent"];
@@ -381,6 +390,7 @@ export class VoiceAccessService {
         ownerId,
         voiceSessionId,
         correlationId,
+        profile,
       );
       const denial = accessDenial(decision, this.clock());
       if (denial) throw new VoiceAccessError(denial);

@@ -249,11 +249,24 @@ MB-854 adds metadata-only milestones for context, each authorization boundary,
 provider request preparation, response headers/body, registration and recheck.
 `bedrock_response_received` marks headers and is not token TTFT. Each LiveKit
 media inspection starts its independent room/dispatch/participant reads together
-and reports only a closed operation/outcome, duration and validated attempt ID;
+and reports closed operations/outcomes, durations and validated correlation IDs;
 room binding and recording guards still precede a successful result. No fresh
 authority check is cached or removed. See the [latency investigation and controlled
 benchmark](../docs/story-mb-854-voice-latency.md); run `npm run benchmark:voice-media`
 for the isolated before/after read comparison without provider calls.
+
+MB-863 correlates each INITIAL, PRE_INFERENCE and PUBLICATION authorization
+round with its current owner checks, local state reads and unique media
+inspection. Native-fetch request/send/headers/body milestones distinguish SDK
+preparation and parsing from the HTTP wait without changing requests, deadlines,
+pooling or retries. Missing native milestones remain UNKNOWN; first-observed
+sockets are not claimed to be cold connections. No request URL, headers, body,
+raw error, account/room identity or conversation content enters these events.
+All three fresh authorization rounds and complete response/publication checks
+remain mandatory. See the [profiling scope and measurement definitions](../docs/story-mb-863-authorization-profiling.md).
+After building, `node scripts/benchmark-voice-authorization.mjs` compares the
+unchanged base adapters and profiled build against paired synthetic loopback
+HTTP delays. It measures profiling overhead, not real Voice E2E improvement.
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
