@@ -264,6 +264,9 @@ sockets are not claimed to be cold connections. No request URL, headers, body,
 raw error, account/room identity or conversation content enters these events.
 All three fresh authorization rounds and complete response/publication checks
 remain mandatory. See the [profiling scope and measurement definitions](../docs/story-mb-863-authorization-profiling.md).
+After building, `node scripts/benchmark-voice-authorization.mjs` compares the
+unchanged base adapters and profiled build against paired synthetic loopback
+HTTP delays. It measures profiling overhead, not real Voice E2E improvement.
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
