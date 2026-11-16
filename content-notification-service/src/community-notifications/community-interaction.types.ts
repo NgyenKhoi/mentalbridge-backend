@@ -13,7 +13,7 @@ export const CommunityInteractionEnvelopeSchema = z
     targetOwnerRoutingReference: z.uuid(),
     targetType: z.enum(['POST', 'COMMENT']),
     targetId: z.uuid(),
-    interactionKind: z.enum(['COMMENT', 'REPLY', 'SUPPORT', 'RELATE', 'THANK_YOU']),
+    interactionKind: z.enum(['COMMENT', 'REPLY', 'SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH']),
     occurredAt: z.iso.datetime({ offset: true }),
     deepLink: z
       .object({
@@ -33,7 +33,7 @@ export const CommunityInteractionEventSchema = CommunityInteractionEnvelopeSchem
     if (event.interactionKind === 'REPLY' && event.targetType !== 'COMMENT') {
       context.addIssue({ code: 'custom', message: 'REPLY must target a parent comment' });
     }
-    if (['SUPPORT', 'RELATE', 'THANK_YOU'].includes(event.interactionKind) && !postTarget) {
+    if (event.interactionKind !== 'COMMENT' && event.interactionKind !== 'REPLY' && !postTarget) {
       context.addIssue({ code: 'custom', message: 'Reaction must target its deep-linked post' });
     }
   },

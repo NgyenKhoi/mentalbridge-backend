@@ -56,11 +56,30 @@ describe('Community interaction notification consumer', () => {
       'SUPPORT',
       'RELATE',
       'THANK_YOU',
+      'LIKE',
+      'EMPATHY',
+      'CHEER',
+      'GROWTH',
     ]);
     expect(CommunityInteractionEventSchema.parse(event)).toEqual(event);
     expect(() =>
       CommunityInteractionEventSchema.parse({ ...event, content: 'private body' }),
     ).toThrow();
+  });
+
+  it.each([
+    ['SUPPORT', 'Một thành viên đã gửi sự ủng hộ tới chia sẻ của bạn.'],
+    ['RELATE', 'Một thành viên cảm thấy đồng điệu với chia sẻ của bạn.'],
+    ['THANK_YOU', 'Một thành viên đã gửi lời cảm ơn tới chia sẻ của bạn.'],
+    ['LIKE', 'Một thành viên đã thích chia sẻ của bạn.'],
+    ['EMPATHY', 'Một thành viên đã bày tỏ sự đồng cảm với chia sẻ của bạn.'],
+    ['CHEER', 'Một thành viên đã gửi lời động viên tới chia sẻ của bạn.'],
+    ['GROWTH', 'Một thành viên đã chọn “Đang lớn lên” cho chia sẻ của bạn.'],
+  ] as const)('projects %s with its supportive copy', async (interactionKind, body) => {
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const projector = new CommunityInteractionProjector({ enqueue } as unknown as CommunityNotificationJobs);
+    await projector.project({ ...event, interactionKind });
+    expect(enqueue.mock.calls[0]?.[0]).toMatchObject({ kind: 'COMMUNITY_REACTION', body });
   });
 
   it('projects generic copy and only approved routing metadata', async () => {

@@ -75,11 +75,12 @@ MB-574 does not upload media, add comments/reactions/bookmarks, report, moderate
 
 ## MB-579 supportive reactions and private bookmarks
 
-- A USER may keep at most one `SUPPORT`, `RELATE`, or `THANK_YOU` reaction per active visible post. Replacing a reaction leaves the aggregate count unchanged; repeated PUT/DELETE requests are natural no-ops.
+- A USER may keep at most one `SUPPORT`, `RELATE`, `THANK_YOU`, `LIKE`, `EMPATHY`, `CHEER`, or `GROWTH` reaction per active visible post. The same choices apply to visible comments and replies. Replacing a reaction leaves the aggregate count unchanged; repeated PUT/DELETE requests are natural no-ops.
 - Reaction create/remove locks the owning post row so concurrent commands cannot lose or duplicate the non-negative display count.
 - A USER may bookmark an active visible post privately. Feed and detail responses expose only that authenticated viewer's reaction/bookmark state and never another profile's bookmarks.
 - Owner-deleted, moderation-hidden, moderation-removed, personally hidden, and bilaterally blocked posts share the bounded not-found mutation behavior and cannot receive new interactions.
 - Reactions and bookmarks remain Community-owned peer-support facts. They do not alter feed order, a clinical recommendation, Care, Journal/AI, screening, SupportPlan, or a hidden mental-health profile.
+- All seven reactions are supportive only, with no negative or clinical meaning; Haha and Angry are not accepted.
 - Rolling deployment is compatibility-first: deploy the frontend consumer that accepts both absent and present `viewerState` before Community v1.6. Absence means interaction capability is unavailable and controls stay hidden; once v1.6 returns valid viewer state, controls activate automatically. Backend-first deployment is not supported because the legacy strict parser rejects additional post fields.
 
 ## MB-580 minimized interaction facts
