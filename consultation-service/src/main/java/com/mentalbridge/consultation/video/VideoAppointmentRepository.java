@@ -22,8 +22,8 @@ interface VideoAppointmentRepository extends JpaRepository<VideoAppointment, UUI
 	@Query(value = "select state from service_credit where id=:creditId and appointment_id=:appointmentId", nativeQuery = true)
 	Optional<String> creditState(UUID creditId, UUID appointmentId);
 
-	@Query(value = "select state from service_credit where id=:creditId", nativeQuery = true)
-	Optional<String> historicalCreditState(UUID creditId);
+	@Query(value = "select case when appointment_id=:appointmentId then state else 'AVAILABLE' end from service_credit where id=:creditId", nativeQuery = true)
+	Optional<String> historicalCreditState(UUID creditId, UUID appointmentId);
 
 	@Query(value = "select exists(select 1 from appointment_status_history where appointment_id=:id and to_status='CONFIRMED')", nativeQuery = true)
 	boolean wasConfirmed(UUID id);

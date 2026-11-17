@@ -428,7 +428,11 @@ class CareOpenApiContractTests {
 
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("phq9AssessmentId", "gad7AssessmentId",
 				"previousPeriod", "currentPeriod");
-		assertThat(request.getOneOf()).hasSize(2);
+		assertThat(request.getOneOf()).isNull();
+		assertThat(request.getNot().getRequired()).containsExactlyInAnyOrder("journalAnalysisId", "journalJobId");
+		var compose = openApi.getPaths().get("/api/v1/reassessment-summaries").getPost();
+		assertThat(compose.getRequestBody().getContent().get("application/json").getExamples())
+				.containsKeys("journalJob", "withoutJournalConsent");
 		assertThat(request.getProperties()).containsKeys("journalAnalysisId", "journalJobId", "selfReportId");
 		assertThat(response.getProperties()).containsKeys("screening", "journalContext", "supportPlanEngagement",
 				"selfReportedExperience", "activityReflection", "userReflection", "disclaimerCode")
@@ -608,6 +612,16 @@ class CareOpenApiContractTests {
 		assertThat(enumValues(property(journey, "nextAction").getOneOf().getFirst())).containsExactlyElementsOf(
 				java.util.Arrays.stream(com.mentalbridge.care.guidedjourney.GuidedJourneyService.NextAction.values())
 						.map(Enum::name).toList());
+		assertThat(property(journey, "latestScreening").getOneOf().getFirst().get$ref())
+				.isEqualTo("#/components/schemas/GuidedJourneyLatestScreening");
+		assertThat(property(journey, "latestScreening").getOneOf().get(1).getTypes()).containsExactly("null");
+		var latest = openApi.getComponents().getSchemas().get("GuidedJourneyLatestScreening");
+		var latestFields = java.util.Arrays.stream(
+				com.mentalbridge.care.guidedjourney.GuidedJourneyService.LatestScreeningView.class.getRecordComponents())
+				.map(java.lang.reflect.RecordComponent::getName).toList();
+		assertThat(latest.getRequired()).containsExactlyInAnyOrderElementsOf(latestFields);
+		assertThat(latest.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(latestFields);
+		assertThat(allowsAdditionalProperties(latest)).isFalse();
 	}
 
 	@Test

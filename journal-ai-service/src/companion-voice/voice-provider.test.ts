@@ -646,7 +646,7 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
           replyStyle,
         }),
       });
-      const supportive = replyStyle === "SUPPORTIVE" && voice;
+      const supportive = replyStyle !== "BRIEF" && voice;
       const message = supportive
         ? "Mình nghe bạn chia sẻ rằng việc học đang khiến bạn mệt mỏi và muốn có người lắng nghe. Nếu thấy phù hợp, bạn có thể dành một chút thời gian nghỉ trước khi nhìn lại phần đang vướng. Điều gì trong chuyện này khiến bạn muốn chia sẻ nhất?"
         : "Mình đang lắng nghe bạn.";

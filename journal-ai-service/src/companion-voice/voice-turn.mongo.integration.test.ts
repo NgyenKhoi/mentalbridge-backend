@@ -1117,7 +1117,8 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
             .sort(),
           [
             "MEDIA_DOCUMENT",
-            "MEDIA_INSPECTION",
+            // MB-867: only INITIAL inspects; later checks reuse its fresh success.
+            ...(round.purpose === "INITIAL" ? ["MEDIA_INSPECTION"] : []),
             "OWNER_AUTHORITY",
             "STATE_AFTER",
             "STATE_BEFORE",
@@ -1125,6 +1126,11 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           ],
         );
       }
+      assert.equal(
+        f.profiles.filter((metric) => metric.stage === "MEDIA_INSPECTION")
+          .length,
+        1,
+      );
       assert.equal(
         f.metrics.filter((metric) => metric.outcome === "PROVIDER_USAGE")
           .length,

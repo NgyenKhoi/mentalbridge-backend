@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mentalbridge.care.consent.ConsentService;
 import com.mentalbridge.care.reassessment.JournalLongitudinalClient.Projection;
 import com.mentalbridge.care.reassessment.ReassessmentEvidenceRepository.AssessmentEvidence;
 import com.mentalbridge.care.reassessment.ReassessmentEvidenceRepository.EngagementEvidence;
@@ -57,24 +58,32 @@ public class ReassessmentSummaryService {
 	private final ReassessmentSummaryStore summaries;
 	private final ReassessmentSelfReportService selfReports;
 	private final ScreeningEpisodeService screeningEpisodes;
+	private final ConsentService consents;
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
 
 	public ReassessmentSummaryService(ReassessmentEvidenceRepository evidence, JournalLongitudinalClient journal,
 			ReassessmentSummaryStore summaries, ReassessmentSelfReportService selfReports,
-			ScreeningEpisodeService screeningEpisodes, ObjectMapper objectMapper, Clock clock) {
+			ScreeningEpisodeService screeningEpisodes, ConsentService consents, ObjectMapper objectMapper,
+			Clock clock) {
 		this.evidence = evidence;
 		this.journal = journal;
 		this.summaries = summaries;
 		this.selfReports = selfReports;
 		this.screeningEpisodes = screeningEpisodes;
+		this.consents = consents;
 		this.objectMapper = objectMapper;
 		this.clock = clock;
 	}
 
 	public ReassessmentSummaryView compose(UUID userId, String bearerToken, String idempotencyKey,
 			UUID correlationId, ComposeCommand command) {
-		boolean jobFlow = validateEvidenceReference(command);
+		boolean withoutJournal = command.journalAnalysisId() == null && command.journalJobId() == null;
+		boolean jobFlow = withoutJournal || validateEvidenceReference(command);
+		// Identical replay first: a committed compose stays retrievable after the window or episode moves on.
+		String requestHash = hash(command);
+		var replay = summaries.findByRequest(userId, idempotencyKey);
+		if (replay.isPresent()) return replay(replay.get(), requestHash);
 		if (jobFlow) {
 			validatePolicyPeriods(command.previousPeriod(), command.currentPeriod());
 			var episode = screeningEpisodes.requiredCompleted(userId, "REASSESSMENT");
@@ -84,9 +93,6 @@ public class ReassessmentSummaryService {
 		else {
 			validateLegacyPeriods(command.previousPeriod(), command.currentPeriod());
 		}
-		String requestHash = hash(command);
-		var replay = summaries.findByRequest(userId, idempotencyKey);
-		if (replay.isPresent()) return replay(replay.get(), requestHash);
 
 		var phq9 = screeningTrend(userId, command.phq9AssessmentId(), "PHQ9");
 		var gad7 = screeningTrend(userId, command.gad7AssessmentId(), "GAD7");
@@ -96,7 +102,8 @@ public class ReassessmentSummaryService {
 				List.of(phq9, gad7));
 		Projection projection;
 		try {
-			projection = jobFlow
+			projection = withoutJournal ? journalWithoutConsent(userId)
+					: jobFlow
 					? journal.resolveJob(userId, command.journalJobId(), command.previousPeriod(),
 							command.currentPeriod(), bearerToken, correlationId)
 					: journal.read(userId, command.journalAnalysisId(), command.previousPeriod(),
@@ -273,6 +280,16 @@ public class ReassessmentSummaryService {
 		if (!evidence.scheduledAt().isBefore(command.currentPeriod().startAt())
 				&& evidence.scheduledAt().isBefore(command.currentPeriod().endAt())) return "CURRENT";
 		return null;
+	}
+
+	private Projection journalWithoutConsent(UUID userId) {
+		var consent = consents.authorizeAiContextProcessing(userId);
+		if (consent.authorized()) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_JOURNAL_EVIDENCE_REFERENCE",
+					"journalJobId is required while AI context processing consent is effective");
+		}
+		return new Projection(null, null, "UNAVAILABLE",
+				"REVOKED".equals(consent.reason()) ? "CONSENT_REVOKED" : "CONSENT_REQUIRED", null);
 	}
 
 	private boolean validateEvidenceReference(ComposeCommand command) {

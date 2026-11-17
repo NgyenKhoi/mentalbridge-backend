@@ -49,6 +49,7 @@ import {
   normalizedLongitudinalSchema,
   type LongitudinalPromptCoverage,
   type LongitudinalPromptSource,
+  type LongitudinalPromptVersion,
   type NormalizedLongitudinal,
 } from "../prompts/longitudinal.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
@@ -158,7 +159,7 @@ export interface LongitudinalAnalysisResult {
   providerApprovalVersion: string;
   provider: "DETERMINISTIC_FAKE" | "GEMINI" | "OPENAI" | "BEDROCK";
   model: string;
-  promptVersion: "longitudinal-v1";
+  promptVersion: LongitudinalPromptVersion;
   schemaVersion: 1;
   latencyMs: number;
   inputTokens: number | null;

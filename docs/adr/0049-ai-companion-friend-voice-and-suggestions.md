@@ -134,3 +134,25 @@ the shared v1 prompt and Voice are unchanged. The guidance label stays
 `companion-guidance-v2`; evaluation evidence identifies each prompt by SHA-256.
 The rollout gate above still applies before the flag is switched on. Evidence:
 [MB-845 companion evaluation](../story-mb-845-companion-eval.md).
+
+## MB-869 amendment — reply length by package, 2026-11-17
+
+The owner decided on 2026-11-17 that short replies apply only to `FREE`. This
+replaces "length rules are unchanged" above for the cases below.
+
+- TEXT `FREE`: unchanged. v1 asks for at most 500 characters, the friend v2
+  guidance for 1–4 short sentences under 400 characters, and the provider schema
+  and server validator cap the message at 500 characters.
+- TEXT `PLUS` and `PREMIUM`: 2–6 sentences and at most 900 characters, for v1 and
+  the friend v2 guidance alike. The provider schema `maxLength` and the server
+  validator rise to 900 on this path only. Only the length clause changes; tone,
+  safety, crisis and authority text stay byte-identical. The public
+  `SendAiMessageResponse.assistant` limit becomes 900.
+- Voice (paid only): without a pilot `replyStyle`, every call uses the
+  SUPPORTIVE delivery, two or three natural sentences of about 180–280
+  characters. An explicit pilot `replyStyle` still wins, so `BRIEF` stays
+  available. The 500-character spoken message limit and the ADR 0046
+  1,000-character ceiling are unchanged, as are pilot token caps.
+
+The package comes from the existing Consultation entitlement decision; no new
+package value or entitlement call is added.

@@ -745,7 +745,12 @@ paths:
         PHQ-9 item-9 safety evidence first, then a stored professional-support pathway,
         then an existing current plan or draft, then PLUS/PREMIUM plan proposal while the
         episode evaluation is still current-policy compatible, otherwise the Guide's
-        reviewed resources. Entitlement is checked only when needed; when it
+        reviewed resources. latestScreening is the newest COMPLETED screening episode of
+        either purpose (INITIAL_CHECK or REASSESSMENT, by completedAt then episodeId);
+        nextAction is decided from that episode's SupportEvaluation, while stage,
+        episodeId, episodeCompletedAt, presentationEvaluationId and supportGuideId keep
+        the initial-check meaning. Open episodes never become latestScreening.
+        Entitlement is checked only when needed; when it
         cannot be verified the response fails closed to the always-available resource step
         with entitlementStatus UNAVAILABLE. A missing published support policy is not
         hidden: it returns 503 SUPPORT_POLICY_UNAVAILABLE so clients offer retry. Responses carry Cache-Control no-store and no
@@ -763,6 +768,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/GuidedJourney" }
+              examples:
+                reassessmentNewerThanInitialCheck:
+                  summary: A newer safety-negative reassessment decides nextAction; the Guide stays on the initial check
+                  value: {"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000111","purpose":"REASSESSMENT","completedAt":"2026-10-22T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000112","supportEvaluationId":"00000000-0000-4000-8000-000000000113"}}
         "400": { $ref: "#/components/responses/ValidationProblem" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
@@ -807,25 +816,25 @@ paths:
               examples:
                 assessmentRequired:
                   summary: No completed initial check; the owner starts the first assessment
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"ASSESSMENT_REQUIRED","assessmentInProgress":false,"episodeId":null,"episodeCompletedAt":null,"presentationEvaluationId":null,"supportGuideId":null,"nextAction":null,"currentSupportPlanId":null,"entitlementStatus":"NOT_REQUIRED"},"plan":null,"lastCompletedPlan":null}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"ASSESSMENT_REQUIRED","assessmentInProgress":false,"episodeId":null,"episodeCompletedAt":null,"presentationEvaluationId":null,"supportGuideId":null,"nextAction":null,"currentSupportPlanId":null,"entitlementStatus":"NOT_REQUIRED","latestScreening":null},"plan":null,"lastCompletedPlan":null}
                 freeResources:
                   summary: FREE retains useful reviewed Guide resources
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"EXPLORE_GUIDE_RESOURCES","currentSupportPlanId":null,"entitlementStatus":"VERIFIED"},"plan":null,"lastCompletedPlan":null}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"EXPLORE_GUIDE_RESOURCES","currentSupportPlanId":null,"entitlementStatus":"VERIFIED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000101","purpose":"INITIAL_CHECK","completedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportEvaluationId":"00000000-0000-4000-8000-000000000108"}},"plan":null,"lastCompletedPlan":null}
                 plusProposal:
                   summary: Verified PLUS owner can review the fourteen-day plan proposal
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"START_PLAN_PROPOSAL","currentSupportPlanId":null,"entitlementStatus":"VERIFIED"},"plan":null,"lastCompletedPlan":null}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"START_PLAN_PROPOSAL","currentSupportPlanId":null,"entitlementStatus":"VERIFIED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000101","purpose":"INITIAL_CHECK","completedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportEvaluationId":"00000000-0000-4000-8000-000000000108"}},"plan":null,"lastCompletedPlan":null}
                 doToday:
                   summary: Active plan has one completed task and one open resource task today
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED"},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"ACTIVE","focus":"DO_TODAY","reviewDueOn":"2026-11-04","cycleDay":1,"cycleLengthDays":14,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":{"occurrenceId":"00000000-0000-4000-8000-000000000105","actionId":"00000000-0000-4000-8000-000000000106","actionType":"RESOURCE","title":"A short breathing practice","displayState":"SCHEDULED","scheduledAt":"2026-10-22T12:00:00Z","estimatedDurationMinutes":5}},"lastCompletedPlan":null}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000101","purpose":"INITIAL_CHECK","completedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportEvaluationId":"00000000-0000-4000-8000-000000000108"}},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"ACTIVE","focus":"DO_TODAY","reviewDueOn":"2026-11-04","cycleDay":1,"cycleLengthDays":14,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":{"occurrenceId":"00000000-0000-4000-8000-000000000105","actionId":"00000000-0000-4000-8000-000000000106","actionType":"RESOURCE","title":"A short breathing practice","displayState":"SCHEDULED","scheduledAt":"2026-10-22T12:00:00Z","estimatedDurationMinutes":5}},"lastCompletedPlan":null}
                 resumePaused:
                   summary: Paused plan without a cycle takes precedence over today's work
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED"},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"PAUSED","focus":"RESUME_PAUSED","reviewDueOn":null,"cycleDay":null,"cycleLengthDays":null,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":null},"lastCompletedPlan":null}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000101","purpose":"INITIAL_CHECK","completedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportEvaluationId":"00000000-0000-4000-8000-000000000108"}},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"PAUSED","focus":"RESUME_PAUSED","reviewDueOn":null,"cycleDay":null,"cycleLengthDays":null,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":null},"lastCompletedPlan":null}
                 reviewDue:
                   summary: Review date reached; the plan stays ACTIVE until an explicit owner choice
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED"},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"ACTIVE","focus":"REVIEW_DUE","reviewDueOn":"2026-10-21","cycleDay":14,"cycleLengthDays":14,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":null},"lastCompletedPlan":null}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000101","purpose":"INITIAL_CHECK","completedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportEvaluationId":"00000000-0000-4000-8000-000000000108"}},"plan":{"supportPlanId":"00000000-0000-4000-8000-000000000104","status":"ACTIVE","focus":"REVIEW_DUE","reviewDueOn":"2026-10-21","cycleDay":14,"cycleLengthDays":14,"localDate":"2026-10-22","timeZone":"Asia/Ho_Chi_Minh","today":{"total":2,"completed":1},"nextOccurrence":null},"lastCompletedPlan":null}
                 lastCompletedPlan:
                   summary: No current or draft plan; newest historical plan was completed
-                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"EXPLORE_GUIDE_RESOURCES","currentSupportPlanId":null,"entitlementStatus":"VERIFIED"},"plan":null,"lastCompletedPlan":{"supportPlanId":"00000000-0000-4000-8000-000000000107","completedAt":"2026-10-21T10:00:00Z"}}
+                  value: {"homePolicyVersion":"mb-home-next-step-v1","journey":{"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"EXPLORE_GUIDE_RESOURCES","currentSupportPlanId":null,"entitlementStatus":"VERIFIED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000101","purpose":"INITIAL_CHECK","completedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportEvaluationId":"00000000-0000-4000-8000-000000000108"}},"plan":null,"lastCompletedPlan":{"supportPlanId":"00000000-0000-4000-8000-000000000107","completedAt":"2026-10-21T10:00:00Z"}}
         "400": { $ref: "#/components/responses/ValidationProblem" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
         "403": { $ref: "#/components/responses/ForbiddenProblem" }
@@ -1119,6 +1128,14 @@ paths:
         dimension while the local dimensions remain available. Sparse local or
         journal evidence is INSUFFICIENT_DATA. Dimensions are never collapsed into
         a global improvement, recovery, or wellness score.
+        A request without journalJobId or journalAnalysisId is accepted only while
+        Care's own effective L2 AI_CONTEXT_PROCESSING consent is missing: Care then
+        persists a v2 snapshot whose journal dimension is UNAVAILABLE with
+        CONSENT_REVOKED (latest L2 decision withdrawn) or CONSENT_REQUIRED (no
+        current effective L2, including missing L1). With effective L2 the same
+        request returns 400 INVALID_JOURNAL_EVIDENCE_REFERENCE. Sending both
+        references is always 400. Idempotent replay is checked before consent, so an
+        identical retry returns the original snapshot.
       security:
         - bearerAuth: []
       parameters:
@@ -1129,6 +1146,13 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ReassessmentSummaryCreateRequest" }
+            examples:
+              journalJob:
+                summary: Canonical v2 request with the Journal longitudinal job
+                value: {"phq9AssessmentId":"00000000-0000-4000-8000-000000000201","gad7AssessmentId":"00000000-0000-4000-8000-000000000202","journalJobId":"00000000-0000-4000-8000-000000000203","previousPeriod":{"startAt":"2026-08-27T00:00:00Z","endAt":"2026-09-10T00:00:00Z"},"currentPeriod":{"startAt":"2026-09-10T00:00:00Z","endAt":"2026-09-24T00:00:00Z"}}
+              withoutJournalConsent:
+                summary: No journal reference while L2 consent is missing; the journal dimension is persisted UNAVAILABLE with CONSENT_REQUIRED or CONSENT_REVOKED
+                value: {"phq9AssessmentId":"00000000-0000-4000-8000-000000000201","gad7AssessmentId":"00000000-0000-4000-8000-000000000202","previousPeriod":{"startAt":"2026-08-27T00:00:00Z","endAt":"2026-09-10T00:00:00Z"},"currentPeriod":{"startAt":"2026-09-10T00:00:00Z","endAt":"2026-09-24T00:00:00Z"}}
       responses:
         "201":
           description: New snapshot or identical idempotent replay
@@ -4448,16 +4472,16 @@ components:
       type: object
       additionalProperties: false
       required: [phq9AssessmentId, gad7AssessmentId, previousPeriod, currentPeriod]
-      oneOf:
-        - required: [journalAnalysisId]
-        - required: [journalJobId]
+      description: At most one Journal evidence reference. Omitting both is valid only while effective L2 AI_CONTEXT_PROCESSING consent is missing (journal dimension UNAVAILABLE, CONSENT_REQUIRED or CONSENT_REVOKED); otherwise 400 INVALID_JOURNAL_EVIDENCE_REFERENCE.
+      not:
+        required: [journalAnalysisId, journalJobId]
       properties:
         phq9AssessmentId: { type: string, format: uuid }
         gad7AssessmentId: { type: string, format: uuid }
         journalAnalysisId:
           type: string
           format: uuid
-          description: Deprecated MB-386 v1 compatibility input. Exactly one Journal evidence reference is required.
+          description: Deprecated MB-386 v1 compatibility input. Never combined with journalJobId.
         journalJobId:
           type: string
           format: uuid
@@ -4682,7 +4706,7 @@ components:
       additionalProperties: false
       required: [provider, model, promptVersion, schemaVersion, createdAt]
       properties:
-        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI] }
+        provider: { type: string, enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK] }
         model: { type: string, minLength: 1, maxLength: 128 }
         promptVersion: { type: string, minLength: 1, maxLength: 96 }
         schemaVersion: { type: integer, minimum: 1 }
@@ -4699,7 +4723,7 @@ components:
         jobId:
           type: [string, "null"]
           format: uuid
-          description: Present for canonical v2 snapshots, including failed jobs.
+          description: Present for canonical v2 snapshots, including failed jobs; absent when the snapshot was composed without a journal reference because L2 consent was missing.
         analysisId:
           type: [string, "null"]
           format: uuid
@@ -5221,7 +5245,8 @@ components:
       additionalProperties: false
       required:
         [journeyPolicyVersion, stage, assessmentInProgress, episodeId, episodeCompletedAt,
-         presentationEvaluationId, supportGuideId, nextAction, currentSupportPlanId, entitlementStatus]
+         presentationEvaluationId, supportGuideId, nextAction, currentSupportPlanId, entitlementStatus,
+         latestScreening]
       properties:
         journeyPolicyVersion: { type: string, const: mb-guided-journey-v1 }
         stage:
@@ -5236,7 +5261,7 @@ components:
         presentationEvaluationId: { type: [string, "null"], format: uuid }
         supportGuideId: { type: [string, "null"], format: uuid }
         nextAction:
-          description: Null only for ASSESSMENT_REQUIRED.
+          description: Decided from the latestScreening episode's SupportEvaluation. With ASSESSMENT_REQUIRED it is REVIEW_SAFETY_SUPPORT when the latest completed reassessment is safety-positive, otherwise null.
           oneOf:
             - type: string
               enum:
@@ -5250,6 +5275,21 @@ components:
         entitlementStatus:
           type: string
           enum: [NOT_REQUIRED, VERIFIED, UNAVAILABLE]
+        latestScreening:
+          description: Newest COMPLETED screening episode of either purpose; null when none is completed. Initial check and reassessment remain separate journeys (ADR 0023).
+          oneOf:
+            - $ref: "#/components/schemas/GuidedJourneyLatestScreening"
+            - type: "null"
+    GuidedJourneyLatestScreening:
+      type: object
+      additionalProperties: false
+      required: [episodeId, purpose, completedAt, presentationEvaluationId, supportEvaluationId]
+      properties:
+        episodeId: { type: string, format: uuid }
+        purpose: { $ref: "#/components/schemas/ScreeningEpisodePurpose" }
+        completedAt: { type: string, format: date-time }
+        presentationEvaluationId: { type: string, format: uuid }
+        supportEvaluationId: { type: string, format: uuid }
     HomeNextStep:
       type: object
       additionalProperties: false

@@ -65,14 +65,14 @@ class HomeNextStepServiceTests {
 	void initialJourney() {
 		journey = new JourneyView("mb-guided-journey-v1", Stage.GUIDE_READY, false, UUID.randomUUID(),
 				NOW.minusSeconds(3600), UUID.randomUUID(), UUID.randomUUID(), NextAction.OPEN_CURRENT_PLAN,
-				PLAN_ID, EntitlementStatus.NOT_REQUIRED);
+				PLAN_ID, EntitlementStatus.NOT_REQUIRED, null);
 		when(journeys.current(USER_ID, "token", CORRELATION_ID)).thenReturn(journey);
 	}
 
 	@Test
 	void embedsTheExactExistingJourneyAndPreservesFirstUseState() {
 		journey = new JourneyView("mb-guided-journey-v1", Stage.ASSESSMENT_REQUIRED, true, null,
-				null, null, null, null, null, EntitlementStatus.NOT_REQUIRED);
+				null, null, null, null, null, EntitlementStatus.NOT_REQUIRED, null);
 		when(journeys.current(USER_ID, "token", CORRELATION_ID)).thenReturn(journey);
 
 		var home = service.current(USER_ID, "token", CORRELATION_ID, null);
@@ -89,7 +89,7 @@ class HomeNextStepServiceTests {
 	void preservesEntitlementOutageResourcesWithoutReinterpretingTheJourney() {
 		journey = new JourneyView("mb-guided-journey-v1", Stage.GUIDE_READY, false, UUID.randomUUID(),
 				NOW.minusSeconds(3600), UUID.randomUUID(), UUID.randomUUID(), NextAction.EXPLORE_GUIDE_RESOURCES,
-				null, EntitlementStatus.UNAVAILABLE);
+				null, EntitlementStatus.UNAVAILABLE, null);
 		when(journeys.current(USER_ID, "token", CORRELATION_ID)).thenReturn(journey);
 
 		assertThat(service.current(USER_ID, "token", CORRELATION_ID, null).journey()).isSameAs(journey);
@@ -324,7 +324,7 @@ class HomeNextStepServiceTests {
 	void aDraftRemainsOnlyInTheJourneyAndSuppressesCompletedPlanHistory() {
 		journey = new JourneyView("mb-guided-journey-v1", Stage.GUIDE_READY, false, UUID.randomUUID(), NOW,
 				UUID.randomUUID(), UUID.randomUUID(), NextAction.REVIEW_PLAN_DRAFT, PLAN_ID,
-				EntitlementStatus.NOT_REQUIRED);
+				EntitlementStatus.NOT_REQUIRED, null);
 		when(journeys.current(USER_ID, "token", CORRELATION_ID)).thenReturn(journey);
 		when(plans.currentOrDraftStatus(USER_ID)).thenReturn(Optional.of(new PlanStatusView(PLAN_ID, "DRAFT")));
 		when(plans.latestHistoryStatus(USER_ID))

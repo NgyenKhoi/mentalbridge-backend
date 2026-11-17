@@ -43,17 +43,23 @@ public class GuidedJourneyService {
 		var context = episodes.journeyContext(userId, PURPOSE);
 		boolean assessmentInProgress = context.hasOpen();
 		var episode = context.latestCompleted().orElse(null);
+		var latest = context.latestCompletedAnyPurpose().orElse(episode);
+		var latestScreening = latest == null ? null : LatestScreeningView.of(latest);
 		if (episode == null) {
+			// A reassessment-only account still gets the safety action; initial-check pointers stay empty (ADR 0023).
+			var safety = latest != null && safetyPositive(evaluations.get(userId, latest.supportEvaluationId()))
+					? NextAction.REVIEW_SAFETY_SUPPORT : null;
 			return new JourneyView(JOURNEY_POLICY_VERSION, Stage.ASSESSMENT_REQUIRED, assessmentInProgress, null,
-					null, null, null, null, null, EntitlementStatus.NOT_REQUIRED);
+					null, null, null, safety, null, EntitlementStatus.NOT_REQUIRED, latestScreening);
 		}
 		UUID guideId = guides.guideIdForEvaluation(userId, episode.supportEvaluationId()).orElse(null);
 		var plan = plans.currentOrDraftStatus(userId).orElse(null);
 		var decision = nextAction(userId, bearerToken, correlationId,
-				evaluations.get(userId, episode.supportEvaluationId()), plan);
+				evaluations.get(userId, latest.supportEvaluationId()), plan);
 		return new JourneyView(JOURNEY_POLICY_VERSION, guideId == null ? Stage.GUIDE_REQUIRED : Stage.GUIDE_READY,
 				assessmentInProgress, episode.episodeId(), episode.completedAt(), episode.presentationEvaluationId(),
-				guideId, decision.action(), plan == null ? null : plan.supportPlanId(), decision.entitlementStatus());
+				guideId, decision.action(), plan == null ? null : plan.supportPlanId(), decision.entitlementStatus(),
+				latestScreening);
 	}
 
 	public SupportGuideView ensureGuide(UUID userId, String bearerToken, UUID correlationId, UUID episodeId) {
@@ -69,7 +75,7 @@ public class GuidedJourneyService {
 
 	private Decision nextAction(UUID userId, String bearerToken, UUID correlationId,
 			SupportEvaluationV2Service.EvaluationView evaluation, PlanStatusView plan) {
-		if (evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN) {
+		if (safetyPositive(evaluation)) {
 			return new Decision(NextAction.REVIEW_SAFETY_SUPPORT, EntitlementStatus.NOT_REQUIRED);
 		}
 		if (evaluation.contributingDomains().stream()
@@ -96,6 +102,10 @@ public class GuidedJourneyService {
 		}
 	}
 
+	private static boolean safetyPositive(SupportEvaluationV2Service.EvaluationView evaluation) {
+		return evaluation.safetyEvidence().status() == SafetyStatus.POSITIVE_SAFETY_SCREEN;
+	}
+
 	private boolean proposalCompatible(UUID userId, UUID supportEvaluationId) {
 		try {
 			evaluations.getCurrentCompatible(userId, supportEvaluationId);
@@ -118,7 +128,15 @@ public class GuidedJourneyService {
 
 	public record JourneyView(String journeyPolicyVersion, Stage stage, boolean assessmentInProgress, UUID episodeId,
 			Instant episodeCompletedAt, UUID presentationEvaluationId, UUID supportGuideId, NextAction nextAction,
-			UUID currentSupportPlanId, EntitlementStatus entitlementStatus) { }
+			UUID currentSupportPlanId, EntitlementStatus entitlementStatus, LatestScreeningView latestScreening) { }
+
+	public record LatestScreeningView(UUID episodeId, String purpose, Instant completedAt,
+			UUID presentationEvaluationId, UUID supportEvaluationId) {
+		static LatestScreeningView of(ScreeningEpisodeService.EpisodeView episode) {
+			return new LatestScreeningView(episode.episodeId(), episode.purpose(), episode.completedAt(),
+					episode.presentationEvaluationId(), episode.supportEvaluationId());
+		}
+	}
 
 	private record Decision(NextAction action, EntitlementStatus entitlementStatus) { }
 }

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -220,6 +222,76 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.screening.trends[0].previous").doesNotExist())
 				.andExpect(jsonPath("$.screening.trends[0].rawDelta").doesNotExist())
 				.andExpect(jsonPath("$.journalContext.state").value("AVAILABLE"));
+	}
+
+	@Test
+	void composesWithoutJournalReferenceOnlyWhileContextConsentIsMissing() throws Exception {
+		var owner = insertProfile();
+		var evidence = assessments(owner);
+		String body = withoutJournalBody(evidence.currentPhq9(), evidence.currentGad7());
+
+		var created = mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-without-journal")
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.summaryVersion").value("reassessment-summary-v2"))
+				.andExpect(jsonPath("$.screening.state").value("AVAILABLE"))
+				.andExpect(jsonPath("$.journalContext.state").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.journalContext.unavailableReason").value("CONSENT_REQUIRED"))
+				.andExpect(jsonPath("$.journalContext.jobId").doesNotExist())
+				.andExpect(jsonPath("$.journalContext.analysisId").doesNotExist())
+				.andExpect(jsonPath("$.supportPlanEngagement.state").value("INSUFFICIENT_DATA"))
+				.andExpect(jsonPath("$.selfReportedExperience.state").value("INSUFFICIENT_DATA"))
+				.andExpect(jsonPath("$.activityReflection.state").value("INSUFFICIENT_DATA"))
+				.andReturn().getResponse().getContentAsString();
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-without-journal")
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.summaryId").value(objectMapper.readTree(created).path("summaryId").asText()));
+		verify(journal, never()).resolveJob(any(), any(), any(), any(), anyString(), any());
+		verify(journal, never()).read(any(), any(), any(), any(), anyString(), any());
+
+		var revoked = insertProfile();
+		var revokedEvidence = assessments(revoked);
+		insertAiConsent(revoked, true, false);
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(revoked))
+				.header("Idempotency-Key", "reassessment-without-journal-revoked")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(withoutJournalBody(revokedEvidence.currentPhq9(), revokedEvidence.currentGad7())))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.journalContext.unavailableReason").value("CONSENT_REVOKED"));
+
+		var consenting = insertProfile();
+		var consentingEvidence = assessments(consenting);
+		insertAiConsent(consenting, true, true);
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(consenting))
+				.header("Idempotency-Key", "reassessment-without-journal-consenting")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(withoutJournalBody(consentingEvidence.currentPhq9(), consentingEvidence.currentGad7())))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_JOURNAL_EVIDENCE_REFERENCE"));
+		assertThat(jdbc.sql("select count(*) from reassessment_summary where user_id=:id").param("id", consenting)
+				.query(Long.class).single()).isZero();
+
+		// A lost response is retried after the 24-hour context window closed and a newer reassessment opened.
+		when(clock.instant()).thenReturn(Instant.parse("2026-09-27T12:00:00Z"));
+		jdbc.sql("""
+				insert into screening_episode (id,user_id,purpose,status,created_at,updated_at,version)
+				values (:id,:userId,'REASSESSMENT','IN_PROGRESS',:now,:now,0)
+				""").param("id", UUID.randomUUID()).param("userId", owner)
+				.param("now", OffsetDateTime.parse("2026-09-27T11:00:00Z")).update();
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-without-journal")
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.summaryId").value(objectMapper.readTree(created).path("summaryId").asText()));
+		mvc.perform(post("/api/v1/reassessment-summaries").with(user(owner))
+				.header("Idempotency-Key", "reassessment-without-journal")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(withoutJournalBody(evidence.currentPhq9(), evidence.previousGad7())))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
 	}
 
 	@Test
@@ -860,6 +932,29 @@ class ReassessmentSummaryIntegrationTests extends CareTestProperties {
 				 "currentPeriod":{"startAt":"%s","endAt":"%s"}%s}
 				""".formatted(phq9, gad7, analysisId, previousStart, previousEnd, currentStart, currentEnd,
 				selfReportId == null ? "" : ",\"selfReportId\":\"" + selfReportId + "\"");
+	}
+
+	private String withoutJournalBody(UUID phq9, UUID gad7) {
+		return """
+				{"phq9AssessmentId":"%s","gad7AssessmentId":"%s",
+				 "previousPeriod":{"startAt":"%s","endAt":"%s"},
+				 "currentPeriod":{"startAt":"%s","endAt":"%s"}}
+				""".formatted(phq9, gad7, PREVIOUS_START, PREVIOUS_END, CURRENT_START, CURRENT_END);
+	}
+
+	private void insertAiConsent(UUID userId, boolean chat, boolean context) {
+		insertConsent(userId, "AI_PROCESSING", "ai-processing-capstone-v2", chat);
+		insertConsent(userId, "AI_CONTEXT_PROCESSING", "ai-context-processing-capstone-v1", context);
+	}
+
+	private void insertConsent(UUID userId, String type, String version, boolean granted) {
+		jdbc.sql("""
+				insert into consent_decision
+				(id,user_id,consent_type,policy_version,granted,idempotency_key,request_hash,decided_at)
+				values (:id,:userId,:type,:version,:granted,:key,:hash,now())
+				""").param("id", UUID.randomUUID()).param("userId", userId).param("type", type)
+				.param("version", version).param("granted", granted)
+				.param("key", "reassessment-consent-" + UUID.randomUUID()).param("hash", "0".repeat(64)).update();
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor user(UUID userId) {

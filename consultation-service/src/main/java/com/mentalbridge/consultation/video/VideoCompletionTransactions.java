@@ -134,7 +134,7 @@ class VideoCompletionTransactions {
 	public VideoCompletionResponse response(UUID id, UUID actor, String role) {
 		var appointment = sessions.authorized(id, actor, role, false);
 		return VideoCompletionResponse.from(appointment, confirmations.findById(id).orElseThrow(),
-				appointments.historicalCreditState(appointment.creditId).orElseThrow());
+				appointments.historicalCreditState(appointment.creditId, appointment.id).orElseThrow());
 	}
 
 	private ApiException forbidden() {

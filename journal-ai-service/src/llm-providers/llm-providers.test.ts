@@ -60,7 +60,7 @@ const output = {
 const longitudinalRoute: LongitudinalAnalysisRoute = {
   ...route("OPENAI"),
   workload: "LONGITUDINAL",
-  promptVersion: "longitudinal-v1",
+  promptVersion: "longitudinal-v2",
 };
 
 void test("Gemini adapter requests structured JSON and captures usage without persisting raw response", async () => {

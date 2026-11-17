@@ -50,7 +50,7 @@ public class AdminAppointmentQueryService {
 				       a.display_timezone, a.requested_at, a.decision_deadline_at, a.decided_at,
 				       a.decision_reason, a.cancelled_at, a.cancellation_reason,
 				       a.cancellation_credit_outcome, a.session_ended_at, a.session_settled_at,
-				       a.session_outcome, a.session_outcome_reason, c.state as settlement_state,
+				       a.session_outcome, a.session_outcome_reason, case when c.appointment_id=a.id then c.state else 'AVAILABLE' end as settlement_state,
 				       a.updated_at, a.version
 				from appointment a
 				join service_credit c on c.id=a.service_credit_id

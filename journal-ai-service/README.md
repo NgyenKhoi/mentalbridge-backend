@@ -267,8 +267,11 @@ seconds and PREMIUM to 600 seconds per session;
 daily Text/Voice policy and financial credits are unchanged. No new collection
 or migration is introduced.
 
-Optional pilot `replyStyle` accepts `BRIEF` (the existing default) or
-`SUPPORTIVE`. The supportive spoken prompt requests two or three natural
+Optional pilot `replyStyle` accepts `BRIEF` or `SUPPORTIVE`. Since MB-869
+every Voice call without a pilot `replyStyle` uses `SUPPORTIVE` (Voice is
+PLUS/PREMIUM only); an explicit pilot `BRIEF` still gives one short sentence.
+A pilot that keeps the default 300-token output ceiling may need an explicit
+`maxOutputTokens` for supportive replies. The supportive spoken prompt requests two or three natural
 Vietnamese sentences, usually 180–280 characters, reflecting only what the
 caller shared, with an optional gentle observation or small next step and at
 most one open question. Ambiguous recognition takes priority and calls for a
@@ -310,6 +313,20 @@ remain mandatory. See the [profiling scope and measurement definitions](../docs/
 After building, `node scripts/benchmark-voice-authorization.mjs` compares the
 unchanged base adapters and profiled build against paired synthetic loopback
 HTTP delays. It measures profiling overhead, not real Voice E2E improvement.
+
+MB-867 (owner decision 2026-11-17) amends the two statements above for media
+only. INITIAL always inspects. PRE_INFERENCE and PUBLICATION reuse a successful
+inspection of the same session, attempt and media identity while it is at most
+5 s old at both the start and the common return of the round, and never past the
+authority or lease expiry. If it ages out during the owner/state reads, the round
+reruns with a fresh inspection. A turn whose checks finish within 5 s of INITIAL
+therefore makes one blocking inspection; a later speech unit after the window
+inspects again. Failures and denials are never reused. Owner authority,
+state/lease, media document and measurement checks still run on every round. A
+reused round emits no `MEDIA_INSPECTION` profile stage. Accepted gap: a recording
+or foreign participant inside the window is caught only by the next real
+inspection; a disconnect is stopped by the worker's `ROOM_DISCONNECTED`
+handling. The reuse is held in process memory, so each replica inspects once.
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input

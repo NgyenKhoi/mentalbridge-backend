@@ -915,7 +915,7 @@ CREATE TABLE care.reassessment_summary (
     idempotency_key varchar(128) NOT NULL,
     request_hash char(64) NOT NULL,
     summary_version varchar(64) NOT NULL,
-    journal_job_id uuid, -- canonical v2 external -> journal-ai longitudinal job
+    journal_job_id uuid, -- canonical v2 external -> journal-ai longitudinal job; null when composed without L2 consent
     journal_analysis_id uuid, -- v1 reference or resolved v2 analysis when available
     previous_period_start timestamptz NOT NULL,
     previous_period_end timestamptz NOT NULL,
@@ -929,7 +929,8 @@ CREATE TABLE care.reassessment_summary (
     CHECK (
         (summary_version = 'reassessment-summary-v1'
             AND journal_analysis_id IS NOT NULL AND journal_job_id IS NULL)
-        OR (summary_version = 'reassessment-summary-v2' AND journal_job_id IS NOT NULL)
+        OR (summary_version = 'reassessment-summary-v2'
+            AND (journal_job_id IS NOT NULL OR journal_analysis_id IS NULL))
     ),
     CHECK (
         previous_period_start < previous_period_end

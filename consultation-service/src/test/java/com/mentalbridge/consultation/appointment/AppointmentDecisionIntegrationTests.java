@@ -200,6 +200,41 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void releasedCreditReusedByLaterBookingsStaysReleasedOnEarlierAppointments() throws Exception {
+		var rejected = requestedAppointment();
+		mvc.perform(post("/api/v1/specialist/appointments/{id}/reject", rejected.appointmentId())
+				.with(specialist(rejected.specialistId())).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "reject-before-credit-reuse-0001"))
+				.andExpect(status().isOk());
+		var expired = book(rejected.userId(), rejected.specialistId(),
+				slot(rejected.specialistId(), Instant.now().plusSeconds(90_000)));
+		makeDue(expired.appointmentId());
+		assertThat(decisions.expire(expired.appointmentId())).isTrue();
+		var current = book(rejected.userId(), rejected.specialistId(),
+				slot(rejected.specialistId(), Instant.now().plusSeconds(93_600)));
+		assertThat(List.of(expired.creditId(), current.creditId())).containsOnly(rejected.creditId());
+
+		for (var list : List.of(get("/api/v1/appointments").with(user(rejected.userId())),
+				get("/api/v1/specialist/appointments").with(specialist(rejected.specialistId())))) {
+			mvc.perform(list).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(3))
+					.andExpect(jsonPath("$.items[?(@.id=='%s')].creditState", rejected.appointmentId()).value("AVAILABLE"))
+					.andExpect(jsonPath("$.items[?(@.id=='%s')].creditState", expired.appointmentId()).value("AVAILABLE"))
+					.andExpect(jsonPath("$.items[?(@.id=='%s')].creditState", current.appointmentId()).value("HELD"));
+		}
+		mvc.perform(get("/api/v1/admin/appointments").with(admin())
+				.param("from", Instant.now().toString()).param("to", Instant.now().plusSeconds(172_800).toString())
+				.param("userAccountId", rejected.userId().toString()))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(3))
+				.andExpect(jsonPath("$.items[?(@.appointmentId=='%s')].settlementState", rejected.appointmentId()).value("AVAILABLE"))
+				.andExpect(jsonPath("$.items[?(@.appointmentId=='%s')].settlementState", expired.appointmentId()).value("AVAILABLE"))
+				.andExpect(jsonPath("$.items[?(@.appointmentId=='%s')].settlementState", current.appointmentId()).value("HELD"));
+		mvc.perform(post("/api/v1/specialist/appointments/{id}/reject", rejected.appointmentId())
+				.with(specialist(rejected.specialistId())).header("If-Match", "\"0\"")
+				.header("Idempotency-Key", "reject-before-credit-reuse-0001"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.creditState").value("AVAILABLE"));
+	}
+
+	@Test
 	void concurrentDuplicateAcceptsReplayOneDecision() throws Exception {
 		var fixture = requestedAppointment();
 
@@ -506,6 +541,15 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(creditState(fixture.creditId())).isEqualTo("AVAILABLE");
 		assertThat(releaseCount(fixture.appointmentId())).isOne();
 		assertThat(earningCount(fixture.appointmentId())).isZero();
+
+		var next = book(fixture.userId(), fixture.specialistId(),
+				slot(fixture.specialistId(), Instant.now().plusSeconds(90_000)));
+		assertThat(next.creditId()).isEqualTo(fixture.creditId());
+		mvc.perform(get("/api/v1/appointments").with(user(fixture.userId()))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id=='%s')].creditState", fixture.appointmentId()).value("AVAILABLE"))
+				.andExpect(jsonPath("$.items[?(@.id=='%s')].creditState", next.appointmentId()).value("HELD"));
+		chatEligibility(fixture.userId(), "USER", fixture.appointmentId(), "HISTORY")
+				.andExpect(status().isOk()).andExpect(jsonPath("$.creditState").value("AVAILABLE"));
 	}
 
 	@Test
@@ -733,7 +777,10 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	private Fixture requestedAppointment() throws Exception {
 		var userId = paidUser();
 		var specialistId = UUID.randomUUID();
-		var slotId = chatSlot(specialistId, Instant.now().plusSeconds(86_400));
+		return book(userId, specialistId, chatSlot(specialistId, Instant.now().plusSeconds(86_400)));
+	}
+
+	private Fixture book(UUID userId, UUID specialistId, UUID slotId) throws Exception {
 		var result = mvc.perform(post("/api/v1/appointments").with(user(userId))
 				.header("Idempotency-Key", "request-appointment-" + UUID.randomUUID())
 				.contentType(MediaType.APPLICATION_JSON)
@@ -766,6 +813,10 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 				) values (:id, 'Specialist', 'Appointment decision profile', 5, 'Asia/Ho_Chi_Minh',
 				 'APPROVED', now(), now(), :admin)
 				""").param("id", specialistId).param("admin", UUID.randomUUID()).update();
+		return slot(specialistId, start);
+	}
+
+	private UUID slot(UUID specialistId, Instant start) {
 		var slotId = UUID.randomUUID();
 		jdbc.sql("""
 				insert into availability_slot (
@@ -915,6 +966,11 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	private org.springframework.test.web.servlet.request.RequestPostProcessor specialist(UUID id) {
 		return jwt().jwt(token -> token.subject(id.toString()).claim("roles", List.of("SPECIALIST")))
 				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"));
+	}
+
+	private org.springframework.test.web.servlet.request.RequestPostProcessor admin() {
+		return jwt().jwt(token -> token.subject(UUID.randomUUID().toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
 	}
 
 	private record Fixture(UUID appointmentId, UUID userId, UUID specialistId, UUID creditId) {
