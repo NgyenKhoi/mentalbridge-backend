@@ -14,10 +14,12 @@ import {
   COMPANION_GUIDANCE_V2_VERSION,
   COMPANION_KNOWLEDGE_V2_VERSION,
   companionGuidanceSystem,
+  companionReplyMaxCharacters,
 } from "./companion-guidance-policy.js";
 import { v1Guidance } from "./companion-guidance-v1.fixture.js";
 import { v1ProviderBodies } from "./companion-provider-v1.fixture.js";
 import type { FriendInput } from "./companion-text-request.js";
+import type { ServicePlan } from "../model-routing/model-routing.js";
 
 const configuration = loadConfiguration({
   NODE_ENV: "test",
@@ -556,6 +558,7 @@ const captureBodies = async (
     voice?: boolean;
     friend?: FriendInput;
     replyStyle?: "BRIEF" | "SUPPORTIVE";
+    plan?: ServicePlan;
   },
 ) => {
   const original = globalThis.fetch;
@@ -584,6 +587,7 @@ const captureBodies = async (
       {
         ...(options.voice ? { voice: true } : {}),
         ...(options.friend ? { friend: options.friend } : {}),
+        ...(options.plan ? { plan: options.plan } : {}),
       },
     );
     return { bodies, result };
@@ -708,4 +712,147 @@ void test("a friend reply cut at an unescaped quote keeps only its complete sent
   assert.equal(await friendReply("Mình ở đây nè 🤗"), "Mình ở đây nè 🤗");
   const v1 = await captureBodies("BEDROCK", JSON.stringify(output(cut)), {});
   assert.equal(v1.result.message, cut);
+});
+
+const freeLength = {
+  v1: "The message must be Vietnamese and at most 500 characters.",
+  friend:
+    "Write 1–4 short sentences in one paragraph; Keep message under 400 characters.",
+};
+const paidLength = {
+  v1: "The message must be Vietnamese, 2–6 sentences and at most 900 characters.",
+  friend:
+    "Write 2–6 sentences in one paragraph; Keep message under 900 characters.",
+};
+
+void test("MB-869 FREE Text keeps the 500-character wording and paid Text changes only the length clause", () => {
+  assert.equal(companionReplyMaxCharacters(), 500);
+  assert.equal(companionReplyMaxCharacters("FREE"), 500);
+  assert.equal(
+    companionGuidanceSystem({ channel: "TEXT", plan: "FREE" }),
+    v1Guidance.TEXT,
+  );
+  assert.equal(
+    companionGuidanceSystem({ channel: "TEXT", friend: true, plan: "FREE" }),
+    companionGuidanceSystem({ channel: "TEXT", friend: true }),
+  );
+  for (const plan of ["PLUS", "PREMIUM"] as const) {
+    assert.equal(companionReplyMaxCharacters(plan), 900);
+    const v1 = companionGuidanceSystem({ channel: "TEXT", plan });
+    assert.ok(v1.includes(paidLength.v1));
+    assert.equal(v1.includes("500 characters"), false);
+    assert.equal(v1.replace(paidLength.v1, freeLength.v1), v1Guidance.TEXT);
+    const friend = companionGuidanceSystem({
+      channel: "TEXT",
+      friend: true,
+      plan,
+    });
+    assert.ok(friend.includes(paidLength.friend));
+    assert.ok(friend.includes(paidLength.v1));
+    assert.equal(
+      friend
+        .replace(paidLength.v1, freeLength.v1)
+        .replace(paidLength.friend, freeLength.friend),
+      companionGuidanceSystem({ channel: "TEXT", friend: true }),
+    );
+    assert.equal(
+      companionGuidanceSystem({ channel: "VOICE", plan }),
+      companionGuidanceSystem({ channel: "VOICE" }),
+    );
+  }
+});
+
+void test("MB-869 paid Text requests a 900-character schema and accepts 600–900 characters; FREE still fails over 500", async () => {
+  const long = (length: number) =>
+    "Mình nghe bạn nè. ".repeat(60).slice(0, length - 1) + ".";
+  for (const friend of [undefined, friendInput]) {
+    for (const plan of [undefined, "FREE", "PLUS", "PREMIUM"] as const) {
+      const max = companionReplyMaxCharacters(plan);
+      for (const provider of ["GEMINI", "OPENAI", "BEDROCK"] as const) {
+        const { bodies, result } = await captureBodies(
+          provider,
+          JSON.stringify(output(long(max === 900 ? 900 : 500))),
+          { ...(friend ? { friend } : {}), ...(plan ? { plan } : {}) },
+        );
+        const request = captured(provider, bodies[0] ?? "{}");
+        const properties = request.schema.properties as Record<
+          string,
+          { maxLength?: number }
+        >;
+        assert.equal(
+          properties.message?.maxLength,
+          provider === "BEDROCK" ? undefined : max,
+        );
+        assert.equal(result.message.length, max);
+        assert.ok(
+          request.system.includes(max === 900 ? paidLength.v1 : freeLength.v1),
+        );
+      }
+      for (const length of [600, 900])
+        if (max === 900)
+          assert.equal(
+            (
+              await captureBodies(
+                "BEDROCK",
+                JSON.stringify(output(long(length))),
+                { ...(friend ? { friend } : {}), ...(plan ? { plan } : {}) },
+              )
+            ).result.message.length,
+            length,
+          );
+      await assert.rejects(
+        captureBodies("BEDROCK", JSON.stringify(output(long(max + 1))), {
+          ...(friend ? { friend } : {}),
+          ...(plan ? { plan } : {}),
+        }),
+      );
+    }
+  }
+});
+
+void test("MB-869 Voice defaults to SUPPORTIVE without a pilot replyStyle and keeps a pilot BRIEF", async () => {
+  const voiceSystem = async (pilotReplyStyle?: "BRIEF" | "SUPPORTIVE") => {
+    const { bodies } = await captureBodies("BEDROCK", plainReply, {
+      voice: true,
+      plan: "PREMIUM",
+      ...(pilotReplyStyle ? { replyStyle: pilotReplyStyle } : {}),
+    });
+    return captured("BEDROCK", bodies[0] ?? "{}").system;
+  };
+  const supportive = companionGuidanceSystem({
+    channel: "VOICE",
+    replyStyle: "SUPPORTIVE",
+  });
+  assert.ok((await voiceSystem()).startsWith(supportive));
+  assert.ok((await voiceSystem("SUPPORTIVE")).startsWith(supportive));
+  const brief = await voiceSystem("BRIEF");
+  assert.ok(
+    brief.startsWith(
+      companionGuidanceSystem({ channel: "VOICE", replyStyle: "BRIEF" }),
+    ),
+  );
+  assert.match(brief, /one short Vietnamese sentence of at most 160/u);
+  assert.match(brief, /"maxLength":500/u);
+
+  const original = globalThis.fetch;
+  let system = "";
+  globalThis.fetch = (url, init) => {
+    assert.ok(typeof init?.body === "string");
+    system = captured("BEDROCK", init.body).system;
+    return Promise.resolve(response("BEDROCK", plainReply));
+  };
+  try {
+    await new RoutedChatProvider({
+      ...configuration,
+      VOICE_PILOT: undefined,
+    }).reply(
+      "Hôm nay mình hơi mệt",
+      { kinds: [], prompt: "" },
+      { provider: "BEDROCK", model },
+      { voice: true },
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.ok(system.startsWith(supportive));
 });

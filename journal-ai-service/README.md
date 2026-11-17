@@ -267,8 +267,11 @@ seconds and PREMIUM to 600 seconds per session;
 daily Text/Voice policy and financial credits are unchanged. No new collection
 or migration is introduced.
 
-Optional pilot `replyStyle` accepts `BRIEF` (the existing default) or
-`SUPPORTIVE`. The supportive spoken prompt requests two or three natural
+Optional pilot `replyStyle` accepts `BRIEF` or `SUPPORTIVE`. Since MB-869
+every Voice call without a pilot `replyStyle` uses `SUPPORTIVE` (Voice is
+PLUS/PREMIUM only); an explicit pilot `BRIEF` still gives one short sentence.
+A pilot that keeps the default 300-token output ceiling may need an explicit
+`maxOutputTokens` for supportive replies. The supportive spoken prompt requests two or three natural
 Vietnamese sentences, usually 180–280 characters, reflecting only what the
 caller shared, with an optional gentle observation or small next step and at
 most one open question. Ambiguous recognition takes priority and calls for a

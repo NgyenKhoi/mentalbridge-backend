@@ -118,6 +118,22 @@ void test("keeps the newest turns within 3000 UTF-8 bytes", () => {
   );
 });
 
+void test("always keeps the newest complete pair even above the byte budget (MB-869)", () => {
+  // A 900-character paid reply of "ệ" is 2700 bytes; with its user turn the pair exceeds 3000.
+  const reply = "ệ".repeat(900);
+  const question = "ệ".repeat(150);
+  const messages = [
+    message(0, "cũ"),
+    message(1, "đáp cũ"),
+    message(2, question),
+    message(3, reply),
+  ];
+  assert.deepEqual(
+    recentHistory(messages, allSelected, decrypt).map((turn) => turn.text),
+    [question, reply],
+  );
+});
+
 void test("an empty conversation gives no history", () => {
   assert.deepEqual(recentHistory([], allSelected, decrypt), []);
 });
