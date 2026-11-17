@@ -18,7 +18,9 @@ import {
   UnknownPushProviderOutcomeError,
   type PushProvider,
 } from './expo-push.provider.js';
+import { notificationAction } from '../notifications/notification.repository.js';
 import { AppointmentPushReminderService } from '../appointment-reminders/appointment-push-reminder.service.js';
+import { DailyReminderPushGate } from './daily-reminder-push.gate.js';
 import type { PushDeviceRepository } from './push-device.repository.js';
 import { PushTokenCrypto } from './push-token.crypto.js';
 
@@ -33,6 +35,7 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
     @Inject(PUSH_DEVICE_REPOSITORY_TOKEN) private readonly repository: PushDeviceRepository,
     @Inject(PUSH_PROVIDER_TOKEN) private readonly provider: PushProvider,
     private readonly appointmentPushReminders: AppointmentPushReminderService,
+    private readonly dailyReminderGate: DailyReminderPushGate,
   ) {}
 
   onModuleInit(): void {
@@ -81,12 +84,31 @@ export class PushDeliveryWorker implements OnModuleInit, OnApplicationShutdown {
             );
             continue;
           }
+          const reminderGate = await this.dailyReminderGate.authorizeClaim(claim);
+          if (reminderGate.decision === 'SUPPRESS') {
+            await this.repository.suppressClaim(claim.id, reminderGate.code);
+            continue;
+          }
+          if (reminderGate.decision === 'DEFER') {
+            await this.repository.deferClaim(
+              claim.id,
+              reminderGate.availableAt,
+              reminderGate.code,
+              claim,
+            );
+            continue;
+          }
+          if (!(await this.repository.isDeliverable(claim.id))) {
+            await this.repository.suppressClaim(claim.id, 'NOTIFICATION_UNAVAILABLE');
+            continue;
+          }
           const ticketId = await this.provider.send({
             token: crypto.decrypt(claim.tokenCiphertext, claim.tokenIv, claim.tokenAuthTag),
-            title: claim.title,
             notificationId: claim.notificationId,
-            actionType: claim.actionType,
-            actionTargetId: claim.actionTargetId,
+            kind: claim.kind,
+            title: claim.title,
+            body: claim.body,
+            action: notificationAction(claim.actionType, claim.actionTargetId),
           });
           await this.repository.accepted(
             claim.id,

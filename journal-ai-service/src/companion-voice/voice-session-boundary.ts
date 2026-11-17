@@ -39,6 +39,7 @@ import {
 } from "./voice-sessions.js";
 import {
   voiceExpressionCapability,
+  voiceSpeechUnitsCapability,
   voiceTurnSchema,
   VoiceTurnError,
   type VoiceTurnService,
@@ -62,6 +63,9 @@ interface VoiceResponse {
   once?(event: string, listener: () => void): void;
   off?(event: string, listener: () => void): void;
   writableEnded?: boolean;
+  destroyed?: boolean;
+  write?(chunk: string): boolean;
+  end?(chunk?: string): void;
   setHeader(name: string, value: string): void;
   status(code: number): VoiceResponse;
   json(body: unknown): void;
@@ -373,7 +377,13 @@ export class VoiceWorkerController {
   constructor(
     @Inject(VOICE_SESSIONS) private readonly sessions: VoiceSessionOperations,
     @Inject(VOICE_TURNS)
-    private readonly turns: Pick<VoiceTurnService, "generate">,
+    private readonly turns: Pick<VoiceTurnService, "generate"> &
+      Partial<
+        Pick<
+          VoiceTurnService,
+          "speechUnitsEnabled" | "cancelSpeechTurn" | "acknowledgeSpeechUnit"
+        >
+      >,
   ) {}
   @Post(":voiceSessionId/turns")
   @HttpCode(200)
@@ -422,6 +432,153 @@ export class VoiceWorkerController {
     )
       throw new VoiceBoundaryError("INVALID_REQUEST");
   }
+  @Post(":voiceSessionId/turns/speech-units")
+  async speechUnits(
+    @Req() request: VoiceRequest,
+    @Res() response: VoiceResponse,
+    @Param("voiceSessionId") id: string,
+    @Body() body: unknown,
+  ) {
+    this.json(request);
+    if (
+      !this.turns.speechUnitsEnabled?.() ||
+      request.headers["x-mentalbridge-voice-capabilities"] !==
+        voiceSpeechUnitsCapability ||
+      !response.write ||
+      !response.end
+    )
+      throw new VoiceBoundaryError("FORBIDDEN");
+    const parsed = voiceTurnSchema.safeParse(body);
+    if (!parsed.success) throw new VoiceBoundaryError("INVALID_REQUEST");
+    const key = uuid(request.headers["idempotency-key"]);
+    const controller = new AbortController();
+    const abort = () => {
+      if (!response.writableEnded) controller.abort();
+    };
+    request.once?.("aborted", abort);
+    response.once?.("close", abort);
+    let count = 0;
+    const send = async (event: object) => {
+      if (controller.signal.aborted || response.destroyed)
+        throw new VoiceLedgerError("SESSION_EXPIRED");
+      if (count === 0) {
+        response.status(200);
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader(
+          "X-MentalBridge-Voice-Protocol",
+          voiceSpeechUnitsCapability,
+        );
+        response.write?.("[");
+      }
+      const writable = response.write?.(
+        `${count++ === 0 ? "" : ","}${JSON.stringify(event)}`,
+      );
+      if (writable === false)
+        await new Promise<void>((resolve, reject) => {
+          const stopped = () => {
+            response.off?.("drain", drained);
+            reject(new VoiceLedgerError("SESSION_EXPIRED"));
+          };
+          const drained = () => {
+            controller.signal.removeEventListener("abort", stopped);
+            resolve();
+          };
+          response.once?.("drain", drained);
+          controller.signal.addEventListener("abort", stopped, { once: true });
+          if (controller.signal.aborted) stopped();
+        });
+    };
+    try {
+      await this.turns.generate(
+        uuid(id),
+        key,
+        parsed.data,
+        request.id ?? randomUUID(),
+        controller.signal,
+        send,
+      );
+      if (count === 0) throw new VoiceLedgerError("INVALID_SESSION_STATE");
+      await send({ type: "COMPLETED", stopReason: "END_TURN" });
+    } catch (error) {
+      if (count === 0) throw error;
+      if (!controller.signal.aborted && !response.destroyed)
+        await send({ type: "FAILED", code: "TURN_FAILED" });
+    } finally {
+      if (count > 0 && !response.destroyed) response.end("]");
+      request.off?.("aborted", abort);
+      response.off?.("close", abort);
+    }
+  }
+  @Post(":voiceSessionId/turns/:turnId/cancel")
+  @HttpCode(200)
+  async cancelSpeechTurn(
+    @Req() request: VoiceRequest,
+    @Param("voiceSessionId") id: string,
+    @Param("turnId") turnId: string,
+    @Body() body: unknown,
+  ) {
+    this.json(request);
+    const parsed = z
+      .object({ attemptId: z.uuid(), leaseId: z.uuid() })
+      .strict()
+      .safeParse(body);
+    if (
+      !parsed.success ||
+      !this.turns.cancelSpeechTurn ||
+      request.headers["x-mentalbridge-voice-capabilities"] !==
+        voiceSpeechUnitsCapability
+    )
+      throw new VoiceBoundaryError("INVALID_REQUEST");
+    await this.turns.cancelSpeechTurn(
+      uuid(id),
+      uuid(turnId),
+      parsed.data.attemptId,
+      parsed.data.leaseId,
+    );
+    return { voiceSessionId: id, turnId, status: "CANCELLED" };
+  }
+  @Post(":voiceSessionId/turns/:turnId/speech-unit-ack")
+  @HttpCode(200)
+  async acknowledgeSpeechUnit(
+    @Req() request: VoiceRequest,
+    @Param("voiceSessionId") id: string,
+    @Param("turnId") turnId: string,
+    @Body() body: unknown,
+  ) {
+    this.json(request);
+    const parsed = z
+      .object({
+        attemptId: z.uuid(),
+        leaseId: z.uuid(),
+        unitSequence: z.number().int().min(1).max(2),
+        replyId: z.uuid(),
+      })
+      .strict()
+      .safeParse(body);
+    if (
+      !parsed.success ||
+      !this.turns.acknowledgeSpeechUnit ||
+      request.headers["x-mentalbridge-voice-capabilities"] !==
+        voiceSpeechUnitsCapability
+    )
+      throw new VoiceBoundaryError("INVALID_REQUEST");
+    await this.turns.acknowledgeSpeechUnit(
+      uuid(id),
+      uuid(turnId),
+      parsed.data.attemptId,
+      parsed.data.leaseId,
+      parsed.data.unitSequence,
+      parsed.data.replyId,
+    );
+    return {
+      voiceSessionId: id,
+      turnId,
+      unitSequence: parsed.data.unitSequence,
+      status: "ACKNOWLEDGED",
+    };
+  }
   @Post(":voiceSessionId/agent-claim")
   @HttpCode(200)
   claim(
@@ -430,8 +587,21 @@ export class VoiceWorkerController {
     @Body() body: unknown,
   ) {
     this.json(request);
+    if (
+      (request.headers["x-mentalbridge-voice-capabilities"] ===
+        voiceSpeechUnitsCapability) !==
+      (this.turns.speechUnitsEnabled?.() === true)
+    )
+      throw new VoiceBoundaryError("FORBIDDEN");
     const parsed = z
-      .object({ attemptId: z.uuid(), dispatchId: z.uuid() })
+      .object({
+        attemptId: z.uuid(),
+        dispatchId: z.uuid(),
+        measurementHash: z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{43}$/)
+          .optional(),
+      })
       .strict()
       .safeParse(body);
     if (!parsed.success) throw new VoiceBoundaryError("INVALID_REQUEST");
@@ -440,6 +610,7 @@ export class VoiceWorkerController {
       parsed.data.attemptId,
       parsed.data.dispatchId,
       request.id ?? randomUUID(),
+      parsed.data.measurementHash,
     );
   }
   @Post(":voiceSessionId/agent-control")

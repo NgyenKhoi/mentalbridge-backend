@@ -895,6 +895,38 @@ void test("a link in a v2 reply is an invalid response", async () => {
   );
 });
 
+void test("MB-869 paid Text accepts up to 900 reply characters while FREE keeps 500", async () => {
+  const long = "Mình hiểu bạn đang mệt. ".repeat(30).trim().slice(0, 700);
+  for (const plan of ["FREE", "PLUS", "PREMIUM"] as const) {
+    const plans: unknown[] = [];
+    const { service } = subject(plan, {
+      provider: {
+        reply: (_message, _minimized, _route, options) => {
+          plans.push(options?.plan);
+          return Promise.resolve({
+            message: long,
+            inputTokens: 20,
+            outputTokens: 10,
+          });
+        },
+      },
+    });
+    const conversation = await create(service);
+    const send = () =>
+      service.send(
+        request({ message: "Kể mình nghe" }, `chat-mb869-${plan}-0001`),
+        conversation.conversationId,
+      );
+    if (plan === "FREE")
+      await assert.rejects(
+        send,
+        chatProblem(503, "CHAT_PROVIDER_INVALID_RESPONSE"),
+      );
+    else assert.equal((await send()).assistant, long);
+    assert.ok(plans.length > 0 && plans.every((value) => value === plan));
+  }
+});
+
 void test("an over-budget estimate refuses before the provider call", async () => {
   const recorder = recordingProvider(null);
   const { service, repository } = subject(

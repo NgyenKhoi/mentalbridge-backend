@@ -62,7 +62,7 @@ class VideoSessionTransactions {
 		return new VideoSessionResponse(id, phase, List.of("WAITING", "ACTIVE").contains(phase),
 				"ACTIVE".equals(phase), appointment.startsAt, appointment.endsAt, now, appointment.version,
 				confirmations.findById(id).map(c -> VideoCompletionResponse.from(appointment, c,
-						appointments.historicalCreditState(appointment.creditId).orElseThrow())).orElse(null));
+						appointments.historicalCreditState(appointment.creditId, appointment.id).orElseThrow())).orElse(null));
 	}
 
 	@Transactional

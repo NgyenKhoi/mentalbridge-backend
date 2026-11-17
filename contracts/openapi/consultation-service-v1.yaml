@@ -4614,7 +4614,7 @@ components:
         confirmationId: { type: string, format: uuid }
         verificationState: { type: string, enum: [PENDING_VERIFICATION, VERIFIED, EVIDENCE_REVIEW] }
         appointmentStatus: { type: string, enum: [SESSION_ENDED, COMPLETED] }
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED] }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         completionFactId: { type: [string, 'null'], format: uuid }
         acceptedAt: { type: string, format: date-time }
         manualReviewAt: { type: string, format: date-time }
@@ -6938,7 +6938,7 @@ components:
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         sessionOutcome: { type: [string, 'null'], enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null] }
         sessionOutcomeReasonCode: { type: [string, 'null'], minLength: 1, maxLength: 64 }
-        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED] }
+        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
     AdminAppointmentPage:
@@ -7027,7 +7027,7 @@ components:
         sessionOutcome:
           type: [string, 'null']
           enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null]
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED] }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         scheduledStartAt: { type: string, format: date-time }
         scheduledEndAt: { type: string, format: date-time }
         serverTime: { type: string, format: date-time }
@@ -7220,7 +7220,7 @@ components:
         sessionEndedAt: { type: [string, 'null'], format: date-time }
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         completionFactId: { type: [string, 'null'], format: uuid }
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED] }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         history:
           type: array
           maxItems: 20

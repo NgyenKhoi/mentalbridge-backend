@@ -81,6 +81,7 @@ describe('configuration', () => {
     expect(configuration.CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS).toBe(300);
     expect(configuration.CONTENT_PUSH_DEVICE_RATE_LIMIT).toBe(30);
     expect(configuration.CONTENT_PUSH_DEVICE_RATE_WINDOW_SECONDS).toBe(60);
+    expect(configuration.CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN).toBeUndefined();
   });
 
   it('normalizes configured CORS origins', () => {
@@ -222,6 +223,44 @@ describe('configuration', () => {
     });
 
     expect(configuration.CONTENT_COMMUNITY_INTERACTION_CONSUMER_ENABLED).toBe(true);
+  });
+
+  it('ignores the retired server-wide reminder time and bounds the SupportPlan reminder token', () => {
+    expect(
+      loadConfiguration({ ...requiredEnvironment, CONTENT_PUSH_DAILY_REMINDER_TIME: '08:30' }),
+    ).not.toHaveProperty('CONTENT_PUSH_DAILY_REMINDER_TIME');
+    for (const token of [undefined, '', 'x'.repeat(32)])
+      expect(
+        loadConfiguration({
+          ...requiredEnvironment,
+          CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN: token,
+        }).CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN,
+      ).toBe(token);
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN: 'too-short',
+      }),
+    ).toThrow();
+  });
+
+  it('tolerates empty push secrets while push is off', () => {
+    expect(
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'false',
+        EXPO_ACCESS_TOKEN: '',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: '',
+      }).CONTENT_PUSH_DELIVERY_ENABLED,
+    ).toBe(false);
+    expect(() =>
+      loadConfiguration({
+        ...requiredEnvironment,
+        CONTENT_PUSH_DELIVERY_ENABLED: 'true',
+        EXPO_ACCESS_TOKEN: '',
+        CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
+      }),
+    ).toThrow();
   });
 
   it('requires push credentials and a valid encryption key when delivery is enabled', () => {

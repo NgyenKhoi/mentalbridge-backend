@@ -698,6 +698,12 @@ class VideoAccessIntegrationTests extends ConsultationTestProperties {
 		evidence.purge(fixture.id);
 		assertThat(events.findByAppointmentId(fixture.id)).hasSize(4);
 		assertThat(jdbc.sql("select completion_fact_id from appointment where id=:id").param("id", fixture.id).query(UUID.class).single()).isEqualTo(completed.completionFactId());
+		jdbc.sql("update service_credit set state='HELD', appointment_id=:next where id=(select service_credit_id from appointment where id=:id)")
+				.param("next", UUID.randomUUID()).param("id", fixture.id).update();
+		mvc.perform(get("/api/v1/appointments/{id}/video-session", fixture.id).with(actor(fixture.user, "USER")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.completion.creditState").value("AVAILABLE"));
+		mvc.perform(get("/api/v1/appointments").with(actor(fixture.user, "USER"))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id=='%s')].creditState", fixture.id).value("AVAILABLE"));
 	}
 
 	Fixture joinedFixtureWithEvidence() throws Exception {

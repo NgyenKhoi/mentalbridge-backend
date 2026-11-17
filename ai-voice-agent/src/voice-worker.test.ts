@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { loadConfiguration } from "./configuration.js";
 import type {
   Control,
   Dispatch,
@@ -32,7 +33,11 @@ const hold = () => {
   return { wait, release };
 };
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
-function fixture(finalAggregationMs?: number) {
+function fixture(
+  finalAggregationMs = 1500,
+  speechUnits = false,
+  unitCount = 1,
+) {
   let now = Date.now();
   const hardStopAt = new Date(now + 300000).toISOString();
   const dispatch: Dispatch = {
@@ -68,8 +73,60 @@ function fixture(finalAggregationMs?: number) {
   let replyExpiryOffset = 0;
   let replyExpression: Reply["expression"];
   let firstAudio: Promise<void> | undefined;
+  const acknowledgements: number[] = [];
+  let streamCancelled = 0;
+  let failAcknowledgement = false;
   let playingReject: ((error: Error) => void) | undefined;
-  const journal: Pick<JournalClient, "claim" | "control" | "turn"> = {
+  const journal: Pick<
+    JournalClient,
+    | "claim"
+    | "control"
+    | "turn"
+    | "turnSpeechUnits"
+    | "cancelSpeechTurn"
+    | "acknowledgeSpeechUnit"
+  > = {
+    acknowledgeSpeechUnit: (_dispatch, _turn, sequence) => {
+      if (failAcknowledgement)
+        return Promise.reject(new Error("PRIVATE_ACK_FAILURE"));
+      acknowledgements.push(sequence);
+      return Promise.resolve();
+    },
+    cancelSpeechTurn: () => {
+      streamCancelled++;
+      return Promise.resolve();
+    },
+    turnSpeechUnits: async (_dispatch, turn, _key, signal, receive) => {
+      turns.push(turn);
+      const replyId = randomUUID();
+      for (let unit = 1; unit <= unitCount; unit++)
+        receive(
+          {
+            voiceSessionId: dispatch.voiceSessionId,
+            turnId: turn.turnId,
+            replyId,
+            language: "vi-VN",
+            spokenText:
+              unit === 1
+                ? "Mình đang lắng nghe bạn."
+                : "Bạn muốn chia sẻ thêm điều gì?",
+            expiresAt: new Date(expires).toISOString(),
+            policyVersion,
+          },
+          unit,
+        );
+      if (generation)
+        await Promise.race([
+          generation,
+          new Promise<never>((_resolve, reject) => {
+            const stop = () => {
+              reject(new Error("CANCELLED"));
+            };
+            signal.addEventListener("abort", stop, { once: true });
+            if (signal.aborted) stop();
+          }),
+        ]);
+    },
     claim: () =>
       claimed
         ? Promise.resolve({
@@ -202,9 +259,15 @@ function fixture(finalAggregationMs?: number) {
     (state) => states.push(state),
     (value) => diagnostics.push(value),
     finalAggregationMs,
+    speechUnits,
   );
   return {
     worker,
+    acknowledgements,
+    streamCancelled: () => streamCancelled,
+    failAcknowledgement: () => {
+      failAcknowledgement = true;
+    },
     signals,
     turns,
     played,
@@ -284,6 +347,88 @@ function fixture(finalAggregationMs?: number) {
   };
 }
 
+void test("speech-unit worker plays before model completion and maintains independent heartbeat and final acknowledgement", async () => {
+  const f = fixture(750, true);
+  const generation = hold();
+  f.generation(generation.wait);
+  await f.start();
+  f.emit("Xin chào, hãy chào tôi một câu ngắn.");
+  f.advance(800);
+  const tick = f.tick();
+  await flush();
+  assert.equal(f.played.length, 1);
+  assert.deepEqual(f.acknowledgements, [1]);
+  assert.equal(f.worker.state, "WAITING_FOR_REPLY");
+  f.advance(5000);
+  await f.tick();
+  assert(f.signals.some((value) => value.kind === "HEARTBEAT"));
+  generation.release();
+  await tick;
+  assert.equal(f.worker.state, "LISTENING");
+  assert.equal(f.turns.length, 1);
+  await f.worker.stop("USER_ENDED");
+  assert.equal(f.closes(), 1);
+});
+
+void test("speaker echo from an earlier speech unit cannot interrupt a later unit in the same reply", async () => {
+  const f = fixture(750, true, 2);
+  const secondPlayback = hold();
+  const speak = f.media.speak.bind(f.media);
+  f.media.speak = async (text, started, signal) => {
+    await speak(text, started, signal);
+    if (f.played.length === 2) await secondPlayback.wait;
+  };
+  await f.start();
+  f.emit("Xin chào, đây là câu thử tổng hợp.");
+  f.advance(800);
+  const work = f.tick();
+  await flush();
+  assert.equal(f.played.length, 2);
+  f.emit("Mình đang lắng nghe bạn.");
+  await flush();
+  assert.equal(f.streamCancelled(), 0);
+  assert.equal(f.turns.length, 1);
+  secondPlayback.release();
+  await work;
+  assert.deepEqual(f.acknowledgements, [1, 2]);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("streaming barge-in cancels the model turn without consuming a replacement admission or ending the session", async () => {
+  const f = fixture(750, true);
+  const generation = hold(),
+    playback = hold();
+  f.generation(generation.wait);
+  f.play(playback.wait);
+  await f.start();
+  f.emit("Xin chào, đây là câu thử tổng hợp.");
+  f.advance(800);
+  const tick = f.tick();
+  await flush();
+  assert.equal(f.worker.state, "SPEAKING");
+  f.emit("Bây giờ chuyển sang chủ đề học bài nhé.");
+  await tick;
+  assert.equal(f.streamCancelled(), 1);
+  assert.equal(f.closes(), 0);
+  assert(!f.signals.some((value) => value.kind === "FINISHED"));
+  assert.equal(f.acknowledgements.length, 0);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("failed speech acknowledgement tears down and never retries synthesis", async () => {
+  const f = fixture(750, true);
+  f.failAcknowledgement();
+  await f.start();
+  f.emit("Xin chào, đây là câu thử tổng hợp.");
+  f.advance(800);
+  await f.tick();
+  await f.worker.finished;
+  assert.equal(f.played.length, 1);
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.closes(), 1);
+  assert.doesNotMatch(JSON.stringify(f.diagnostics), /PRIVATE|lắng nghe/u);
+});
+
 void test("reply expression starts only with trusted first audio and clears on mute", async () => {
   const f = fixture();
   const audio = hold();
@@ -310,7 +455,7 @@ void test("reply expression starts only with trusted first audio and clears on m
   await f.worker.stop("USER_ENDED");
 });
 
-void test("production timer ticks every 250 ms, catches failures and stops scheduling", async (t) => {
+void test("production timer ticks every 50 ms, catches failures and stops scheduling", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   let ticks = 0;
   let failures = 0;
@@ -324,7 +469,7 @@ void test("production timer ticks every 250 ms, catches failures and stops sched
       return Promise.resolve();
     },
   });
-  t.mock.timers.tick(750);
+  t.mock.timers.tick(150);
   await Promise.resolve();
   assert.equal(ticks, 3);
   assert.equal(failures, 3);
@@ -560,8 +705,9 @@ void test("claims before audio and aggregates final Vietnamese segments, ignorin
   assert.equal(f.closes(), 1);
 });
 
-void test("a shorter configured aggregation interval still waits for adjacent finals and ignores interim speech", async () => {
-  const f = fixture(750);
+void test("default aggregation dispatches sooner but waits for a resumed utterance to finalize", async () => {
+  assert.equal(loadConfiguration({}).finalAggregationMs, 750);
+  const f = fixture(loadConfiguration({}).finalAggregationMs);
   await f.start();
   f.emit("Tôi muốn chia sẻ");
   f.advance(500);
@@ -574,9 +720,101 @@ void test("a shorter configured aggregation interval still waits for adjacent fi
   assert.equal(f.turns.length, 0);
   f.advance(1);
   await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.advance(900);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("mình muốn nói tiếp");
+  f.advance(749);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.advance(1);
+  await f.tick();
   assert.equal(f.turns.length, 1);
-  assert.equal(f.turns[0]?.finalTranscript, "Tôi muốn chia sẻ về hôm nay");
+  assert.equal(
+    f.turns[0]?.finalTranscript,
+    "Tôi muốn chia sẻ về hôm nay mình muốn nói tiếp",
+  );
   assert.equal(f.played.length, 1);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("low-confidence interim activity cannot dispatch a pending prefix or lower final confidence", async () => {
+  const f = fixture(750);
+  await f.start();
+  f.emit("PRIVATE_PENDING_PREFIX");
+  f.advance(500);
+  f.emit("PRIVATE_RESUMED_INTERIM", { final: false, confidence: 0.1 });
+  f.advance(1500);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("PRIVATE_UNCERTAIN_FINAL", { confidence: 0.7 });
+  f.advance(1000);
+  await f.tick();
+  assert.equal(f.turns.length, 0);
+  f.emit("PRIVATE_ACCEPTED_NEW_TURN");
+  f.advance(750);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0]?.finalTranscript, "PRIVATE_ACCEPTED_NEW_TURN");
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("a replayed interim for an accepted final cannot stall the pending response", async () => {
+  const f = fixture(750);
+  const segmentId = randomUUID();
+  await f.start();
+  f.emit("PRIVATE_ACCEPTED_SEGMENT", { segmentId });
+  f.advance(400);
+  f.emit("PRIVATE_ACCEPTED_SEGMENT", { segmentId, final: false });
+  f.advance(350);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0]?.finalTranscript, "PRIVATE_ACCEPTED_SEGMENT");
+  await f.worker.stop("USER_ENDED");
+});
+
+void test("turn latency diagnostics preserve segment boundaries and separate Journal from Agent playout", async () => {
+  const f = fixture(750);
+  const generation = hold();
+  await f.start();
+  f.generation(generation.wait);
+  f.emit("PRIVATE_SYNTHETIC_QUESTION");
+  f.advance(775);
+  const work = f.tick();
+  await flush();
+  f.advance(400);
+  generation.release();
+  await work;
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.phase === "turn_dispatch_timing"),
+    {
+      phase: "turn_dispatch_timing",
+      turnSequence: 1,
+      finalToDispatchMs: 775,
+      aggregationMs: 750,
+      schedulerLagMs: 25,
+    },
+  );
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.phase === "journal_reply_received"),
+    {
+      phase: "journal_reply_received",
+      turnSequence: 1,
+      journalRoundTripMs: 400,
+    },
+  );
+  assert.deepEqual(
+    f.diagnostics.find((value) => value.phase === "playout_first_audio"),
+    {
+      phase: "playout_first_audio",
+      turnSequence: 1,
+      requestToPlayoutMs: 400,
+      ttsToPlayoutMs: 0,
+    },
+  );
+  assert.equal(JSON.stringify(f.diagnostics).includes("PRIVATE"), false);
   await f.worker.stop("USER_ENDED");
 });
 

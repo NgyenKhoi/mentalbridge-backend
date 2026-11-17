@@ -228,6 +228,8 @@ and email choices cannot drift across web, email, inbox, or future mobile consum
 | `group_screening_reassessment_enabled` | Independent screening/reassessment content-group choice. |
 | `group_appointment_message_enabled` | Independent appointment/message content-group choice. |
 | `group_resource_system_enabled` | Independent resource/system content-group choice. |
+| `group_support_plan_reminder_enabled` | MB-855 USER opt-out (default on) for the one generic daily SupportPlan inbox item and push. New SPECIALIST defaults store false; it is not part of the SPECIALIST scope check so code still running before the release can keep inserting rows, and SPECIALIST rows are never reminder candidates. |
+| `daily_reminder_time` | MB-855 owner-selected local wall-clock time (default `20:00`), interpreted in `time_zone`, from which the Journal, emotion and SupportPlan daily reminders are created or pushed. The push gate reads the current value at claim time. |
 | `group_community_interaction_enabled` | Independent in-app choice for eligible Community comment, reply, and first-reaction facts. Disabled facts are durably recorded as cancelled so replay cannot create a later surprise notification. |
 | `quiet_hours_enabled` | Whether non-bypass delivery observes the local quiet window. |
 | `quiet_hours_start` | Inclusive local wall-clock start in `time_zone`; later-than-end windows cross midnight. |
@@ -266,10 +268,10 @@ Durable in-app notification and safe delivery payload owned by Content/Notificat
 | --- | --- |
 | `id` | Immutable UUID used for REST history, Kafka delivery, and read idempotency. |
 | `recipient_id` | External Identity account UUID of the intended recipient. |
-| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds Community kinds; MB-565 adds `ASSESSMENT_RESULT_AVAILABLE`, `SUPPORT_GUIDE_AVAILABLE`, and `ACCOUNT_STATUS` while retaining historical generic kinds. |
+| `category` | Stable kind used for preference, priority, and presentation rules. MB-564 adds separate Journal/emotion kinds; MB-617 adds Community kinds; MB-565 adds `ASSESSMENT_RESULT_AVAILABLE`, `SUPPORT_GUIDE_AVAILABLE`, and `ACCOUNT_STATUS` while retaining historical generic kinds. MB-855 adds `SUPPORT_PLAN_DAILY_REMINDER` (source `CARE_SUPPORT_PLAN`, identity `SUPPORT_PLAN_DAILY_REMINDER:YYYY-MM-DD` in the preference time zone, fixed generic copy). |
 | `title` | Reviewed/minimized user-visible title safe for the selected channel. |
 | `body` | Reviewed/minimized user-visible body that excludes raw sensitive source content. |
-| `action_type` | Optional approved internal action enum used to derive a relative client route; MB-565 adds `OPEN_SUPPORT_GUIDE` bound to its exact UUID target, while account status has no action. `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
+| `action_type` | Optional approved internal action enum used to derive a relative client route; MB-565 adds `OPEN_SUPPORT_GUIDE` bound to its exact UUID target, while account status has no action. MB-855 adds targetless `OPEN_SUPPORT_PLAN`, which always resolves to `/support-plan`. `OPEN_SPECIALIST_APPOINTMENTS` resolves only to the specialist appointment workspace and arbitrary producer URLs are never stored. |
 | `action_target_id` | Optional opaque target UUID for the closed action enum, including exact resource, SupportGuide, Community post, conversation, request or invitation. This pointer never grants access; the owner read handles unavailable targets safely. |
 | `grouping_key` | Nullable `POST:<id>` or `COMMENT:<id>` reaction target key; new jobs may join one active unread unexpired item under the recipient preference lock. Reading/deleting ends the group. |
 | `priority` | Delivery/presentation priority, not a clinical severity decision. |

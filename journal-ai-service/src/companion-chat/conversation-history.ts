@@ -42,7 +42,7 @@ export const conversationMemory = (
     const pairBytes =
       Buffer.byteLength(userText, "utf8") +
       Buffer.byteLength(assistantText, "utf8");
-    if (bytes + pairBytes > HISTORY_MAX_BYTES) break;
+    if (history.length > 0 && bytes + pairBytes > HISTORY_MAX_BYTES) break;
     bytes += pairBytes;
     history.unshift(
       { role: "USER", text: userText },

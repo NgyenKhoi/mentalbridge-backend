@@ -41,7 +41,7 @@ public class AppointmentDecisionService {
 	@Transactional(readOnly = true)
 	public AppointmentResponse.ListResponse list(UUID specialistId) {
 		var items = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
@@ -176,7 +176,7 @@ public class AppointmentDecisionService {
 
 	private AppointmentResponse find(UUID appointmentId, UUID specialistId) {
 		var appointment = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id

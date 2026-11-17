@@ -29,6 +29,18 @@ import {
 
 const COMMUNITY_INTERACTION_GROUP = 'content-notification-community-interactions-v1';
 const MAX_PROJECTION_ATTEMPTS = 3;
+const POST_REACTION_COPY: Record<
+  Exclude<CommunityInteractionEvent['interactionKind'], 'COMMENT' | 'REPLY'>,
+  string
+> = {
+  SUPPORT: 'Một thành viên đã gửi sự ủng hộ tới chia sẻ của bạn.',
+  RELATE: 'Một thành viên cảm thấy đồng điệu với chia sẻ của bạn.',
+  THANK_YOU: 'Một thành viên đã gửi lời cảm ơn tới chia sẻ của bạn.',
+  LIKE: 'Một thành viên đã thích chia sẻ của bạn.',
+  EMPATHY: 'Một thành viên đã bày tỏ sự đồng cảm với chia sẻ của bạn.',
+  CHEER: 'Một thành viên đã gửi lời động viên tới chia sẻ của bạn.',
+  GROWTH: 'Một thành viên đã chọn “Đang lớn lên” cho chia sẻ của bạn.',
+};
 
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -81,12 +93,7 @@ function projection(event: CommunityInteractionEvent): CommunityNotificationProj
     kind: 'COMMUNITY_REACTION',
     groupingKey: 'POST:' + event.targetId,
     title: 'Bài viết của bạn nhận được sự đồng cảm',
-    body:
-      event.interactionKind === 'THANK_YOU'
-        ? 'Một thành viên đã gửi lời cảm ơn tới chia sẻ của bạn.'
-        : event.interactionKind === 'RELATE'
-          ? 'Một thành viên cảm thấy đồng điệu với chia sẻ của bạn.'
-          : 'Một thành viên đã gửi sự ủng hộ tới chia sẻ của bạn.',
+    body: POST_REACTION_COPY[event.interactionKind],
     occurredAt: event.occurredAt,
     postId: event.deepLink.postId,
   };

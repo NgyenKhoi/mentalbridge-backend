@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { voicePilotAllows, type VoicePilot } from "./voice-pilot.js";
+import { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
 import {
   MongoClient,
   MongoServerError,
@@ -323,6 +324,7 @@ const dueReason = (
 export const voiceSessionExpiryReason = dueReason;
 
 export class MongoVoiceLedger {
+  readonly measurements: MongoVoiceMeasurementStore;
   private readonly sessions: Collection<StoredSession>;
   private readonly usage: Collection<DailyUsage>;
   private readonly capacity: Collection<Capacity>;
@@ -338,6 +340,11 @@ export class MongoVoiceLedger {
     this.usage = database.collection("ai_voice_daily_usage");
     this.capacity = database.collection("ai_voice_capacity");
     this.mediaInitialization = database.collection("ai_voice_media");
+    this.measurements = new MongoVoiceMeasurementStore(
+      client,
+      databaseName,
+      pilot,
+    );
   }
 
   private async atomic<T>(
@@ -468,6 +475,12 @@ export class MongoVoiceLedger {
           prior.contextHandoffHash !== input.contextHandoffHash
         )
           throw new VoiceLedgerError("IDEMPOTENCY_CONFLICT");
+        if (!terminal(prior.state) && prior.state !== "ENDING")
+          await this.measurements.authorize(
+            prior.voiceSessionId,
+            input.now,
+            transaction,
+          );
         return publicSession(prior);
       }
       if (prior) throw new VoiceLedgerError("SESSION_EXPIRED");
@@ -548,9 +561,16 @@ export class MongoVoiceLedger {
         seconds <= 0
       )
         throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+      await this.measurements.reserve(
+        input.voiceSessionId,
+        input.now,
+        transaction,
+      );
       const admittedSeconds = Math.min(
         limits.perSessionSeconds,
         seconds,
+        this.measurements.policy?.allocation.voiceSeconds ??
+          Number.POSITIVE_INFINITY,
         this.pilot
           ? (this.pilot.maxSessionSeconds ?? 90)
           : Number.POSITIVE_INFINITY,
@@ -756,7 +776,7 @@ export class MongoVoiceLedger {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (!this.guard(value, guard)) return publicSession(value);
-      this.live(value, now);
+      await this.live(value, now, transaction);
       value.lastSequence = guard.sequence;
       value.updatedAt = now;
       return this.save(value, transaction);
@@ -779,8 +799,9 @@ export class MongoVoiceLedger {
   ): Promise<VoiceSession> {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
+      await this.measurements.authorize(voiceSessionId, now, transaction);
       if (value.dispatchState === "ISSUED") {
-        this.live(value, now);
+        await this.live(value, now, transaction);
         return publicSession(value);
       }
       if (
@@ -824,13 +845,18 @@ export class MongoVoiceLedger {
     return guard.sequence > value.lastSequence;
   }
 
-  private live(value: VoiceSession, now: Date) {
+  private async live(
+    value: VoiceSession,
+    now: Date,
+    transaction: ClientSession,
+  ) {
     assertDate(now);
     if (now < value.updatedAt) throw new VoiceLedgerError("STALE_ATTEMPT");
     if (terminal(value.state) || value.state === "ENDING")
       throw new VoiceLedgerError("INVALID_SESSION_STATE");
     if (value.expiresAt <= now || dueReason(value, now))
       throw new VoiceLedgerError("SESSION_EXPIRED");
+    await this.measurements.authorize(value.voiceSessionId, now, transaction);
   }
 
   async transition(
@@ -842,7 +868,7 @@ export class MongoVoiceLedger {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (!this.guard(value, guard)) return publicSession(value);
-      this.live(value, now);
+      await this.live(value, now, transaction);
       if (!transitions[value.state].includes(state))
         throw new VoiceLedgerError("INVALID_SESSION_STATE");
       closeActive(value, closingCut(value, now));
@@ -871,7 +897,7 @@ export class MongoVoiceLedger {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (!this.guard(value, guard)) return publicSession(value);
-      this.live(value, now);
+      await this.live(value, now, transaction);
       if (value.state !== "ACTIVE")
         throw new VoiceLedgerError("INVALID_SESSION_STATE");
       if (!value.deliveredSession) {
@@ -903,7 +929,7 @@ export class MongoVoiceLedger {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (!this.guard(value, guard)) return publicSession(value);
-      this.live(value, now);
+      await this.live(value, now, transaction);
       if (value.state !== "ACTIVE")
         throw new VoiceLedgerError("INVALID_SESSION_STATE");
       value.lastActivityAt = now;
@@ -926,7 +952,7 @@ export class MongoVoiceLedger {
         value.capacityGeneration !== guard.generation
       )
         throw new VoiceLedgerError("STALE_ATTEMPT");
-      this.live(value, now);
+      await this.live(value, now, transaction);
       if (value.state !== "ACTIVE")
         throw new VoiceLedgerError("INVALID_SESSION_STATE");
       value.lastActivityAt = now;
@@ -945,7 +971,7 @@ export class MongoVoiceLedger {
     return this.atomic(async (transaction) => {
       const value = await this.load(voiceSessionId, transaction);
       if (!this.guard(value, guard)) return publicSession(value);
-      this.live(value, now);
+      await this.live(value, now, transaction);
       value.authorityExpiresAt = new Date(
         Math.min(
           entitlement.checkedAt.getTime() + VOICE_LEASE_MS,
@@ -970,7 +996,7 @@ export class MongoVoiceLedger {
       const value = await this.load(voiceSessionId, transaction);
       if (value.ownerId !== ownerId)
         throw new VoiceLedgerError("SESSION_NOT_FOUND");
-      this.live(value, now);
+      await this.live(value, now, transaction);
       const expiresAt = new Date(
         Math.min(
           now.getTime() + VOICE_LEASE_MS,
@@ -1068,6 +1094,7 @@ export class MongoVoiceLedger {
     value.settledAt = now;
     value.updatedAt = now;
     value.chargedSeconds = usedSeconds;
+    await this.measurements.release(value, now, transaction);
     await this.capacity.replaceOne({ _id: capacity._id }, capacity, {
       session: transaction,
     });

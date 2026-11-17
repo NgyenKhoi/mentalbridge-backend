@@ -796,3 +796,18 @@ story's `CARE_OPENAPI_SOURCE`, then consumer contract/BFF/client checks. The
 provider merges first. Tests cover source/replay/snapshot, deterministic
 mapping, owner/concurrency/failure boundaries and upgrade from 033; exact local
 gate evidence is recorded in the story backend handoff.
+
+## MB-855 SupportPlan daily reminder eligibility
+
+`POST /internal/v1/support-plan-reminder-eligibility` lets Content ask whether
+an owner should get today's generic SupportPlan reminder. It accepts only
+`X-MentalBridge-Service-Token` matching `CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN`
+(empty disables access; otherwise 32-256 printable characters, distinct from the
+voice, Companion and idempotency credentials). User JWTs never authorize it; every
+refusal is a bodiless 401 and every response is `Cache-Control: no-store`. The body
+is exactly `{ownerAccountId, asOf}`; the answer is only `{eligible}`. True means the
+current plan is ACTIVE and has a SCHEDULED occurrence whose local date in its own
+timezone equals `asOf`'s local date, whose schedule is ACTIVE with
+`reminderEnabled`, and whose native action (v3) is ACTIVE. The read reuses the Today
+window, so it may idempotently generate occurrences like a Today read; it never
+changes occurrence state.

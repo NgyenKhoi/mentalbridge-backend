@@ -1,8 +1,14 @@
 export type VoiceProviderPhase =
+  | "provider_prompt_prepared"
   | "token_count_requested"
   | "token_count_authorized"
+  | "bedrock_request_body_prepared"
   | "bedrock_requested"
   | "bedrock_response_received"
+  | "bedrock_response_body_received"
+  | "bedrock_stream_first_text"
+  | "bedrock_stream_message_stopped"
+  | "bedrock_stream_completed"
   | "provider_usage"
   | "bedrock_output_validation"
   | "bedrock_response_validated";
@@ -18,6 +24,8 @@ export type VoiceFailureCode =
   | "OUTPUT_TOKEN_LIMIT"
   | "UNEXPECTED_STOP_REASON"
   | "RESPONSE_ENVELOPE_INVALID"
+  | "STREAM_PROTOCOL_INVALID"
+  | "STREAM_PROVIDER_EXCEPTION"
   | "OUTPUT_JSON_INVALID"
   | "OUTPUT_SCHEMA_INVALID"
   | "OUTPUT_SAFETY_REJECTED"

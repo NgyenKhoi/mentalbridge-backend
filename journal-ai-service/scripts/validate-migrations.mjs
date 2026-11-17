@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
+const measurementMigration = createRequire(import.meta.url)(
+  "../migrations/020_voice_measurement_campaigns.cjs",
+);
+assert.equal(
+  measurementMigration.collectionName,
+  "ai_voice_measurement_campaigns",
+);
+assert.equal(
+  measurementMigration.validator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  measurementMigration.validator.$jsonSchema.properties.reservations.maxItems,
+  2,
+);
+assert.equal(typeof measurementMigration.up, "function");
+assert.equal(typeof measurementMigration.down, "function");
+
 const require = createRequire(import.meta.url);
 const migration = require("../migrations/001_journal_entries_baseline.cjs");
 const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
@@ -14,6 +32,7 @@ const longitudinalMigration = require("../migrations/009_longitudinal_context_an
 const companionChatMigration = require("../migrations/010_ai_companion_chat_quotas.cjs");
 const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
 const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
+const longitudinalPromptV2Migration = require("../migrations/022_longitudinal_prompt_v2.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -86,6 +105,21 @@ assert.equal(
 );
 assert.equal(typeof longitudinalMigration.up, "function");
 assert.equal(typeof longitudinalMigration.down, "function");
+assert.deepEqual(
+  longitudinalPromptV2Migration.longitudinalResultValidator.$jsonSchema
+    .properties.promptVersion.enum,
+  ["longitudinal-v1", "longitudinal-v2"],
+);
+assert.deepEqual(
+  longitudinalPromptV2Migration.longitudinalJobValidator.$jsonSchema.properties
+    .route.properties.promptVersion.enum,
+  ["longitudinal-v1", "longitudinal-v2"],
+);
+assert.ok(
+  longitudinalPromptV2Migration.longitudinalResultValidator.$jsonSchema.properties.provider.enum.includes(
+    "BEDROCK",
+  ),
+);
 assert.equal(
   longitudinalMigration.jobValidator.$jsonSchema.properties.route.properties
     .workload.enum[0],
@@ -318,5 +352,5 @@ assert.deepEqual(titleCommands, [
   },
 ]);
 console.log(
-  "Validated Mongo migrations: 001 through 018_companion_conversation_title.cjs",
+  "Validated Mongo migrations: existing 001..018 plus additive 020_voice_measurement_campaigns.cjs; preserve separate migration019 from MB-697 before deployment",
 );

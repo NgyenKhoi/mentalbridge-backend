@@ -10,11 +10,16 @@ and 750 ms response defaults, no retry, no ACTIVE cache, and fails closed.
 ## Runtime
 
 MB-691 also adds `GET|PUT|DELETE /api/v1/community/comments/{commentId}/reaction`
-for supportive `SUPPORT`, `RELATE`, `THANK_YOU` reactions on visible active root
+for supportive `SUPPORT`, `RELATE`, `THANK_YOU`, `LIKE`, `EMPATHY`, `CHEER`, `GROWTH` reactions on visible active root
 comments and replies. The response contains the caller's reaction and current
 reaction count. PUT replaces one actor/comment value naturally; DELETE is
 idempotent. Neither changes the comment authoring ETag. Deleted/hidden/blocked
 targets are unavailable, and self-reaction creates no notification fact.
+The same seven values apply to post reactions. They are supportive only, with
+no negative or clinical meaning. Migration `0026-community-supportive-reactions`
+widens both reaction CHECK constraints; deploy compatible notification consumers
+before emitting new reaction facts, and retire older Community replicas before
+clients submit new values.
 Migration `0021-community-comment-reactions` adds the owner table. Its first
 logical non-self reaction uses the existing interaction outbox and a separate
 `mentalbridge.community.comment-reaction.v1` topic, keyed by comment ID, preserving

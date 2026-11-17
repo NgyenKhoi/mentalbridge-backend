@@ -21,7 +21,7 @@ import jakarta.persistence.Table;
 @Table(name = "community_post_reaction")
 class CommunityPostReactionEntity {
 
-	enum Reaction { SUPPORT, RELATE, THANK_YOU }
+	enum Reaction { SUPPORT, RELATE, THANK_YOU, LIKE, EMPATHY, CHEER, GROWTH }
 
 	@EmbeddedId
 	private CommunityPostReactionId id;

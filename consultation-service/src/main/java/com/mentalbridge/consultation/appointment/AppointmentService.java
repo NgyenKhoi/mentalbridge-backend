@@ -204,7 +204,7 @@ public class AppointmentService {
 	public AppointmentResponse.ListResponse list(UUID userId, UUID originatingPlanActionId) {
 		var filter = originatingPlanActionId == null ? "" : " and a.originating_plan_action_id=:originatingPlanActionId";
 		var statement = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
@@ -337,7 +337,7 @@ public class AppointmentService {
 
 	private AppointmentResponse findByCommand(UUID userId, String key) {
 		var appointment = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
@@ -350,7 +350,7 @@ public class AppointmentService {
 
 	private AppointmentResponse findById(UUID userId, UUID id) {
 		var appointment = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id

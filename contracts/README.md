@@ -1,5 +1,14 @@
 # Contract source of truth
 
+MB-854 adds the default-OFF internal
+[Voice speech-unit contract](openapi/journal-ai-voice-speech-units-v1.json).
+Its handlers are implemented behind matching Journal/Agent measurement opt-ins;
+the independent-unit publication policy still requires explicit source/policy
+review and a separate live window. Agent is the sole consumer. No main Journal
+public API, memberPR299 migration or frontend sync is changed. See
+[the policy difference](../docs/policies/companion-voice-speech-unit-v1.md),
+especially irreversible early audio and conservative TTS reservations.
+
 All language-neutral integration contracts live under this directory. Service-local contract copies are not allowed because they drift from consumers and review tooling.
 
 | Contract | Canonical location |

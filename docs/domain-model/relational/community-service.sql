@@ -80,7 +80,7 @@ CREATE TABLE community.community_post_topic (
 CREATE TABLE community.community_post_reaction (
     post_id uuid NOT NULL REFERENCES community.community_post(id),
     profile_id uuid NOT NULL REFERENCES community.community_profile(id),
-    reaction varchar(16) NOT NULL,
+    reaction varchar(16) NOT NULL CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH')),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     PRIMARY KEY (post_id, profile_id)
@@ -176,7 +176,7 @@ CREATE TABLE community.community_comment_revision (
 CREATE TABLE community.community_comment_reaction (
     comment_id uuid NOT NULL REFERENCES community.community_comment(id) ON DELETE CASCADE,
     profile_id uuid NOT NULL REFERENCES community.community_profile(id) ON DELETE CASCADE,
-    reaction varchar(16) NOT NULL CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU')),
+    reaction varchar(16) NOT NULL CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU', 'LIKE', 'EMPATHY', 'CHEER', 'GROWTH')),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
     PRIMARY KEY (comment_id, profile_id)

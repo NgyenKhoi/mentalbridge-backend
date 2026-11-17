@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type {
+  NotificationActionType,
   NotificationCreate,
   NotificationCursor,
   NotificationItem,
@@ -39,9 +40,11 @@ function iso(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
-function action(row: NotificationRow): NotificationItem['action'] {
-  if (!row.action_type) return null;
-  const targetId = row.action_target_id;
+export function notificationAction(
+  type: NotificationActionType | null,
+  targetId: string | null,
+): NotificationItem['action'] {
+  if (!type) return null;
   const href: Readonly<Record<string, string>> = {
     OPEN_JOURNAL: '/journal',
     OPEN_MESSAGES: '/messages',
@@ -49,26 +52,27 @@ function action(row: NotificationRow): NotificationItem['action'] {
     OPEN_RESOURCES: '/resources',
     OPEN_ASSESSMENTS: '/assessments',
     OPEN_SPECIALIST_APPOINTMENTS: '/specialist/appointments',
+    OPEN_SUPPORT_PLAN: '/support-plan',
   };
   return {
-    type: row.action_type,
+    type,
     targetId,
     href:
-      row.action_type === 'OPEN_RESOURCE' && targetId
+      type === 'OPEN_RESOURCE' && targetId
         ? `/resources/${encodeURIComponent(targetId)}`
-        : row.action_type === 'OPEN_APPOINTMENT' && targetId
+        : type === 'OPEN_APPOINTMENT' && targetId
           ? `/appointments/${encodeURIComponent(targetId)}`
-          : row.action_type === 'OPEN_SUPPORT_GUIDE' && targetId
+          : type === 'OPEN_SUPPORT_GUIDE' && targetId
             ? `/support-guides/${encodeURIComponent(targetId)}`
-            : row.action_type === 'OPEN_COMMUNITY_POST' && targetId
+            : type === 'OPEN_COMMUNITY_POST' && targetId
               ? `/community/${encodeURIComponent(targetId)}`
-              : row.action_type === 'OPEN_COMMUNITY_CONVERSATION' && targetId
+              : type === 'OPEN_COMMUNITY_CONVERSATION' && targetId
                 ? `/community/chat/conversations/${encodeURIComponent(targetId)}`
-                : row.action_type === 'OPEN_COMMUNITY_REQUEST' && targetId
+                : type === 'OPEN_COMMUNITY_REQUEST' && targetId
                   ? `/community/chat/requests/${encodeURIComponent(targetId)}`
-                  : row.action_type === 'OPEN_COMMUNITY_INVITATION' && targetId
+                  : type === 'OPEN_COMMUNITY_INVITATION' && targetId
                     ? `/community/chat/invitations/${encodeURIComponent(targetId)}`
-                    : href[row.action_type],
+                    : href[type],
   };
 }
 
@@ -83,7 +87,7 @@ export function toNotificationItem(row: NotificationRow): NotificationItem {
     createdAt: iso(row.created_at),
     read: row.read_at !== null,
     readAt: row.read_at === null ? null : iso(row.read_at),
-    action: action(row),
+    action: notificationAction(row.action_type, row.action_target_id),
     lifecycleState: 'ACTIVE',
     expiresAt: iso(row.expires_at),
   };

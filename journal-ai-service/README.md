@@ -1,6 +1,49 @@
 # Journal and AI Service
 
+MB-854 independently publishable speech units are a default-OFF review proposal:
+`JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`. Enabling requires reviewed policy,
+ConverseStream enabled and an approved bound measurement pilot. Each complete
+unit retains schema/safety, fresh publication authorization, state/lease checks,
+and a conservative500-character turn reservation. No raw token reaches TTS.
+Read [the prospective policy](../docs/policies/companion-voice-speech-unit-v1.md)
+before considering activation; source approval is not a live window. Text and
+ordinary Voice remain on their existing contracts while the flag isOFF.
+
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
+
+## MB-854 incoming Voice ConverseStream
+
+`JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED=false` is an independent, explicit
+Voice-only opt-in. When enabled on a reviewed deployment, Journal sends the
+unchanged bounded request to Bedrock `/converse-stream`, using the existing
+Bearer credential and pinned Sonnet route. Text and default Voice still use
+`/converse`. CountTokens, request deadline, input/output ceilings and current
+authorization remain unchanged. The API requires the separate AWS permission
+`bedrock:InvokeModelWithResponseStream`; source or a working Converse key does
+not prove that permission or current credit. Never probe it without an approved
+live window or fall back to Converse after a stream failure.
+
+The Node22 adapter incrementally decodes Amazon EventStream frames, validates
+prelude/message CRC32, event order/role/text-only blocks, bounded headers/frames/
+response bytes and usage. It uses no new dependency and never exposes delta
+text to telemetry or a consumer. Cancellation/deadline closes the reader; a
+broken body, provider exception or invalid protocol has a closed diagnostic.
+Usage is observed once before output validation, including abnormal stops;
+there is no retry, redirect or fallback for this opt-in path.
+
+New metadata-only phases distinguish `bedrock_stream_first_text` (first nonempty
+model text delta), `bedrock_stream_message_stopped` (model stop, closed reason)
+and `bedrock_stream_completed` (complete wire stream/metadata). None means
+speech is authorized or audible. Existing elapsed timers and attempt/turn IDs
+provide correlation; actual TTFT remains NOT_MEASURED until a permitted real run.
+
+**This is an incoming model-stream foundation, not early-audio completion.**
+Journal still waits for complete END_TURN, JSON/schema/full-message safety and
+fresh publication authorization before returning the existing single Voice
+reply to Agent/TTS. Partial JSON, an apparently safe prefix or a provider's NONE
+field is not proof that the entire response is acceptable. No REST, persistence,
+consent, quota, TTS/voice, Agent, retry or streaming-speech policy is changed.
+See [the implementation and early-playback gate](../docs/story-mb-854-converse-stream.md).
 
 ## MB-806 two AI consent levels
 
@@ -224,8 +267,11 @@ seconds and PREMIUM to 600 seconds per session;
 daily Text/Voice policy and financial credits are unchanged. No new collection
 or migration is introduced.
 
-Optional pilot `replyStyle` accepts `BRIEF` (the existing default) or
-`SUPPORTIVE`. The supportive spoken prompt requests two or three natural
+Optional pilot `replyStyle` accepts `BRIEF` or `SUPPORTIVE`. Since MB-869
+every Voice call without a pilot `replyStyle` uses `SUPPORTIVE` (Voice is
+PLUS/PREMIUM only); an explicit pilot `BRIEF` still gives one short sentence.
+A pilot that keeps the default 300-token output ceiling may need an explicit
+`maxOutputTokens` for supportive replies. The supportive spoken prompt requests two or three natural
 Vietnamese sentences, usually 180–280 characters, reflecting only what the
 caller shared, with an optional gentle observation or small next step and at
 most one open question. Ambiguous recognition takes priority and calls for a
@@ -244,6 +290,43 @@ Only `end_turn` is accepted for Voice completion. Missing reasons and
 `stop_sequence` fail closed as `UNEXPECTED_STOP_REASON`; no stop sequence is
 configured by the Voice request. Valid JSON alone does not authorize speech.
 See [the MB-790 output-validation follow-up](../docs/mb-790-voice-output-validation.md).
+
+MB-854 adds metadata-only milestones for context, each authorization boundary,
+provider request preparation, response headers/body, registration and recheck.
+`bedrock_response_received` marks headers and is not token TTFT. Each LiveKit
+media inspection starts its independent room/dispatch/participant reads together
+and reports closed operations/outcomes, durations and validated correlation IDs;
+room binding and recording guards still precede a successful result. No fresh
+authority check is cached or removed. See the [latency investigation and controlled
+benchmark](../docs/story-mb-854-voice-latency.md); run `npm run benchmark:voice-media`
+for the isolated before/after read comparison without provider calls.
+
+MB-863 correlates each INITIAL, PRE_INFERENCE and PUBLICATION authorization
+round with its current owner checks, local state reads and unique media
+inspection. Native-fetch request/send/headers/body milestones distinguish SDK
+preparation and parsing from the HTTP wait without changing requests, deadlines,
+pooling or retries. Missing native milestones remain UNKNOWN; first-observed
+sockets are not claimed to be cold connections. No request URL, headers, body,
+raw error, account/room identity or conversation content enters these events.
+All three fresh authorization rounds and complete response/publication checks
+remain mandatory. See the [profiling scope and measurement definitions](../docs/story-mb-863-authorization-profiling.md).
+After building, `node scripts/benchmark-voice-authorization.mjs` compares the
+unchanged base adapters and profiled build against paired synthetic loopback
+HTTP delays. It measures profiling overhead, not real Voice E2E improvement.
+
+MB-867 (owner decision 2026-11-17) amends the two statements above for media
+only. INITIAL always inspects. PRE_INFERENCE and PUBLICATION reuse a successful
+inspection of the same session, attempt and media identity while it is at most
+5 s old at both the start and the common return of the round, and never past the
+authority or lease expiry. If it ages out during the owner/state reads, the round
+reruns with a fresh inspection. A turn whose checks finish within 5 s of INITIAL
+therefore makes one blocking inspection; a later speech unit after the window
+inspects again. Failures and denials are never reused. Owner authority,
+state/lease, media document and measurement checks still run on every round. A
+reused round emits no `MEDIA_INSPECTION` profile stage. Accepted gap: a recording
+or foreign participant inside the window is caught only by the next real
+inspection; a disconnect is stopped by the worker's `ROOM_DISCONNECTED`
+handling. The reuse is held in process memory, so each replica inspects once.
 
 Pilot Voice uses the same safety schema/validator with the schema included in
 the system prompt, and omits provider-side `outputConfig` so the complete input
@@ -847,6 +930,40 @@ from AI context, notification activity, SupportPlan, reassessment, analytics,
 events, metrics, and logs; delete erases them with the encrypted revisions.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
+
+## Voice measurement configuration snapshot
+
+MB-862 adds opt-in `measurement` to the existing pilot JSON. The approved source
+design reserves a full fixed allocation per admission, atomically with ordinary
+quota/session/capacity writes. With two sessions and 12 turns/480 seconds/4,000
+TTS characters, each allocation is at most 6 turns/240 seconds/2,000 characters.
+Existing smaller pilot/product/window bounds still apply. Campaign spend is
+never refunded; only confirmed settlement releases concurrency. No normal Text
+or Voice allowance is changed. Migration 020 adds the content-free campaign
+collection; it creates no campaign or approval window.
+
+The [MB-862 runbook](../docs/story-mb-862-voice-measurement-fence.md) defines
+approved provisioning, replica/Agent binding, owner-derived preflight evidence,
+restart/unknown-outcome behavior and the remaining external gates. Its separate
+operator command reads the owner database; it does not accept manually asserted
+counters. The original MB-861 offline coordinator remains conservatively BLOCKED.
+
+Run `node dist/companion-voice/voice-measurement-preflight.js` after building
+the reviewed revision, inside the existing production service environment.
+The command requires `NODE_ENV=production` and loads the actual configuration
+without dotenv, service bootstrap, database access or provider requests. Exit 0
+means snapshot export only; invalid configuration exits 1 with a fixed safe code.
+
+The version-1 snapshot reports the same effective input/output limits used by
+the Bedrock request path. Non-pilot Voice still has the existing 2,000-token
+output ceiling; Friend-only enables the existing input guard without reducing
+that output ceiling. Pilot defaults/overrides and Text behavior are unchanged.
+Owner count is exported, never owner IDs, credentials or endpoint URLs.
+
+Use the [MB-861 runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+to combine fresh snapshots with approval metadata. The combined command remains
+BLOCKED until aggregate enforcement and external authority gates are implemented
+and verified separately; it cannot grant live approval.
 
 ## Graceful shutdown
 

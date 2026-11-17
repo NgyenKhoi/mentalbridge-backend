@@ -18,7 +18,9 @@ const preferences: NotificationPreferences = {
     appointmentMessage: true,
     resourceSystem: true,
     communityInteraction: true,
+    supportPlanReminder: true,
   },
+  dailyReminderTime: '20:00',
   quietHours: {
     enabled: false,
     start: '22:00',
@@ -60,10 +62,11 @@ describe('ReminderScheduler', () => {
       if (ownerId === second.ownerId) throw new Error('dependency unavailable');
       return 2;
     });
+    const materializeSupportPlan = vi.fn(async () => 0);
     const scheduler = new ReminderScheduler(
       configuration,
       { listReminderCandidates } as never,
-      { materialize } as never,
+      { materialize, materializeSupportPlan } as never,
     );
 
     await expect(scheduler.runOnce()).resolves.toEqual({
@@ -75,6 +78,52 @@ describe('ReminderScheduler', () => {
     expect(listReminderCandidates).toHaveBeenNthCalledWith(1, null, 2);
     expect(listReminderCandidates).toHaveBeenNthCalledWith(2, second.ownerId, 2);
     expect(materialize).toHaveBeenCalledTimes(3);
+  });
+
+  it('materializes the SupportPlan reminder per owner after the activity reminders', async () => {
+    const first = candidate('11111111-1111-4111-8111-111111111111');
+    const second = candidate('22222222-2222-4222-8222-222222222222');
+    const third = candidate('33333333-3333-4333-8333-333333333333');
+    const order: string[] = [];
+    const materialize = vi.fn(async (ownerId: string) => {
+      order.push(`activity:${ownerId}`);
+      if (ownerId === first.ownerId) throw new Error('journal-ai unavailable');
+      return 0;
+    });
+    const materializeSupportPlan = vi.fn(async (ownerId: string) => {
+      order.push(`plan:${ownerId}`);
+      if (ownerId === second.ownerId) throw new Error('care unavailable');
+      return 1;
+    });
+    const scheduler = new ReminderScheduler(
+      configuration,
+      {
+        listReminderCandidates: vi.fn(async (afterOwnerId: string | null) =>
+          afterOwnerId === null ? [first, second] : [third],
+        ),
+      } as never,
+      { materialize, materializeSupportPlan } as never,
+    );
+
+    await expect(scheduler.runOnce()).resolves.toEqual({
+      candidates: 3,
+      notifications: 2,
+      failures: 2,
+      skippedOverlap: false,
+    });
+    expect(order).toEqual([
+      `activity:${first.ownerId}`,
+      `plan:${first.ownerId}`,
+      `activity:${second.ownerId}`,
+      `plan:${second.ownerId}`,
+      `activity:${third.ownerId}`,
+      `plan:${third.ownerId}`,
+    ]);
+    expect(materializeSupportPlan).toHaveBeenCalledWith(
+      third.ownerId,
+      preferences,
+      expect.any(String),
+    );
   });
 
   it('does not overlap scheduler runs in one process', async () => {
@@ -95,6 +144,7 @@ describe('ReminderScheduler', () => {
           await blocked;
           return 1;
         },
+        materializeSupportPlan: async () => 0,
       } as never,
     );
 

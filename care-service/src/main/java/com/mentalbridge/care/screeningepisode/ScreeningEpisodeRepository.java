@@ -42,6 +42,9 @@ public interface ScreeningEpisodeRepository extends JpaRepository<ScreeningEpiso
 	Optional<ScreeningEpisodeEntity> findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(UUID userId,
 			String purpose, String status);
 
+	Optional<ScreeningEpisodeEntity> findFirstByUserIdAndStatusOrderByCompletedAtDescIdDesc(UUID userId,
+			String status);
+
 	boolean existsByUserIdAndPurposeAndStatusIn(UUID userId, String purpose, List<String> statuses);
 
 	Optional<ScreeningEpisodeEntity> findByIdAndUserId(UUID id, UUID userId);

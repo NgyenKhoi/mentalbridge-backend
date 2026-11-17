@@ -31,6 +31,14 @@ export const leaseSchema = z
     validUntil: z.iso.datetime({ offset: true }),
     hardStopAt: z.iso.datetime({ offset: true }),
     policyVersion: z.literal(policyVersion),
+    measurement: z
+      .object({
+        configHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+        ttsCharacters: z.number().int().min(1).max(4000),
+        voiceId: z.uuid(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type Lease = z.infer<typeof leaseSchema>;

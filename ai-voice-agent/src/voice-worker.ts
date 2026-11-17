@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AgentFailure } from "./configuration.js";
-import type { Dispatch, Lease, Reply, Signal, StopReason } from "./contract.js";
+import type {
+  Dispatch,
+  Lease,
+  Reply,
+  Signal,
+  StopReason,
+  Turn,
+} from "./contract.js";
 import type { JournalClient } from "./journal-client.js";
 import type {
   AgentDiagnostic,
@@ -45,7 +52,13 @@ export interface MediaPort {
   interrupt(): void;
   close(): Promise<void>;
 }
-type Journal = Pick<JournalClient, "claim" | "control" | "turn">;
+type Journal = Pick<JournalClient, "claim" | "control" | "turn"> &
+  Partial<
+    Pick<
+      JournalClient,
+      "turnSpeechUnits" | "cancelSpeechTurn" | "acknowledgeSpeechUnit"
+    >
+  >;
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const normalized = (value: string) =>
@@ -67,6 +80,8 @@ export class VoiceWorker {
   private readonly life = new AbortController();
   private readonly seen = new Set<string>();
   private pending = "";
+  private pendingInterim = false;
+  private finalReceivedAt = 0;
   private pauseUntil = 0;
   private speaking: Reply | null = null;
   private playbackStarted = false;
@@ -82,6 +97,8 @@ export class VoiceWorker {
   private stopWork: Promise<void> | undefined;
   private lastEcho = "";
   private echoUntil = 0;
+  private streamCurrent: Turn | null = null;
+  private streamCancellation: Promise<void> | undefined;
   constructor(
     private readonly dispatch: Dispatch,
     private readonly journal: Journal,
@@ -92,7 +109,8 @@ export class VoiceWorker {
     ) => void = () => undefined,
     private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
       undefined,
-    private readonly finalAggregationMs = 1500,
+    private readonly finalAggregationMs = 750,
+    private readonly speechUnitsEnabled = false,
   ) {
     this.finished = new Promise((resolve) => {
       this.finish = resolve;
@@ -266,20 +284,19 @@ export class VoiceWorker {
       if (value.final) reject("PENDING_TOO_LARGE");
       return;
     }
-    if (value.confidence < 0.8) {
-      if (value.final) {
-        this.pending = "";
-        this.pauseUntil = 0;
-        this.diagnostic({
-          phase: "stt_final",
-          transcriptResult: "DISCARDED",
-          rejection: "LOW_CONFIDENCE",
-          confidenceValid: true,
-          confidence: value.confidence,
-          languageAccepted: true,
-        });
-        if (!this.busy) this.setState("LISTENING");
-      }
+    if (value.confidence < 0.8 && value.final) {
+      this.pending = "";
+      this.pendingInterim = false;
+      this.pauseUntil = 0;
+      this.diagnostic({
+        phase: "stt_final",
+        transcriptResult: "DISCARDED",
+        rejection: "LOW_CONFIDENCE",
+        confidenceValid: true,
+        confidence: value.confidence,
+        languageAccepted: true,
+      });
+      if (!this.busy) this.setState("LISTENING");
       return;
     }
     const clean = normalized(text);
@@ -289,8 +306,12 @@ export class VoiceWorker {
       (this.lastEcho.includes(clean) || clean.includes(this.lastEcho))
     )
       return;
+    const key = digest(value.segmentId);
+    if (this.seen.has(key)) return;
     if (!value.final) {
+      if (this.pending) this.pendingInterim = true;
       if (
+        value.confidence >= 0.8 &&
         this.speaking &&
         value.durationMs >= 500 &&
         clean.split(" ").length >= 2
@@ -298,8 +319,6 @@ export class VoiceWorker {
         void this.bargeIn();
       return;
     }
-    const key = digest(value.segmentId);
-    if (this.seen.has(key)) return;
     if (this.seen.size >= 256) {
       reject("SEGMENT_LIMIT");
       return;
@@ -307,11 +326,13 @@ export class VoiceWorker {
     this.seen.add(key);
     if (this.speaking) void this.bargeIn();
     this.pending = [this.pending, text].filter(Boolean).join(" ");
+    this.pendingInterim = false;
     if (Buffer.byteLength(this.pending, "utf8") > 1800) {
       reject("PENDING_TOO_LARGE");
       return;
     }
-    this.pauseUntil = this.clock() + this.finalAggregationMs;
+    this.finalReceivedAt = this.clock();
+    this.pauseUntil = this.finalReceivedAt + this.finalAggregationMs;
     this.diagnostic({ phase: "stt_final", transcriptResult: "PENDING" });
     if (!this.busy) this.setState("TRANSCRIBING");
   }
@@ -356,6 +377,7 @@ export class VoiceWorker {
     }
     if (
       this.pending &&
+      !this.pendingInterim &&
       !this.busy &&
       this.connected &&
       !this.muted &&
@@ -363,14 +385,23 @@ export class VoiceWorker {
     ) {
       const text = this.pending;
       this.pending = "";
+      this.diagnostic({
+        phase: "turn_dispatch_timing",
+        turnSequence: this.turnSequence + 1,
+        finalToDispatchMs: Math.max(0, this.clock() - this.finalReceivedAt),
+        aggregationMs: this.finalAggregationMs,
+        schedulerLagMs: Math.max(0, this.clock() - this.pauseUntil),
+      });
       await this.turn(text);
     }
   }
   private async turn(text: string) {
+    if (this.speechUnitsEnabled) return this.streamTurn(text);
     if (!this.live() || !this.lease) return;
     this.busy = true;
     this.interrupted = false;
     this.setState("WAITING_FOR_REPLY");
+    const requestedAt = this.clock();
     try {
       this.diagnostic({ phase: "turn_requested" });
       const reply = await this.journal.turn(
@@ -387,6 +418,11 @@ export class VoiceWorker {
         randomUUID(),
         this.life.signal,
       );
+      this.diagnostic({
+        phase: "journal_reply_received",
+        turnSequence: this.turnSequence,
+        journalRoundTripMs: Math.max(0, this.clock() - requestedAt),
+      });
       await this.controls;
       if (
         !this.live() ||
@@ -399,11 +435,17 @@ export class VoiceWorker {
       this.playback = new AbortController();
       this.lastEcho = normalized(reply.spokenText);
       this.echoUntil = this.clock() + 60000;
-      this.diagnostic({ phase: "tts_begin" });
+      const ttsStartedAt = this.clock();
+      this.diagnostic({ phase: "tts_begin", turnSequence: this.turnSequence });
       await this.media.speak(
         reply.spokenText,
         async () => {
-          this.diagnostic({ phase: "playout_first_audio" });
+          this.diagnostic({
+            phase: "playout_first_audio",
+            turnSequence: this.turnSequence,
+            requestToPlayoutMs: Math.max(0, this.clock() - requestedAt),
+            ttsToPlayoutMs: Math.max(0, this.clock() - ttsStartedAt),
+          });
           if (
             !this.live() ||
             !this.connected ||
@@ -464,6 +506,17 @@ export class VoiceWorker {
     this.media.interrupt();
     this.interrupted = true;
     this.playback.abort();
+    const current = this.streamCurrent;
+    if (current && !this.streamCancellation) {
+      const cancel = this.journal.cancelSpeechTurn;
+      this.streamCancellation = cancel
+        ? cancel
+            .call(this.journal, this.dispatch, current, this.life.signal)
+            .catch(async () => {
+              await this.fail();
+            })
+        : this.fail();
+    }
     this.setState(
       this.muted ? "MUTED" : this.connected ? "INTERRUPTED" : "DISCONNECTED",
     );
@@ -479,9 +532,174 @@ export class VoiceWorker {
       }
     }
   }
+  private async streamTurn(text: string) {
+    if (!this.live() || !this.lease) return;
+    const receive = this.journal.turnSpeechUnits;
+    const acknowledge = this.journal.acknowledgeSpeechUnit;
+    if (!receive || !acknowledge || !this.journal.cancelSpeechTurn) {
+      await this.fail();
+      return;
+    }
+    this.busy = true;
+    this.interrupted = false;
+    this.streamCancellation = undefined;
+    this.setState("WAITING_FOR_REPLY");
+    const requestedAt = this.clock();
+    const playback = new AbortController();
+    this.playback = playback;
+    const signal = AbortSignal.any([this.life.signal, playback.signal]);
+    const aborted = () => signal.aborted;
+    const turn: Turn = {
+      attemptId: this.dispatch.attemptId,
+      leaseId: this.lease.leaseId,
+      turnId: randomUUID(),
+      sequence: ++this.turnSequence,
+      language: "vi-VN",
+      isFinal: true,
+      finalTranscript: text,
+    };
+    this.streamCurrent = turn;
+    let queue = Promise.resolve();
+    let echoedText = "";
+    const failure: { playback?: Error } = {};
+    const interrupted = () => this.interrupted;
+    try {
+      this.diagnostic({ phase: "turn_requested" });
+      await receive.call(
+        this.journal,
+        this.dispatch,
+        turn,
+        randomUUID(),
+        signal,
+        (reply, unitSequence) => {
+          queue = queue.then(async () => {
+            await this.controls;
+            if (
+              !this.live() ||
+              !this.lease ||
+              signal.aborted ||
+              Date.parse(reply.expiresAt) > Date.parse(this.lease.validUntil) ||
+              Date.parse(reply.expiresAt) <= this.clock()
+            )
+              throw new AgentFailure("AUTHORITY_EXPIRED");
+            this.speaking = reply;
+            this.playbackStarted = false;
+            echoedText = [echoedText, reply.spokenText].join(" ").trim();
+            this.lastEcho = normalized(echoedText);
+            this.echoUntil = this.clock() + 60000;
+            const ttsStartedAt = this.clock();
+            this.diagnostic({
+              phase: "speech_unit_received",
+              unitSequence,
+              turnSequence: this.turnSequence,
+            });
+            this.diagnostic({
+              phase: "tts_begin",
+              unitSequence,
+              turnSequence: this.turnSequence,
+            });
+            await this.media.speak(
+              reply.spokenText,
+              async () => {
+                if (
+                  !this.live() ||
+                  !this.connected ||
+                  this.muted ||
+                  signal.aborted ||
+                  Date.parse(reply.expiresAt) <= this.clock()
+                )
+                  throw new AgentFailure("AUTHORITY_EXPIRED");
+                this.diagnostic({
+                  phase: "playout_first_audio",
+                  unitSequence,
+                  turnSequence: this.turnSequence,
+                  requestToPlayoutMs: Math.max(0, this.clock() - requestedAt),
+                  ttsToPlayoutMs: Math.max(0, this.clock() - ttsStartedAt),
+                });
+                await this.control("PLAYBACK_STARTED", {
+                  turnId: reply.turnId,
+                  replyId: reply.replyId,
+                });
+                this.playbackStarted = true;
+                if (interrupted()) {
+                  this.playbackStarted = false;
+                  await this.control("INTERRUPTED", {
+                    turnId: reply.turnId,
+                    replyId: reply.replyId,
+                  });
+                } else this.setState("SPEAKING", reply.expression);
+              },
+              signal,
+            );
+            if (aborted())
+              throw new AgentFailure("JOURNAL_UNAVAILABLE", "ABORTED");
+            await acknowledge.call(
+              this.journal,
+              this.dispatch,
+              turn,
+              unitSequence,
+              reply.replyId,
+              signal,
+            );
+            this.playbackStarted = false;
+            this.speaking = null;
+            this.setState("WAITING_FOR_REPLY");
+          });
+          void queue.catch((error: unknown) => {
+            if (!signal.aborted) {
+              failure.playback =
+                error instanceof AgentFailure
+                  ? error
+                  : new AgentFailure("PROVIDER_FAILED");
+              playback.abort();
+              this.media.interrupt();
+            }
+          });
+        },
+      );
+      await queue;
+      if (failure.playback) throw failure.playback;
+      this.echoUntil = this.clock() + 1000;
+      this.setState(
+        this.muted
+          ? "MUTED"
+          : !this.connected
+            ? "DISCONNECTED"
+            : this.pending
+              ? "TRANSCRIBING"
+              : "LISTENING",
+      );
+    } catch (error) {
+      playback.abort();
+      this.media.interrupt();
+      await queue.catch(() => undefined);
+      await this.waitForStreamCancellation();
+      this.diagnostic({
+        phase: "turn_failed",
+        code:
+          interrupted() && !failure.playback
+            ? "ABORTED"
+            : error instanceof AgentFailure
+              ? (error.failure ?? "INVALID_RESPONSE")
+              : "PROVIDER_FAILED",
+      });
+      if (!this.life.signal.aborted && (!interrupted() || failure.playback))
+        await this.fail();
+    } finally {
+      this.streamCurrent = null;
+      this.streamCancellation = undefined;
+      this.busy = false;
+      this.speaking = null;
+      this.playback = null;
+    }
+  }
+  private async waitForStreamCancellation() {
+    await this.streamCancellation;
+  }
   private async mute(value: boolean) {
     this.muted = value;
     this.pending = "";
+    this.pendingInterim = false;
     this.media.input(this.ready && this.live() && this.connected && !value);
     if (value && this.speaking) await this.bargeIn();
     if (this.ready && !this.life.signal.aborted)
@@ -497,6 +715,7 @@ export class VoiceWorker {
     }
     this.connected = value;
     this.pending = "";
+    this.pendingInterim = false;
     this.media.input(false);
     if (!value) {
       this.reconnectUntil = this.clock() + 30000;
@@ -531,6 +750,7 @@ export class VoiceWorker {
     this.diagnostic({ phase: "agent_stopped", reason });
     this.ready = false;
     this.pending = "";
+    this.pendingInterim = false;
     this.seen.clear();
     this.lastEcho = "";
     this.speaking = null;
@@ -584,10 +804,11 @@ export class VoiceWorker {
     return this.stopWork;
   }
 }
+export const workerTickIntervalMs = 50;
 export function startWorkerTimer(worker: Pick<VoiceWorker, "tick" | "fail">) {
   const timer = setInterval(() => {
     void worker.tick().catch(() => worker.fail());
-  }, 250);
+  }, workerTickIntervalMs);
   timer.unref();
   return () => {
     clearInterval(timer);

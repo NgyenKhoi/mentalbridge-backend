@@ -37,6 +37,11 @@ import {
   type LongitudinalSourceRevision,
   type LongitudinalTerminalReason,
 } from "./longitudinal-analysis.js";
+import {
+  LONGITUDINAL_PROMPT_VERSION,
+  longitudinalPrompt,
+  longitudinalPromptVersions,
+} from "../prompts/longitudinal.js";
 
 class MemoryRepository implements LongitudinalAnalysisRepository {
   readonly jobs: LongitudinalAnalysisJob[] = [];
@@ -223,7 +228,7 @@ class FixedRouter implements LongitudinalModelRouter {
       providerApprovalVersion: "local-deterministic-v1",
       provider: "DETERMINISTIC_FAKE",
       model: "deterministic-reflection-v1",
-      promptVersion: "longitudinal-v1",
+      promptVersion: "longitudinal-v2",
       inputCostMicroUsdPerMillionTokens: 0,
       outputCostMicroUsdPerMillionTokens: 0,
     };
@@ -710,4 +715,23 @@ void test("longitudinal worker reauthorizes L2 after a paused source read and de
       reason === "REVOKED" ? "CONSENT_REVOKED" : "CONSENT_REQUIRED",
     );
   }
+});
+
+void test("longitudinal-v2 asks for short Vietnamese user-facing labels and keeps v1 readable", () => {
+  const prompt = longitudinalPrompt([], {
+    previousPeriodJournalEntryCount: 3,
+    currentPeriodJournalEntryCount: 3,
+    sufficientForComparison: true,
+  });
+  assert.equal(prompt.version, "longitudinal-v2");
+  assert.equal(LONGITUDINAL_PROMPT_VERSION, "longitudinal-v2");
+  assert.deepEqual(longitudinalPromptVersions, [
+    "longitudinal-v1",
+    "longitudinal-v2",
+  ]);
+  assert.match(prompt.system, /short Vietnamese phrase/);
+  assert.match(prompt.system, /at most 40 characters/);
+  assert.match(prompt.system, /no English, no diagnosis/);
+  assert.match(prompt.system, /changesComparedWithPreviousPeriod\[\]\.signal/);
+  assert.match(prompt.system, /Giấc ngủ khó/);
 });

@@ -93,10 +93,27 @@ class CommunityInteractionIntegrationTests extends CommunityTestProperties {
 	void unsupportedReactionIsRejectedWithoutChangingThePost() throws Exception {
 		var postId = createPost();
 
-		putReaction(postId, VIEWER, "LIKE").andExpect(status().isBadRequest());
+		putReaction(postId, VIEWER, "ANGRY").andExpect(status().isBadRequest());
 
 		assertThat(reactionCount(postId)).isZero();
 		assertThat(jdbc.sql("select count(*) from community_post_reaction").query(Long.class).single()).isZero();
+	}
+
+	@Test
+	void sevenSupportiveValuesReplaceOnePostReactionAndDatabaseRejectsNegativeValues() throws Exception {
+		var postId = createPost();
+		for (var value : List.of("SUPPORT", "RELATE", "THANK_YOU", "LIKE", "EMPATHY", "CHEER", "GROWTH")) {
+			putReaction(postId, VIEWER, value).andExpect(status().isOk())
+					.andExpect(jsonPath("$.reaction").value(value));
+			assertThat(reactionCount(postId)).isOne();
+		}
+		assertThat(jdbc.sql("select count(*) from community_post_reaction where post_id = :postId")
+				.param("postId", postId).query(Long.class).single()).isOne();
+		assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> jdbc.sql(
+				"update community_post_reaction set reaction = 'ANGRY' where post_id = :postId")
+				.param("postId", postId).update())).isNotNull();
+		assertThat(jdbc.sql("select reaction from community_post_reaction where post_id = :postId")
+				.param("postId", postId).query(String.class).single()).isEqualTo("GROWTH");
 	}
 
 	@Test

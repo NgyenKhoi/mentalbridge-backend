@@ -1,5 +1,15 @@
 # MentalBridge AI Voice agent — MB-759
 
+MB-854 speech units use the independently versioned
+[internal JSON contract](../contracts/openapi/journal-ai-voice-speech-units-v1.json).
+`AI_VOICE_SPEECH_UNITS_ENABLED=false` stays OFF until source/policy review,
+deployment preflight and a separate live window. Opt-in requires the bound
+measurement hash; Journal must enable the matching mode or reject the claim.
+The client reads complete authorized objects incrementally, plays one unit at a
+time, ACKs successful complete playback and cancels the exact provider turn on
+barge-in. No retry/fallback, text/audio persistence or raw token speech is added.
+See [policy and rollout limits](../docs/policies/companion-voice-speech-unit-v1.md).
+
 Journal/AI owns this independently deployable Node 22 worker. The accepted
 [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md) permits LiveKit's
 media SDK; every synchronous business call still uses
@@ -82,6 +92,17 @@ packaged Silero VAD with `--network none`; revisit the override when ONNX update
 
 ## Configuration and startup
 
+MB-862 optionally binds a measurement worker with
+`AI_VOICE_MEASUREMENT_POLICY_HASH`, the non-secret digest exported by Journal's
+approved measurement configuration. It requires pilot mode and exactly the
+server-allocated TTS cap/approved voice. The claim sends `measurementHash` and
+validates the optional lease `measurement` object before starting media.
+Missing, unexpected or mismatched policy/cap/voice fails closed without retry.
+Journal allows only one measurement worker claim per attempt, including after
+an unknown response or process restart. Normal unbound claims are unchanged.
+No environment value enables a campaign or supplies consent. See the
+[MB-862 operator and verification runbook](../docs/story-mb-862-voice-measurement-fence.md).
+
 Use exactly the keys in [.env.example](.env.example), injected into the server
 through managed secrets. No dotenv file is loaded automatically. Never put keys
 in a client, dispatch, Jira, repository, command-line value or build argument.
@@ -91,7 +112,7 @@ in a client, dispatch, Jira, repository, command-line value or build argument.
 | `AI_VOICE_AGENT_ENABLED`                | Defaults to `false`; explicit `true` is rejected in CI/test                                                          |
 | `AI_VOICE_PILOT`                        | Defaults to `false`; pilot mode pins Nova-3/Sonic 3 and an explicitly approved voice, with the configured TTS budget |
 | `AI_VOICE_PILOT_TTS_MAX_CHARACTERS`     | Integer 1..8000, default 1200; approved pilot TTS input budget, including interrupted/failed/unknown speech          |
-| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 1500; pause joining adjacent valid STT finals before requesting a Journal turn            |
+| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 750; pause joining adjacent valid STT finals before requesting a Journal turn             |
 | `AI_VOICE_AGENT_APPROVAL_VERSION`       | Reviewed account/privacy/speech QA record identifier, required when enabled                                          |
 | `LIVEKIT_URL`                           | Existing mentalbridge project's `wss://…livekit.cloud` origin                                                        |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-only existing project credentials, also used for LiveKit Inference                                            |
@@ -154,10 +175,15 @@ newly published owner tracks follow the same gate. This is distinct from
 
 Every job owns one session and current-turn RAM. Silero VAD is CPU-local and
 ships its model with the plugin. Endpointing plus a final-segment aggregation
-pause accommodates hesitant Vietnamese speech. The pause defaults to 1,500 ms;
+pause accommodates hesitant Vietnamese speech. The pause defaults to 750 ms;
 `AI_VOICE_FINAL_AGGREGATION_MS` can bound it between 500 and 1,500 ms for an
-approved latency setting. A shorter pause may split hesitant speech sooner and
-does not change confidence validation, quota or provider deadlines. Interim words can
+approved latency setting, including rollback to 1,500 ms. A new nonempty
+Vietnamese interim suspends dispatch of a pending final until a fresh final
+arrives; replayed accepted segment IDs cannot stall it. Interim text never
+enters a Journal request. Missing subsequent finals remain fail-closed under
+existing idle/session deadlines. The worker checks due work every 50 ms; lease
+renewals retain their existing independent deadlines and serialized controls.
+The shorter pause does not change confidence validation, quota or provider deadlines. Interim words can
 interrupt after 500 ms/two words but cannot call Journal. A finite, in-range
 Vietnamese final below confidence 0.8 is discarded with the unsubmitted pending
 utterance. It cannot call Journal, generate TTS, interrupt an approved reply or
@@ -181,6 +207,11 @@ regression-tested; normalization does not raise recognition confidence.
 Only Journal's validated short `spokenText` reaches TTS. First audio publication
 reports its exact turn/reply identity once. Barge-in cuts the current TTS stream,
 reports interruption and never resumes an old prefix or retries generation.
+The worker speaks `spokenText` one sentence at a time with a 200 ms pause
+between sentences and before a following speech unit; with the ~180 ms TTS
+first byte this gives about 350–400 ms of audible silence. The first sentence
+starts without delay, and a stop or barge-in drops the remaining sentences.
+TTS requests Cartesia `speed: 0.9` through Inference `modelOptions`.
 Final speech arriving while a Journal request is unresolved stays in the bounded
 pending buffer. A later turn starts only after the current request and playback
 finish; a failed or cancelled request discards pending speech. There are no automatic REST,
@@ -207,7 +238,7 @@ Ordinary turns and playback preserve the same recognition stream. Coordinator
 pending text is cleared locally; SDK `clearUserTurn()` is not used because it
 restarts recognition in the pinned SDK. Microphone mute/end still disable input,
 and terminal cleanup closes the session. Nova-3 endpointing is 500ms; the worker
-defaults to 1500ms aggregation for adjacent finals. Diagnostic HTTP status is limited
+defaults to 750ms aggregation for adjacent finals. Diagnostic HTTP status is limited
 to numeric 400–599, without raw SDK messages or payloads.
 
 The caller must enable acoustic echo cancellation and browser/device noise
@@ -217,6 +248,30 @@ background speech and hesitant pauses require MB-760 real-device benchmarks.
 No paid managed noise filter is enabled without allowance/quality evidence.
 
 ## Privacy and operational evidence
+
+### Measurement configuration snapshot
+
+After building the reviewed revision, run
+`node dist/measurement-preflight.js` inside the Agent's existing environment.
+This command only loads configuration and prints the version-1 allowlisted
+snapshot; it does not register a worker or contact Journal/LiveKit. Exit 0 means
+the snapshot was exported, not that a measurement is authorized. Invalid
+configuration exits 1 with a fixed code and no configuration values.
+
+`configuredTtsCharactersPerAttempt` is only a configured number. The effective
+`ttsCharactersPerAttempt` is null when pilot reservations are off. No voice UUID,
+owner, credential or endpoint is exported. See the
+[MB-861 preflight runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+for the combined blocking check and the remaining aggregate-enforcement gate.
+
+MB-854 adds numeric per-turn dispatch and Journal round-trip timings, Agent
+playout delays, and finite SDK TTS first-byte/synthesis timings. Match Agent
+`turnSequence` with Journal's numeric turn sequence within the same attempt.
+Agent `playout_first_audio` is not browser audibility; SDK TTS first-byte time
+is not end-to-end latency. Missing metrics stay absent, never zero-filled.
+Existing full response and publication checks still precede speech.
+`schedulerLagMs` can include waiting for a busy prior turn or coordination,
+not only timer jitter. See the [MB-854 investigation and benchmark](../docs/story-mb-854-voice-latency.md).
 
 `AgentSession.start({record:false})` disables SDK session recording and content
 observability. Text/video input, transcription output/sync, preemptive generation,

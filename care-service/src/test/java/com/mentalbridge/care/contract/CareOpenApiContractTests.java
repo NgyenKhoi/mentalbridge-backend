@@ -25,6 +25,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/consents/ai-voice-processing",
 			"POST /api/v1/consents/ai-voice-processing",
 			"POST /internal/v1/ai-companion/voice-consent-authorizations",
+			"POST /internal/v1/support-plan-reminder-eligibility",
 			"POST /api/v2/support-plans",
 			"GET /api/v2/support-plans/history",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
@@ -125,6 +126,7 @@ class CareOpenApiContractTests {
 			"/api/v1/ai-voice-processing-disclosure",
 			"/api/v1/consents/ai-voice-processing",
 			"/internal/v1/ai-companion/voice-consent-authorizations",
+			"/internal/v1/support-plan-reminder-eligibility",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review",
 			"/api/v2/support-plans/{supportPlanId}/adaptive-review/confirm",
 			"/api/v2/support-plans",
@@ -426,7 +428,11 @@ class CareOpenApiContractTests {
 
 		assertThat(request.getRequired()).containsExactlyInAnyOrder("phq9AssessmentId", "gad7AssessmentId",
 				"previousPeriod", "currentPeriod");
-		assertThat(request.getOneOf()).hasSize(2);
+		assertThat(request.getOneOf()).isNull();
+		assertThat(request.getNot().getRequired()).containsExactlyInAnyOrder("journalAnalysisId", "journalJobId");
+		var compose = openApi.getPaths().get("/api/v1/reassessment-summaries").getPost();
+		assertThat(compose.getRequestBody().getContent().get("application/json").getExamples())
+				.containsKeys("journalJob", "withoutJournalConsent");
 		assertThat(request.getProperties()).containsKeys("journalAnalysisId", "journalJobId", "selfReportId");
 		assertThat(response.getProperties()).containsKeys("screening", "journalContext", "supportPlanEngagement",
 				"selfReportedExperience", "activityReflection", "userReflection", "disclaimerCode")
@@ -606,6 +612,16 @@ class CareOpenApiContractTests {
 		assertThat(enumValues(property(journey, "nextAction").getOneOf().getFirst())).containsExactlyElementsOf(
 				java.util.Arrays.stream(com.mentalbridge.care.guidedjourney.GuidedJourneyService.NextAction.values())
 						.map(Enum::name).toList());
+		assertThat(property(journey, "latestScreening").getOneOf().getFirst().get$ref())
+				.isEqualTo("#/components/schemas/GuidedJourneyLatestScreening");
+		assertThat(property(journey, "latestScreening").getOneOf().get(1).getTypes()).containsExactly("null");
+		var latest = openApi.getComponents().getSchemas().get("GuidedJourneyLatestScreening");
+		var latestFields = java.util.Arrays.stream(
+				com.mentalbridge.care.guidedjourney.GuidedJourneyService.LatestScreeningView.class.getRecordComponents())
+				.map(java.lang.reflect.RecordComponent::getName).toList();
+		assertThat(latest.getRequired()).containsExactlyInAnyOrderElementsOf(latestFields);
+		assertThat(latest.getProperties().keySet()).containsExactlyInAnyOrderElementsOf(latestFields);
+		assertThat(allowsAdditionalProperties(latest)).isFalse();
 	}
 
 	@Test
@@ -777,6 +793,10 @@ class CareOpenApiContractTests {
 		else if (key.equals("POST /internal/v1/ai-companion/voice-consent-authorizations")) {
 			assertThat(operation.getSecurity()).anySatisfy(requirement ->
 					assertThat(requirement).containsOnlyKeys("JournalVoiceCareToken"));
+		}
+		else if (key.equals("POST /internal/v1/support-plan-reminder-eligibility")) {
+			assertThat(operation.getSecurity()).singleElement().satisfies(requirement ->
+					assertThat(requirement).containsOnlyKeys("supportPlanReminderServiceToken"));
 		}
 		else if (ANONYMOUS_TOKEN_OPERATIONS.contains(key)) {
 			assertThat(operation.getSecurity())

@@ -1,5 +1,12 @@
 # MongoDB canonical logical model
 
+MB-862 adds optional `ai_voice_measurement_campaigns`, owned by Journal/AI,
+through migration 020. The canonical aggregate, relationships, reservation
+lifecycle and privacy boundaries are defined in
+[Voice measurement campaign](voice-measurement-campaign.md). Source design
+approval does not authorize provisioning or activation. Merge after PR #299
+and preserve its separate benchmark-governance model.
+
 This document is the canonical domain-level index for MongoDB-owned data. The
 executable source of truth remains each owner's `migrate-mongo` history and
 collection validators. Detailed field examples and index rationale remain in
@@ -85,6 +92,11 @@ direction vocabulary, provider/model/prompt/schema and entitlement-routing
 provenance, execution metrics, and creation time. Raw source/provider text,
 hidden reasoning, combined scores, and clinical-improvement conclusions are not
 fields.
+
+Migration `022_longitudinal_prompt_v2.cjs` lets job route and result
+`promptVersion` be `longitudinal-v1` (stored rows, unchanged) or
+`longitudinal-v2` (new rows whose signal labels are short Vietnamese
+user-facing phrases). The result shape is unchanged.
 
 ### Emotion Check-In — ACTIVE
 

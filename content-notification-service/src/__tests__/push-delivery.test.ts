@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppointmentPushReminderService } from '../appointment-reminders/appointment-push-reminder.service.js';
@@ -8,17 +9,21 @@ import {
   InvalidPushTokenError,
   TransientPushProviderError,
 } from '../push-delivery/expo-push.provider.js';
+import { PUSH_CHANNEL_ID, PUSH_SOUND } from '../push-delivery/push-copy.js';
 import { PushDeviceService } from '../push-delivery/push-device.service.js';
 import { PushDeliveryWorker } from '../push-delivery/push-delivery.worker.js';
 import { PushTokenCrypto } from '../push-delivery/push-token.crypto.js';
 
 const encryptionKey = randomBytes(32).toString('base64');
 const configuration = {
+  CONTENT_PUSH_DELIVERY_ENABLED: true,
   CONTENT_PUSH_TOKEN_ENCRYPTION_KEY: encryptionKey,
   CONTENT_PUSH_PROVIDER_TIMEOUT_MS: 500,
   EXPO_PUSH_BASE_URL: 'https://exp.host',
   EXPO_ACCESS_TOKEN: 'synthetic-test-token',
 } as ServiceConfiguration;
+
+const sendGate = { authorizeClaim: vi.fn(async () => ({ decision: 'SEND' })) } as never;
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -74,28 +79,94 @@ describe('native push delivery', () => {
     expect(result).not.toHaveProperty('providerToken');
   });
 
-  it('sends only generic copy and safe routing pointers to Expo', async () => {
-    const fetchMock = vi.fn(async (_url, init?: RequestInit) => {
-      const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      expect(payload.title).toBe('MentalBridge');
-      expect(payload.body).toBe('Bạn có một cập nhật mới trong MentalBridge.');
-      expect(JSON.stringify(payload)).not.toMatch(/journal|assessment|crisis|chatBody|AI/i);
-      return new Response(JSON.stringify({ data: { status: 'ok', id: 'ticket-1' } }), {
-        status: 200,
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('refuses registration while delivery is off but still revokes', async () => {
+    const register = vi.fn();
+    const revoke = vi.fn(async () => true);
+    const service = new PushDeviceService(
+      { register, revoke, consumeCommandRateLimit: vi.fn(async () => true) } as never,
+      { ...configuration, CONTENT_PUSH_DELIVERY_ENABLED: false },
+    );
+    const ownerId = '10000000-0000-4000-8000-000000000001';
+    const installationId = '20000000-0000-4000-8000-000000000002';
+
+    await expect(
+      service.register(ownerId, installationId, {
+        platform: 'ANDROID',
+        provider: 'EXPO',
+        providerToken: 'ExponentPushToken[test-device-token]',
+        permissionStatus: 'GRANTED',
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(register).not.toHaveBeenCalled();
+    await expect(service.revoke(ownerId, installationId)).resolves.toBeUndefined();
+    expect(revoke).toHaveBeenCalledWith(ownerId, installationId);
+  });
+
+  it('sends the reviewed copy, channel, sound and a closed data object to Expo', async () => {
+    let payload: Record<string, unknown> = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init?: RequestInit) => {
+        payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ data: { status: 'ok', id: 'ticket-1' } }), {
+          status: 200,
+        });
+      }),
+    );
     const provider = new ExpoPushProvider(configuration);
+    const notificationId = '30000000-0000-4000-8000-000000000003';
 
     await expect(
       provider.send({
         token: 'ExponentPushToken[test-device-token]',
-        title: 'MentalBridge',
-        notificationId: '30000000-0000-4000-8000-000000000003',
-        actionType: 'OPEN_RESOURCES',
-        actionTargetId: null,
+        notificationId,
+        kind: 'JOURNAL_REMINDER',
+        title: 'Bạn chưa viết nhật ký hôm nay',
+        body: 'Nhật ký hôm nay vẫn đang mở.',
+        action: { type: 'OPEN_JOURNAL', targetId: null, href: '/journal' },
       }),
     ).resolves.toBe('ticket-1');
+
+    expect(payload).toEqual({
+      to: 'ExponentPushToken[test-device-token]',
+      title: 'Bạn chưa viết nhật ký hôm nay',
+      body: 'Nhật ký hôm nay vẫn đang mở.',
+      data: {
+        notificationId,
+        kind: 'JOURNAL_REMINDER',
+        action: { type: 'OPEN_JOURNAL', targetId: null, href: '/journal' },
+      },
+      sound: PUSH_SOUND,
+      channelId: PUSH_CHANNEL_ID,
+      priority: 'high',
+    });
+  });
+
+  it('sends generic copy for a kind outside the allowlist and a null action when absent', async () => {
+    let payload: { title?: string; body?: string; data?: { action: unknown } } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init?: RequestInit) => {
+        payload = JSON.parse(String(init?.body)) as typeof payload;
+        return new Response(JSON.stringify({ data: { status: 'ok', id: 'ticket-2' } }), {
+          status: 200,
+        });
+      }),
+    );
+
+    await new ExpoPushProvider(configuration).send({
+      token: 'ExponentPushToken[test-device-token]',
+      notificationId: '30000000-0000-4000-8000-000000000003',
+      kind: 'COMMUNITY_COMMENT',
+      title: 'Một người đã bình luận bài viết của bạn',
+      body: 'Nội dung bình luận',
+      action: null,
+    });
+
+    expect(payload.title).toBe('MentalBridge');
+    expect(payload.body).toBe('Bạn có thông báo mới trên MentalBridge.');
+    expect(payload.data?.action).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain('bình luận');
   });
 
   it('classifies invalid tokens and retryable provider failures', async () => {
@@ -185,6 +256,11 @@ describe('native push delivery', () => {
           tokenIv: encrypted.iv,
           tokenAuthTag: encrypted.authTag,
           title: 'MentalBridge',
+          body: 'Nội dung',
+          kind: 'APPOINTMENT',
+          ownerId: '10000000-0000-4000-8000-000000000001',
+          timeZone: 'Asia/Ho_Chi_Minh',
+          sourceIdentity: 'appointment:1',
           notificationId: '30000000-0000-4000-8000-000000000003',
           actionType: null,
           actionTargetId: null,
@@ -216,6 +292,7 @@ describe('native push delivery', () => {
       repository as never,
       provider,
       { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
+      sendGate,
     );
 
     await worker.runOnce();
@@ -223,6 +300,134 @@ describe('native push delivery', () => {
     expect(repository.invalidateDevice).toHaveBeenCalledWith('device-1');
     expect(repository.failed).toHaveBeenCalledWith('attempt-1', 'DEVICE_NOT_REGISTERED', false);
     expect(repository.accepted).not.toHaveBeenCalled();
+  });
+
+  describe('daily reminder gate in the worker', () => {
+    const reminderClaim = async () => {
+      const encrypted = new PushTokenCrypto(encryptionKey).encrypt(
+        'ExponentPushToken[reminder-device]',
+      );
+      return {
+        id: 'attempt-reminder',
+        deviceId: 'device-1',
+        tokenCiphertext: encrypted.ciphertext,
+        tokenIv: encrypted.iv,
+        tokenAuthTag: encrypted.authTag,
+        title: 'Bạn chưa viết nhật ký hôm nay',
+        body: 'Nhật ký hôm nay vẫn đang mở.',
+        kind: 'JOURNAL_REMINDER',
+        ownerId: '10000000-0000-4000-8000-000000000001',
+        timeZone: 'Asia/Ho_Chi_Minh',
+        dailyReminderTime: '20:00',
+        sourceIdentity: 'JOURNAL_REMINDER:2026-09-24',
+        notificationId: '30000000-0000-4000-8000-000000000003',
+        actionType: 'OPEN_JOURNAL',
+        actionTargetId: null,
+        attemptCount: 1,
+        appointmentReminder: null,
+      };
+    };
+    const run = async (
+      decision: unknown,
+      isDeliverable: () => Promise<boolean> = async () => true,
+      onGate: () => void = () => undefined,
+    ) => {
+      const repository = {
+        materializeCandidates: vi.fn(async () => 0),
+        settleIneligible: vi.fn(),
+        claim: vi.fn(async () => [await reminderClaim()]),
+        isDeliverable: vi.fn(isDeliverable),
+        suppressClaim: vi.fn(),
+        deferClaim: vi.fn(),
+        accepted: vi.fn(),
+        claimReceipts: vi.fn(async () => []),
+      };
+      const provider = { send: vi.fn(async () => 'ticket-1'), getReceipts: vi.fn() };
+      const worker = new PushDeliveryWorker(
+        {
+          ...configuration,
+          CONTENT_PUSH_DELIVERY_ENABLED: true,
+          CONTENT_PUSH_DELIVERY_BATCH_SIZE: 10,
+          CONTENT_PUSH_DELIVERY_INTERVAL_MS: 60_000,
+          CONTENT_PUSH_RECEIPT_INITIAL_DELAY_SECONDS: 900,
+          CONTENT_PUSH_RECEIPT_RETRY_DELAY_SECONDS: 300,
+        } as ServiceConfiguration,
+        repository as never,
+        provider,
+        { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
+        {
+          authorizeClaim: vi.fn(async () => {
+            onGate();
+            return decision;
+          }),
+        } as never,
+      );
+      await worker.runOnce();
+      return { repository, provider };
+    };
+
+    it('suppresses the claim with the gate code and never calls the provider', async () => {
+      const { repository, provider } = await run({
+        decision: 'SUPPRESS',
+        code: 'ACTIVITY_COMPLETED',
+      });
+
+      expect(repository.suppressClaim).toHaveBeenCalledWith(
+        'attempt-reminder',
+        'ACTIVITY_COMPLETED',
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('defers the claim to the gate time and never calls the provider', async () => {
+      const availableAt = new Date('2026-09-24T13:00:00.000Z');
+      const { repository, provider } = await run({
+        decision: 'DEFER',
+        availableAt,
+        code: 'REMINDER_NOT_DUE',
+      });
+
+      expect(repository.deferClaim).toHaveBeenCalledWith(
+        'attempt-reminder',
+        availableAt,
+        'REMINDER_NOT_DUE',
+        expect.objectContaining({ dailyReminderTime: '20:00', timeZone: 'Asia/Ho_Chi_Minh' }),
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('hands the reviewed copy, kind and closed action to the provider on SEND', async () => {
+      const { repository, provider } = await run({ decision: 'SEND' });
+
+      expect(provider.send).toHaveBeenCalledWith({
+        token: 'ExponentPushToken[reminder-device]',
+        notificationId: '30000000-0000-4000-8000-000000000003',
+        kind: 'JOURNAL_REMINDER',
+        title: 'Bạn chưa viết nhật ký hôm nay',
+        body: 'Nhật ký hôm nay vẫn đang mở.',
+        action: { type: 'OPEN_JOURNAL', targetId: null, href: '/journal' },
+      });
+      expect(repository.accepted).toHaveBeenCalled();
+    });
+
+    it('suppresses without sending when push is turned off while the gate waits on Care', async () => {
+      let deliverable = true;
+      const { repository, provider } = await run(
+        { decision: 'SEND' },
+        async () => deliverable,
+        () => {
+          deliverable = false;
+        },
+      );
+
+      expect(repository.isDeliverable).toHaveBeenCalledTimes(2);
+      expect(repository.suppressClaim).toHaveBeenCalledWith(
+        'attempt-reminder',
+        'NOTIFICATION_UNAVAILABLE',
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(repository.accepted).not.toHaveBeenCalled();
+    });
   });
 
   it('invalidates a device when Expo reports DeviceNotRegistered in a receipt', async () => {
@@ -262,6 +467,7 @@ describe('native push delivery', () => {
       repository as never,
       provider,
       { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
+      sendGate,
     );
 
     await worker.runOnce();
@@ -283,6 +489,11 @@ describe('native push delivery', () => {
           tokenIv: 'iv',
           tokenAuthTag: 'tag',
           title: 'MentalBridge',
+          body: 'Nội dung',
+          kind: 'APPOINTMENT',
+          ownerId: '10000000-0000-4000-8000-000000000001',
+          timeZone: 'Asia/Ho_Chi_Minh',
+          sourceIdentity: 'appointment:1',
           notificationId: 'notification-1',
           actionType: null,
           actionTargetId: null,
@@ -307,6 +518,7 @@ describe('native push delivery', () => {
       repository as never,
       provider,
       { runDue: vi.fn(), authorizeClaim: vi.fn(async () => ({ outcome: 'SEND' })) } as never,
+      sendGate,
     );
 
     await worker.runOnce();
@@ -385,6 +597,11 @@ describe('native push delivery', () => {
           tokenIv: encrypted.iv,
           tokenAuthTag: encrypted.authTag,
           title: 'MentalBridge',
+          body: 'Nội dung',
+          kind: 'APPOINTMENT',
+          ownerId: '10000000-0000-4000-8000-000000000001',
+          timeZone: 'Asia/Ho_Chi_Minh',
+          sourceIdentity: 'appointment:1',
           notificationId: '30000000-0000-4000-8000-000000000003',
           actionType: 'OPEN_APPOINTMENT',
           actionTargetId: appointmentId,
@@ -415,6 +632,7 @@ describe('native push delivery', () => {
       repository as never,
       provider,
       reminderService,
+      sendGate,
     );
 
     await worker.runOnce();

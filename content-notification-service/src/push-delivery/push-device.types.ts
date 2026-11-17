@@ -1,3 +1,5 @@
+import type { NotificationActionType } from '../notifications/notification.types.js';
+
 export type PushPlatform = 'ANDROID' | 'IOS';
 export type PushPermissionStatus = 'GRANTED' | 'DENIED';
 export type PushDeviceStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED' | 'INVALID';
@@ -29,8 +31,14 @@ export interface PushDeliveryClaim {
   readonly tokenIv: string;
   readonly tokenAuthTag: string;
   readonly title: string;
+  readonly body: string;
+  readonly kind: string;
+  readonly ownerId: string;
+  readonly timeZone: string;
+  readonly dailyReminderTime: string;
+  readonly sourceIdentity: string;
   readonly notificationId: string;
-  readonly actionType: string | null;
+  readonly actionType: NotificationActionType | null;
   readonly actionTargetId: string | null;
   readonly attemptCount: number;
   readonly appointmentReminder: Readonly<{
