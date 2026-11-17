@@ -207,6 +207,11 @@ regression-tested; normalization does not raise recognition confidence.
 Only Journal's validated short `spokenText` reaches TTS. First audio publication
 reports its exact turn/reply identity once. Barge-in cuts the current TTS stream,
 reports interruption and never resumes an old prefix or retries generation.
+The worker speaks `spokenText` one sentence at a time with a 200 ms pause
+between sentences and before a following speech unit; with the ~180 ms TTS
+first byte this gives about 350–400 ms of audible silence. The first sentence
+starts without delay, and a stop or barge-in drops the remaining sentences.
+TTS requests Cartesia `speed: 0.9` through Inference `modelOptions`.
 Final speech arriving while a Journal request is unresolved stays in the bounded
 pending buffer. A later turn starts only after the current request and playback
 finish; a failed or cancelled request discards pending speech. There are no automatic REST,

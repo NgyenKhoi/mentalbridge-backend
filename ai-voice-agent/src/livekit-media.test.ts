@@ -21,6 +21,10 @@ import {
   sttModelOptions,
   LiveKitMedia,
   inputAudioLevel,
+  sentenceChunks,
+  sentencePauseMs,
+  silence,
+  ttsModelOptions,
 } from "./livekit-media.js";
 import { loadConfiguration } from "./configuration.js";
 import { DispatchAdmission, run } from "./main.js";
@@ -460,10 +464,15 @@ void test("normal playback keeps the pinned SDK STT lifecycle intact until expli
   );
   Reflect.set(media, "session", session);
   Reflect.set(media, "started", true);
+  const pauses: number[] = [];
+  Reflect.set(media, "pause", (ms: number) => {
+    pauses.push(ms);
+    return Promise.resolve();
+  });
   let published = 0;
   for (let turn = 0; turn < 2; turn++) {
     await media.speak(
-      "Synthetic response",
+      "Synthetic response. Second part.",
       () => {
         published++;
         return Promise.resolve();
@@ -475,7 +484,21 @@ void test("normal playback keeps the pinned SDK STT lifecycle intact until expli
     assert.equal(session.output.audio, output);
   }
   assert.equal(published, 2);
-  assert.equal(utterances.mock.callCount(), 2);
+  assert.equal(utterances.mock.callCount(), 4);
+  assert.deepEqual(
+    utterances.mock.calls.map((call) => call.arguments[0]),
+    [
+      "Synthetic response.",
+      "Second part.",
+      "Synthetic response.",
+      "Second part.",
+    ],
+  );
+  assert.equal(pauses.length, 3);
+  assert.equal(pauses[0], sentencePauseMs);
+  assert.ok(pauses[1] !== undefined && pauses[1] > 0);
+  assert.ok(pauses[1] <= sentencePauseMs);
+  assert.equal(pauses[2], sentencePauseMs);
   assert.deepEqual(utterances.mock.calls[0]?.arguments[1], {
     allowInterruptions: true,
     addToChatCtx: false,
@@ -667,6 +690,7 @@ void test("playback proof requires actual SDK first-frame event, deduplicates it
   });
   const playback = approvedPlayback(
     output,
+    "Synthetic response",
     () => ({ waitForPlayout: () => playout, exception: () => null }),
     () => {
       frames++;
@@ -689,6 +713,7 @@ void test("playback proof requires actual SDK first-frame event, deduplicates it
   await assert.rejects(
     approvedPlayback(
       output,
+      "Synthetic response",
       () => ({
         waitForPlayout: () => Promise.resolve(),
         exception: () => null,
@@ -713,6 +738,7 @@ void test("aborted TTS cuts playback immediately; denied publication fails close
   });
   const play = approvedPlayback(
     output,
+    "Synthetic response",
     () => ({ waitForPlayout: () => wait, exception: () => null }),
     () => Promise.reject(new Error("AUTHORITY_EXPIRED")),
     abort.signal,
@@ -730,6 +756,7 @@ void test("aborted TTS cuts playback immediately; denied publication fails close
   assert.equal(failures, 1);
   const interrupted = approvedPlayback(
     output,
+    "Synthetic response",
     () => ({
       waitForPlayout: () =>
         new Promise<void>((resolve) => {
@@ -748,6 +775,141 @@ void test("aborted TTS cuts playback immediately; denied publication fails close
   abort.abort();
   await interrupted;
   assert.equal(cuts, 2);
+});
+
+void test("sentence chunks split Vietnamese sentence ends but keep decimals and never emit empty chunks", () => {
+  assert.deepEqual(
+    sentenceChunks("Chào bạn! Hôm nay bạn thấy thế nào? Mình ở đây.  "),
+    ["Chào bạn!", "Hôm nay bạn thấy thế nào?", "Mình ở đây."],
+  );
+  assert.deepEqual(sentenceChunks("Điểm của bạn là 3.5 trên 10. Ổn rồi."), [
+    "Điểm của bạn là 3.5 trên 10.",
+    "Ổn rồi.",
+  ]);
+  assert.deepEqual(
+    sentenceChunks("Mình hiểu… Bạn kể tiếp nhé... Được không?"),
+    ["Mình hiểu…", "Bạn kể tiếp nhé...", "Được không?"],
+  );
+  assert.deepEqual(sentenceChunks('Bạn nói "ổn." Rồi sao?'), [
+    'Bạn nói "ổn."',
+    "Rồi sao?",
+  ]);
+  assert.deepEqual(sentenceChunks("Một câu duy nhất"), ["Một câu duy nhất"]);
+  assert.deepEqual(sentenceChunks("  Thở chậm lại nhé.\n"), [
+    "Thở chậm lại nhé.",
+  ]);
+  assert.deepEqual(sentenceChunks(" \n "), []);
+  assert.deepEqual(sentenceChunks("Mình ở TP. Hồ Chí Minh. Còn bạn?"), [
+    "Mình ở TP. Hồ Chí Minh.",
+    "Còn bạn?",
+  ]);
+  assert.deepEqual(sentenceChunks("Mình ở TP. HCM. Còn bạn?"), [
+    "Mình ở TP. HCM. Còn bạn?",
+  ]);
+  assert.deepEqual(sentenceChunks("Hỏi ThS. Lan hoặc BS. Minh nhé."), [
+    "Hỏi ThS. Lan hoặc BS. Minh nhé.",
+  ]);
+  assert.deepEqual(sentenceChunks("Đi bộ, nghe nhạc, v.v. đều tốt. Thử nhé."), [
+    "Đi bộ, nghe nhạc, v.v. đều tốt.",
+    "Thử nhé.",
+  ]);
+  assert.deepEqual(
+    sentenceChunks("1. Hít thở sâu. 2. Thả lỏng vai.\n3. Nghỉ."),
+    ["1. Hít thở sâu.", "2. Thả lỏng vai.", "3. Nghỉ."],
+  );
+  assert.deepEqual(sentenceChunks("Có 3. Bạn thử nhé."), [
+    "Có 3.",
+    "Bạn thử nhé.",
+  ]);
+  assert.deepEqual(sentenceChunks("Ừ. Mình hiểu."), ["Ừ.", "Mình hiểu."]);
+  assert.deepEqual(ttsModelOptions, { speed: 0.9 });
+});
+
+void test("playback speaks sentence chunks in order with a pause between them and none before the first", async () => {
+  const output = new EventEmitter();
+  const events: string[] = [];
+  let published = 0;
+  await approvedPlayback(
+    output,
+    "Chào bạn. Mình nghe đây! Bạn kể nhé?",
+    (chunk) => {
+      events.push(`say:${chunk}`);
+      if (events.length === 1)
+        output.emit(voice.AudioOutput.EVENT_PLAYBACK_STARTED);
+      return {
+        waitForPlayout: () => {
+          events.push("playout");
+          return Promise.resolve();
+        },
+        exception: () => null,
+      };
+    },
+    () => {
+      published++;
+      return Promise.resolve();
+    },
+    new AbortController().signal,
+    () => assert.fail("unexpected interrupt"),
+    () => assert.fail("unexpected failure"),
+    (ms) => {
+      events.push(`pause:${String(ms)}`);
+      return Promise.resolve();
+    },
+  );
+  assert.equal(published, 1);
+  assert.deepEqual(events, [
+    "say:Chào bạn.",
+    "playout",
+    `pause:${String(sentencePauseMs)}`,
+    "say:Mình nghe đây!",
+    "playout",
+    `pause:${String(sentencePauseMs)}`,
+    "say:Bạn kể nhé?",
+    "playout",
+  ]);
+});
+
+void test("stop during a sentence pause or chunk prevents every later chunk", async () => {
+  for (const stopAt of ["pause", "chunk"] as const) {
+    const output = new EventEmitter();
+    const abort = new AbortController();
+    const said: string[] = [];
+    let cuts = 0;
+    await approvedPlayback(
+      output,
+      "Một. Hai. Ba.",
+      (chunk) => {
+        said.push(chunk);
+        if (said.length === 1)
+          output.emit(voice.AudioOutput.EVENT_PLAYBACK_STARTED);
+        return {
+          waitForPlayout: () => {
+            if (stopAt === "chunk" && said.length === 2) abort.abort();
+            return Promise.resolve();
+          },
+          exception: () => null,
+        };
+      },
+      () => Promise.resolve(),
+      abort.signal,
+      () => {
+        cuts++;
+      },
+      () => assert.fail("unexpected failure"),
+      (ms, signal) => {
+        if (stopAt === "pause") abort.abort();
+        return silence(ms, signal);
+      },
+    );
+    assert.deepEqual(said, stopAt === "pause" ? ["Một."] : ["Một.", "Hai."]);
+    assert.equal(cuts, 1);
+  }
+  const stopped = new AbortController();
+  const startedAt = performance.now();
+  const pause = silence(60000, stopped.signal);
+  stopped.abort();
+  await pause;
+  assert.ok(performance.now() - startedAt < 1000);
 });
 
 void test("named dispatch admits only one bounded AI attempt, never a consultation/recorded room or duplicate", async () => {
