@@ -21,8 +21,9 @@ Provider wire consumption continues independently while publication/TTS wait,
 so model messageStop is not delayed artificially by an awaited audio callback.
 
 For each unit Journal performs fresh publication authorization and state/lease
-checks. Before the first, it atomically reserves500 campaign TTS characters for
-the entire response and registers the existing turn/reply identity. Each later
+checks. In measured mode, before the first it atomically reserves500 campaign
+TTS characters for the entire response; plain pilot mode has no campaign
+reservation. It registers the existing turn/reply identity. Each later
 unit uses that identity with a closed1..2 unit sequence, and is authorized only
 after Agent ACKs complete playback of the previous unit. This avoids publishing
 the next unit with an expiry that elapses while it waits in an audio queue.
@@ -55,15 +56,18 @@ review. The path stays OFF if that policy difference is not accepted.
 marks the implemented, default-OFF handlers; that status is not policy or live approval. Journal boundary/provider tests
 validate it, and Agent contract checks compare actual wire fields/bounds to it.
 Agent is the sole internal consumer, no frontend contracts:sync/UI work needed.
-The existing main Journal OpenAPI, migrations, package files and PR299 hotspots
-are deliberately untouched. No persisted shape/model/dictionary change occurs.
+The existing main Journal OpenAPI and migrations remain untouched. MB-871 only
+serialized Journal integration test-file startup in its package script. No
+persisted shape/model/dictionary change occurs.
 
 ## Configuration and rollout
 
 - Journal: `JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`, requiring
   `JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED=true`, APPROVED_BEDROCK and a bound
-  approved measurement pilot when enabled. Agent:
-  `AI_VOICE_SPEECH_UNITS_ENABLED=false`, requiring its measurement hash.
+  measurement pilot or a configured plain pilot with one or two unique owners
+  and a window no longer than24 hours. Agent:
+  `AI_VOICE_SPEECH_UNITS_ENABLED=false`, requiring `AI_VOICE_PILOT=true`; a
+  measurement hash is required only for a measured campaign.
 - Claim capability mismatch fails before media. Source/flags/policy hash must
   agree across the one supported Journal process and worker. ACK/cancel routing
   to a different process fails closed; do not deploy without single-replica
@@ -72,6 +76,9 @@ are deliberately untouched. No persisted shape/model/dictionary change occurs.
   4000TTSchars remain cumulative. Full500-character per-turn reservation is
   conservative and can cap a2000-character session at four responses. No refund
   or profile expansion is implied by unused reserved characters.
+- Plain mode retains the 500 combined-character limit, Agent pilot TTS budget,
+  product quota, two global slots and one admission per allowlisted owner. It
+  has no campaign reservation or cumulative USD/LiveKit spend cap.
 - Rollout through dev→staging review/CI, initially all live flagsOFF. Existing
   applied020 remains; no new migration,019/021 copy or reset. Rollback turns
   intake/Agent/unit flagsOFF, retains all campaign history/reservations and

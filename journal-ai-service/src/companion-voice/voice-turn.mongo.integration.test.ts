@@ -148,6 +148,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       };
     }) => Promise<string>,
     speechUnits = false,
+    lateOwnerJoin = false,
   ) => {
     const name = `voice_turn_verify_${String(Date.now())}_${String(count++)}`;
     assert.match(name, /^voice_turn_verify_\d+_\d+$/);
@@ -168,7 +169,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     let ai = true;
     let voice = true;
     let paid = true;
-    let connected = true;
+    let connected = !lateOwnerJoin;
     const metrics: VoiceTurnMetric[] = [];
     const profiles: VoiceAuthorizationDiagnostic[] = [];
     let throwingProfiler = false;
@@ -422,6 +423,28 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         },
         randomUUID(),
       );
+      if (lateOwnerJoin) {
+        assert.equal(
+          (await left.sessions.status(owner, id)).state,
+          "CONNECTING",
+        );
+        connected = true;
+        await left.sessions.control(
+          id,
+          {
+            schemaVersion: 1,
+            kind: "HEARTBEAT",
+            commandId: randomUUID(),
+            voiceSessionId: id,
+            attemptId: lease.attemptId,
+            sequence: 2,
+            issuedAt: clock().toISOString(),
+            expiresAt: lease.validUntil,
+            payload: { leaseId: lease.leaseId, observedState: "CONNECTING" },
+          },
+          randomUUID(),
+        );
+      }
       return { id, attemptId: lease.attemptId, leaseId: lease.leaseId };
     };
     const active = await start(initialStartKey);
@@ -517,6 +540,71 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       false,
       undefined,
       true,
+    );
+  for (const lateOwnerJoin of [false, true])
+    await t.test(
+      `plain pilot ${lateOwnerJoin ? "late join" : "owner first"} publishes a complete speech unit without a campaign and retains turn cap`,
+      async () => {
+        const f = await fixture(
+          { maxTurns: 1, maxSessionSeconds: 90 },
+          false,
+          undefined,
+          true,
+          lateOwnerJoin,
+        );
+        const units: AuthorizedSpeechUnit[] = [];
+        f.respond((observe, send) => {
+          assert(send);
+          send({ message: "Mình đang lắng nghe bạn.", expression: "neutral" });
+          observe?.({
+            phase: "bedrock_stream_message_stopped",
+            stopReason: "END_TURN",
+          });
+          return Promise.resolve(reply());
+        });
+        const input = f.input();
+        const work = f.left.turns.generate(
+          f.active.id,
+          randomUUID(),
+          input,
+          randomUUID(),
+          undefined,
+          (unit) => {
+            units.push(unit);
+            return Promise.resolve();
+          },
+        );
+        await waitFor(() => units.length === 1);
+        assert.equal(
+          await f.db
+            .collection("ai_voice_measurement_campaigns")
+            .countDocuments(),
+          0,
+        );
+        const first = units[0];
+        assert(first);
+        await f.left.turns.acknowledgeSpeechUnit(
+          f.active.id,
+          input.turnId,
+          input.attemptId,
+          input.leaseId,
+          1,
+          first.replyId,
+        );
+        await work;
+        await assert.rejects(
+          f.left.turns.generate(
+            f.active.id,
+            randomUUID(),
+            f.input(2),
+            randomUUID(),
+            undefined,
+            () => Promise.resolve(),
+          ),
+          rejected("QUOTA_EXHAUSTED"),
+        );
+        assert.equal(f.calls(), 1);
+      },
     );
   await t.test(
     "unconfirmed provider cancellation closes the session instead of admitting a next turn",

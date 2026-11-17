@@ -33,6 +33,9 @@ The existing exact 1,900-input-token authorization remains before inference.
 No persona, prompt, provider/model/region, schema, full-message safety or fresh
 publication authorization is replaced. Ordinary pilot 300..600 output overrides
 and normal Text/Voice behavior outside a measurement campaign remain compatible.
+MB-871 permits a separately configured plain speech-unit pilot without minting
+or resetting this campaign. Its 500 combined-character output and Agent TTS
+checks do not replace any measured reservation, worker hash or cumulative cap.
 
 The allocation for each admitted attempt is the floor of each total cap divided
 by maximum sessions, further reduced by smaller existing pilot turn/time limits.

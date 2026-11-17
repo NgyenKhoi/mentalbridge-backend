@@ -28,6 +28,11 @@ minutes within ten daily minutes, and PREMIUM three sessions of up to ten
 minutes within thirty daily minutes. Voice uses independent quota, dual Care
 consent and isolated LiveKit agent rooms with no saved audio/transcript.
 Journal/AI owns voice authority; Consultation remains entitlement owner.
+The prospective [MB-871 amendment in ADR 0046](adr/0046-ai-voice-companion-contract.md#mb-871-bounded-voice-demo-pilot-amendment--2026-11-18)
+allows a default-off speech-unit demo for one or two named owners in one window
+of at most 24 hours, without creating a measurement campaign. Measured mode
+retains its separate cumulative fences; speech-unit policy and live activation
+still require Code Owner and runtime approval.
 MB-790's accepted [Text-to-Voice amendment](adr/0048-opt-in-text-voice-context.md)
 adds explicit selected-chat opt-in and Care Voice disclosure v2 reacceptance.
 It supersedes only the original no-Text-context clause prospectively; implicit

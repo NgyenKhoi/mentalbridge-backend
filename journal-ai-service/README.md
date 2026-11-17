@@ -2,9 +2,13 @@
 
 MB-854 independently publishable speech units are a default-OFF review proposal:
 `JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`. Enabling requires reviewed policy,
-ConverseStream enabled and an approved bound measurement pilot. Each complete
-unit retains schema/safety, fresh publication authorization, state/lease checks,
-and a conservative500-character turn reservation. No raw token reaches TTS.
+ConverseStream enabled, approved Bedrock and either a bound measurement profile
+or a configured plain pilot with unique allowlisted owners and at most24 hours.
+Each complete unit retains schema/safety, fresh publication authorization,
+state/lease checks,
+and the 500 combined-character limit. Measured mode keeps its conservative500
+campaign TTS reservation; plain mode uses Agent pilot TTS limits without a
+campaign reservation. No raw token reaches TTS.
 Read [the prospective policy](../docs/policies/companion-voice-speech-unit-v1.md)
 before considering activation; source approval is not a live window. Text and
 ordinary Voice remain on their existing contracts while the flag isOFF.

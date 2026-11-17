@@ -314,3 +314,24 @@ relying on the clear write. A consumer reads both keys from the same
 admitted-participant snapshot and accepts a non-neutral value only with a
 fresh `speaking` state. Attributes contain no transcript, identifier, or safety
 metadata. Failed display writes do not block the call.
+
+## MB-871 bounded Voice demo pilot amendment — 2026-11-18
+
+The owner selected a prospective, default-off plain speech-unit demo for one or
+two unique named owners in one explicitly configured positive window of at most
+24 hours. It uses the existing approved Bedrock ConverseStream route, Voice
+consent, paid entitlement, global capacity, per-owner admission, product quota,
+session turn and time limits, fresh publication authorization, and Agent TTS
+budget. It neither creates nor resets an MB-862 measurement campaign. A bound
+measurement profile retains its 30-minute window, 300 output tokens, durable
+hash-bound worker claim and cumulative turn/voice/TTS reservations. Plain mode
+retains the 500 combined-character speech-unit limit without a campaign TTS
+reservation. The internal speech-unit contract and policy describe both modes.
+
+Presence-checked owner heartbeat may activate CONNECTING after a late join,
+using the same attempt/lease/sequence and fenced transition as MEDIA_READY.
+Sanitized presence and create-room/create-dispatch operation diagnostics identify
+failed establishment without logging identities, credentials or provider bodies.
+These changes do not approve the speech-unit early-publication safety difference
+or start a staging window. Code Owner policy review and separate runtime approval
+remain required. No public API, persisted shape or historical campaign changes.

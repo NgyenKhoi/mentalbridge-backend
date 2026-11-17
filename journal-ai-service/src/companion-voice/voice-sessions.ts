@@ -149,7 +149,10 @@ export class VoiceSessionsService {
     private readonly media: VoiceMediaProvider,
     private readonly secret: Buffer,
     private readonly clock: () => Date = () => new Date(),
-    private readonly telemetry: (outcome: string) => void = () => undefined,
+    private readonly telemetry: (
+      outcome: string,
+      stage?: string,
+    ) => void = () => undefined,
     private readonly handoffs?: VoiceContextHandoffs,
     private readonly measurements:
       MongoVoiceMeasurementStore | undefined = ledger.measurements,
@@ -427,64 +430,80 @@ export class VoiceSessionsService {
     correlationId: string,
   ): Promise<void> {
     let document = initial;
-    if (["CREATING", "DISPATCHING"].includes(document.phase)) {
-      const observed = await this.media.inspect(document);
-      if (document.phase === "CREATING" && observed.roomExists) {
-        document =
-          (await this.store.advance(document, "ROOM_READY", this.clock())) ??
-          document;
-      } else if (
-        document.phase === "DISPATCHING" &&
-        observed.providerDispatchId
-      ) {
-        await this.store.advance(
-          document,
-          "READY",
-          this.clock(),
-          observed.providerDispatchId,
-        );
-        return;
-      } else {
-        return;
+    let stage = "INSPECT";
+    try {
+      if (["CREATING", "DISPATCHING"].includes(document.phase)) {
+        const observed = await this.media.inspect(document);
+        if (document.phase === "CREATING" && observed.roomExists) {
+          stage = "ROOM_PERSIST";
+          document =
+            (await this.store.advance(document, "ROOM_READY", this.clock())) ??
+            document;
+        } else if (
+          document.phase === "DISPATCHING" &&
+          observed.providerDispatchId
+        ) {
+          stage = "READY_PERSIST";
+          await this.store.advance(
+            document,
+            "READY",
+            this.clock(),
+            observed.providerDispatchId,
+          );
+          return;
+        } else {
+          return;
+        }
       }
-    }
-    if (document.phase === "NEW") {
-      const session = await this.current(document.voiceSessionId);
-      await this.access.authorizeSession(
-        session.ownerId,
-        session.voiceSessionId,
-        correlationId,
-      );
-      const claimed = await this.store.advance(
-        document,
-        "CREATING",
-        this.clock(),
-      );
-      if (!claimed) return;
-      await this.media.createRoom(claimed);
-      const completed = await this.store.advance(
-        claimed,
-        "ROOM_READY",
-        this.clock(),
-      );
-      if (!completed) return;
-      document = completed;
-    }
-    if (document.phase === "ROOM_READY") {
-      const session = await this.current(document.voiceSessionId);
-      await this.access.authorizeSession(
-        session.ownerId,
-        session.voiceSessionId,
-        correlationId,
-      );
-      const claimed = await this.store.advance(
-        document,
-        "DISPATCHING",
-        this.clock(),
-      );
-      if (!claimed) return;
-      const providerId = await this.media.dispatch(claimed);
-      await this.store.advance(claimed, "READY", this.clock(), providerId);
+      if (document.phase === "NEW") {
+        stage = "AUTHORIZATION";
+        const session = await this.current(document.voiceSessionId);
+        await this.access.authorizeSession(
+          session.ownerId,
+          session.voiceSessionId,
+          correlationId,
+        );
+        stage = "ROOM_PERSIST";
+        const claimed = await this.store.advance(
+          document,
+          "CREATING",
+          this.clock(),
+        );
+        if (!claimed) return;
+        stage = "CREATE_ROOM";
+        await this.media.createRoom(claimed);
+        stage = "ROOM_PERSIST";
+        const completed = await this.store.advance(
+          claimed,
+          "ROOM_READY",
+          this.clock(),
+        );
+        if (!completed) return;
+        document = completed;
+      }
+      if (document.phase === "ROOM_READY") {
+        stage = "AUTHORIZATION";
+        const session = await this.current(document.voiceSessionId);
+        await this.access.authorizeSession(
+          session.ownerId,
+          session.voiceSessionId,
+          correlationId,
+        );
+        stage = "DISPATCH_PERSIST";
+        const claimed = await this.store.advance(
+          document,
+          "DISPATCHING",
+          this.clock(),
+        );
+        if (!claimed) return;
+        stage = "CREATE_DISPATCH";
+        const providerId = await this.media.dispatch(claimed);
+        stage = "READY_PERSIST";
+        await this.store.advance(claimed, "READY", this.clock(), providerId);
+      }
+    } catch (error) {
+      this.telemetry("VOICE_ESTABLISHMENT_FAILED", stage);
+      throw error;
     }
   }
 
@@ -760,7 +779,8 @@ export class VoiceSessionsService {
         observed.ownerConnected &&
         observed.agentConnected &&
         (session.state === "RECONNECTING" ||
-          (session.state === "CONNECTING" && input.kind === "MEDIA_READY"))
+          (session.state === "CONNECTING" &&
+            (input.kind === "MEDIA_READY" || input.kind === "HEARTBEAT")))
       ) {
         await this.ledger.transition(id, guard, "ACTIVE", this.clock());
       } else if (!observed.ownerConnected && session.state === "ACTIVE") {

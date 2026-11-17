@@ -24,7 +24,9 @@ a review risk; if that difference is unacceptable, keep this mode OFF.
 
 ## Publication contract
 
-- Approved Bedrock ConverseStream and bound measurement profile are required.
+- Approved Bedrock ConverseStream and either a bound measurement profile or a
+  configured plain pilot with one or two unique owners and a positive window of
+  at most 24 hours are required. Plain mode does not mint a measurement campaign.
   Both Journal and Agent opt in. An incompatible worker is rejected at claim;
   old single-response turns are not silently accepted in the new mode.
 - The model emits one JSON array of at most two complete structured objects.
@@ -37,9 +39,11 @@ a review risk; if that difference is unacceptable, keep this mode OFF.
   Since MB-867 (owner decision 2026-11-17) its LiveKit media inspection may
   reuse the turn's successful inspection for up to 5 s; failures are never
   reused and owner consent/entitlement stay fresh on every unit.
-  The first reserves **500 campaign TTS characters once** before publication,
-  conservatively covering the entire turn. Failed/cancelled/short responses do
-  not refund this reservation. No campaign schema or product quota is changed.
+  In measured mode the first reserves **500 campaign TTS characters once** before
+  publication, conservatively covering the entire turn. Failed/cancelled/short
+  responses do not refund this reservation. Plain mode has no campaign
+  reservation; the 500 combined-character limit and Agent pilot TTS budget apply.
+  No campaign schema or product quota is changed.
 - All units share one registered turn/reply identity. Per-stream unit sequence
   is1..2, not a new provider turn. Existing PLAYBACK_STARTED/INTERRUPTED controls
   keep delivery/quota semantics. After complete playback Agent sends a bound ACK;
@@ -56,7 +60,8 @@ a review risk; if that difference is unacceptable, keep this mode OFF.
 Provider wire consumption runs independently of publication/TTS. No network
 request is made inside a database transaction. One shared CountTokens/request
 cap applies to the whole response, not each object. No retry/fallback is added.
-The existing session, campaign, entitlement, consent and lease checks remain.
+The existing session, applicable campaign, entitlement, consent and lease
+checks remain.
 
 Barge-in interrupts local audio immediately and cancels the exact provider turn.
 The next user turn can use the same live session only after cancellation cleanup;
@@ -79,12 +84,18 @@ modified by this proposal. Normal Voice/Text stay compatible with both flagsOFF.
 
 Exact-head source review/CI, controlled promotion and OFF-first deployment are
 required. Then verify one Journal replica/same-process ACK routing, matching
-Agent flags/policy digest, cumulative hard caps, current owner consent/quota,
-credit/no-overage/privacy and a separately confirmed window. No source approval
+Agent flags and measured policy digest when applicable, cumulative hard caps,
+current owner consent/quota, credit/no-overage/privacy and a separately confirmed
+window. No source approval
 implicitly starts a window. USD0.50/2sessions/concurrency1/12turns/480s/4000chars
-remain total limits. A500-character reservation per generated turn can exhaust
-the2000-character session allocation after four responses even if actual text
+remain total **measurement** limits. A500-character reservation per measured turn
+can exhaust the2000-character session allocation after four responses even if actual text
 is shorter; do not hide that conservative limit or refund to force more samples.
+Plain pilot exposure is bounded by its allowlist, one admission per owner, 24-hour
+maximum window, product quota and two global slots, admitted duration, session
+turn/token limits and Agent TTS budget. These do not form a cumulative USD or
+LiveKit STT/TTS spend cap. Expiry denies admission and ends the admitted wall
+ceiling; a new window requires a separate external configuration action.
 
 True completion requires real first audible audio before the model messageStop,
 independent browser end-of-speech/heard timing, matched baseline/comparison and

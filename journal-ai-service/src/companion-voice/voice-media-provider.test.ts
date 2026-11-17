@@ -192,9 +192,22 @@ void test("inspection read timings include only validated attempt, closed enums 
   assert.deepEqual(observations.map((value) => value.operation).sort(), [
     "DISPATCHES",
     "PARTICIPANTS",
+    "PRESENCE",
     "ROOMS",
   ]);
-  for (const value of observations) {
+  const presence = observations.find((value) => value.operation === "PRESENCE");
+  assert.deepEqual(
+    [
+      presence?.roomExists,
+      presence?.ownerConnected,
+      presence?.agentConnected,
+      presence?.agentAudioPublished,
+    ],
+    [true, true, true, true],
+  );
+  for (const value of observations.filter(
+    (item) => item.operation !== "PRESENCE",
+  )) {
     assert.deepEqual(Object.keys(value).sort(), [
       "attemptId",
       "connection",
@@ -278,13 +291,16 @@ void test("invalid reference never emits inspection telemetry and non-finite mea
     VoiceMediaError,
   );
   assert.deepEqual(f.calls, []);
-  assert.deepEqual(observations, []);
+  assert.equal(observations.length, 0);
   const work = f.provider.inspect(f.ref);
   f.roomRead.resolve([f.room]);
   f.dispatchRead.resolve([f.dispatch]);
   f.participantsRead.resolve(f.participants);
   assert.equal((await work).roomExists, true);
-  assert.deepEqual(observations, []);
+  assert.deepEqual(
+    observations.map((value) => value.operation),
+    ["PRESENCE"],
+  );
 });
 
 void test("an absent room stays a negative inspection even when parallel detail reads fail first", async () => {
@@ -376,6 +392,7 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
   let roomPresent = false;
   let dispatchPresent = false;
   let unavailable = false;
+  let failureStatus = 503;
   let recording = false;
   const room = () => ({
     sid: "RM_synthetic",
@@ -420,13 +437,23 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
         grant: payload.video as Record<string, unknown>,
       });
       if (unavailable) {
-        response.writeHead(503, { "Content-Type": "application/json" });
+        response.writeHead(failureStatus, {
+          "Content-Type": "application/json",
+        });
         response.end(
           JSON.stringify({
             code: "unavailable",
             msg: "synthetic-private-provider-error",
           }),
         );
+        return;
+      }
+      if (
+        !roomPresent &&
+        (method === "ListDispatch" || method === "ListParticipants")
+      ) {
+        response.writeHead(404, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ msg: "synthetic-private-absent-room" }));
         return;
       }
       let value: unknown = {};
@@ -510,6 +537,22 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
     },
     (value) => profiling.push(value),
   );
+  assert.equal((await provider.inspect(ref)).roomExists, false);
+  const until = Date.now() + 1000;
+  while (
+    profiling.filter((event) => event.httpStatusClass === "HTTP_4XX").length <
+      2 &&
+    Date.now() < until
+  )
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(
+    profiling
+      .filter((event) => event.httpStatusClass === "HTTP_4XX")
+      .map((event) => event.operation)
+      .sort(),
+    ["DISPATCHES", "PARTICIPANTS"],
+  );
+  profiling.length = 0;
   await provider.createRoom(ref);
   ref.providerDispatchId = await provider.dispatch(ref);
   assert.equal(ref.providerDispatchId, "AD_synthetic");
@@ -520,12 +563,31 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
     turnSequence: 3,
   });
   const inspection = await provider.inspect(ref, trace);
-  assert.equal(profiling.length, 3);
-  for (const event of profiling) {
+  assert.deepEqual(
+    profiling.map((event) => event.operation),
+    [
+      "CREATE_ROOM",
+      "CREATE_DISPATCH",
+      "ROOMS",
+      "DISPATCHES",
+      "PARTICIPANTS",
+      "PRESENCE",
+    ],
+  );
+  assert.equal(
+    profiling.find((event) => event.operation === "PRESENCE")?.ownerConnected,
+    true,
+  );
+  for (const event of profiling.filter((value) =>
+    ["ROOMS", "DISPATCHES", "PARTICIPANTS"].includes(value.operation),
+  )) {
     assert.equal(event.authorizationId, trace.tags.authorizationId);
     assert.equal(event.purpose, "PUBLICATION");
     assert.equal(event.turnId, trace.tags.turnId);
-    assert.equal(event.inspectionId, profiling[0]?.inspectionId);
+    assert.equal(
+      event.inspectionId,
+      profiling.find((value) => value.operation === "ROOMS")?.inspectionId,
+    );
     assert.equal(event.httpObservation, "OBSERVED");
     assert.equal(event.nativeRequests, 1);
     assert.equal(event.httpStatusClass, "HTTP_2XX");
@@ -644,6 +706,18 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
     calls.filter((call) => call.method === "CreateDispatch").length,
     2,
   );
+  assert.equal(profiling.at(-1)?.operation, "CREATE_DISPATCH");
+  assert.equal(profiling.at(-1)?.outcome, "FAILED");
+  assert.equal(profiling.at(-1)?.httpStatusClass, "HTTP_5XX");
+  assert.equal(profiling[0]?.httpStatusClass, "HTTP_2XX");
+  assert.equal(
+    JSON.stringify(profiling).includes("synthetic-private-provider-error"),
+    false,
+  );
+  failureStatus = 400;
+  await assert.rejects(provider.createRoom(ref), VoiceMediaError);
+  assert.equal(profiling.at(-1)?.operation, "CREATE_ROOM");
+  assert.equal(profiling.at(-1)?.httpStatusClass, "HTTP_4XX");
 });
 
 void test("voice media configuration stays disabled without new accounts and rejects unsafe enablement", () => {
