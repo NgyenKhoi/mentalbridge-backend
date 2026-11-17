@@ -920,17 +920,16 @@ export class VoiceTurnService {
       throw new VoiceMediaError();
     const replyId = previous?.replyId ?? randomUUID();
     if (!previous) {
-      if (
-        !this.configuration.VOICE_PILOT?.measurement ||
-        !this.sessions.reserveMeasurementSpeech
-      )
-        throw new VoiceLedgerError("QUOTA_EXHAUSTED");
-      await this.sessions.reserveMeasurementSpeech(
-        id,
-        input.turnId,
-        replyId,
-        500,
-      );
+      if (this.configuration.VOICE_PILOT?.measurement) {
+        if (!this.sessions.reserveMeasurementSpeech)
+          throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+        await this.sessions.reserveMeasurementSpeech(
+          id,
+          input.turnId,
+          replyId,
+          500,
+        );
+      }
       if (this.isAborted(signal)) throw new VoiceLedgerError("SESSION_EXPIRED");
       stage("reply_registration_started");
       await this.sessions.registerReply(

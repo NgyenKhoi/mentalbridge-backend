@@ -394,6 +394,24 @@ void test("speaker echo from an earlier speech unit cannot interrupt a later uni
   await f.worker.stop("USER_ENDED");
 });
 
+void test("plain pilot without a measurement hash plays and acknowledges a bounded speech unit", async () => {
+  const config = loadConfiguration({
+    AI_VOICE_PILOT: "true",
+    AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+    AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  });
+  assert.equal(config.measurementPolicyHash, null);
+  const f = fixture(config.finalAggregationMs, config.speechUnitsEnabled);
+  await f.start();
+  f.emit("Xin chào, đây là câu thử tổng hợp.");
+  f.advance(800);
+  await f.tick();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.played.length, 1);
+  assert.deepEqual(f.acknowledgements, [1]);
+  await f.worker.stop("USER_ENDED");
+});
+
 void test("streaming barge-in cancels the model turn without consuming a replacement admission or ending the session", async () => {
   const f = fixture(750, true);
   const generation = hold(),
