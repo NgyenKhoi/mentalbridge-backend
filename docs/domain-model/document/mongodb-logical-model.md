@@ -93,7 +93,7 @@ provenance, execution metrics, and creation time. Raw source/provider text,
 hidden reasoning, combined scores, and clinical-improvement conclusions are not
 fields.
 
-Migration `021_longitudinal_prompt_v2.cjs` lets job route and result
+Migration `022_longitudinal_prompt_v2.cjs` lets job route and result
 `promptVersion` be `longitudinal-v1` (stored rows, unchanged) or
 `longitudinal-v2` (new rows whose signal labels are short Vietnamese
 user-facing phrases). The result shape is unchanged.

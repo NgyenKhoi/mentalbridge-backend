@@ -23,7 +23,7 @@ const migrations = [
   require("../../migrations/007_entitlement_aware_model_routing.cjs"),
   require("../../migrations/008_ai_benchmark_metadata.cjs"),
   require("../../migrations/009_longitudinal_context_analysis.cjs"),
-  require("../../migrations/021_longitudinal_prompt_v2.cjs"),
+  require("../../migrations/022_longitudinal_prompt_v2.cjs"),
 ] as { up(database: unknown): Promise<void> }[];
 
 const DAY_MS = 24 * 60 * 60 * 1_000;

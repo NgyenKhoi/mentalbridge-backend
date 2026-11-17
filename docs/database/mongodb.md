@@ -690,7 +690,7 @@ db.journal_longitudinal_analysis_results.createIndex({
 
 `promptVersion` is `longitudinal-v1` (stored rows, stable uppercase signal
 keys) or `longitudinal-v2` (new rows, short Vietnamese user-facing phrases of at
-most 40 characters); migration `021_longitudinal_prompt_v2.cjs` accepts both.
+most 40 characters); migration `022_longitudinal_prompt_v2.cjs` accepts both.
 Stored v1 results are never rewritten.
 
 Direction is exactly `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
