@@ -27,11 +27,28 @@ Existing native fetch also means missing keep-alive is not established.
 
 Every turn keeps these three boundaries:
 
-| Purpose       | Position                                                                | Mandatory current checks                                                                                                   |
-| ------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| INITIAL       | Before context/generation admission                                     | Owned active attempt/lease, bound campaign, current Care/Consultation, room/dispatch/participants, common-return freshness |
-| PRE_INFERENCE | Immediately before provider dispatch                                    | Same fresh checks; no reuse of the INITIAL result                                                                          |
-| PUBLICATION   | After full END_TURN/schema/safety validation, before reply registration | Same fresh checks; consent loss, stale authority, recording or invalid media still deny speech                             |
+| Purpose       | Position                                                                | Mandatory current checks                                                                                                                    |
+| ------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| INITIAL       | Before context/generation admission                                     | Owned active attempt/lease, bound campaign, current Care/Consultation, room/dispatch/participants, common-return freshness                  |
+| PRE_INFERENCE | Immediately before provider dispatch                                    | Same fresh owner/state checks; room/dispatch/participants are inspected again unless a successful inspection is reusable (MB-867, below)    |
+| PUBLICATION   | After full END_TURN/schema/safety validation, before reply registration | Same as PRE_INFERENCE; consent loss and stale authority always deny; recording or invalid media deny only when this round inspects (MB-867) |
+
+**Amended by MB-867 (owner decision 2026-11-17).** PRE_INFERENCE and PUBLICATION
+inspect LiveKit media only when no reusable result exists. A result is reusable
+when it came from a fully successful authorization of the same session, attempt
+and media identity, is at most 5 s old both when the round starts and at its
+common return, and the authority and lease are unexpired. If the age passes 5 s
+during the owner/state reads, the whole round reruns with a fresh inspection.
+Failed or denied inspections are never reused; INITIAL always inspects. Owner
+authority, state/lease, media document and measurement checks run on every
+round. A reused round emits no `MEDIA_INSPECTION` stage; a rerun round emits
+its owner, media and STATE_AFTER stages twice under the same authorizationId.
+
+Accepted observation gap: during the up-to-5 s window a room or participant
+disconnect, a started recording or a foreign participant is not seen by the
+reusing round. A disconnect is stopped by the worker on `ROOM_DISCONNECTED`;
+a recording or foreign participant is caught by the next real inspection. In
+exchange a turn saves about 2 s. The reuse is held per journal-ai replica.
 
 `voice_authorization_profile` records a generated authorizationId, closed purpose
 and stage, validated optional attemptId/turnId/turnSequence, bounded monotonic
