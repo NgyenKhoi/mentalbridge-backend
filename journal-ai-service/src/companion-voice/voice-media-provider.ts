@@ -1,5 +1,14 @@
 import { decodeJwt } from "jose";
 import { performance } from "node:perf_hooks";
+import { randomUUID } from "node:crypto";
+import type {
+  VoiceAuthorizationProfile,
+  VoiceAuthorizationCall,
+} from "./voice-authorization-profile.js";
+import {
+  profileVoiceHttpRead,
+  type VoiceHttpDiagnostic,
+} from "./voice-http-profile.js";
 import {
   AccessToken,
   AgentDispatchClient,
@@ -52,8 +61,13 @@ export interface VoiceMediaInspection {
   agentAudioPublished: boolean;
 }
 
-export interface VoiceMediaDiagnostic {
+export interface VoiceMediaDiagnostic extends Partial<VoiceHttpDiagnostic> {
   attemptId: string;
+  inspectionId: string;
+  purpose: VoiceAuthorizationCall["purpose"];
+  authorizationId?: string;
+  turnId?: string | undefined;
+  turnSequence?: number | undefined;
   operation: "ROOMS" | "DISPATCHES" | "PARTICIPANTS";
   elapsedMs: number;
   outcome: "SUCCESS" | "FAILED";
@@ -62,7 +76,10 @@ export interface VoiceMediaDiagnostic {
 export interface VoiceMediaProvider {
   createRoom(reference: VoiceMediaReference): Promise<void>;
   dispatch(reference: VoiceMediaReference): Promise<string>;
-  inspect(reference: VoiceMediaReference): Promise<VoiceMediaInspection>;
+  inspect(
+    reference: VoiceMediaReference,
+    profile?: VoiceAuthorizationProfile,
+  ): Promise<VoiceMediaInspection>;
   connection(
     reference: VoiceMediaReference,
     now: Date,
@@ -116,8 +133,7 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
   constructor(
     private readonly configuration: VoiceMediaConfiguration,
     clients?: { rooms: RoomClient; agents: DispatchClient },
-    private readonly diagnostic: (value: VoiceMediaDiagnostic) => void = () =>
-      undefined,
+    private readonly diagnostic?: (value: VoiceMediaDiagnostic) => void,
     private readonly monotonic: () => number = () => performance.now(),
   ) {
     if (
@@ -162,13 +178,20 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
     reference: VoiceMediaReference,
     operation: VoiceMediaDiagnostic["operation"],
     read: () => Promise<T>,
+    identity: Pick<
+      VoiceMediaDiagnostic,
+      "inspectionId" | "purpose" | "authorizationId" | "turnId" | "turnSequence"
+    >,
   ): Promise<T> {
     const started = this.monotonic();
+    let http: VoiceHttpDiagnostic | undefined;
     const observe = (outcome: VoiceMediaDiagnostic["outcome"]) => {
       const elapsed = this.monotonic() - started;
       if (!Number.isFinite(elapsed)) return;
       try {
-        this.diagnostic({
+        this.diagnostic?.({
+          ...identity,
+          ...http,
           attemptId: reference.attemptId,
           operation,
           elapsedMs: Math.max(0, Math.floor(elapsed)),
@@ -179,7 +202,13 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
       }
     };
     return Promise.resolve()
-      .then(read)
+      .then(() =>
+        this.diagnostic
+          ? profileVoiceHttpRead(read, (value) => {
+              http = value;
+            })
+          : read(),
+      )
       .then(
         (value) => {
           observe("SUCCESS");
@@ -235,17 +264,33 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
     });
   }
 
-  inspect(reference: VoiceMediaReference): Promise<VoiceMediaInspection> {
+  inspect(
+    reference: VoiceMediaReference,
+    profile?: VoiceAuthorizationProfile,
+  ): Promise<VoiceMediaInspection> {
     return this.safe(reference, async () => {
-      const roomRead = this.inspectRead(reference, "ROOMS", () =>
-        this.rooms.listRooms([reference.roomName]),
+      const identity = {
+        ...(profile?.tags ?? { purpose: "UNSCOPED" as const }),
+        inspectionId: randomUUID(),
+      };
+      const roomRead = this.inspectRead(
+        reference,
+        "ROOMS",
+        () => this.rooms.listRooms([reference.roomName]),
+        identity,
       );
       const detailsRead = Promise.all([
-        this.inspectRead(reference, "DISPATCHES", () =>
-          this.agents.listDispatch(reference.roomName),
+        this.inspectRead(
+          reference,
+          "DISPATCHES",
+          () => this.agents.listDispatch(reference.roomName),
+          identity,
         ),
-        this.inspectRead(reference, "PARTICIPANTS", () =>
-          this.rooms.listParticipants(reference.roomName),
+        this.inspectRead(
+          reference,
+          "PARTICIPANTS",
+          () => this.rooms.listParticipants(reference.roomName),
+          identity,
         ),
       ]).catch(() => null);
       const rooms = await roomRead;

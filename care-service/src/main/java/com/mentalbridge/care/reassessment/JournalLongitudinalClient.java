@@ -26,7 +26,8 @@ import io.github.resilience4j.retry.RetryConfig;
 @Component
 public class JournalLongitudinalClient {
 
-	private static final Set<String> PROVIDERS = Set.of("DETERMINISTIC_FAKE", "GEMINI", "OPENAI");
+	private static final Set<String> PROVIDERS = Set.of("DETERMINISTIC_FAKE", "GEMINI", "OPENAI", "BEDROCK");
+	private static final Set<String> PROMPT_VERSIONS = Set.of("longitudinal-v1", "longitudinal-v2");
 	private static final Set<String> DIRECTIONS = Set.of("MORE_FREQUENT", "LESS_FREQUENT", "SIMILAR",
 			"INSUFFICIENT_DATA");
 	private static final Set<String> PERIODS = Set.of("PREVIOUS", "CURRENT");
@@ -149,7 +150,7 @@ public class JournalLongitudinalClient {
 				|| !validStrings(evidence.barriers(), 12) || !validStrings(evidence.helpfulPatterns(), 12)
 				|| !validList(evidence.changesComparedWithPreviousPeriod(), 24)
 				|| !PROVIDERS.contains(evidence.provider()) || blankOrLong(evidence.model(), 128)
-				|| !"longitudinal-v1".equals(evidence.promptVersion())
+				|| !PROMPT_VERSIONS.contains(evidence.promptVersion())
 				|| !Integer.valueOf(1).equals(evidence.schemaVersion()) || evidence.createdAt() == null) {
 			throw new InvalidProjectionException();
 		}

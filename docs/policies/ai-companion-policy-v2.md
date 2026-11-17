@@ -66,9 +66,11 @@ whether to open it.
 
 | Package | AI behavior |
 | --- | --- |
-| `FREE` | Default limit of five successfully delivered assistant responses per day |
-| `PLUS` | Higher versioned quota; it may use the same model as `FREE` |
-| `PREMIUM` | No daily response limit displayed; a stronger configured model may be used |
+| `FREE` | Default limit of five successfully delivered assistant responses per day; Text replies stay at most 500 characters |
+| `PLUS` | Higher versioned quota; it may use the same model as `FREE`; Text replies may run 2–6 sentences, at most 900 characters |
+| `PREMIUM` | No daily response limit displayed; a stronger configured model may be used; same Text reply length as `PLUS` |
+
+Reply length by package follows the [ADR 0049 MB-869 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md#mb-869-amendment--reply-length-by-package-2026-11-17).
 
 Every package remains subject to server-side token, request-rate, abuse, cost,
 and fair-use limits. “No displayed daily response limit” is not an unlimited

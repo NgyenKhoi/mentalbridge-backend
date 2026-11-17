@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import "./voice-authorization-profile.test.js";
+import { VoiceAuthorizationProfile } from "./voice-authorization-profile.js";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
@@ -195,10 +197,22 @@ void test("inspection read timings include only validated attempt, closed enums 
   for (const value of observations) {
     assert.deepEqual(Object.keys(value).sort(), [
       "attemptId",
+      "connection",
       "elapsedMs",
+      "httpObservation",
+      "httpResult",
+      "httpStatusClass",
+      "inspectionId",
+      "nativeRequests",
       "operation",
       "outcome",
+      "purpose",
     ]);
+    assert.match(value.inspectionId, /^[0-9a-f-]{36}$/);
+    assert.equal(value.inspectionId, observations[0]?.inspectionId);
+    assert.equal(value.purpose, "UNSCOPED");
+    assert.equal(value.httpObservation, "UNAVAILABLE");
+    assert.equal(value.sendToHeadersMs, undefined);
     assert.equal(value.attemptId, f.ref.attemptId);
     assert.equal(value.outcome, "SUCCESS");
     assert.equal(value.elapsedMs, 23);
@@ -477,24 +491,63 @@ void test("official LiveKit SDK sends bounded AI-only room/explicit-dispatch cal
   assert.ok(address && typeof address !== "string");
   const host = `http://127.0.0.1:${String(address.port)}`;
   const options = { requestTimeout: 3, failover: false };
-  const provider = new LiveKitVoiceMedia(configuration, {
-    rooms: new RoomServiceClient(
-      host,
-      configuration.apiKey ?? "",
-      configuration.apiSecret ?? "",
-      options,
-    ),
-    agents: new AgentDispatchClient(
-      host,
-      configuration.apiKey ?? "",
-      configuration.apiSecret ?? "",
-      options,
-    ),
-  });
+  const profiling: VoiceMediaDiagnostic[] = [];
+  const provider = new LiveKitVoiceMedia(
+    configuration,
+    {
+      rooms: new RoomServiceClient(
+        host,
+        configuration.apiKey ?? "",
+        configuration.apiSecret ?? "",
+        options,
+      ),
+      agents: new AgentDispatchClient(
+        host,
+        configuration.apiKey ?? "",
+        configuration.apiSecret ?? "",
+        options,
+      ),
+    },
+    (value) => profiling.push(value),
+  );
   await provider.createRoom(ref);
   ref.providerDispatchId = await provider.dispatch(ref);
   assert.equal(ref.providerDispatchId, "AD_synthetic");
-  const inspection = await provider.inspect(ref);
+  const trace = new VoiceAuthorizationProfile({
+    purpose: "PUBLICATION",
+    attemptId: ref.attemptId,
+    turnId: randomUUID(),
+    turnSequence: 3,
+  });
+  const inspection = await provider.inspect(ref, trace);
+  assert.equal(profiling.length, 3);
+  for (const event of profiling) {
+    assert.equal(event.authorizationId, trace.tags.authorizationId);
+    assert.equal(event.purpose, "PUBLICATION");
+    assert.equal(event.turnId, trace.tags.turnId);
+    assert.equal(event.inspectionId, profiling[0]?.inspectionId);
+    assert.equal(event.httpObservation, "OBSERVED");
+    assert.equal(event.nativeRequests, 1);
+    assert.equal(event.httpStatusClass, "HTTP_2XX");
+    assert.equal(event.httpResult, "COMPLETE");
+    assert.ok(
+      event.sendToHeadersMs !== undefined && event.sendToHeadersMs >= 0,
+    );
+    assert.ok(
+      event.headersToBodyMs !== undefined && event.headersToBodyMs >= 0,
+    );
+  }
+  const scrubbed = JSON.stringify(profiling);
+  for (const privateValue of [
+    host,
+    ref.roomName,
+    ref.participantIdentity,
+    configuration.apiKey,
+    configuration.apiSecret,
+    "Bearer",
+    "synthetic-private",
+  ])
+    assert.equal(scrubbed.includes(privateValue ?? "PRIVATE"), false);
   assert.deepEqual(inspection, {
     roomExists: true,
     providerDispatchId: "AD_synthetic",

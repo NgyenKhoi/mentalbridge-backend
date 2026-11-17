@@ -42,6 +42,8 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/service-credits",
 			"GET /api/v1/service-plans",
 			"POST /api/v1/subscriptions/checkout",
+			"GET /api/v1/subscriptions/current",
+			"POST /api/v1/subscriptions/{subscriptionId}/cancellation",
 			"GET /api/v1/payments",
 			"GET /api/v1/payments/{paymentId}",
 			"POST /internal/v1/payments/momo/ipn",

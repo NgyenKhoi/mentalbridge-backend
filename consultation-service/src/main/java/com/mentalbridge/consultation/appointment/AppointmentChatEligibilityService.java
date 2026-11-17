@@ -31,7 +31,7 @@ public class AppointmentChatEligibilityService {
 		var appointment = jdbc.sql("""
 				select a.id, a.user_account_id, a.specialist_account_id, a.status, a.modality,
 				       a.scheduled_start_at, a.scheduled_end_at, a.session_outcome,
-				       a.evidence_failure_reason, c.state as credit_state,
+				       a.evidence_failure_reason, case when c.appointment_id=a.id or c.state='REVOKED' then c.state else 'AVAILABLE' end as credit_state,
 				       exists(select 1 from appointment_chat_evidence e
 				              where e.appointment_id=a.id and e.participant_account_id=:actorId
 				                and e.evidence_type='CHECK_IN') as participant_checked_in,

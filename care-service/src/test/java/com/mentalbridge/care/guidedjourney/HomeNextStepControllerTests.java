@@ -177,7 +177,7 @@ class HomeNextStepControllerTests extends CareTestProperties {
 
 	private JourneyView firstUse(boolean assessmentInProgress) {
 		return new JourneyView("mb-guided-journey-v1", Stage.ASSESSMENT_REQUIRED, assessmentInProgress,
-				null, null, null, null, null, null, EntitlementStatus.NOT_REQUIRED);
+				null, null, null, null, null, null, EntitlementStatus.NOT_REQUIRED, null);
 	}
 
 	private RequestPostProcessor user(UUID owner) {

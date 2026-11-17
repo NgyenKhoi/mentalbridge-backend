@@ -34,7 +34,8 @@ final class AppointmentRowMapper {
 
 	static String actorType(String reason) {
 		if (reason == null) return null;
-		if (reason.startsWith("USER_") || reason.equals("APPOINTMENT_REQUESTED")) return "USER";
+		if (reason.startsWith("USER_") || reason.equals("APPOINTMENT_REQUESTED")
+				|| reason.equals("OWNER_SUBSCRIPTION_CANCELLED")) return "USER";
 		if (reason.equals("SPECIALIST_SUSPENDED")) return "ADMIN";
 		if (reason.startsWith("SPECIALIST_")) return "SPECIALIST";
 		if (reason.equals("DECISION_DEADLINE_EXPIRED") || reason.startsWith("SESSION_")

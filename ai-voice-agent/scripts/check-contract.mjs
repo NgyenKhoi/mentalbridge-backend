@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
+import { speechEventSchema } from "../dist/speech-units.js";
 import {
   controlSchema,
   leaseSchema,
@@ -16,6 +17,44 @@ const api = JSON.parse(
     "utf8",
   ),
 );
+const speechContract = JSON.parse(
+  await readFile(
+    new URL(
+      "../../contracts/openapi/journal-ai-voice-speech-units-v1.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+const speechUnit =
+  z.toJSONSchema(speechEventSchema).oneOf?.[0] ??
+  z.toJSONSchema(speechEventSchema).anyOf?.[0];
+const canonicalSpeechUnit = speechContract.components.schemas.SpeechUnit;
+assert.deepEqual(
+  [...speechUnit.required].sort(),
+  [...canonicalSpeechUnit.required].sort(),
+);
+assert.deepEqual(
+  Object.keys(speechUnit.properties).sort(),
+  Object.keys(canonicalSpeechUnit.properties).sort(),
+);
+assert.equal(speechUnit.additionalProperties, false);
+for (const [name, property] of Object.entries(canonicalSpeechUnit.properties))
+  for (const constraint of [
+    "const",
+    "format",
+    "maximum",
+    "minimum",
+    "maxLength",
+    "minLength",
+    "enum",
+  ])
+    if (property[constraint] !== undefined)
+      assert.deepEqual(
+        speechUnit.properties[name][constraint],
+        property[constraint],
+        `${name}.${constraint}`,
+      );
 for (const [name, schema] of [
   ["AgentLease", leaseSchema],
   ["VoiceReply", replySchema],

@@ -103,7 +103,7 @@ void test("measurement hash is stable for owner ordering but binds every approve
         voiceId: "b8cd71e3-bc14-4538-a530-d6314731c036",
       },
     },
-    { ...original, replyStyle: "SUPPORTIVE" },
+    { ...original, replyStyle: "BRIEF" },
   ])
     assert.notEqual(
       a.configHash,

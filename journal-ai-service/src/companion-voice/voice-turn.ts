@@ -4,6 +4,7 @@ import {
   validatedAssistantMessage,
   type ChatProvider,
   type ProviderReply,
+  type ProviderSpeechUnit,
 } from "../companion-chat/companion-chat.js";
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { VoiceAccessError } from "./voice-access.js";
@@ -50,6 +51,16 @@ export interface VoiceReply {
 }
 const expressionSchema = z.enum(["neutral", "comfort"]);
 export const voiceExpressionCapability = "expression";
+export const voiceSpeechUnitsCapability = "voice-speech-units-v1";
+export interface AuthorizedSpeechUnit extends Omit<
+  VoiceReply,
+  "policyVersion"
+> {
+  type: "SPEECH_UNIT";
+  unitSequence: number;
+  reservedCharacters: 500;
+  policyVersion: "companion-voice-speech-unit-v1";
+}
 interface Pair {
   user: string;
   assistant: string;
@@ -65,6 +76,14 @@ interface Context {
   textPairs: Pair[];
   controller: AbortController;
   latest: { keyHash: string; fingerprint: string; response: VoiceReply } | null;
+  cancelledTurnId?: string;
+}
+interface SpeechUnitJob {
+  input: VoiceTurn;
+  controller: AbortController;
+  finished: Promise<void>;
+  awaiting?: { sequence: number; replyId: string; release: () => void };
+  acknowledged?: { sequence: number; replyId: string };
 }
 export interface VoiceTurnMetric {
   outcome: "GENERATED" | "FAILED" | "PHASE" | "PROVIDER_USAGE";
@@ -97,6 +116,7 @@ export interface VoiceTurnMetric {
   countedInputTokens?: number;
   sequence?: number;
   turnSequence?: number;
+  unitSequence?: number;
   elapsedMs?: number;
   inputTokens?: number;
   outputTokens?: number;
@@ -157,6 +177,7 @@ const trimSelectedText = (
 
 export class VoiceTurnService {
   private readonly contexts = new Map<string, Context>();
+  private readonly speechJobs = new Map<string, SpeechUnitJob>();
   private readonly unsubscribe: () => void;
   constructor(
     private readonly sessions: Sessions,
@@ -213,6 +234,7 @@ export class VoiceTurnService {
     body: unknown,
     correlationId: string,
     signal?: AbortSignal,
+    onAuthorizedUnit?: (unit: AuthorizedSpeechUnit) => Promise<void>,
   ): Promise<VoiceReply> {
     const parsed = voiceTurnSchema.safeParse(body);
     if (
@@ -222,6 +244,8 @@ export class VoiceTurnService {
     )
       throw new VoiceLedgerError("INVALID_REQUEST");
     const input = parsed.data;
+    if (Boolean(onAuthorizedUnit) !== this.speechUnitsEnabled())
+      throw new VoiceLedgerError("INVALID_REQUEST");
     let phase: NonNullable<VoiceTurnMetric["phase"]> = "turn_authorized";
     let diagnosticSequence = 0;
     const diagnosticStart = performance.now();
@@ -254,6 +278,11 @@ export class VoiceTurnService {
       input.attemptId,
       input.leaseId,
       correlationId,
+      {
+        purpose: "INITIAL",
+        turnId: input.turnId,
+        turnSequence: input.sequence,
+      },
     );
     stage("turn_authorized");
     if (
@@ -293,6 +322,7 @@ export class VoiceTurnService {
     }
     if (context?.busy) throw new VoiceLedgerError("INVALID_SESSION_STATE");
     if (context?.latest?.keyHash === keyHash) {
+      if (onAuthorizedUnit) throw new VoiceLedgerError("STALE_ATTEMPT");
       if (context.latest.fingerprint !== fingerprint)
         throw new VoiceLedgerError("IDEMPOTENCY_CONFLICT");
       if (
@@ -335,11 +365,26 @@ export class VoiceTurnService {
     let claimed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
     let timeout: AbortSignal | undefined;
+    const turnController = new AbortController();
+    let finishJob: (() => void) | undefined;
+    let publications: Promise<void> = Promise.resolve();
+    let publicationFailure: { error: unknown } | undefined;
+    let generation: Promise<ProviderReply> | undefined;
+    const generationState = { completed: false };
     const usage = { recorded: false };
     const abort = () => {
-      this.discard(id);
+      if (onAuthorizedUnit) turnController.abort();
+      else this.discard(id);
     };
     const active = context;
+    if (onAuthorizedUnit)
+      this.speechJobs.set(id, {
+        input,
+        controller: turnController,
+        finished: new Promise<void>((resolve) => {
+          finishJob = resolve;
+        }),
+      });
     try {
       stage("turn_claim_started");
       claimed = await this.store.claim({
@@ -384,17 +429,21 @@ export class VoiceTurnService {
         checking = true;
         void this.sessions
           .turnState(id, input.attemptId, input.leaseId)
-          .catch(abort)
+          .catch(() => {
+            this.discard(id);
+          })
           .finally(() => {
             checking = false;
           });
       }, 1000);
       timer.unref();
       timeout = AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS);
-      const requestSignal = AbortSignal.any([
+      const authoritySignal = AbortSignal.any([
         context.controller.signal,
-        timeout,
+        turnController.signal,
       ]);
+      const providerSignal = AbortSignal.any([authoritySignal, timeout]);
+      const requestSignal = onAuthorizedUnit ? authoritySignal : providerSignal;
       if (this.isAborted(requestSignal))
         throw new VoiceLedgerError("SESSION_EXPIRED");
       stage("pre_inference_authorization_started");
@@ -403,6 +452,11 @@ export class VoiceTurnService {
         input.attemptId,
         input.leaseId,
         correlationId,
+        {
+          purpose: "PRE_INFERENCE",
+          turnId: input.turnId,
+          turnSequence: input.sequence,
+        },
       );
       stage("pre_inference_authorized");
       if (
@@ -421,53 +475,121 @@ export class VoiceTurnService {
         if (requestSignal.aborted) rejectAbort();
       });
       let reply: ProviderReply;
+      let streamedReply: VoiceReply | undefined;
+      let unitSequence = 0;
+      const queuedText: string[] = [];
+      const queueUnit = onAuthorizedUnit
+        ? (unit: ProviderSpeechUnit) => {
+            const message = validatedAssistantMessage(unit.message, {
+              rejectLinks: true,
+            });
+            if (queuedText.length >= 2 || !/[.!?…]$/u.test(message))
+              throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+            validatedAssistantMessage([...queuedText, message].join(" "), {
+              rejectLinks: true,
+            });
+            queuedText.push(message);
+            const selected: ProviderSpeechUnit = {
+              message,
+              expression:
+                expressionSchema.safeParse(unit.expression).data ?? "neutral",
+            };
+            publications = publications.then(async () => {
+              streamedReply = await this.publishSpeechUnit(
+                id,
+                input,
+                active,
+                routeHash,
+                requestSignal,
+                correlationId,
+                selected,
+                streamedReply,
+                (value) => {
+                  phase = value;
+                  report({
+                    outcome: "PHASE",
+                    phase,
+                    unitSequence: unitSequence + 1,
+                  });
+                },
+              );
+              const sequence = ++unitSequence;
+              const acknowledged = this.waitForSpeechAcknowledgement(
+                id,
+                sequence,
+                streamedReply.replyId,
+                requestSignal,
+              );
+              void acknowledged.catch(() => undefined);
+              await onAuthorizedUnit({
+                ...streamedReply,
+                type: "SPEECH_UNIT",
+                unitSequence: sequence,
+                reservedCharacters: 500,
+                policyVersion: "companion-voice-speech-unit-v1",
+              });
+              await acknowledged;
+            });
+            void publications.catch((error: unknown) => {
+              if (!turnController.signal.aborted) {
+                publicationFailure ??= { error };
+                turnController.abort();
+              }
+            });
+          }
+        : undefined;
       try {
         stage("provider_reply_requested");
-        reply = await Promise.race([
-          this.provider.reply(
-            input.finalTranscript,
-            {
-              kinds: [],
-              prompt: JSON.stringify(
-                textHandoff
-                  ? { selectedText: context.textPairs, currentCall: recent }
-                  : recent,
-              ),
+        generation = this.provider.reply(
+          input.finalTranscript,
+          {
+            kinds: [],
+            prompt: JSON.stringify(
+              textHandoff
+                ? { selectedText: context.textPairs, currentCall: recent }
+                : recent,
+            ),
+          },
+          route,
+          {
+            voice: true,
+            textHandoff,
+            ...(queueUnit ? { onSpeechUnit: queueUnit } : {}),
+            signal: providerSignal,
+            voiceObserver: (observation) => {
+              phase = observation.phase;
+              if (observation.phase === "provider_usage") {
+                if (
+                  !usage.recorded &&
+                  observation.inputTokens !== undefined &&
+                  observation.outputTokens !== undefined
+                ) {
+                  usage.recorded = true;
+                  this.usage(
+                    {
+                      message: "",
+                      inputTokens: observation.inputTokens,
+                      outputTokens: observation.outputTokens,
+                      usageSource: "PROVIDER",
+                    },
+                    entitlement.packageCode,
+                    (metric) => {
+                      report({ ...metric, outcome: "PROVIDER_USAGE", phase });
+                    },
+                  );
+                }
+              } else report({ outcome: "PHASE", ...observation });
             },
-            route,
-            {
-              voice: true,
-              textHandoff,
-              signal: requestSignal,
-              voiceObserver: (observation) => {
-                phase = observation.phase;
-                if (observation.phase === "provider_usage") {
-                  if (
-                    !usage.recorded &&
-                    observation.inputTokens !== undefined &&
-                    observation.outputTokens !== undefined
-                  ) {
-                    usage.recorded = true;
-                    this.usage(
-                      {
-                        message: "",
-                        inputTokens: observation.inputTokens,
-                        outputTokens: observation.outputTokens,
-                        usageSource: "PROVIDER",
-                      },
-                      entitlement.packageCode,
-                      (metric) => {
-                        report({ ...metric, outcome: "PROVIDER_USAGE", phase });
-                      },
-                    );
-                  }
-                } else report({ outcome: "PHASE", ...observation });
-              },
-            },
-          ),
-          cancelled,
-        ]);
+          },
+        );
+        reply = await Promise.race([generation, cancelled]);
+        generationState.completed = true;
         stage("provider_reply_received");
+        await publications;
+        if (publicationFailure) throw publicationFailure.error;
+      } catch (error) {
+        if (publicationFailure) throw publicationFailure.error;
+        throw error;
       } finally {
         requestSignal.removeEventListener("abort", rejectAbort);
       }
@@ -476,6 +598,19 @@ export class VoiceTurnService {
           report({ ...metric, outcome: "PROVIDER_USAGE", phase });
         });
         usage.recorded = true;
+      }
+      if (onAuthorizedUnit) {
+        if (!streamedReply || unitSequence < 1 || requestSignal.aborted)
+          throw new VoiceLedgerError("SESSION_EXPIRED");
+        const result = { ...streamedReply, spokenText: reply.message };
+        context.pairs = history([
+          ...recent,
+          { user: input.finalTranscript, assistant: reply.message },
+        ]);
+        trimSelectedText(context.textPairs, context.pairs);
+        context.latest = { keyHash, fingerprint, response: result };
+        report({ outcome: "GENERATED", phase });
+        return result;
       }
       const spokenText = validatedAssistantMessage(reply.message);
       if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
@@ -489,6 +624,11 @@ export class VoiceTurnService {
         input.attemptId,
         input.leaseId,
         correlationId,
+        {
+          purpose: "PUBLICATION",
+          turnId: input.turnId,
+          turnSequence: input.sequence,
+        },
       );
       stage("publication_authorized");
       if (
@@ -556,8 +696,30 @@ export class VoiceTurnService {
       report({ outcome: "GENERATED", phase });
       return result;
     } catch (error) {
-      const timedOut = timeout !== undefined && this.isAborted(timeout);
+      const timedOut =
+        timeout !== undefined &&
+        this.isAborted(timeout) &&
+        (!onAuthorizedUnit || !generationState.completed);
       const authorityAborted = active.controller.signal.aborted;
+      if (
+        onAuthorizedUnit &&
+        turnController.signal.aborted &&
+        !timedOut &&
+        !authorityAborted &&
+        !publicationFailure &&
+        this.contexts.get(id) === active &&
+        ((error instanceof VoiceProviderFailure && error.code === "ABORTED") ||
+          (error instanceof VoiceLedgerError &&
+            error.code === "SESSION_EXPIRED"))
+      ) {
+        await publications.catch(() => undefined);
+        if (await this.generationStopped(generation)) {
+          active.cancelledTurnId = input.turnId;
+          active.latest = null;
+          report({ outcome: "FAILED", phase, code: "ABORTED" });
+          throw new VoiceLedgerError("STALE_ATTEMPT");
+        }
+      }
       this.discard(id);
       if (claimed) {
         report({
@@ -596,14 +758,220 @@ export class VoiceTurnService {
         throw error;
       throw new VoiceMediaError();
     } finally {
+      if (onAuthorizedUnit) {
+        turnController.abort();
+        await publications.catch(() => undefined);
+        this.speechJobs.delete(id);
+      }
       active.busy = false;
       if (timer) clearInterval(timer);
       signal?.removeEventListener("abort", abort);
+      finishJob?.();
     }
   }
 
   private isAborted(signal: AbortSignal) {
     return signal.aborted;
+  }
+  speechUnitsEnabled(): boolean {
+    return this.configuration.VOICE_SPEECH_UNITS_ENABLED === true;
+  }
+  async cancelSpeechTurn(
+    id: string,
+    turnId: string,
+    attemptId: string,
+    leaseId: string,
+  ): Promise<void> {
+    if (!this.speechUnitsEnabled())
+      throw new VoiceLedgerError("INVALID_REQUEST");
+    await this.sessions.turnState(id, attemptId, leaseId);
+    const job = this.speechJobs.get(id);
+    if (!job) {
+      const context = this.contexts.get(id);
+      if (
+        context?.cancelledTurnId === turnId ||
+        context?.latest?.response.turnId === turnId
+      )
+        return;
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+    }
+    if (
+      job.input.turnId !== turnId ||
+      job.input.attemptId !== attemptId ||
+      job.input.leaseId !== leaseId
+    )
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+    job.controller.abort();
+    await job.finished;
+    if (this.contexts.get(id)?.cancelledTurnId !== turnId)
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+  }
+  private async generationStopped(
+    work: Promise<ProviderReply> | undefined,
+  ): Promise<boolean> {
+    if (!work) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work.then(
+          () => true,
+          () => true,
+        ),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => {
+            resolve(false);
+          }, 1000);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  async acknowledgeSpeechUnit(
+    id: string,
+    turnId: string,
+    attemptId: string,
+    leaseId: string,
+    sequence: number,
+    replyId: string,
+  ): Promise<void> {
+    await this.sessions.turnState(id, attemptId, leaseId);
+    const job = this.speechJobs.get(id);
+    if (
+      job?.input.turnId !== turnId ||
+      job.input.attemptId !== attemptId ||
+      job.input.leaseId !== leaseId ||
+      job.controller.signal.aborted
+    )
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+    if (
+      job.acknowledged?.sequence === sequence &&
+      job.acknowledged.replyId === replyId
+    )
+      return;
+    const unit = job.awaiting;
+    if (unit?.sequence !== sequence || unit.replyId !== replyId)
+      throw new VoiceLedgerError("STALE_ATTEMPT");
+    job.acknowledged = { sequence, replyId };
+    delete job.awaiting;
+    unit.release();
+  }
+  private waitForSpeechAcknowledgement(
+    id: string,
+    sequence: number,
+    replyId: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const job = this.speechJobs.get(id);
+    if (!job || job.awaiting || signal.aborted)
+      throw new VoiceLedgerError("SESSION_EXPIRED");
+    return new Promise<void>((resolve, reject) => {
+      const stop = () => {
+        reject(new VoiceLedgerError("SESSION_EXPIRED"));
+      };
+      const release = () => {
+        signal.removeEventListener("abort", stop);
+        resolve();
+      };
+      job.awaiting = { sequence, replyId, release };
+      signal.addEventListener("abort", stop, { once: true });
+      if (signal.aborted) stop();
+    });
+  }
+  private async publishSpeechUnit(
+    id: string,
+    input: VoiceTurn,
+    context: Context,
+    routeHash: string,
+    signal: AbortSignal,
+    correlationId: string,
+    unit: ProviderSpeechUnit,
+    previous?: VoiceReply,
+    stage: (phase: NonNullable<VoiceTurnMetric["phase"]>) => void = () =>
+      undefined,
+  ): Promise<VoiceReply> {
+    if (this.isAborted(signal) || this.contexts.get(id) !== context)
+      throw new VoiceLedgerError("SESSION_EXPIRED");
+    const spokenText = validatedAssistantMessage(unit.message, {
+      rejectLinks: true,
+    });
+    if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
+    stage("output_validated");
+    stage("publication_authorization_started");
+    const publication = await this.sessions.authorizeTurn(
+      id,
+      input.attemptId,
+      input.leaseId,
+      correlationId,
+      {
+        purpose: "PUBLICATION",
+        turnId: input.turnId,
+        turnSequence: input.sequence,
+      },
+    );
+    stage("publication_authorized");
+    if (
+      this.isAborted(signal) ||
+      this.contexts.get(id) !== context ||
+      this.digest(
+        JSON.stringify(this.route(publication.entitlement.packageCode)),
+      ) !== routeHash
+    )
+      throw new VoiceMediaError();
+    const replyId = previous?.replyId ?? randomUUID();
+    if (!previous) {
+      if (
+        !this.configuration.VOICE_PILOT?.measurement ||
+        !this.sessions.reserveMeasurementSpeech
+      )
+        throw new VoiceLedgerError("QUOTA_EXHAUSTED");
+      await this.sessions.reserveMeasurementSpeech(
+        id,
+        input.turnId,
+        replyId,
+        500,
+      );
+      if (this.isAborted(signal)) throw new VoiceLedgerError("SESSION_EXPIRED");
+      stage("reply_registration_started");
+      await this.sessions.registerReply(
+        id,
+        input.attemptId,
+        input.turnId,
+        replyId,
+        correlationId,
+      );
+      stage("reply_registered");
+    }
+    stage("turn_state_recheck_started");
+    const latest = await this.sessions.turnState(
+      id,
+      input.attemptId,
+      input.leaseId,
+    );
+    stage("turn_state_rechecked");
+    const expiresAt = new Date(
+      Math.min(
+        latest.hardStopAt.getTime(),
+        latest.authorityExpiresAt.getTime(),
+        latest.leaseExpiresAt?.getTime() ?? 0,
+      ),
+    );
+    if (
+      this.isAborted(signal) ||
+      this.contexts.get(id) !== context ||
+      expiresAt <= this.clock()
+    )
+      throw new VoiceLedgerError("SESSION_EXPIRED");
+    return {
+      voiceSessionId: id,
+      turnId: input.turnId,
+      replyId,
+      language: "vi-VN",
+      spokenText,
+      expression: context.textPairs.length > 0 ? "neutral" : unit.expression,
+      expiresAt: expiresAt.toISOString(),
+      policyVersion: "companion-voice-policy-v1",
+    };
   }
 
   private route(plan: "FREE" | "PLUS" | "PREMIUM") {

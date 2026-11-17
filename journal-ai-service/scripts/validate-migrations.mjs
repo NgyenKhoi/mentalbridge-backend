@@ -34,6 +34,7 @@ const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
 const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
 const benchmarkGovernanceMigration = require("../migrations/019_benchmark_dataset_governance.cjs");
 const benchmarkExecutionMigration = require("../migrations/021_benchmark_execution_governance.cjs");
+const longitudinalPromptV2Migration = require("../migrations/022_longitudinal_prompt_v2.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -106,6 +107,21 @@ assert.equal(
 );
 assert.equal(typeof longitudinalMigration.up, "function");
 assert.equal(typeof longitudinalMigration.down, "function");
+assert.deepEqual(
+  longitudinalPromptV2Migration.longitudinalResultValidator.$jsonSchema
+    .properties.promptVersion.enum,
+  ["longitudinal-v1", "longitudinal-v2"],
+);
+assert.deepEqual(
+  longitudinalPromptV2Migration.longitudinalJobValidator.$jsonSchema.properties
+    .route.properties.promptVersion.enum,
+  ["longitudinal-v1", "longitudinal-v2"],
+);
+assert.ok(
+  longitudinalPromptV2Migration.longitudinalResultValidator.$jsonSchema.properties.provider.enum.includes(
+    "BEDROCK",
+  ),
+);
 assert.equal(
   longitudinalMigration.jobValidator.$jsonSchema.properties.route.properties
     .workload.enum[0],

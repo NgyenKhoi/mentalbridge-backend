@@ -30,6 +30,7 @@ import {
 import { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import { createVoiceProvider } from "./voice-provider.js";
 import { VoiceTurnService, type VoiceTurnMetric } from "./voice-turn.js";
+import type { VoiceAuthorizationDiagnostic } from "./voice-authorization-profile.js";
 import { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import {
   VOICE_SESSIONS,
@@ -80,6 +81,9 @@ export interface CompanionVoiceDependencies {
   readonly turns?: Pick<VoiceTurnService, "generate">;
   readonly turnProvider?: ChatProvider;
   readonly turnTelemetry?: (metric: VoiceTurnMetric) => void;
+  readonly authorizationTelemetry?: (
+    metric: VoiceAuthorizationDiagnostic,
+  ) => void;
   readonly authorizer?: VoiceOwnerAuthorizer;
   readonly clock?: () => Date;
   readonly providerReady?: (plan: VoicePlan) => boolean;
@@ -185,6 +189,10 @@ export const registerCompanionVoiceModule = (
     telemetry,
     handoffs,
     coreLedger.measurements,
+    dependencies.authorizationTelemetry ??
+      ((metric) => {
+        logger.info({ event: "voice_authorization_profile", ...metric });
+      }),
   );
   const turns = new VoiceTurnService(
     sessions,

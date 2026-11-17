@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.consultation.availability.AvailabilityProperties;
+import com.mentalbridge.consultation.billing.CommercialAccountLock;
 import com.mentalbridge.consultation.credits.CreditEventType;
 import com.mentalbridge.consultation.credits.ServiceCreditService;
 import com.mentalbridge.consultation.entitlement.ServicePackage;
@@ -40,15 +41,18 @@ public class AppointmentService {
 	private final AvailabilityProperties availability;
 	private final Clock clock;
 	private final AppointmentStatusOutbox outbox;
+	private final CommercialAccountLock accountLock;
 
 	public AppointmentService(JdbcClient jdbc, ServiceCreditService credits, SpecialistProfileService profiles,
-			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox) {
+			AvailabilityProperties availability, Clock clock, AppointmentStatusOutbox outbox,
+			CommercialAccountLock accountLock) {
 		this.jdbc = jdbc;
 		this.credits = credits;
 		this.profiles = profiles;
 		this.availability = availability;
 		this.clock = clock;
 		this.outbox = outbox;
+		this.accountLock = accountLock;
 	}
 
 	@Transactional
@@ -63,20 +67,12 @@ public class AppointmentService {
 			AppointmentModality requestedModality, UUID replacesAppointmentId, Long expectedReplacementVersion,
 			UUID originatingPlanActionId) {
 		var replay = findByCommand(userId, idempotencyKey);
-		if (replay != null) {
-			if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
-					|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
-				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
-			}
-			var effectiveOriginatingPlanActionId = originatingPlanActionId;
-			if (effectiveOriginatingPlanActionId == null && replacesAppointmentId != null) {
-				effectiveOriginatingPlanActionId = existingPlanActionOrigin(userId, replacesAppointmentId);
-			}
-			if (!java.util.Objects.equals(replay.originatingPlanActionId(), effectiveOriginatingPlanActionId)) {
-				throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
-			}
-			return replay;
-		}
+		if (replay != null) return validateReplay(userId, replay, slotId, requestedModality,
+				replacesAppointmentId, originatingPlanActionId);
+		accountLock.lock(userId);
+		replay = findByCommand(userId, idempotencyKey);
+		if (replay != null) return validateReplay(userId, replay, slotId, requestedModality,
+				replacesAppointmentId, originatingPlanActionId);
 		var now = clock.instant();
 		var creditAccount = credits.current(userId);
 		if (creditAccount.packageCode() == ServicePackage.FREE) {
@@ -146,6 +142,22 @@ public class AppointmentService {
 		return findById(userId, appointmentId);
 	}
 
+	private AppointmentResponse validateReplay(UUID userId, AppointmentResponse replay, UUID slotId,
+			AppointmentModality requestedModality, UUID replacesAppointmentId, UUID originatingPlanActionId) {
+		if (!replay.slotId().equals(slotId) || replay.modality() != requestedModality
+				|| !java.util.Objects.equals(replay.replacesAppointmentId(), replacesAppointmentId)) {
+			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
+		}
+		var effectiveOriginatingPlanActionId = originatingPlanActionId;
+		if (effectiveOriginatingPlanActionId == null && replacesAppointmentId != null) {
+			effectiveOriginatingPlanActionId = existingPlanActionOrigin(userId, replacesAppointmentId);
+		}
+		if (!java.util.Objects.equals(replay.originatingPlanActionId(), effectiveOriginatingPlanActionId)) {
+			throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used for another appointment request");
+		}
+		return replay;
+	}
+
 	@Transactional
 	public AppointmentResponse cancel(UUID userId, UUID appointmentId, long expectedVersion, String idempotencyKey) {
 		var replay = cancellationReplay(userId, appointmentId, idempotencyKey);
@@ -192,7 +204,7 @@ public class AppointmentService {
 	public AppointmentResponse.ListResponse list(UUID userId, UUID originatingPlanActionId) {
 		var filter = originatingPlanActionId == null ? "" : " and a.originating_plan_action_id=:originatingPlanActionId";
 		var statement = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id or c.state='REVOKED' then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
@@ -325,7 +337,7 @@ public class AppointmentService {
 
 	private AppointmentResponse findByCommand(UUID userId, String key) {
 		var appointment = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id or c.state='REVOKED' then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id
@@ -338,7 +350,7 @@ public class AppointmentService {
 
 	private AppointmentResponse findById(UUID userId, UUID id) {
 		var appointment = jdbc.sql("""
-				select a.*, p.display_name, c.state as credit_state,
+				select a.*, p.display_name, case when c.appointment_id=a.id or c.state='REVOKED' then c.state else 'AVAILABLE' end as credit_state,
 				       replacement.id as replaced_by_appointment_id
 				from appointment a
 				join specialist_profile p on p.account_id=a.specialist_account_id

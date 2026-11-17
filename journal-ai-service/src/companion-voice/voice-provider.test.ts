@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import SwaggerParser from "@apidevtools/swagger-parser";
+import { z } from "zod";
 import { loadConfiguration } from "../configuration/configuration.js";
 import { selectCompanionProviderRoute } from "../companion-chat/companion-chat.js";
 import {
@@ -39,6 +41,64 @@ const pilotWindow = {
   endsAt: "2026-11-16T00:30:00.000Z",
   ownerIds: ["00000000-0000-4000-8000-000000000001"],
 };
+void test("independent speech contract and its configuration gate are reviewable and fail closed", async () => {
+  const contract = await SwaggerParser.validate(
+    fileURLToPath(
+      new URL(
+        "../../../contracts/openapi/journal-ai-voice-speech-units-v1.json",
+        import.meta.url,
+      ),
+    ),
+  );
+  assert.deepEqual(contract.security, [{ VoiceWorkerToken: [] }]);
+  const paths = z
+    .record(
+      z.string(),
+      z
+        .object({
+          "x-mentalbridge-status": z.literal("implemented"),
+          post: z
+            .object({ "x-mentalbridge-status": z.literal("implemented") })
+            .loose(),
+        })
+        .loose(),
+    )
+    .parse(contract.paths);
+  for (const route of Object.values(paths)) {
+    assert.equal(route["x-mentalbridge-status"], "implemented");
+    assert.equal(route.post["x-mentalbridge-status"], "implemented");
+  }
+  assert.equal(loadConfiguration(approved).VOICE_SPEECH_UNITS_ENABLED, false);
+  assert.equal(
+    loadConfiguration({
+      ...approved,
+      JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
+      JOURNAL_AI_VOICE_PILOT: JSON.stringify({
+        ...pilotWindow,
+        measurement: {
+          campaignId: "00000000-0000-4000-8000-000000000009",
+          maxSessions: 2,
+          maxConcurrentSessions: 1,
+          maxTurns: 12,
+          maxVoiceSeconds: 480,
+          maxTtsCharacters: 4000,
+          voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+        },
+      }),
+    }).VOICE_SPEECH_UNITS_ENABLED,
+    true,
+  );
+  for (const env of [
+    { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true" },
+    {
+      JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
+    },
+    { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "yes" },
+  ])
+    assert.throws(() => loadConfiguration({ ...approved, ...env }));
+});
 void test("measurement snapshot reports effective fixed allocations instead of the larger pilot values", () => {
   const config = loadConfiguration({
     ...approved,
@@ -328,6 +388,26 @@ void test("Voice friend tone defaults off and accepts only its explicit boolean 
   );
 });
 
+void test("Voice ConverseStream defaults off and rejects nonboolean activation", () => {
+  assert.equal(
+    loadConfiguration(identity).VOICE_CONVERSE_STREAM_ENABLED,
+    false,
+  );
+  assert.equal(
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
+    }).VOICE_CONVERSE_STREAM_ENABLED,
+    true,
+  );
+  assert.throws(() =>
+    loadConfiguration({
+      ...identity,
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "yes",
+    }),
+  );
+});
+
 void test("Voice pins Sonnet independently of fake/Gemini Text while admission remains disabled", () => {
   const configuration = loadConfiguration(approved);
   assert.equal(configuration.VOICE_MEDIA?.enabled, false);
@@ -566,7 +646,7 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
           replyStyle,
         }),
       });
-      const supportive = replyStyle === "SUPPORTIVE" && voice;
+      const supportive = replyStyle !== "BRIEF" && voice;
       const message = supportive
         ? "Mình nghe bạn chia sẻ rằng việc học đang khiến bạn mệt mỏi và muốn có người lắng nghe. Nếu thấy phù hợp, bạn có thể dành một chút thời gian nghỉ trước khi nhìn lại phần đang vướng. Điều gì trong chuyện này khiến bạn muốn chia sẻ nhất?"
         : "Mình đang lắng nghe bạn.";

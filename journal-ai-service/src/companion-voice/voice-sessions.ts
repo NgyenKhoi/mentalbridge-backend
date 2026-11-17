@@ -1,5 +1,10 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  VoiceAuthorizationProfile,
+  type VoiceAuthorizationCall,
+  type VoiceAuthorizationDiagnostic,
+} from "./voice-authorization-profile.js";
 import type { MongoVoiceMeasurementStore } from "./voice-measurement-store.js";
 import { VoiceAccessError, VoiceAccessService } from "./voice-access.js";
 import { VoiceAuthorizationError } from "./voice-authorization.js";
@@ -103,6 +108,16 @@ const terminal = (session: VoiceSession) =>
   ["ENDED", "FAILED", "EXPIRED"].includes(session.state);
 const closed = (session: VoiceSession) =>
   terminal(session) || session.state === "ENDING";
+const inspectionReuseMs = 5000;
+const mediaIdentity = (ref: VoiceMediaDocument) =>
+  [
+    ref.voiceSessionId,
+    ref.attemptId,
+    ref.dispatchId,
+    ref.roomName,
+    ref.participantIdentity,
+    ref.agentIdentity,
+  ].join("|");
 
 export const voiceSessionView = (session: VoiceSession) => ({
   ...(session.contextHandoffHash
@@ -123,6 +138,10 @@ export const voiceSessionView = (session: VoiceSession) => ({
 
 export class VoiceSessionsService {
   private readonly terminationListeners = new Set<(id: string) => void>();
+  private readonly inspected = new Map<
+    string,
+    { identity: string; at: number }
+  >();
   constructor(
     private readonly ledger: MongoVoiceLedger,
     private readonly access: VoiceAccessService,
@@ -134,6 +153,9 @@ export class VoiceSessionsService {
     private readonly handoffs?: VoiceContextHandoffs,
     private readonly measurements:
       MongoVoiceMeasurementStore | undefined = ledger.measurements,
+    private readonly authorizationTelemetry: (
+      value: VoiceAuthorizationDiagnostic,
+    ) => void = () => undefined,
   ) {}
 
   private digest(value: string) {
@@ -175,6 +197,7 @@ export class VoiceSessionsService {
   }
 
   private discardContext(id: string) {
+    this.inspected.delete(id);
     this.handoffs?.discard(id);
     for (const listener of this.terminationListeners) listener(id);
   }
@@ -201,47 +224,97 @@ export class VoiceSessionsService {
     attemptId: string,
     leaseId: string,
     correlationId: string,
+    profiling?: VoiceAuthorizationCall,
   ) {
-    const session = await this.turnState(id, attemptId, leaseId);
-    const document = await this.store.find(id, this.clock());
-    if (
-      document?.phase !== "READY" ||
-      !document.claimedAt ||
-      document.attemptId !== attemptId
-    )
-      throw new VoiceLedgerError("STALE_ATTEMPT");
-    try {
-      const [authority, observed] = await Promise.all([
-        this.access.authorizeTurn(session.ownerId, id, correlationId),
-        this.media.inspect(document),
-      ]);
-      if (
-        !observed.roomExists ||
-        !observed.ownerConnected ||
-        !observed.agentConnected
-      )
-        throw new VoiceLedgerError("INVALID_SESSION_STATE");
-      await this.turnState(id, attemptId, leaseId);
-      const now = this.clock().getTime();
-      for (const [decision, failure] of [
-        [authority.consent, "CONSENT_UNAVAILABLE"],
-        [authority.entitlement, "ENTITLEMENT_UNAVAILABLE"],
-      ] as const) {
-        const age = now - Date.parse(decision.checkedAt);
-        if (!Number.isFinite(age) || age < 0 || age > 2000)
-          throw new VoiceAuthorizationError(failure);
-      }
-      const entitlementExpiry = Date.parse(
-        authority.entitlement.validUntil ?? "",
+    const profile = new VoiceAuthorizationProfile(
+      { ...(profiling ?? { purpose: "UNSCOPED" }), attemptId },
+      this.authorizationTelemetry,
+    );
+    return profile.measure("TOTAL", async () => {
+      const session = await profile.measure("STATE_BEFORE", () =>
+        this.turnState(id, attemptId, leaseId),
       );
-      if (!Number.isFinite(entitlementExpiry) || entitlementExpiry <= now)
-        throw new VoiceAuthorizationError("ENTITLEMENT_UNAVAILABLE");
-      return authority;
-    } catch (error) {
-      this.discardContext(id);
-      await this.failTurn(id);
-      throw error;
-    }
+      const document = await profile.measure("MEDIA_DOCUMENT", () =>
+        this.store.find(id, this.clock()),
+      );
+      if (
+        document?.phase !== "READY" ||
+        !document.claimedAt ||
+        document.attemptId !== attemptId
+      )
+        throw new VoiceLedgerError("STALE_ATTEMPT");
+      const identity = mediaIdentity(document);
+      const prior = this.inspected.get(id);
+      const fresh = (now: number) =>
+        prior?.identity === identity &&
+        now - prior.at >= 0 &&
+        now - prior.at <= inspectionReuseMs;
+      const decidedAt = this.clock().getTime();
+      const reuse =
+        (profile.tags.purpose === "PRE_INFERENCE" ||
+          profile.tags.purpose === "PUBLICATION") &&
+        fresh(decidedAt) &&
+        decidedAt < session.authorityExpiresAt.getTime() &&
+        decidedAt < (session.leaseExpiresAt?.getTime() ?? Infinity);
+      const check = async (reuseMedia: boolean) => {
+        const startedAt = this.clock().getTime();
+        const [authority, observed] = await Promise.all([
+          profile.measure("OWNER_AUTHORITY", () =>
+            this.access.authorizeTurn(
+              session.ownerId,
+              id,
+              correlationId,
+              profile,
+            ),
+          ),
+          reuseMedia
+            ? null
+            : profile.measure("MEDIA_INSPECTION", () =>
+                this.media.inspect(document, profile),
+              ),
+        ]);
+        if (
+          observed &&
+          (!observed.roomExists ||
+            !observed.ownerConnected ||
+            !observed.agentConnected)
+        )
+          throw new VoiceLedgerError("INVALID_SESSION_STATE");
+        await profile.measure("STATE_AFTER", () =>
+          this.turnState(id, attemptId, leaseId),
+        );
+        const now = this.clock().getTime();
+        for (const [decision, failure] of [
+          [authority.consent, "CONSENT_UNAVAILABLE"],
+          [authority.entitlement, "ENTITLEMENT_UNAVAILABLE"],
+        ] as const) {
+          const age = now - Date.parse(decision.checkedAt);
+          if (!Number.isFinite(age) || age < 0 || age > 2000)
+            throw new VoiceAuthorizationError(failure);
+        }
+        const entitlementExpiry = Date.parse(
+          authority.entitlement.validUntil ?? "",
+        );
+        if (!Number.isFinite(entitlementExpiry) || entitlementExpiry <= now)
+          throw new VoiceAuthorizationError("ENTITLEMENT_UNAVAILABLE");
+        return { authority, observed, now, startedAt };
+      };
+      try {
+        let round = await check(reuse);
+        if (!round.observed && !fresh(round.now)) round = await check(false);
+        if (round.observed) {
+          for (const [key, value] of this.inspected)
+            if (round.now - value.at > inspectionReuseMs)
+              this.inspected.delete(key);
+          this.inspected.set(id, { identity, at: round.startedAt });
+        }
+        return round.authority;
+      } catch (error) {
+        this.discardContext(id);
+        await profile.measure("DENIAL_CLEANUP", () => this.failTurn(id));
+        throw error;
+      }
+    });
   }
 
   async recordSpeechActivity(id: string, attemptId: string, leaseId: string) {

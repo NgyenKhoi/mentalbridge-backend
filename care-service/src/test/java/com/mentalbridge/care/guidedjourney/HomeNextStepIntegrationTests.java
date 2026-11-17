@@ -116,7 +116,7 @@ class HomeNextStepIntegrationTests extends CareTestProperties {
 		assertThat(home.path("journey").properties()).extracting(java.util.Map.Entry::getKey)
 				.containsExactlyInAnyOrder("journeyPolicyVersion", "stage", "assessmentInProgress", "episodeId",
 						"episodeCompletedAt", "presentationEvaluationId", "supportGuideId", "nextAction",
-						"currentSupportPlanId", "entitlementStatus");
+						"currentSupportPlanId", "entitlementStatus", "latestScreening");
 		assertThat(response).doesNotContain("\"answers\"", "\"totalScore\"", "\"screeningLevel\"",
 				"\"journal\"", "\"emotion\"", "\"overallSeverity\"");
 		mvc.perform(get("/api/v1/home-next-step").with(user(other)).param("userId", owner.toString()))

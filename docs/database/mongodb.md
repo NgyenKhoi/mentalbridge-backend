@@ -654,18 +654,18 @@ reproducible.
   "servicePlan": "PLUS",
   "provider": "OPENAI",
   "model": "model-name",
-  "promptVersion": "longitudinal-v1",
+  "promptVersion": "longitudinal-v2",
   "schemaVersion": 1,
   "result": {
-    "contextSignals": ["WORK_STRESS"],
-    "emotionIndicators": ["ANXIETY"],
-    "recurringThemes": ["ACADEMIC_WORKLOAD"],
+    "contextSignals": ["Áp lực công việc"],
+    "emotionIndicators": ["Hay lo lắng"],
+    "recurringThemes": ["Bài vở dồn dập"],
     "changesComparedWithPreviousPeriod": [
-      { "signal": "SLEEP_DIFFICULTY", "direction": "LESS_FREQUENT" }
+      { "signal": "Giấc ngủ khó", "direction": "LESS_FREQUENT" }
     ],
-    "preferences": ["SHORT_GUIDED_ACTIVITY"],
-    "barriers": ["BREATHING_DISCOMFORT"],
-    "helpfulPatterns": ["GROUNDING"]
+    "preferences": ["Bài tập ngắn có hướng dẫn"],
+    "barriers": ["Khó chịu khi tập thở"],
+    "helpfulPatterns": ["Đi dạo buổi tối"]
   },
   "createdAt": "ISODate"
 }
@@ -687,6 +687,11 @@ db.journal_longitudinal_analysis_results.createIndex({
   "currentPeriod.endAt": -1,
 });
 ```
+
+`promptVersion` is `longitudinal-v1` (stored rows, stable uppercase signal
+keys) or `longitudinal-v2` (new rows, short Vietnamese user-facing phrases of at
+most 40 characters); migration `022_longitudinal_prompt_v2.cjs` accepts both.
+Stored v1 results are never rewritten.
 
 Direction is exactly `MORE_FREQUENT`, `LESS_FREQUENT`, `SIMILAR`, or
 `INSUFFICIENT_DATA`. A missing mention is not resolution evidence. Sparse or

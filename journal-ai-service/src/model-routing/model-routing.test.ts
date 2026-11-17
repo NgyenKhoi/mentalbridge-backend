@@ -60,7 +60,7 @@ void test("keeps the approved provider route while versioning the longitudinal w
     entitlement("PLUS"),
   );
   assert.equal(route.workload, "LONGITUDINAL");
-  assert.equal(route.promptVersion, "longitudinal-v1");
+  assert.equal(route.promptVersion, "longitudinal-v2");
   assert.equal(route.provider, "GEMINI");
   assert.equal(route.model, "baseline-model");
 });

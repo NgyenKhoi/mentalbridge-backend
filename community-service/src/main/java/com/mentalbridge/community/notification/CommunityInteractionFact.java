@@ -16,7 +16,7 @@ public record CommunityInteractionFact(UUID eventId, String schemaVersion, UUID 
 
 	public enum TargetType { POST, COMMENT }
 
-	public enum InteractionKind { COMMENT, REPLY, SUPPORT, RELATE, THANK_YOU }
+	public enum InteractionKind { COMMENT, REPLY, SUPPORT, RELATE, THANK_YOU, LIKE, EMPATHY, CHEER, GROWTH }
 
 	public enum DeepLinkKind { COMMUNITY_POST }
 
