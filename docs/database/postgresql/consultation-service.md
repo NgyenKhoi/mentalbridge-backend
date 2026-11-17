@@ -510,17 +510,22 @@ Allow-list of feature decisions attached to one immutable plan version.
 
 Authoritative paid-subscription lifecycle for one user. Absence of an active
 paid row means `FREE` entitlement. MB-515 exposes new purchase and
-`PLUS`-to-`PREMIUM` upgrade only, with no downgrade/refund API.
+`PLUS`-to-`PREMIUM` upgrade. MB-695 adds owner cancellation with immediate
+paid-access cessation, no downgrade/refund, revocation of unused credits and
+future appointments, and one bounded already-started-session exception.
 
 | Field | Purpose |
 | --- | --- |
 | `id` | Immutable subscription UUID used by payment, upgrade, status, and audit records. |
 | `user_id` | External Identity user UUID owning the subscription; not proof of current request authorization. |
 | `plan_version_id` | Current immutable paid-plan version; an applied upgrade changes this reference while upgrade history preserves the prior version. |
-| `status` | Current lifecycle state: `PENDING_PAYMENT`, `ACTIVE`, or terminal `ENDED`. |
+| `status` | Current lifecycle state: `PENDING_PAYMENT`, `ACTIVE`, `CANCEL_PENDING_SESSION_END`, terminal owner `CANCELLED`, or period/payment terminal `ENDED`. |
 | `current_period_start` | UTC start of the active provider billing period; null while initial payment is pending. |
 | `current_period_end` | UTC exclusive end of the current billing period used for benefit/credit expiry and exact upgrade seconds. |
-| `ended_at` | UTC instant the paid subscription ceased being current: the period end when an elapsed `ACTIVE` row is closed on checkout, or the failure instant for a pending purchase; null while active/pending. |
+| `ended_at` | UTC instant paid access ceased: owner cancellation request time, elapsed period end, or pending-purchase failure time; null while active/pending. |
+| `cancellation_requested_at` | UTC instant the authenticated owner command was accepted; null for non-cancellation lifecycle rows. |
+| `cancellation_effective_at` | UTC instant paid rights and unused credits ceased, equal to the accepted cancellation time under the current no-refund policy. |
+| `cancellation_live_appointment_id` | Nullable sole already-started appointment allowed to finish. Required only while `CANCEL_PENDING_SESSION_END`, then cleared atomically on finalization. |
 | `idempotency_key` | User-scoped creation retry key returning the original subscription outcome. |
 | `created_at` | Immutable UTC insertion instant. |
 | `updated_at` | UTC instant of the latest lifecycle, period, or plan change. |
@@ -537,7 +542,29 @@ Append-only timeline of subscription status transitions.
 | `from_status` | Previous status; null only for initial creation. |
 | `to_status` | New validated status. |
 | `reason_code` | Required stable machine-readable reason without provider payload text. |
+| `changed_by` | Nullable authenticated actor UUID; required by the owner-cancellation path. |
+| `outcome_code` | Nullable stable transition outcome without payment or personal-content secrets. |
 | `changed_at` | UTC instant the transition committed. |
+
+### `consultation.subscription_cancellation_command`
+
+Immutable owner-command receipt and audit record. The actor/idempotency key is
+unique, its SHA-256 fingerprint binds the command to one subscription, and the
+receipt commits in the same transaction as subscription, entitlement, credit,
+appointment, pending-upgrade and history effects.
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Immutable cancellation receipt UUID. |
+| `actor_account_id` | Authenticated owner who requested cancellation. |
+| `subscription_id` | Owned subscription transitioned by the command. |
+| `idempotency_key` | Actor-scoped retry key; exact replay returns the authoritative current cancellation state. |
+| `request_fingerprint` | SHA-256 binding to the requested subscription, preventing conflicting key reuse. |
+| `from_status` / `accepted_status` | Audited validated transition from `ACTIVE` to `CANCELLED` or `CANCEL_PENDING_SESSION_END`. |
+| `requested_at` / `effective_at` | UTC acceptance and immediate paid-access cessation times. |
+| `live_appointment_id` | Nullable sole already-started appointment preserved by the accepted command. |
+| `cancelled_appointment_count` / `revoked_credit_count` | Non-negative effects committed with the receipt. |
+| `outcome_code` | Stable safe outcome (`ACCEPTED`), with no provider or payment secrets. |
 
 ### `consultation.payment_transaction`
 

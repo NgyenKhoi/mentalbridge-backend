@@ -697,6 +697,43 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundProblem' }
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '503': { $ref: '#/components/responses/UnavailableProblem' }
+  /api/v1/subscriptions/current:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: getOwnSubscription
+      description: Returns the authenticated owner's latest authoritative subscription lifecycle state. NONE means there is no managed subscription. Cancellation state is never inferred from a client entitlement cache.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Latest owner subscription state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnSubscription' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+  /api/v1/subscriptions/{subscriptionId}/cancellation:
+    x-mentalbridge-status: implemented
+    post:
+      operationId: cancelOwnSubscription
+      description: Cancels one ACTIVE owner subscription idempotently. Paid access ends immediately with no downgrade or refund. Unused credits and future appointments are revoked atomically; at most one already-started appointment may finish before the lifecycle becomes CANCELLED.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Authoritative accepted or replayed cancellation state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionCancellation' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
+        '409': { $ref: '#/components/responses/ConflictProblem' }
   /api/v1/payments:
     x-mentalbridge-status: implemented
     get:
@@ -4699,6 +4736,42 @@ components:
       required: [planVersionId]
       properties:
         planVersionId: { type: string, format: uuid }
+    SubscriptionLifecycleState:
+      type: string
+      enum: [NONE, PENDING_PAYMENT, ACTIVE, CANCEL_PENDING_SESSION_END, CANCELLED, ENDED]
+    OwnSubscription:
+      type: object
+      additionalProperties: false
+      required: [subscriptionId, planCode, status, currentPeriodStart, currentPeriodEnd, cancellationRequestedAt, paidAccessEndedAt, liveAppointmentId, liveSessionEndsAt, generatedAt]
+      properties:
+        subscriptionId: { type: [string, 'null'], format: uuid }
+        planCode: { type: string, enum: [FREE, PLUS, PREMIUM] }
+        status: { $ref: '#/components/schemas/SubscriptionLifecycleState' }
+        currentPeriodStart: { type: [string, 'null'], format: date-time }
+        currentPeriodEnd: { type: [string, 'null'], format: date-time }
+        cancellationRequestedAt: { type: [string, 'null'], format: date-time }
+        paidAccessEndedAt: { type: [string, 'null'], format: date-time }
+        liveAppointmentId: { type: [string, 'null'], format: uuid }
+        liveSessionEndsAt: { type: [string, 'null'], format: date-time }
+        generatedAt: { type: string, format: date-time }
+    SubscriptionCancellation:
+      type: object
+      additionalProperties: false
+      required: [subscriptionId, planCode, status, currentPeriodEnd, cancellationRequestedAt, paidAccessEndedAt, liveAppointmentId, liveSessionEndsAt, cancelledAppointments, revokedCredits, generatedAt]
+      properties:
+        subscriptionId: { type: string, format: uuid }
+        planCode: { type: string, enum: [PLUS, PREMIUM] }
+        status:
+          type: string
+          enum: [CANCEL_PENDING_SESSION_END, CANCELLED]
+        currentPeriodEnd: { type: string, format: date-time }
+        cancellationRequestedAt: { type: string, format: date-time }
+        paidAccessEndedAt: { type: string, format: date-time }
+        liveAppointmentId: { type: [string, 'null'], format: uuid }
+        liveSessionEndsAt: { type: [string, 'null'], format: date-time }
+        cancelledAppointments: { type: integer, minimum: 0 }
+        revokedCredits: { type: integer, minimum: 0 }
+        generatedAt: { type: string, format: date-time }
     PlanPayment:
       type: object
       additionalProperties: false
@@ -4910,7 +4983,7 @@ components:
       enum: [DEFAULT_FREE, DEMO, PAID]
     CreditLedgerEventType:
       type: string
-      enum: [PROVISIONED, HELD, CONSUMED, RELEASED, FORFEITED]
+      enum: [PROVISIONED, HELD, CONSUMED, RELEASED, FORFEITED, ADJUSTED_RELEASED, REVOKED]
     ConsultationCreditPolicyVersion:
       type: string
       enum: [consultation-credit-v1, consultation-credit-v2]
@@ -6865,7 +6938,7 @@ components:
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         sessionOutcome: { type: [string, 'null'], enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null] }
         sessionOutcomeReasonCode: { type: [string, 'null'], minLength: 1, maxLength: 64 }
-        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
+        settlementState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64, minimum: 0 }
     AdminAppointmentPage:
@@ -6886,7 +6959,7 @@ components:
         nextCursor: { type: [string, 'null'], minLength: 1, maxLength: 512 }
     AppointmentCancellationCreditOutcome:
       type: string
-      enum: [RELEASED, FORFEITED, TRANSFERRED_TO_REPLACEMENT]
+      enum: [RELEASED, FORFEITED, TRANSFERRED_TO_REPLACEMENT, REVOKED]
     AppointmentHistoryEntry:
       type: object
       additionalProperties: false
@@ -6901,7 +6974,7 @@ components:
         actorId: { type: [string, 'null'], format: uuid }
         reason:
           type: string
-          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED, SESSION_ACTIVITY_OBSERVED, SCHEDULED_WINDOW_ENDED, EVIDENCE_REQUIREMENTS_MET, SPECIALIST_VIDEO_END_CONFIRMED, VIDEO_MANUAL_REVIEW_REQUIRED]
+          enum: [APPOINTMENT_REQUESTED, USER_CANCELLED, USER_RESCHEDULED, OWNER_SUBSCRIPTION_CANCELLED, SPECIALIST_ACCEPTED, SPECIALIST_REJECTED, DECISION_DEADLINE_EXPIRED, SPECIALIST_SUSPENDED, SESSION_ACTIVITY_OBSERVED, SCHEDULED_WINDOW_ENDED, EVIDENCE_REQUIREMENTS_MET, SPECIALIST_VIDEO_END_CONFIRMED, VIDEO_MANUAL_REVIEW_REQUIRED]
         creditOutcome:
           oneOf:
             - { $ref: '#/components/schemas/AppointmentCancellationCreditOutcome' }
@@ -6954,7 +7027,7 @@ components:
         sessionOutcome:
           type: [string, 'null']
           enum: [COMPLETED, USER_NO_SHOW, SPECIALIST_NO_SHOW, BOTH_NO_SHOW, INSUFFICIENT_EVIDENCE, EVIDENCE_REVIEW, null]
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         scheduledStartAt: { type: string, format: date-time }
         scheduledEndAt: { type: string, format: date-time }
         serverTime: { type: string, format: date-time }
@@ -7131,7 +7204,7 @@ components:
         cancelledAt: { type: [string, 'null'], format: date-time }
         cancellationReason:
           type: [string, 'null']
-          enum: [USER_CANCELLED, USER_RESCHEDULED, SPECIALIST_SUSPENDED, null]
+          enum: [USER_CANCELLED, USER_RESCHEDULED, OWNER_SUBSCRIPTION_CANCELLED, SPECIALIST_SUSPENDED, null]
         cancellationActor:
           type: [string, 'null']
           enum: [USER, ADMIN, null]
@@ -7147,7 +7220,7 @@ components:
         sessionEndedAt: { type: [string, 'null'], format: date-time }
         sessionSettledAt: { type: [string, 'null'], format: date-time }
         completionFactId: { type: [string, 'null'], format: uuid }
-        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
+        creditState: { type: string, enum: [AVAILABLE, HELD, CONSUMED, FORFEITED, REVOKED], description: "State of the credit for this appointment. AVAILABLE means the credit is no longer bound to this appointment (released, transferred or adjusted back), even when a later booking holds it again." }
         history:
           type: array
           maxItems: 20

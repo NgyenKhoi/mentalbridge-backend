@@ -21,9 +21,12 @@ import jakarta.validation.Valid;
 public class SubscriptionBillingController {
 
 	private final SubscriptionBillingService billing;
+	private final SubscriptionCancellationService cancellations;
 
-	public SubscriptionBillingController(SubscriptionBillingService billing) {
+	public SubscriptionBillingController(SubscriptionBillingService billing,
+			SubscriptionCancellationService cancellations) {
 		this.billing = billing;
+		this.cancellations = cancellations;
 	}
 
 	@GetMapping("/api/v1/service-plans")
@@ -37,6 +40,18 @@ public class SubscriptionBillingController {
 			@Valid @RequestBody CheckoutRequest request) {
 		var result = billing.checkout(RequestIdentity.subject(jwt), request.planVersionId(), idempotencyKey);
 		return ResponseEntity.created(URI.create("/api/v1/payments/" + result.paymentId())).body(result);
+	}
+
+	@GetMapping("/api/v1/subscriptions/current")
+	OwnSubscriptionResponse currentSubscription(@AuthenticationPrincipal Jwt jwt) {
+		return cancellations.current(RequestIdentity.subject(jwt));
+	}
+
+	@PostMapping("/api/v1/subscriptions/{subscriptionId}/cancellation")
+	SubscriptionCancellationResponse cancelSubscription(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID subscriptionId,
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+		return cancellations.cancel(RequestIdentity.subject(jwt), subscriptionId, idempotencyKey);
 	}
 
 	@GetMapping("/api/v1/payments/{paymentId}")
