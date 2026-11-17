@@ -4085,7 +4085,10 @@ components:
           type: string
           enum: [DETERMINISTIC_FAKE, GEMINI, OPENAI, BEDROCK]
         model: { type: string, minLength: 1, maxLength: 128 }
-        promptVersion: { type: string, const: longitudinal-v1 }
+        promptVersion:
+          type: string
+          enum: [longitudinal-v1, longitudinal-v2]
+          description: longitudinal-v2 signal labels are short Vietnamese user-facing phrases; stored longitudinal-v1 rows keep their original labels.
         schemaVersion: { type: integer, const: 1 }
         createdAt: { type: string, format: date-time }
       description: Non-standardized observations limited to the available entries; never a diagnosis, combined score, recovery verdict, or clinical improvement conclusion.

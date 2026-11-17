@@ -49,6 +49,10 @@ class GuidedJourneyServiceTests {
 	private static final UUID PRESENTATION_ID = UUID.fromString("40000000-0000-4000-8000-000000000668");
 	private static final UUID GUIDE_ID = UUID.fromString("50000000-0000-4000-8000-000000000668");
 	private static final UUID PLAN_ID = UUID.fromString("60000000-0000-4000-8000-000000000668");
+	private static final UUID REASSESSMENT_EPISODE_ID = UUID.fromString("80000000-0000-4000-8000-000000000668");
+	private static final UUID REASSESSMENT_EVALUATION_ID = UUID.fromString("90000000-0000-4000-8000-000000000668");
+	private static final UUID REASSESSMENT_PRESENTATION_ID =
+			UUID.fromString("a0000000-0000-4000-8000-000000000668");
 	private static final Instant NOW = Instant.parse("2026-10-16T03:00:00Z");
 
 	private final ScreeningEpisodeService episodes = mock(ScreeningEpisodeService.class);
@@ -61,7 +65,7 @@ class GuidedJourneyServiceTests {
 
 	@Test
 	void requiresAssessmentWithoutACompletedInitialCheckAndNeverChecksEntitlement() {
-		when(episodes.journeyContext(USER_ID, "INITIAL_CHECK")).thenReturn(new JourneyContext(Optional.empty(), true));
+		when(episodes.journeyContext(USER_ID, "INITIAL_CHECK")).thenReturn(new JourneyContext(Optional.empty(), true, Optional.empty()));
 
 		var journey = service.current(USER_ID, "token", UUID.randomUUID());
 
@@ -70,7 +74,53 @@ class GuidedJourneyServiceTests {
 		assertThat(journey.episodeId()).isNull();
 		assertThat(journey.nextAction()).isNull();
 		assertThat(journey.entitlementStatus()).isEqualTo(EntitlementStatus.NOT_REQUIRED);
+		assertThat(journey.latestScreening()).isNull();
 		verifyNoInteractions(entitlements, guides, plans, evaluations);
+	}
+
+	@Test
+	void initialCheckAloneIsTheLatestScreening() {
+		completedEpisode(false, DomainSupportPathway.SELF_GUIDED_SUPPORT);
+		when(plans.currentOrDraftStatus(USER_ID)).thenReturn(Optional.of(new PlanStatusView(PLAN_ID, "ACTIVE")));
+
+		var latest = service.current(USER_ID, "token", UUID.randomUUID()).latestScreening();
+
+		assertThat(latest.episodeId()).isEqualTo(EPISODE_ID);
+		assertThat(latest.purpose()).isEqualTo("INITIAL_CHECK");
+		assertThat(latest.completedAt()).isEqualTo(NOW);
+		assertThat(latest.presentationEvaluationId()).isEqualTo(PRESENTATION_ID);
+		assertThat(latest.supportEvaluationId()).isEqualTo(SUPPORT_EVALUATION_ID);
+	}
+
+	@Test
+	void newerSafetyNegativeReassessmentDrivesNextActionWhileInitialContextStays() {
+		completedEpisode(true, DomainSupportPathway.SELF_GUIDED_SUPPORT);
+		newerReassessment(false);
+		when(plans.currentOrDraftStatus(USER_ID)).thenReturn(Optional.of(new PlanStatusView(PLAN_ID, "ACTIVE")));
+
+		var journey = service.current(USER_ID, "token", UUID.randomUUID());
+
+		assertThat(journey.nextAction()).isEqualTo(NextAction.OPEN_CURRENT_PLAN);
+		assertThat(journey.episodeId()).isEqualTo(EPISODE_ID);
+		assertThat(journey.presentationEvaluationId()).isEqualTo(PRESENTATION_ID);
+		assertThat(journey.supportGuideId()).isEqualTo(GUIDE_ID);
+		assertThat(journey.latestScreening().episodeId()).isEqualTo(REASSESSMENT_EPISODE_ID);
+		assertThat(journey.latestScreening().purpose()).isEqualTo("REASSESSMENT");
+		assertThat(journey.latestScreening().supportEvaluationId()).isEqualTo(REASSESSMENT_EVALUATION_ID);
+		assertThat(journey.latestScreening().presentationEvaluationId()).isEqualTo(REASSESSMENT_PRESENTATION_ID);
+	}
+
+	@Test
+	void newerSafetyPositiveReassessmentReviewsSafetySupport() {
+		completedEpisode(false, DomainSupportPathway.SELF_GUIDED_SUPPORT);
+		newerReassessment(true);
+		when(plans.currentOrDraftStatus(USER_ID)).thenReturn(Optional.of(new PlanStatusView(PLAN_ID, "ACTIVE")));
+
+		var journey = service.current(USER_ID, "token", UUID.randomUUID());
+
+		assertThat(journey.nextAction()).isEqualTo(NextAction.REVIEW_SAFETY_SUPPORT);
+		assertThat(journey.latestScreening().purpose()).isEqualTo("REASSESSMENT");
+		verifyNoInteractions(entitlements);
 	}
 
 	@Test
@@ -222,9 +272,20 @@ class GuidedJourneyServiceTests {
 	}
 
 	private void completedEpisode(boolean positiveSafety, DomainSupportPathway gad7Pathway) {
-		when(episodes.journeyContext(USER_ID, "INITIAL_CHECK")).thenReturn(new JourneyContext(Optional.of(episode()), false));
+		when(episodes.journeyContext(USER_ID, "INITIAL_CHECK"))
+				.thenReturn(new JourneyContext(Optional.of(episode()), false, Optional.of(episode())));
 		when(guides.guideIdForEvaluation(USER_ID, SUPPORT_EVALUATION_ID)).thenReturn(Optional.of(GUIDE_ID));
 		when(evaluations.get(USER_ID, SUPPORT_EVALUATION_ID)).thenReturn(evaluation(positiveSafety, gad7Pathway));
+	}
+
+	private void newerReassessment(boolean positiveSafety) {
+		var reassessment = new EpisodeView(REASSESSMENT_EPISODE_ID, "REASSESSMENT", "COMPLETED", UUID.randomUUID(),
+				UUID.randomUUID(), REASSESSMENT_EVALUATION_ID, REASSESSMENT_PRESENTATION_ID, NOW.plusSeconds(60),
+				NOW.plusSeconds(60), NOW.plusSeconds(1_209_600), 3);
+		when(episodes.journeyContext(USER_ID, "INITIAL_CHECK"))
+				.thenReturn(new JourneyContext(Optional.of(episode()), false, Optional.of(reassessment)));
+		when(evaluations.get(USER_ID, REASSESSMENT_EVALUATION_ID))
+				.thenReturn(evaluation(positiveSafety, DomainSupportPathway.SELF_GUIDED_SUPPORT));
 	}
 
 	private EpisodeView episode() {

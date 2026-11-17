@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import type { ServiceConfiguration } from "../configuration/configuration.js";
 import { EXACT_REVISION_PROMPT_VERSION } from "../prompts/exact-revision.js";
-import { LONGITUDINAL_PROMPT_VERSION } from "../prompts/longitudinal.js";
+import {
+  LONGITUDINAL_PROMPT_VERSION,
+  type LongitudinalPromptVersion,
+} from "../prompts/longitudinal.js";
 import { CONSULTATION_BRIEF_DRAFT_PROMPT_VERSION } from "../prompts/consultation-brief-draft.js";
 
 export type ServicePlan = "FREE" | "PLUS" | "PREMIUM";
@@ -37,7 +40,7 @@ export interface LongitudinalAnalysisRoute extends Omit<
   "workload" | "promptVersion"
 > {
   readonly workload: "LONGITUDINAL";
-  readonly promptVersion: typeof LONGITUDINAL_PROMPT_VERSION;
+  readonly promptVersion: LongitudinalPromptVersion;
 }
 
 export interface ConsultationBriefDraftRoute extends Omit<

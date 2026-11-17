@@ -94,6 +94,8 @@ class GuidedJourneyIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$", hasKey("nextAction")))
 				.andExpect(jsonPath("$.nextAction").value(nullValue()))
 				.andExpect(jsonPath("$.episodeId").value(nullValue()))
+				.andExpect(jsonPath("$", hasKey("latestScreening")))
+				.andExpect(jsonPath("$.latestScreening").value(nullValue()))
 				.andExpect(jsonPath("$.entitlementStatus").value("NOT_REQUIRED"));
 
 		var episode = completeInitialCheck(userId, false);
@@ -107,7 +109,14 @@ class GuidedJourneyIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.supportGuideId").value(nullValue()))
 				.andExpect(jsonPath("$.currentSupportPlanId").value(nullValue()))
 				.andExpect(jsonPath("$.nextAction").value("EXPLORE_GUIDE_RESOURCES"))
-				.andExpect(jsonPath("$.entitlementStatus").value("VERIFIED"));
+				.andExpect(jsonPath("$.entitlementStatus").value("VERIFIED"))
+				.andExpect(jsonPath("$.latestScreening.episodeId").value(episode.episodeId().toString()))
+				.andExpect(jsonPath("$.latestScreening.purpose").value("INITIAL_CHECK"))
+				.andExpect(jsonPath("$.latestScreening.completedAt").isNotEmpty())
+				.andExpect(jsonPath("$.latestScreening.presentationEvaluationId")
+						.value(episode.presentationEvaluationId().toString()))
+				.andExpect(jsonPath("$.latestScreening.supportEvaluationId")
+						.value(episode.supportEvaluationId().toString()));
 		assertThat(guideCount(userId)).isZero();
 
 		var start = new CountDownLatch(1);
@@ -188,6 +197,64 @@ class GuidedJourneyIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.episodeId").value(current.episodeId().toString()));
 		ensure(userId, current.episodeId()).andExpect(status().isOk());
 		assertThat(guideCount(userId)).isEqualTo(1);
+	}
+
+	@Test
+	void latestCompletedReassessmentDrivesNextActionAndAnOpenOneIsIgnored() throws Exception {
+		var userId = insertProfile();
+		when(entitlements.current(any(), anyString(), any())).thenReturn(entitlement(userId, ServicePackage.FREE));
+		var initial = completeInitialCheck(userId, true);
+		var calm = completeEpisode(userId, false, "REASSESSMENT");
+		mvc.perform(post("/api/v1/screening-episodes").with(user(userId))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"purpose\":\"REASSESSMENT\"}"))
+				.andExpect(status().isCreated());
+
+		mvc.perform(get("/api/v1/guided-journey/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.episodeId").value(initial.episodeId().toString()))
+				.andExpect(jsonPath("$.presentationEvaluationId").value(initial.presentationEvaluationId().toString()))
+				.andExpect(jsonPath("$.assessmentInProgress").value(false))
+				.andExpect(jsonPath("$.latestScreening.episodeId").value(calm.episodeId().toString()))
+				.andExpect(jsonPath("$.latestScreening.purpose").value("REASSESSMENT"))
+				.andExpect(jsonPath("$.latestScreening.supportEvaluationId").value(calm.supportEvaluationId().toString()))
+				.andExpect(jsonPath("$.nextAction").value("EXPLORE_GUIDE_RESOURCES"));
+
+		var urgent = completeEpisode(userId, true, "REASSESSMENT");
+		mvc.perform(get("/api/v1/guided-journey/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.episodeId").value(initial.episodeId().toString()))
+				.andExpect(jsonPath("$.latestScreening.episodeId").value(urgent.episodeId().toString()))
+				.andExpect(jsonPath("$.nextAction").value("REVIEW_SAFETY_SUPPORT"));
+	}
+
+	@Test
+	void safetyPositiveReassessmentWithoutAnInitialCheckStillLeadsToSafetySupport() throws Exception {
+		var userId = insertProfile();
+		var calm = completeEpisode(userId, false, "REASSESSMENT");
+
+		mvc.perform(get("/api/v1/guided-journey/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stage").value("ASSESSMENT_REQUIRED"))
+				.andExpect(jsonPath("$.latestScreening.episodeId").value(calm.episodeId().toString()))
+				.andExpect(jsonPath("$.nextAction").value(nullValue()));
+
+		var urgent = completeEpisode(userId, true, "REASSESSMENT");
+		mvc.perform(get("/api/v1/guided-journey/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stage").value("ASSESSMENT_REQUIRED"))
+				.andExpect(jsonPath("$.episodeId").value(nullValue()))
+				.andExpect(jsonPath("$.presentationEvaluationId").value(nullValue()))
+				.andExpect(jsonPath("$.supportGuideId").value(nullValue()))
+				.andExpect(jsonPath("$.latestScreening.episodeId").value(urgent.episodeId().toString()))
+				.andExpect(jsonPath("$.latestScreening.purpose").value("REASSESSMENT"))
+				.andExpect(jsonPath("$.latestScreening.supportEvaluationId").value(urgent.supportEvaluationId().toString()))
+				.andExpect(jsonPath("$.nextAction").value("REVIEW_SAFETY_SUPPORT"))
+				.andExpect(jsonPath("$.entitlementStatus").value("NOT_REQUIRED"));
+		mvc.perform(get("/api/v1/home-next-step").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.journey.nextAction").value("REVIEW_SAFETY_SUPPORT"))
+				.andExpect(jsonPath("$.journey.latestScreening.episodeId").value(urgent.episodeId().toString()));
+		verifyNoInteractions(entitlements);
 	}
 
 	@Test
