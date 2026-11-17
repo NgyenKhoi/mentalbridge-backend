@@ -589,6 +589,167 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       },
     );
 
+  const turn = (
+    f: Awaited<ReturnType<typeof fixture>>,
+    session: VoiceSession,
+    purpose: "INITIAL" | "PRE_INFERENCE" | "PUBLICATION",
+  ) =>
+    f.service.authorizeTurn(
+      session.voiceSessionId,
+      session.attemptId ?? "",
+      session.leaseId ?? "",
+      randomUUID(),
+      { purpose },
+    );
+
+  await t.test(
+    "one turn inspects media once while owner authority runs on every authorization",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const checks = f.checks.length;
+      const inspections = f.media.inspections;
+      await turn(f, session, "INITIAL");
+      f.advance(2500);
+      await turn(f, session, "PRE_INFERENCE");
+      f.advance(2500);
+      await turn(f, session, "PUBLICATION");
+      await turn(f, session, "PUBLICATION");
+      assert.equal(f.media.inspections, inspections + 1);
+      assert.equal(f.checks.length, checks + 4);
+      await turn(f, session, "INITIAL");
+      assert.equal(f.media.inspections, inspections + 2);
+    },
+  );
+
+  await t.test(
+    "a reused inspection expires after five seconds and never skips owner denial",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const inspections = f.media.inspections;
+      await turn(f, session, "INITIAL");
+      f.advance(5001);
+      await turn(f, session, "PRE_INFERENCE");
+      assert.equal(f.media.inspections, inspections + 2);
+      f.revoke();
+      await assert.rejects(
+        turn(f, session, "PUBLICATION"),
+        (error: unknown) =>
+          error instanceof VoiceAccessError &&
+          error.code === "VOICE_CONSENT_REQUIRED",
+      );
+      assert.equal(f.media.inspections, inspections + 2);
+      assert.equal((await f.current(session.voiceSessionId)).state, "FAILED");
+    },
+  );
+
+  await t.test("a denied or failed inspection is never reused", async () => {
+    const f = await fixture();
+    const session = await activate(f);
+    // Keep the session ACTIVE after denial to observe the next authorization.
+    f.service.failTurn = () => Promise.resolve();
+    const inspections = f.media.inspections;
+    f.media.ownerConnected = false;
+    await assert.rejects(
+      turn(f, session, "INITIAL"),
+      rejected("INVALID_SESSION_STATE"),
+    );
+    f.media.ownerConnected = true;
+    await turn(f, session, "PRE_INFERENCE");
+    assert.equal(f.media.inspections, inspections + 2);
+    const inspect = f.media.inspect.bind(f.media);
+    f.media.inspect = () => Promise.reject(new VoiceMediaError());
+    await assert.rejects(
+      turn(f, session, "INITIAL"),
+      (error: unknown) => error instanceof VoiceMediaError,
+    );
+    f.media.inspect = inspect;
+    await turn(f, session, "PUBLICATION");
+    assert.equal(f.media.inspections, inspections + 3);
+  });
+
+  for (const [delay, rounds] of [
+    [100, 1],
+    [101, 2],
+  ] as const)
+    await t.test(
+      `a reused inspection is rechecked at return after a ${String(delay)} ms owner delay`,
+      async () => {
+        const f = await fixture();
+        const session = await activate(f);
+        const inspections = f.media.inspections;
+        await turn(f, session, "INITIAL");
+        f.advance(4900);
+        const owner = barrier();
+        f.pauseAuthority(owner.wait);
+        const checks = f.checks.length;
+        const pending = turn(f, session, "PUBLICATION");
+        try {
+          await waitFor(() => f.checks.length === checks + 1);
+          assert.equal(f.media.inspections, inspections + 1);
+          f.advance(delay);
+        } finally {
+          owner.release();
+        }
+        await pending;
+        // At 5000 ms the reuse holds; past it the whole round reruns with a fresh inspection.
+        assert.equal(f.media.inspections, inspections + rounds);
+        assert.equal(f.checks.length, checks + rounds);
+      },
+    );
+
+  for (const field of ["authorityExpiresAt", "leaseExpiresAt"] as const)
+    await t.test(`reuse stops at the exact ${field} boundary`, async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const inspections = f.media.inspections;
+      await turn(f, session, "INITIAL");
+      await f.db
+        .collection<{ _id: string }>("ai_voice_sessions")
+        .updateOne(
+          { _id: session.voiceSessionId },
+          { $set: { [field]: new Date(f.clock().getTime() + 3000) } },
+        );
+      f.advance(2999);
+      await turn(f, session, "PRE_INFERENCE");
+      assert.equal(f.media.inspections, inspections + 1);
+      f.advance(1);
+      await assert.rejects(
+        turn(f, session, "PUBLICATION"),
+        rejected("SESSION_EXPIRED"),
+      );
+      assert.equal(f.media.inspections, inspections + 1);
+    });
+
+  await t.test(
+    "a changed media identity or attempt never reuses an inspection",
+    async () => {
+      const f = await fixture();
+      const session = await activate(f);
+      const inspections = f.media.inspections;
+      await turn(f, session, "INITIAL");
+      const media = f.db.collection<VoiceMediaDocument>("ai_voice_media");
+      await media.updateOne(
+        { _id: session.voiceSessionId },
+        { $set: { participantIdentity: `vu-${randomUUID()}` } },
+      );
+      await turn(f, session, "PRE_INFERENCE");
+      assert.equal(f.media.inspections, inspections + 2);
+      await turn(f, session, "PUBLICATION");
+      assert.equal(f.media.inspections, inspections + 2);
+      await media.updateOne(
+        { _id: session.voiceSessionId },
+        { $set: { attemptId: randomUUID() } },
+      );
+      await assert.rejects(
+        turn(f, session, "PUBLICATION"),
+        rejected("STALE_ATTEMPT"),
+      );
+      assert.equal(f.media.inspections, inspections + 2);
+    },
+  );
+
   await t.test(
     "two independent service instances never duplicate room, dispatch or quota on same-key retries",
     async () => {

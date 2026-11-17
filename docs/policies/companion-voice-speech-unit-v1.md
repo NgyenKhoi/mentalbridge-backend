@@ -34,6 +34,9 @@ a review risk; if that difference is unacceptable, keep this mode OFF.
   punctuation, markup/link denial and combined500-character ceiling. Incomplete
   JSON, malformed UTF8, invalid schema, unsafe or oversized text never publishes.
 - Each unit gets a fresh publication authorization and a state/lease recheck.
+  Since MB-867 (owner decision 2026-11-17) its LiveKit media inspection may
+  reuse the turn's successful inspection for up to 5 s; failures are never
+  reused and owner consent/entitlement stay fresh on every unit.
   The first reserves **500 campaign TTS characters once** before publication,
   conservatively covering the entire turn. Failed/cancelled/short responses do
   not refund this reservation. No campaign schema or product quota is changed.
