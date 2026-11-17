@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { TransformStream } from "node:stream/web";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   AutoSubscribe,
   initializeLogger,
@@ -109,6 +110,19 @@ export const sttModelOptions = {
   interim_results: true,
   punctuate: true,
 };
+export const ttsModelOptions = { speed: 0.9 };
+export const sentencePauseMs = 200;
+export function sentenceChunks(text: string): string[] {
+  return text
+    .split(
+      /(?<=[.!?…]["'”’)\]]*)(?<!(?:^|[\s(])(?:[A-Z]{1,3}|ThS|v\.v)\.)(?<!(?:^|[.!?…\n])\s*\d+\.)\s+/u,
+    )
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+}
+export function silence(ms: number, signal: AbortSignal): Promise<void> {
+  return delay(ms, undefined, { signal }).catch(() => undefined);
+}
 export function microphoneSubscriptions(
   publications: Iterable<
     Pick<RemoteTrackPublication, "kind" | "source" | "setSubscribed">
@@ -219,11 +233,15 @@ export async function approvedPlayback(
       listener: () => void,
     ): unknown;
   },
-  say: () => Pick<voice.SpeechHandle, "waitForPlayout" | "exception">,
+  text: string,
+  say: (
+    chunk: string,
+  ) => Pick<voice.SpeechHandle, "waitForPlayout" | "exception">,
   started: () => Promise<void>,
   signal: AbortSignal,
   interrupt: () => void,
   failed: () => void,
+  pause: (ms: number, signal: AbortSignal) => Promise<void> = silence,
 ) {
   if (signal.aborted) throw new AgentFailure("AUTHORITY_EXPIRED");
   let publication: Promise<void> | undefined;
@@ -237,10 +255,16 @@ export async function approvedPlayback(
   output.once(voice.AudioOutput.EVENT_PLAYBACK_STARTED, onStart);
   signal.addEventListener("abort", interrupt, { once: true });
   try {
-    const speech = say();
-    await speech.waitForPlayout();
-    await verifyPublication({ publication }, signal);
-    if (speech.exception()) throw new AgentFailure("PROVIDER_FAILED");
+    const chunks = sentenceChunks(text);
+    const stopped = () => signal.aborted;
+    for (const [index, chunk] of (chunks.length ? chunks : [text]).entries()) {
+      if (index) await pause(sentencePauseMs, signal);
+      if (stopped()) break;
+      const speech = say(chunk);
+      await speech.waitForPlayout();
+      if (!index) await verifyPublication({ publication }, signal);
+      if (speech.exception()) throw new AgentFailure("PROVIDER_FAILED");
+    }
   } finally {
     output.off(voice.AudioOutput.EVENT_PLAYBACK_STARTED, onStart);
     signal.removeEventListener("abort", interrupt);
@@ -258,6 +282,8 @@ export class LiveKitMedia implements MediaPort {
   private session: voice.AgentSession | undefined;
   private agent: voice.Agent | undefined;
   private speech: voice.SpeechHandle | undefined;
+  private readonly pause = silence;
+  private playedOutAt = Number.NEGATIVE_INFINITY;
   private callbacks: MediaCallbacks | undefined;
   private owner: string | undefined;
   private closed = false;
@@ -392,6 +418,7 @@ export class LiveKitMedia implements MediaPort {
       voice: voiceId,
       apiKey,
       apiSecret,
+      modelOptions: ttsModelOptions,
       connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
     });
     this.session = new voice.AgentSession({
@@ -507,11 +534,14 @@ export class LiveKitMedia implements MediaPort {
     if (this.configuration.pilot) this.pilotSpeechBudget.reserve(text);
     const output = session.output.audio;
     if (!output) throw new AgentFailure("PROVIDER_FAILED");
+    const gap = this.playedOutAt + sentencePauseMs - performance.now();
+    if (gap > 0) await this.pause(gap, signal);
     try {
       await approvedPlayback(
         output,
-        () => {
-          this.speech = session.say(text, {
+        text,
+        (chunk) => {
+          this.speech = session.say(chunk, {
             allowInterruptions: true,
             addToChatCtx: false,
           });
@@ -525,9 +555,11 @@ export class LiveKitMedia implements MediaPort {
         () => {
           this.callbacks?.failed(mediaFailure("PLAYBACK_PUBLICATION"));
         },
+        this.pause,
       );
     } finally {
       this.speech = undefined;
+      this.playedOutAt = performance.now();
     }
   }
   interrupt() {
