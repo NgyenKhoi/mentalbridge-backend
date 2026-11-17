@@ -62,6 +62,10 @@ import {
   registerConsultationBriefDraftModule,
   type ConsultationBriefDraftDependencies,
 } from "./consultation-brief-draft/consultation-brief-draft.js";
+import {
+  registerBenchmarkAdministrationModule,
+  type BenchmarkAdministrationDependencies,
+} from "./benchmarks/benchmark-administration.js";
 
 export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
@@ -74,6 +78,7 @@ export interface ApplicationDependencies {
   readonly supportPlanCompanion?: SupportPlanCompanionDependencies;
   readonly notificationActivity?: NotificationActivityDependencies;
   readonly consultationBriefDraft?: ConsultationBriefDraftDependencies;
+  readonly benchmarkAdministration?: BenchmarkAdministrationDependencies;
 }
 
 @Module({})
@@ -125,6 +130,10 @@ export class AppModule implements NestModule {
         registerConsultationBriefDraftModule(
           configuration,
           dependencies.consultationBriefDraft,
+        ),
+        registerBenchmarkAdministrationModule(
+          configuration,
+          dependencies.benchmarkAdministration,
         ),
       ],
       controllers: [HealthController, MetricsController],

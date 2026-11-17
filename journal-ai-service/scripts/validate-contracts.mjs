@@ -134,6 +134,15 @@ if (contract.paths["/v1/journals"]) {
 }
 
 const implementedOperations = new Set([
+  "GET /api/v1/admin/ai-benchmarks/datasets",
+  "POST /api/v1/admin/ai-benchmarks/datasets",
+  "GET /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}",
+  "POST /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}",
+  "POST /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}/archive",
+  "GET /api/v1/admin/ai-benchmarks/runs",
+  "POST /api/v1/admin/ai-benchmarks/runs",
+  "GET /api/v1/admin/ai-benchmarks/runs/{runId}",
+  "GET /api/v1/admin/ai-benchmarks/runs/{runId}/export",
   "POST /api/v1/ai-companion/voice-context-handoffs",
   "POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns",
   "GET /health/live",
@@ -179,6 +188,36 @@ const implementedOperations = new Set([
   "PUT /api/v1/ai-companion/conversations/{conversationId}/context",
 ]);
 const implementedResponses = new Map([
+  ["GET /api/v1/admin/ai-benchmarks/datasets", new Set(["200", "401", "403"])],
+  [
+    "POST /api/v1/admin/ai-benchmarks/datasets",
+    new Set(["201", "400", "401", "403", "409"]),
+  ],
+  [
+    "GET /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}",
+    new Set(["200", "401", "403", "404"]),
+  ],
+  [
+    "POST /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}",
+    new Set(["201", "400", "401", "403", "404", "409"]),
+  ],
+  [
+    "POST /api/v1/admin/ai-benchmarks/datasets/{datasetId}/versions/{version}/archive",
+    new Set(["200", "401", "403", "404", "409"]),
+  ],
+  ["GET /api/v1/admin/ai-benchmarks/runs", new Set(["200", "401", "403"])],
+  [
+    "POST /api/v1/admin/ai-benchmarks/runs",
+    new Set(["202", "400", "401", "403", "409", "422", "503"]),
+  ],
+  [
+    "GET /api/v1/admin/ai-benchmarks/runs/{runId}",
+    new Set(["200", "401", "403", "404"]),
+  ],
+  [
+    "GET /api/v1/admin/ai-benchmarks/runs/{runId}/export",
+    new Set(["200", "401", "403", "404"]),
+  ],
   [
     "POST /api/v1/ai-companion/voice-context-handoffs",
     new Set(["200", "401", "403", "404", "409", "422", "429", "503"]),
@@ -524,7 +563,7 @@ const careContractPath = fileURLToPath(
 const care = await SwaggerParser.validate(careContractPath);
 const careSchemas = care.components.schemas;
 assert.equal(care.info.version, "1.12.0");
-assert.equal(contract.info.version, "1.20.1");
+assert.equal(contract.info.version, "1.22.0");
 assert.deepEqual(careSchemas.ConsentType.enum, [
   "PRIVACY_POLICY",
   "AI_PROCESSING",

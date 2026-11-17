@@ -111,8 +111,10 @@ private note, idempotent command records, deletion tombstone, and purge time.
 Collection: `benchmark_datasets`
 
 Key fields: dataset/version, workload, language, synthetic source, license,
-content digest, case count, and registration time. Raw cases remain governed
-version-controlled input.
+description, bounded synthetic cases, content digest, case count, creator,
+lineage, archive time, and registration time. Admin-created versions are
+immutable; a change creates a new lineage version. Archived versions remain
+auditable but cannot be selected for a new run.
 
 ### Benchmark Run — ACTIVE
 
@@ -133,6 +135,17 @@ Migration `011_bedrock_provider.cjs` extends exact-revision, longitudinal,
 benchmark, and AI Companion provenance with `BEDROCK` while retaining existing
 provider values. Benchmark runs may contain up to three pinned candidates; raw
 provider output and credentials remain excluded from every collection.
+
+### Benchmark Administration Command — ACTIVE
+
+Collection: `benchmark_admin_commands`
+
+Key fields: admin/operation/key identity, intent fingerprint, lifecycle, and
+bounded completed response. The unique identity reserves a command before a
+dataset or run mutation; a changed intent fails closed. It stores no dataset
+case text, provider credential, raw output, journal, or personal-health data.
+Migration `019_benchmark_dataset_governance.cjs` owns this collection and the
+optional governed fields added to legacy benchmark dataset metadata.
 
 ### AI Companion Conversation — ACTIVE
 
