@@ -3268,7 +3268,7 @@ components:
         titleVersion: { $ref: "#/components/schemas/AiConversationTitleVersion" }
         userMessageId: { type: string, format: uuid }
         assistantMessageId: { type: string, format: uuid }
-        assistant: { type: string, minLength: 1, maxLength: 500 }
+        assistant: { type: string, minLength: 1, maxLength: 900, description: "FREE replies stay at most 500 characters; PLUS and PREMIUM Text replies may reach 900 (MB-869)." }
         createdAt: { type: string, format: date-time }
         contextKinds:
           type: array

@@ -50,7 +50,10 @@ import {
   companionMaxOutputTokens,
   effectiveBedrockRequestLimits,
 } from "../llm-providers/bedrock-request-limits.js";
-import { companionGuidanceSystem } from "./companion-guidance-policy.js";
+import {
+  companionGuidanceSystem,
+  companionReplyMaxCharacters,
+} from "./companion-guidance-policy.js";
 import {
   SUGGESTION_DESTINATIONS,
   resolveSuggestion,
@@ -393,6 +396,32 @@ export const providerOutputSchemaV2 = providerOutputSchema.extend({
     .nullable(),
 });
 
+const paidMessageJsonSchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: 900,
+} as const;
+
+const paidProviderOutputJsonSchema = {
+  ...providerOutputJsonSchema,
+  properties: {
+    ...providerOutputJsonSchema.properties,
+    message: paidMessageJsonSchema,
+  },
+} as const;
+
+const paidProviderOutputJsonSchemaV2 = {
+  ...providerOutputJsonSchemaV2,
+  properties: {
+    ...providerOutputJsonSchemaV2.properties,
+    message: paidMessageJsonSchema,
+  },
+} as const;
+
+const paidProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(900),
+});
+
 const unsafeAssistantPatterns = [
   /(?:ignore|disregard) (?:all )?(?:previous|system|developer) (?:instructions?|messages?)/iu,
   /(?:bỏ qua|phớt lờ).{0,40}(?:chỉ dẫn|hướng dẫn|system|developer)/iu,
@@ -419,12 +448,12 @@ const withoutCutOffTail = (message: string): string =>
 
 export const validatedAssistantMessage = (
   value: string,
-  options?: { rejectLinks?: boolean },
+  options?: { rejectLinks?: boolean; maxLength?: number },
 ): string => {
   const message = value.trim();
   if (
     message.length === 0 ||
-    message.length > 500 ||
+    message.length > (options?.maxLength ?? 500) ||
     !/[\u00c0-\u1ef9]/u.test(message) ||
     unsafeAssistantPatterns.some((pattern) => pattern.test(message)) ||
     (options?.rejectLinks === true && linkOrMarkup.test(message))
@@ -453,6 +482,7 @@ export interface ChatProvider {
       voiceObserver?: VoiceObserver;
       onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
       friend?: FriendInput;
+      plan?: ServicePlan;
       requestTitle?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
@@ -1726,6 +1756,7 @@ export class RoutedChatProvider implements ChatProvider {
       voiceObserver?: VoiceObserver;
       onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
       friend?: FriendInput;
+      plan?: ServicePlan;
       requestTitle?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
@@ -1742,6 +1773,8 @@ export class RoutedChatProvider implements ChatProvider {
     )
       throw new VoiceProviderFailure("AUTHORITY_OR_STATE");
     const friend = options?.voice ? undefined : options?.friend;
+    const plan = options?.voice ? undefined : options?.plan;
+    const maxLength = companionReplyMaxCharacters(plan);
     if (options?.voice && context.kinds.length !== 0)
       throw new VoiceProviderFailure("INVALID_RESPONSE");
     if (route.provider === "DETERMINISTIC_FAKE") {
@@ -1762,10 +1795,14 @@ export class RoutedChatProvider implements ChatProvider {
         ? { voiceFriend: true }
         : {}),
       ...(options?.voice && options.textHandoff ? { textHandoff: true } : {}),
-      ...(options?.voice && this.configuration.VOICE_PILOT?.replyStyle
-        ? { replyStyle: this.configuration.VOICE_PILOT.replyStyle }
+      ...(options?.voice
+        ? {
+            replyStyle:
+              this.configuration.VOICE_PILOT?.replyStyle ?? "SUPPORTIVE",
+          }
         : {}),
       ...(friend ? { friend: true } : {}),
+      ...(plan ? { plan } : {}),
     });
     const requestTitle = options?.requestTitle === true && !options.voice;
     if (speechUnits)
@@ -1780,8 +1817,12 @@ export class RoutedChatProvider implements ChatProvider {
     const coreOutputJsonSchema = options?.voice
       ? voiceProviderOutputJsonSchema
       : friend
-        ? providerOutputJsonSchemaV2
-        : providerOutputJsonSchema;
+        ? maxLength > 500
+          ? paidProviderOutputJsonSchemaV2
+          : providerOutputJsonSchemaV2
+        : maxLength > 500
+          ? paidProviderOutputJsonSchema
+          : providerOutputJsonSchema;
     const outputJsonSchema = requestTitle
       ? {
           ...coreOutputJsonSchema,
@@ -2246,7 +2287,9 @@ export class RoutedChatProvider implements ChatProvider {
         null;
       output = rest;
     }
-    const parsedOutput = providerOutputSchema.safeParse(output);
+    const parsedOutput = (
+      maxLength > 500 ? paidProviderOutputSchema : providerOutputSchema
+    ).safeParse(output);
     if (!parsedOutput.success) {
       if (options?.voice && responseProvider === "BEDROCK")
         throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
@@ -2259,6 +2302,7 @@ export class RoutedChatProvider implements ChatProvider {
     let normalized: string;
     try {
       normalized = validatedAssistantMessage(parsedOutput.data.message, {
+        maxLength,
         rejectLinks:
           friend !== undefined ||
           (options?.voice === true &&
@@ -2683,8 +2727,11 @@ export class CompanionChatService {
       }
       const requestTitle = canInitializeTitle(conversation);
       const estimate = estimateInputTokens(
-        companionGuidanceSystem({ channel: "TEXT", friend: !!friend }) +
-          (requestTitle ? `\n${providerTitleInstruction}` : ""),
+        companionGuidanceSystem({
+          channel: "TEXT",
+          friend: !!friend,
+          plan: decision.packageCode,
+        }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
         companionUserInput({
           message: parsed.data.message,
           context: minimized,
@@ -2715,6 +2762,7 @@ export class CompanionChatService {
             this.provider.reply(parsed.data.message, minimized, route, {
               ...(friend ? { friend } : {}),
               ...(requestTitle ? { requestTitle: true } : {}),
+              plan: decision.packageCode,
               signal,
               onUsage: (input, output) => {
                 usage = { input, output };
@@ -2730,6 +2778,7 @@ export class CompanionChatService {
           ]);
           assistant = validatedAssistantMessage(attemptedReply.message, {
             rejectLinks: friend !== undefined,
+            maxLength: companionReplyMaxCharacters(decision.packageCode),
           });
         } catch (error) {
           attemptError = error;
