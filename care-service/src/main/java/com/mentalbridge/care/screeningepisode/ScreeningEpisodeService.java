@@ -143,7 +143,8 @@ public class ScreeningEpisodeService {
 		return new JourneyContext(
 				episodes.findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(userId, purpose, "COMPLETED")
 						.map(this::view),
-				episodes.existsByUserIdAndPurposeAndStatusIn(userId, purpose, List.of("IN_PROGRESS", "READY")));
+				episodes.existsByUserIdAndPurposeAndStatusIn(userId, purpose, List.of("IN_PROGRESS", "READY")),
+				episodes.findFirstByUserIdAndStatusOrderByCompletedAtDescIdDesc(userId, "COMPLETED").map(this::view));
 	}
 
 	@Transactional(readOnly = true)
@@ -202,7 +203,8 @@ public class ScreeningEpisodeService {
 			UUID gad7AssessmentId, UUID supportEvaluationId, UUID presentationEvaluationId,
 			Instant createdAt, Instant updatedAt, Instant completedAt, long version) { }
 
-	public record JourneyContext(Optional<EpisodeView> latestCompleted, boolean hasOpen) { }
+	public record JourneyContext(Optional<EpisodeView> latestCompleted, boolean hasOpen,
+			Optional<EpisodeView> latestCompletedAnyPurpose) { }
 
 	public record EvaluationOutcome(EpisodeView episode,
 			SupportEvaluationService.EvaluationView presentationEvaluation) { }

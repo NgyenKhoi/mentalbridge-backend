@@ -756,7 +756,7 @@ improvement verdict.
 | `idempotency_key` | Caller retry key unique per owner, 16-128 visible ASCII characters at the API boundary. |
 | `request_hash` | SHA-256 of the exact PHQ-9/GAD-7 assessment IDs, Journal job/legacy analysis reference, comparison-period bounds, and optional self-report ID; conflicting key reuse fails. |
 | `summary_version` | Composition/schema policy version. Historical compatibility rows remain `reassessment-summary-v1`; canonical explicit-self-report rows use `reassessment-summary-v2`. |
-| `journal_job_id` | Required external Journal longitudinal job UUID for canonical v2 snapshots, including failed-job snapshots. Care resolves its authoritative status. Null only on historical v1 rows. |
+| `journal_job_id` | External Journal longitudinal job UUID for canonical v2 snapshots, including failed-job snapshots. Care resolves its authoritative status. Null on historical v1 rows and on v2 rows composed without a journal reference because effective L2 AI_CONTEXT_PROCESSING consent was missing (journal dimension `UNAVAILABLE`, `CONSENT_REQUIRED`/`CONSENT_REVOKED`); such a row also has no `journal_analysis_id` (`ck_reassessment_summary_journal_reference`, changeset `care-037`). |
 | `journal_analysis_id` | Resolved analysis UUID when a v2 job succeeded, or the requested legacy v1 analysis UUID. It is nullable for failed/unavailable v2 jobs. |
 | `previous_period_start` / `previous_period_end` | Half-open UTC bounds for the prior evidence period. Database checks require 7-31 days. |
 | `current_period_start` / `current_period_end` | Half-open UTC bounds for the current evidence period. It must have the same duration and cannot overlap the prior period. |

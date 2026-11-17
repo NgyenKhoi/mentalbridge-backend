@@ -61,6 +61,20 @@ class JournalLongitudinalClientTests {
 	}
 
 	@Test
+	void acceptsVietnameseLabelPromptV2AndBedrockProvenanceButNotUnknownVersions() {
+		var v2 = provenance(evidence(true, 3, 3), "BEDROCK", "longitudinal-v2");
+		var accepted = client((auth, correlation, userId, analysisId, purpose) -> v2, 1, 5)
+				.read(USER_ID, ANALYSIS_ID, PREVIOUS, CURRENT, "user-token", CORRELATION_ID);
+		assertThat(accepted.state()).isEqualTo("AVAILABLE");
+		assertThat(accepted.evidence().promptVersion()).isEqualTo("longitudinal-v2");
+
+		var unknown = provenance(evidence(true, 3, 3), "GEMINI", "longitudinal-v9");
+		assertThat(client((auth, correlation, userId, analysisId, purpose) -> unknown, 1, 5)
+				.read(USER_ID, ANALYSIS_ID, PREVIOUS, CURRENT, "user-token", CORRELATION_ID).unavailableReason())
+				.isEqualTo("INVALID_PROJECTION");
+	}
+
+	@Test
 	void preservesInsufficientDataWithoutInventingADirection() {
 		var client = client((auth, correlation, userId, analysisId, purpose) -> evidence(false, 2, 2), 2, 5);
 
@@ -226,6 +240,13 @@ class JournalLongitudinalClientTests {
 				List.of(), List.of("low-energy"), List.of(), new Coverage(previousCount, currentCount, sufficient),
 				"DETERMINISTIC_FAKE", "deterministic-longitudinal-v1", "longitudinal-v1", 1,
 				Instant.parse("2026-09-24T00:00:00Z"));
+	}
+
+	private Evidence provenance(Evidence value, String provider, String promptVersion) {
+		return new Evidence(value.analysisId(), value.previousPeriod(), value.currentPeriod(),
+				value.sourceJournalRevisions(), value.contextSignals(), value.emotionIndicators(), value.recurringThemes(),
+				value.changesComparedWithPreviousPeriod(), value.preferences(), value.barriers(), value.helpfulPatterns(),
+				value.dataCoverage(), provider, value.model(), promptVersion, value.schemaVersion(), value.createdAt());
 	}
 
 	private FeignException httpFailure(int status) {

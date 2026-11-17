@@ -204,6 +204,8 @@ PLUS / PREMIUM
 
 MB-672 adds Care's owner-only `GET /api/v1/home-next-step`, embedding the unchanged guided journey with an ordered current-plan focus and bounded completed-plan context for web/native Home; see [ADR 0045](adr/0045-home-next-step-read.md) (`MB-HOME-NEXT-STEP-001`).
 
+Home reads the latest completed screening of either purpose: the guided journey's `latestScreening` (newest COMPLETED initial check or reassessment) decides `nextAction`, the severe notice and the safety card, while the Support Guide and the journey's episode fields stay on the initial check; initial check and reassessment remain separate persisted journeys per [ADR 0023](adr/0023-persist-guided-screening-episodes.md).
+
 ## 4. Support Guide versus SupportPlan
 
 The current distinction is mandatory:
