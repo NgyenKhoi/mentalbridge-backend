@@ -4135,6 +4135,23 @@ paths:
         '409': { $ref: '#/components/responses/ConflictProblem' }
         '412': { $ref: '#/components/responses/VersionProblem' }
         '428': { $ref: '#/components/responses/VersionRequiredProblem' }
+  /api/v1/specialist/appointments/{appointmentId}/reusable-session-summaries:
+    x-mentalbridge-status: implemented
+    get:
+      operationId: listReusableEarlierSessionSummaries
+      description: For the assigned specialist of a CONFIRMED or IN_PROGRESS appointment, within 24 hours either side of its scheduled start, returns the same user's earlier session summaries whose latest version the user approved for reuse. Earlier sessions must end before this appointment starts. Revoked consent or an unapproved newer version removes the item. User-owned checklist and reuse-consent state are omitted.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: Approved earlier summaries, newest session first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReusableSessionSummaryList' }
+        '401': { $ref: '#/components/responses/UnauthorizedProblem' }
+        '403': { $ref: '#/components/responses/ForbiddenProblem' }
+        '404': { $ref: '#/components/responses/NotFoundProblem' }
   /api/v1/specialist/appointments/{appointmentId}/accept:
     x-mentalbridge-status: implemented
     parameters:
@@ -6870,6 +6887,26 @@ components:
           type: array
           maxItems: 100
           items: { $ref: '#/components/schemas/SessionSummary' }
+        count: { type: integer, minimum: 0, maximum: 100 }
+        generatedAt: { type: string, format: date-time }
+    ReusableSessionSummary:
+      type: object
+      additionalProperties: false
+      required: [summary, sessionStartedAt, specialistDisplayName, sameSpecialist]
+      properties:
+        summary: { $ref: '#/components/schemas/SessionSummary' }
+        sessionStartedAt: { type: string, format: date-time }
+        specialistDisplayName: { type: string, minLength: 1 }
+        sameSpecialist: { type: boolean, description: True when the caller wrote the earlier summary. }
+    ReusableSessionSummaryList:
+      type: object
+      additionalProperties: false
+      required: [items, count, generatedAt]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ReusableSessionSummary' }
         count: { type: integer, minimum: 0, maximum: 100 }
         generatedAt: { type: string, format: date-time }
     ResourceProposal:

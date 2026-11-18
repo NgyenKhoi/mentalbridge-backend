@@ -336,13 +336,12 @@ const environmentSchema = z
     if (
       environment.JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED === "true" &&
       (environment.JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED !== "true" ||
-        environment.JOURNAL_AI_VOICE_PROVIDER_MODE !== "APPROVED_BEDROCK" ||
-        !environment.JOURNAL_AI_VOICE_PILOT)
+        environment.JOURNAL_AI_VOICE_PROVIDER_MODE !== "APPROVED_BEDROCK")
     )
       context.addIssue({
         code: "custom",
         path: ["JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED"],
-        message: "Bounded approved streaming pilot is required",
+        message: "Approved Bedrock streaming is required",
       });
     if (environment.JOURNAL_AI_VOICE_PROVIDER_MODE === "APPROVED_BEDROCK") {
       for (const key of [

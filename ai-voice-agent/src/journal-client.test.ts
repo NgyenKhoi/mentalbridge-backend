@@ -211,7 +211,7 @@ const configuration = () =>
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
   });
-void test("Agent speech-unit opt-in requires a pilot but permits an unmeasured claim", () => {
+void test("Agent speech-unit opt-in works without a pilot and permits an unmeasured claim", () => {
   assert.equal(configuration().speechUnitsEnabled, false);
   assert.equal(
     loadConfiguration({
@@ -230,9 +230,10 @@ void test("Agent speech-unit opt-in requires a pilot but permits an unmeasured c
     }).speechUnitsEnabled,
     true,
   );
-  assert.throws(
-    () => loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "true" }),
-    AgentFailure,
+  assert.equal(
+    loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "true" })
+      .speechUnitsEnabled,
+    true,
   );
   assert.throws(
     () => loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "invalid" }),
