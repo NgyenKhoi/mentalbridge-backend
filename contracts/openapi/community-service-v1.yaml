@@ -408,6 +408,23 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/posts/{postId}/reactions:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    get:
+      x-mentalbridge-status: implemented
+      operationId: listCommunityPostReactions
+      description: Community display identities that reacted to a post the caller can see, newest first, at most 100. Profiles either side has blocked are omitted; account subjects are never exposed.
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: Reactors of the post.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityPostReactionList" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
   /api/v1/community/posts/{postId}/bookmark:
     parameters:
       - $ref: "#/components/parameters/PostId"
@@ -1081,6 +1098,30 @@ components:
       properties:
         postId: { type: string, format: uuid }
         reaction: { $ref: "#/components/schemas/SupportiveReaction" }
+    CommunityPostReactor:
+      type: object
+      additionalProperties: false
+      required: [communityProfileId, displayName, avatarPreset, reaction, reactedAt, self]
+      properties:
+        communityProfileId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        avatarPreset:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityAvatarPreset"
+            - type: "null"
+        reaction: { $ref: "#/components/schemas/SupportiveReaction" }
+        reactedAt: { type: string, format: date-time }
+        self: { type: boolean }
+    CommunityPostReactionList:
+      type: object
+      additionalProperties: false
+      required: [items, count]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/CommunityPostReactor" }
+        count: { type: integer, minimum: 0, maximum: 100 }
     ReportReason:
       type: string
       enum: [HARASSMENT, PRIVACY_OR_DOXXING, MEDICAL_MISINFORMATION, SELF_HARM_OR_CRISIS_CONCERN, SPAM, SEXUAL_OR_VIOLENT_CONTENT, OTHER]

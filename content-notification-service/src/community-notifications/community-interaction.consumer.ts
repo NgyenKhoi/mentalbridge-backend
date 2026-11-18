@@ -71,7 +71,7 @@ function projection(event: CommunityInteractionEvent): CommunityNotificationProj
       ownerId: event.targetOwnerRoutingReference,
       kind: 'COMMUNITY_COMMENT',
       title: 'Bài viết của bạn có phản hồi mới',
-      body: 'Một thành viên đã để lại lời nhắn hỗ trợ.',
+      body: 'Một thành viên đã bình luận về chia sẻ của bạn.',
       occurredAt: event.occurredAt,
       postId: event.deepLink.postId,
     };

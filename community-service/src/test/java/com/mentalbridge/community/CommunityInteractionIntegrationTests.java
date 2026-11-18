@@ -90,6 +90,37 @@ class CommunityInteractionIntegrationTests extends CommunityTestProperties {
 	}
 
 	@Test
+	void reactorsAreListedNewestFirstWithoutBlockedProfiles() throws Exception {
+		var postId = createPost();
+		putReaction(postId, VIEWER, "SUPPORT").andExpect(status().isOk());
+		putReaction(postId, OTHER_VIEWER, "RELATE").andExpect(status().isOk());
+
+		mvc.perform(get("/api/v1/community/posts/{postId}/reactions", postId).with(user(AUTHOR)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(2))
+				.andExpect(jsonPath("$.items[0].reaction").value("RELATE"))
+				.andExpect(jsonPath("$.items[0].displayName").isNotEmpty())
+				.andExpect(jsonPath("$.items[0].self").value(false))
+				.andExpect(jsonPath("$.items[0].accountSubject").doesNotExist());
+		mvc.perform(get("/api/v1/community/posts/{postId}/reactions", postId).with(user(VIEWER)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[1].self").value(true));
+
+		var author = jdbc.sql("select id from community_profile where account_subject = :s").param("s", AUTHOR)
+				.query(UUID.class).single();
+		var other = jdbc.sql("select id from community_profile where account_subject = :s").param("s", OTHER_VIEWER)
+				.query(UUID.class).single();
+		jdbc.sql("insert into community_block (blocker_profile_id, blocked_profile_id, created_at) values (:a, :b, now())")
+				.param("a", author).param("b", other).update();
+		mvc.perform(get("/api/v1/community/posts/{postId}/reactions", postId).with(user(AUTHOR)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].reaction").value("SUPPORT"));
+		mvc.perform(get("/api/v1/community/posts/{postId}/reactions", UUID.randomUUID()).with(user(AUTHOR)))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
 	void unsupportedReactionIsRejectedWithoutChangingThePost() throws Exception {
 		var postId = createPost();
 
