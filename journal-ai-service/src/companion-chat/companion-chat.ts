@@ -1768,8 +1768,7 @@ export class RoutedChatProvider implements ChatProvider {
       (!options.voice ||
         route.provider !== "BEDROCK" ||
         !this.configuration.VOICE_CONVERSE_STREAM_ENABLED ||
-        !this.configuration.VOICE_SPEECH_UNITS_ENABLED ||
-        !this.configuration.VOICE_PILOT)
+        !this.configuration.VOICE_SPEECH_UNITS_ENABLED)
     )
       throw new VoiceProviderFailure("AUTHORITY_OR_STATE");
     const friend = options?.voice ? undefined : options?.friend;

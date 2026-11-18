@@ -241,6 +241,48 @@ public class SessionSummaryService {
 		return readById(summaryId, false);
 	}
 
+	/**
+	 * Earlier summaries the user approved for reuse, for the specialist of a later active appointment. Same
+	 * eligibility as {@link #reusable}; only the latest version of each earlier session counts, because consent
+	 * is per exact version and an unapproved amendment supersedes an approved older version.
+	 */
+	@Transactional(readOnly = true)
+	public SessionSummaryResponse.ReusableListResponse specialistReusable(UUID specialistId, UUID targetAppointmentId) {
+		var target = jdbc.sql("""
+				select user_account_id, status, scheduled_start_at from appointment
+				where id=:appointmentId and specialist_account_id=:specialistId
+				""").param("appointmentId", targetAppointmentId).param("specialistId", specialistId)
+				.query((rs, row) -> new ReuseTarget(rs.getObject("user_account_id", UUID.class),
+						rs.getString("status"), rs.getTimestamp("scheduled_start_at").toInstant()))
+				.optional().orElseThrow(() -> notFound());
+		var now = clock.instant();
+		if (!List.of("CONFIRMED", "IN_PROGRESS").contains(target.status())
+				|| now.isBefore(target.scheduledStartAt().minus(BRIEF_ACCESS_WINDOW))
+				|| now.isAfter(target.scheduledStartAt().plus(BRIEF_ACCESS_WINDOW))) throw reuseNotEligible();
+
+		var items = jdbc.sql("""
+				select s.id, s.specialist_account_id, source.scheduled_start_at, p.display_name
+				from session_summary s
+				join session_summary_reuse_consent c on c.summary_id=s.id
+				join appointment source on source.id=s.appointment_id
+				join specialist_profile p on p.account_id=s.specialist_account_id
+				where s.user_account_id=:userId and c.approved
+				  and s.appointment_id<>:targetId and source.scheduled_end_at<:targetStart
+				  and s.summary_version=(select max(latest.summary_version) from session_summary latest
+				                         where latest.appointment_id=s.appointment_id)
+				order by source.scheduled_start_at desc
+				""").param("userId", target.userId()).param("targetId", targetAppointmentId)
+				.param("targetStart", Timestamp.from(target.scheduledStartAt()))
+				.query((rs, row) -> new ReusableRow(rs.getObject("id", UUID.class),
+						rs.getObject("specialist_account_id", UUID.class),
+						rs.getTimestamp("scheduled_start_at").toInstant(), rs.getString("display_name")))
+				.list().stream()
+				.map(row -> new SessionSummaryResponse.ReusableItem(readById(row.summaryId(), false),
+						row.sessionStartedAt(), row.specialistDisplayName(), specialistId.equals(row.specialistId())))
+				.toList();
+		return new SessionSummaryResponse.ReusableListResponse(items, items.size(), now);
+	}
+
 	@Transactional(readOnly = true)
 	public ResourceProposalResponse resourceProposal(UUID actorId, UUID proposalId) {
 		var proposal = jdbc.sql("""
@@ -395,6 +437,8 @@ public class SessionSummaryService {
 	private record ReuseTarget(UUID userId, String status, Instant scheduledStartAt) { }
 	private record ReuseSource(UUID appointmentId, UUID userId, long version, boolean approved,
 			Instant scheduledEndAt) { }
+	private record ReusableRow(UUID summaryId, UUID specialistId, Instant sessionStartedAt,
+			String specialistDisplayName) { }
 	private record ProposalRow(UUID id, UUID summaryId, UUID appointmentId, UUID userId,
 			UUID specialistId, long summaryVersion, long latestSummaryVersion, String schemaVersion,
 			Instant proposedAt, String appointmentStatus, UUID completionFactId, UUID resourceId,

@@ -92,6 +92,7 @@ class ConsultationOpenApiContractTests {
 			"GET /api/v1/specialist/appointments/{appointmentId}/dispute",
 			"POST /api/v1/specialist/appointments/{appointmentId}/dispute",
 			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
+			"GET /api/v1/specialist/appointments/{appointmentId}/reusable-session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
 			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
 			"POST /api/v1/specialist/appointments/{appointmentId}/reject",

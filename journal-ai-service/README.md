@@ -2,8 +2,10 @@
 
 MB-854 independently publishable speech units are a default-OFF review proposal:
 `JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`. Enabling requires reviewed policy,
-ConverseStream enabled, approved Bedrock and either a bound measurement profile
-or a configured plain pilot with unique allowlisted owners and at most24 hours.
+ConverseStream enabled and approved Bedrock. Since MB-891 (owner decision,
+2026-11-18) a pilot is optional: without `JOURNAL_AI_VOICE_PILOT` every eligible
+PLUS/PREMIUM owner is admitted on entitlement quota alone, and speech units still
+apply. A measurement profile or plain pilot remains available for bounded campaigns.
 Each complete unit retains schema/safety, fresh publication authorization,
 state/lease checks,
 and the 500 combined-character limit. Measured mode keeps its conservative500

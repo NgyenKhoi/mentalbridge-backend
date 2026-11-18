@@ -279,10 +279,14 @@ The snapshot contains only bounded current situation, the exact approved
 SupportEvaluation v2 domain/level/version provenance, and bounded user goals. It
 never contains raw assessment answers, raw journals, chat, private notes,
 diagnosis, or an unapproved generated summary. MB-385 remains the owner of
-`SessionSummary`; until that exact-version source exists, prior-summary reuse is
-unavailable rather than accepting client-authored continuity text. When added,
-reuse requires a separate approval tied to the exact summary snapshot/version and
-must never inherit this appointment-preparation grant.
+`SessionSummary`. Prior-summary reuse never accepts client-authored continuity
+text and is not part of this snapshot. It requires a separate approval tied to
+the exact summary snapshot/version and never inherits this appointment-preparation
+grant. Since MB-891 the assigned specialist of a later CONFIRMED or IN_PROGRESS
+appointment, within 24 hours either side of its start, can read the same user's
+earlier summaries whose latest version the user approved for reuse
+(`GET /api/v1/specialist/appointments/{appointmentId}/reusable-session-summaries`).
+Revocation or an unapproved newer version removes an item on the next read.
 
 After an eligible completed session, the specialist may create a user-visible
 `SessionSummary` and `AgreedNextSteps`. These are not a second SupportPlan and

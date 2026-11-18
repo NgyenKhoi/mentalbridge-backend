@@ -39,6 +39,12 @@ public class SessionSummaryController {
 		return summaries.specialistHistory(RequestIdentity.subject(jwt), appointmentId);
 	}
 
+	@GetMapping("/api/v1/specialist/appointments/{appointmentId}/reusable-session-summaries")
+	SessionSummaryResponse.ReusableListResponse specialistReusable(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID appointmentId) {
+		return summaries.specialistReusable(RequestIdentity.subject(jwt), appointmentId);
+	}
+
 	@PostMapping("/api/v1/specialist/appointments/{appointmentId}/session-summaries")
 	ResponseEntity<SessionSummaryResponse> publish(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID appointmentId,
