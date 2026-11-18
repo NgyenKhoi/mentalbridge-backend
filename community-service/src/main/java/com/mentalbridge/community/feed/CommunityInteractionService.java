@@ -1,8 +1,10 @@
 package com.mentalbridge.community.feed;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,10 +23,12 @@ class CommunityInteractionService {
 	private final CommunityPostReactionRepository reactions;
 	private final CommunityPostBookmarkRepository bookmarks;
 	private final CommunityInteractionEventPolicy interactionEvents;
+	private final JdbcClient jdbc;
 
 	CommunityInteractionService(CommunityProfileRepository profiles, CommunityPostRepository posts,
 			CommunityPostReactionRepository reactions, CommunityPostBookmarkRepository bookmarks,
-			CommunityInteractionEventPolicy interactionEvents) {
+			CommunityInteractionEventPolicy interactionEvents, JdbcClient jdbc) {
+		this.jdbc = jdbc;
 		this.profiles = profiles;
 		this.posts = posts;
 		this.reactions = reactions;
@@ -91,6 +95,34 @@ class CommunityInteractionService {
 		}
 	}
 
+	/**
+	 * Who reacted to a post the viewer can see: Community display identity only (never the account subject),
+	 * newest first, at most 100, without profiles either side has blocked.
+	 */
+	@Transactional
+	ReactionList listReactions(UUID subject, UUID postId) {
+		var viewer = activeProfile(subject).id();
+		posts.findVisibleById(postId, viewer).orElseThrow(CommunityApiException::postNotFound);
+		var items = jdbc.sql("""
+				SELECT r.profile_id, p.display_name, p.avatar_preset, r.reaction, r.updated_at
+				FROM community_post_reaction r
+				JOIN community_profile p ON p.id = r.profile_id
+				WHERE r.post_id = :postId AND p.status = 'ACTIVE'
+				  AND NOT EXISTS (
+				      SELECT 1 FROM community_block b
+				      WHERE (b.blocker_profile_id = :viewer AND b.blocked_profile_id = r.profile_id)
+				         OR (b.blocker_profile_id = r.profile_id AND b.blocked_profile_id = :viewer))
+				ORDER BY r.updated_at DESC
+				LIMIT 100
+				""").param("postId", postId).param("viewer", viewer)
+				.query((rs, row) -> new Reactor(rs.getObject("profile_id", UUID.class), rs.getString("display_name"),
+						rs.getString("avatar_preset") == null ? null : AvatarPreset.valueOf(rs.getString("avatar_preset")),
+						Reaction.valueOf(rs.getString("reaction")), rs.getTimestamp("updated_at").toInstant(),
+						rs.getObject("profile_id", UUID.class).equals(viewer)))
+				.list();
+		return new ReactionList(items, items.size());
+	}
+
 	private CommunityProfileEntity activeProfile(UUID subject) {
 		var now = Instant.now();
 		profiles.createIfAbsent(UUID.randomUUID(), subject, DEFAULT_DISPLAY_NAME, now);
@@ -107,5 +139,12 @@ class CommunityInteractionService {
 	}
 
 	record CommunityReaction(UUID postId, Reaction reaction) {
+	}
+
+	record Reactor(UUID communityProfileId, String displayName, AvatarPreset avatarPreset, Reaction reaction,
+			Instant reactedAt, boolean self) {
+	}
+
+	record ReactionList(List<Reactor> items, int count) {
 	}
 }

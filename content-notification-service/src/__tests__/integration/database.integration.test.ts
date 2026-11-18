@@ -2774,7 +2774,7 @@ describe('Database Integration', () => {
         ownerId: enabledOwner,
         kind: 'COMMUNITY_COMMENT' as const,
         title: 'Bài viết của bạn có phản hồi mới',
-        body: 'Một thành viên đã để lại lời nhắn hỗ trợ.',
+        body: 'Một thành viên đã bình luận về chia sẻ của bạn.',
         occurredAt: '2026-10-05T08:00:00.000Z',
         postId,
       };
