@@ -98,12 +98,17 @@ void test("independent speech contract and its configuration gate are reviewable
     }).VOICE_SPEECH_UNITS_ENABLED,
     true,
   );
-  for (const env of [
-    { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true" },
-    {
+  // MB-891: speech units no longer need a pilot window; entitlement quota bounds ordinary calls.
+  assert.equal(
+    loadConfiguration({
+      ...approved,
       JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
       JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
-    },
+    }).VOICE_SPEECH_UNITS_ENABLED,
+    true,
+  );
+  for (const env of [
+    { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true" },
     { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "yes" },
   ])
     assert.throws(() => loadConfiguration({ ...approved, ...env }));

@@ -132,8 +132,6 @@ export function loadConfiguration(
   };
   if (configuration.measurementPolicyHash && !configuration.pilot)
     throw new AgentFailure("CONFIGURATION_INVALID");
-  if (configuration.speechUnitsEnabled && !configuration.pilot)
-    throw new AgentFailure("CONFIGURATION_INVALID");
   if (
     configuration.pilot &&
     (configuration.sttModel !== "deepgram/nova-3" ||

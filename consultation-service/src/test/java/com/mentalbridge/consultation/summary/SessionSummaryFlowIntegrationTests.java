@@ -214,6 +214,56 @@ class SessionSummaryFlowIntegrationTests extends ConsultationTestProperties {
 	}
 
 	@Test
+	void laterSpecialistListsOnlyApprovedLatestEarlierSummaries() throws Exception {
+		var fixture = completedAppointment();
+		var published = mvc.perform(publish(fixture, fixture.specialistId(), "summary-reuse-list-1", summaryBody()))
+				.andExpect(status().isCreated()).andReturn();
+		var summaryId = json.readTree(published.getResponse().getContentAsByteArray()).get("id").asText();
+		var now = Instant.now();
+		moveAppointment(fixture.appointmentId(), now.minusSeconds(172_800));
+		var laterSpecialist = UUID.randomUUID();
+		jdbc.sql("""
+				insert into specialist_profile (
+				 account_id, display_name, biography, years_experience, timezone, approval_status,
+				 submitted_at, reviewed_at, reviewed_by
+				) values (:id, 'Later Specialist', 'Reuse test specialist', 3, 'Asia/Ho_Chi_Minh',
+				 'APPROVED', now(), now(), :admin)
+				""").param("id", laterSpecialist).param("admin", UUID.randomUUID()).update();
+		var targetId = laterAppointment(fixture, now.plusSeconds(3_600), "CONFIRMED");
+		jdbc.sql("update appointment set specialist_account_id=:specialist where id=:id")
+				.param("specialist", laterSpecialist).param("id", targetId).update();
+		var path = "/api/v1/specialist/appointments/{appointmentId}/reusable-session-summaries";
+
+		mvc.perform(get(path, targetId).with(specialist(laterSpecialist)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+
+		mvc.perform(put("/api/v1/session-summaries/{id}/reuse-consent", summaryId).with(user(fixture.userId()))
+				.header("If-Match", "\"0\"").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"approved\":true}"))
+				.andExpect(status().isOk());
+		mvc.perform(get(path, targetId).with(specialist(laterSpecialist)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].summary.id").value(summaryId))
+				.andExpect(jsonPath("$.items[0].summary.reuseConsent").doesNotExist())
+				.andExpect(jsonPath("$.items[0].specialistDisplayName").value("Specialist"))
+				.andExpect(jsonPath("$.items[0].sameSpecialist").value(false));
+		mvc.perform(get(path, targetId).with(specialist(fixture.specialistId())))
+				.andExpect(status().isNotFound());
+
+		setTarget(targetId, now.plusSeconds(3_600), "REQUESTED");
+		mvc.perform(get(path, targetId).with(specialist(laterSpecialist)))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("SESSION_SUMMARY_REUSE_NOT_ELIGIBLE"));
+		setTarget(targetId, now.plusSeconds(3_600), "CONFIRMED");
+
+		// An unapproved amendment supersedes the approved earlier version.
+		mvc.perform(publish(fixture, fixture.specialistId(), "summary-reuse-list-2", amendedBody())
+				.header("If-Match", "\"1\"")).andExpect(status().isCreated());
+		mvc.perform(get(path, targetId).with(specialist(laterSpecialist)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+	}
+
+	@Test
 	void concurrentFirstPublicationCreatesOnlyOneVersion() throws Exception {
 		var fixture = completedAppointment();
 		var ready = new CountDownLatch(2);

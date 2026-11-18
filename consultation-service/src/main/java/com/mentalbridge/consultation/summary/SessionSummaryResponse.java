@@ -21,4 +21,11 @@ public record SessionSummaryResponse(UUID id, UUID appointmentId, UUID userAccou
 
 	public record ListResponse(List<SessionSummaryResponse> items, int count, Instant generatedAt) {
 	}
+
+	public record ReusableItem(SessionSummaryResponse summary, Instant sessionStartedAt,
+			String specialistDisplayName, boolean sameSpecialist) {
+	}
+
+	public record ReusableListResponse(List<ReusableItem> items, int count, Instant generatedAt) {
+	}
 }
