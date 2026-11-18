@@ -211,8 +211,16 @@ const configuration = () =>
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
   });
-void test("Agent speech-unit opt-in requires a measurement policy before registration", () => {
+void test("Agent speech-unit opt-in requires a pilot but permits an unmeasured claim", () => {
   assert.equal(configuration().speechUnitsEnabled, false);
+  assert.equal(
+    loadConfiguration({
+      AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+      AI_VOICE_PILOT: "true",
+      AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+    }).measurementPolicyHash,
+    null,
+  );
   assert.equal(
     loadConfiguration({
       AI_VOICE_SPEECH_UNITS_ENABLED: "true",
@@ -230,6 +238,47 @@ void test("Agent speech-unit opt-in requires a measurement policy before registr
     () => loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "invalid" }),
     AgentFailure,
   );
+});
+void test("plain pilot claim omits measurement hash and rejects an unexpected campaign", async () => {
+  const config = loadConfiguration({
+    AI_VOICE_JOURNAL_SERVICE_TOKEN:
+      "synthetic-worker-service-credential-32-chars",
+    AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+    AI_VOICE_PILOT: "true",
+    AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  });
+  for (const unexpected of [false, true]) {
+    const client = new JournalClient(config, (_url, init) => {
+      const request = JSON.parse(init?.body as string) as {
+        measurementHash?: string;
+      };
+      assert.equal(request.measurementHash, undefined);
+      return Promise.resolve(
+        Response.json(
+          {
+            voiceSessionId: dispatch.voiceSessionId,
+            attemptId: dispatch.attemptId,
+            leaseId: randomUUID(),
+            validUntil: new Date(Date.now() + 9000).toISOString(),
+            hardStopAt: new Date(Date.now() + 90000).toISOString(),
+            policyVersion,
+            ...(unexpected
+              ? {
+                  measurement: {
+                    configHash: "h".repeat(43),
+                    ttsCharacters: 500,
+                    voiceId: config.voiceId,
+                  },
+                }
+              : {}),
+          },
+          { headers: { "cache-control": "no-store" } },
+        ),
+      );
+    });
+    if (unexpected) await assert.rejects(client.claim(dispatch), AgentFailure);
+    else assert.equal((await client.claim(dispatch)).measurement, undefined);
+  }
 });
 void test("measurement claim binds Agent policy and effective TTS reservation before media with one request", async () => {
   const configHash = "h".repeat(43);

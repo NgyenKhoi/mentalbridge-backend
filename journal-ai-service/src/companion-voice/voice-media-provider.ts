@@ -68,9 +68,19 @@ export interface VoiceMediaDiagnostic extends Partial<VoiceHttpDiagnostic> {
   authorizationId?: string;
   turnId?: string | undefined;
   turnSequence?: number | undefined;
-  operation: "ROOMS" | "DISPATCHES" | "PARTICIPANTS";
+  operation:
+    | "ROOMS"
+    | "DISPATCHES"
+    | "PARTICIPANTS"
+    | "PRESENCE"
+    | "CREATE_ROOM"
+    | "CREATE_DISPATCH";
   elapsedMs: number;
   outcome: "SUCCESS" | "FAILED";
+  roomExists?: boolean;
+  ownerConnected?: boolean;
+  agentConnected?: boolean;
+  agentAudioPublished?: boolean;
 }
 
 export interface VoiceMediaProvider {
@@ -223,44 +233,58 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
 
   createRoom(reference: VoiceMediaReference): Promise<void> {
     return this.safe(reference, async () => {
-      const room = await this.rooms.createRoom({
-        name: reference.roomName,
-        maxParticipants: 2,
-        emptyTimeout: 45,
-        departureTimeout: 30,
-        metadata: reference.dispatchId,
-        agents: [],
-      });
-      if (
-        room.name !== reference.roomName ||
-        room.metadata !== reference.dispatchId
-      )
-        throw new VoiceMediaError();
-      if (room.activeRecording) {
-        await this.stop(reference);
-        throw new VoiceMediaError();
-      }
+      await this.inspectRead(
+        reference,
+        "CREATE_ROOM",
+        async () => {
+          const room = await this.rooms.createRoom({
+            name: reference.roomName,
+            maxParticipants: 2,
+            emptyTimeout: 45,
+            departureTimeout: 30,
+            metadata: reference.dispatchId,
+            agents: [],
+          });
+          if (
+            room.name !== reference.roomName ||
+            room.metadata !== reference.dispatchId
+          )
+            throw new VoiceMediaError();
+          if (room.activeRecording) {
+            await this.stop(reference);
+            throw new VoiceMediaError();
+          }
+        },
+        { purpose: "UNSCOPED", inspectionId: randomUUID() },
+      );
     });
   }
 
   dispatch(reference: VoiceMediaReference): Promise<string> {
     return this.safe(reference, async () => {
-      const value = await this.agents.createDispatch(
-        reference.roomName,
-        this.configuration.agentName,
-        {
-          metadata: dispatchMetadata(reference),
-          restartPolicy: JobRestartPolicy.JRP_NEVER,
+      return this.inspectRead(
+        reference,
+        "CREATE_DISPATCH",
+        async () => {
+          const value = await this.agents.createDispatch(
+            reference.roomName,
+            this.configuration.agentName,
+            {
+              metadata: dispatchMetadata(reference),
+              restartPolicy: JobRestartPolicy.JRP_NEVER,
+            },
+          );
+          if (
+            value.room !== reference.roomName ||
+            value.agentName !== this.configuration.agentName ||
+            value.metadata !== dispatchMetadata(reference) ||
+            !value.id
+          )
+            throw new VoiceMediaError();
+          return value.id;
         },
+        { purpose: "UNSCOPED", inspectionId: randomUUID() },
       );
-      if (
-        value.room !== reference.roomName ||
-        value.agentName !== this.configuration.agentName ||
-        value.metadata !== dispatchMetadata(reference) ||
-        !value.id
-      )
-        throw new VoiceMediaError();
-      return value.id;
     });
   }
 
@@ -296,13 +320,13 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
       const rooms = await roomRead;
       const room = rooms.find((value) => value.name === reference.roomName);
       if (!room)
-        return {
+        return this.presence(reference, identity, {
           roomExists: false,
           providerDispatchId: null,
           ownerConnected: false,
           agentConnected: false,
           agentAudioPublished: false,
-        };
+        });
       if (room.metadata !== reference.dispatchId) throw new VoiceMediaError();
       if (room.activeRecording) {
         await this.stop(reference);
@@ -330,7 +354,7 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
           value.metadata === dispatchMetadata(reference),
       );
       if (matching.length > 1) throw new VoiceMediaError();
-      return {
+      return this.presence(reference, identity, {
         roomExists: true,
         providerDispatchId: matching[0]?.id ?? null,
         ownerConnected: participants.some(
@@ -351,8 +375,34 @@ export class LiveKitVoiceMedia implements VoiceMediaProvider {
               (track) => track.type === TrackType.AUDIO && !track.muted,
             ),
         ),
-      };
+      });
     });
+  }
+
+  private presence(
+    reference: VoiceMediaReference,
+    identity: Pick<
+      VoiceMediaDiagnostic,
+      "inspectionId" | "purpose" | "authorizationId" | "turnId" | "turnSequence"
+    >,
+    observed: VoiceMediaInspection,
+  ): VoiceMediaInspection {
+    try {
+      this.diagnostic?.({
+        ...identity,
+        attemptId: reference.attemptId,
+        operation: "PRESENCE",
+        elapsedMs: 0,
+        outcome: "SUCCESS",
+        roomExists: observed.roomExists,
+        ownerConnected: observed.ownerConnected,
+        agentConnected: observed.agentConnected,
+        agentAudioPublished: observed.agentAudioPublished,
+      });
+    } catch {
+      return observed;
+    }
+    return observed;
   }
 
   connection(

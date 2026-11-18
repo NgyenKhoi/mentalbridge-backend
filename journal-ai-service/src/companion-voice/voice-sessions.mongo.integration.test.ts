@@ -159,6 +159,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
     let consentDecisionAge = 0;
     let entitlementDecisionAge = 0;
     const media = new SyntheticMedia();
+    const diagnostics: { outcome: string; stage?: string }[] = [];
     const secret = Buffer.alloc(32, 72);
     const checks: string[] = [];
     const build = (client: MongoClient) => {
@@ -222,6 +223,8 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
           media,
           secret,
           clock,
+          (outcome, stage) =>
+            diagnostics.push({ outcome, ...(stage ? { stage } : {}) }),
         ),
       };
     };
@@ -274,6 +277,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       media,
       clock,
       checks,
+      diagnostics,
       current,
       document,
       signal,
@@ -856,6 +860,10 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       const f = await fixture();
       f.media.failDispatch = true;
       await assert.rejects(f.start(), VoiceMediaError);
+      assert.deepEqual(f.diagnostics[0], {
+        outcome: "VOICE_ESTABLISHMENT_FAILED",
+        stage: "CREATE_DISPATCH",
+      });
       const doc = (await f.store.pending(f.clock()))[0];
       assert.ok(doc);
       assert.equal(doc.phase, "DISPATCHING");
@@ -946,7 +954,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
   );
 
   await t.test(
-    "a pre-ready heartbeat renews checked authority without activating input or bypassing consent",
+    "a late-owner heartbeat activates after checked presence and cannot bypass consent",
     async () => {
       const f = await fixture();
       const started = await f.start();
@@ -973,7 +981,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
       assert.equal(heartbeat.action, "CONTINUE");
       assert.equal(f.checks.length, checks + 1);
       session = await f.current(session.voiceSessionId);
-      assert.equal(session.state, "CONNECTING");
+      assert.equal(session.state, "ACTIVE");
       assert.ok((session.leaseExpiresAt?.getTime() ?? 0) > originalLease);
       assert.equal(session.activeMilliseconds, 0);
       await f.service.control(
@@ -1000,6 +1008,40 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
         "FAILED",
       );
       assert.equal(revoked.media.rooms.size, 0);
+    },
+  );
+
+  await t.test(
+    "owner joining after MEDIA_READY activates on the next heartbeat only",
+    async () => {
+      const f = await fixture();
+      const started = await f.start();
+      const session = await f.claim(started.voiceSessionId);
+      f.media.ownerConnected = false;
+      await f.service.control(
+        session.voiceSessionId,
+        f.signal(session, 1, "MEDIA_READY"),
+        randomUUID(),
+      );
+      assert.equal(
+        (await f.current(session.voiceSessionId)).state,
+        "CONNECTING",
+      );
+      f.media.ownerConnected = true;
+      const heartbeat = f.signal(
+        await f.current(session.voiceSessionId),
+        2,
+        "HEARTBEAT",
+      );
+      await f.service.control(session.voiceSessionId, heartbeat, randomUUID());
+      assert.equal((await f.current(session.voiceSessionId)).state, "ACTIVE");
+      const replayed = await f.service.control(
+        session.voiceSessionId,
+        heartbeat,
+        randomUUID(),
+      );
+      assert.equal(replayed.action, "CONTINUE");
+      assert.equal((await f.current(session.voiceSessionId)).state, "ACTIVE");
     },
   );
 

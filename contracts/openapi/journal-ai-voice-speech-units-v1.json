@@ -3,7 +3,7 @@
   "info": {
     "title": "MentalBridge Internal Voice Speech Units",
     "version": "1.0.0",
-    "description": "Prospective independently publishable speech-unit policy for MB-854 review. Default OFF, measurement-only. This changes the all-or-nothing END_TURN publication guarantee only when separately reviewed and enabled. Raw model tokens are never publishable. Existing public Voice/Text contracts remain unchanged. The in-repository ai-voice-agent is the sole consumer."
+    "description": "Prospective independently publishable speech-unit policy for MB-854 and MB-871 review. Default OFF. Requires either a bound measurement profile or a configured bounded plain pilot. This changes the all-or-nothing END_TURN publication guarantee only when separately reviewed and enabled. Raw model tokens are never publishable. Existing public Voice/Text contracts remain unchanged. The in-repository ai-voice-agent is the sole consumer."
   },
   "servers": [
     {
@@ -26,7 +26,7 @@
       "post": {
         "x-mentalbridge-status": "implemented",
         "operationId": "generateVoiceSpeechUnitsV1",
-        "description": "One counted/idempotency-fenced provider turn, no retry. Requires both feature flags, approved Bedrock measurement profile and matching Agent capability. Response is one incrementally transferred JSON array, not WebSocket/SSE. Each complete SPEECH_UNIT follows schema/safety including cumulative-prefix checks, fresh publication authorization, a durable conservative 500-character reservation shared by all units of this turn, reply registration and state recheck. Two units/500 combined characters maximum. The server waits for the previous unit's exact playback ACK before authorizing another. COMPLETED requires the outer model END_TURN, complete schema/usage and EOF. Later abnormal completion sends FAILED and cancels future audio; already heard audio cannot be recalled.",
+        "description": "One counted/idempotency-fenced provider turn, no retry. Requires both feature flags, approved Bedrock ConverseStream, a valid plain pilot or bound measurement profile, and matching Agent capability. Response is one incrementally transferred JSON array, not WebSocket/SSE. Each complete SPEECH_UNIT follows schema/safety including cumulative-prefix checks, fresh publication authorization, reply registration and state recheck. Measured mode reserves a durable conservative 500 campaign TTS characters shared by all units of this turn; plain mode has no campaign reservation and retains the 500 combined-character field limit plus Agent pilot TTS budget. Two units/500 combined characters maximum. The server waits for the previous unit's exact playback ACK before authorizing another. COMPLETED requires the outer model END_TURN, complete schema/usage and EOF. Later abnormal completion sends FAILED and cancels future audio; already heard audio cannot be recalled.",
         "parameters": [
           {
             "$ref": "#/components/parameters/Capability"
@@ -395,6 +395,7 @@
             "const": "companion-voice-speech-unit-v1"
           },
           "reservedCharacters": {
+            "description": "Conservative 500-character turn envelope. It is a durable campaign TTS reservation only when the session has a bound measurement profile; in a plain pilot it is the same wire field and combined-output limit without a campaign reservation.",
             "const": 500
           }
         }

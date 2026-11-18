@@ -72,6 +72,7 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
     @Autowired JdbcClient jdbc;
     @Autowired ObjectMapper json;
     @Autowired SubscriptionBillingService billing;
+    @Autowired SubscriptionCancellationService cancellations;
     @Autowired CollectPaymentGateway collectGateway;
     @Autowired PayosPaymentWebhookService webhooks;
     @Autowired ServiceCreditService credits;
@@ -132,6 +133,40 @@ class PayosPaymentIntegrationTests extends ConsultationTestProperties {
         assertThat(jdbc.sql("select count(*) from service_credit_ledger where account_id=:id and event_type='PROVISIONED'")
                 .param("id", payment.userId()).query(Long.class).single()).isEqualTo(4);
     }
+
+	@Test
+	void cancellationSerializesAgainstPendingPayosUpgradeSettlement() throws Exception {
+		var plus = checkout(PLUS);
+		send(event(plus, "cancel-race-plus"), 204);
+		var upgrade = checkout(plus.userId(), PREMIUM);
+		var start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var cancellation = executor.submit(() -> {
+				start.await();
+				return cancellations.cancel(plus.userId(), plus.original().subscriptionId(),
+						"payos-cancel-race-" + UUID.randomUUID());
+			});
+			var settlementAttempt = executor.submit(() -> {
+				start.await();
+				send(event(upgrade, "cancel-race-upgrade"), 204);
+				return true;
+			});
+			start.countDown();
+			assertThat(cancellation.get(30, TimeUnit.SECONDS).status()).isEqualTo("CANCELLED");
+			assertThat(settlementAttempt.get(30, TimeUnit.SECONDS)).isTrue();
+		}
+		assertThat(jdbc.sql("select status from user_subscription where id=:id")
+				.param("id", plus.original().subscriptionId()).query(String.class).single()).isEqualTo("CANCELLED");
+		assertThat(jdbc.sql("select count(*) from current_service_entitlement where account_id=:owner")
+				.param("owner", plus.userId()).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("""
+				select count(*) from service_credit c join service_credit_period p on p.id=c.period_id
+				 where p.account_id=:owner and c.state in ('AVAILABLE','HELD','UPGRADE_HELD')
+				""").param("owner", plus.userId()).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select status from payment_transaction where id=:id")
+				.param("id", upgrade.original().paymentId()).query(String.class).single())
+				.isIn("FAILED", "SUCCEEDED");
+	}
 
     @Test
     void payosCheckoutDurablyPreparesProviderIdentityThenPersistsQrAndReplaysWithoutResubmission() {

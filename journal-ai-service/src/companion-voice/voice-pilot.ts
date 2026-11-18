@@ -18,11 +18,14 @@ export const voicePilotSchema = z
     return duration > 0 && duration <= 86_400_000;
   }, "Pilot window must be positive and at most 24 hours")
   .refine(
+    (value) => new Set(value.ownerIds).size === value.ownerIds.length,
+    "Pilot owner IDs must be unique",
+  )
+  .refine(
     (value) =>
       !value.measurement ||
       (value.endsAt.getTime() - value.startsAt.getTime() <= 1_800_000 &&
         (value.maxOutputTokens ?? 300) === 300 &&
-        new Set(value.ownerIds).size === value.ownerIds.length &&
         value.ownerIds.length <= value.measurement.maxSessions),
     "Measurement configuration must retain approved bounded limits",
   );

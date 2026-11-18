@@ -16,35 +16,53 @@ class PaymentSettlementService {
     private static final String PAYMENT_SELECT = """
             select pt.id, pt.subscription_id, pt.target_plan_version_id, pt.momo_request_id,
              pt.amount_minor, pt.status, pt.purpose, pt.expires_at, pt.momo_response_time_epoch_ms,
-             pt.payment_provider, pt.order_code, pt.payos_payment_link_id, s.user_id
+             pt.payment_provider, pt.order_code, pt.payos_payment_link_id, s.user_id,
+             s.status as subscription_status
             from payment_transaction pt join user_subscription s on s.id=pt.subscription_id
             """;
     private final JdbcClient jdbc;
     private final ServiceCreditService credits;
+    private final CommercialAccountLock accountLock;
 
-    PaymentSettlementService(JdbcClient jdbc, ServiceCreditService credits) {
+    PaymentSettlementService(JdbcClient jdbc, ServiceCreditService credits, CommercialAccountLock accountLock) {
         this.jdbc = jdbc;
         this.credits = credits;
+        this.accountLock = accountLock;
     }
 
     Payment lock(UUID paymentId) {
+        if (!lockOwner("pt.id=:id", "id", paymentId)) return null;
         return jdbc.sql(PAYMENT_SELECT + " where pt.id=:id for update of pt")
                 .param("id", paymentId).query(this::payment).optional().orElse(null);
     }
 
     Payment lockPayos(long orderCode) {
+        if (!lockOwner("pt.payment_provider='PAYOS' and pt.order_code=:code", "code", orderCode)) return null;
         return jdbc.sql(PAYMENT_SELECT + " where pt.payment_provider='PAYOS' and pt.order_code=:code for update of pt")
                 .param("code", orderCode).query(this::payment).optional().orElse(null);
     }
 
     Payment lockMomo(String orderId) {
+        if (!lockOwner("pt.payment_provider in ('MOMO','FAKE') and pt.momo_order_id=:id", "id", orderId)) return null;
         return jdbc.sql(PAYMENT_SELECT + " where pt.payment_provider in ('MOMO','FAKE') and pt.momo_order_id=:id for update of pt")
                 .param("id", orderId).query(this::payment).optional().orElse(null);
+    }
+
+    private boolean lockOwner(String predicate, String parameter, Object value) {
+        var owner = jdbc.sql("""
+                select s.user_id from payment_transaction pt
+                join user_subscription s on s.id=pt.subscription_id where
+                """ + predicate).param(parameter, value).query(UUID.class).optional();
+        if (owner.isEmpty()) return false;
+        accountLock.lock(owner.orElseThrow());
+        return true;
     }
 
     boolean succeed(Payment payment, Instant now) {
         if (payment == null || !"PENDING".equals(payment.status())
                 || (!"PAYOS".equals(payment.provider()) && !payment.expiresAt().isAfter(now))) return false;
+		var expectedSubscriptionStatus = "PURCHASE".equals(payment.purpose()) ? "PENDING_PAYMENT" : "ACTIVE";
+		if (!expectedSubscriptionStatus.equals(payment.subscriptionStatus())) return false;
         var changed = jdbc.sql("""
                 update payment_transaction set status='SUCCEEDED', terminal_reason=null, paid_at=:now,
                   updated_at=:now, version=version+1 where id=:id and status='PENDING'
@@ -64,12 +82,14 @@ class PaymentSettlementService {
 		}
 		var plan = plan(payment.targetPlanVersionId());
 		var periodEnd = OffsetDateTime.ofInstant(now, ZoneOffset.UTC).plusMonths(plan.billingMonths()).toInstant();
-		jdbc.sql("""
+		var subscriptionChanged = jdbc.sql("""
 				update user_subscription set plan_version_id=:planVersionId, status='ACTIVE',
 				 current_period_start=:now, current_period_end=:periodEnd, ended_at=null,
-				 updated_at=:now, version=version+1 where id=:id
+				 updated_at=:now, version=version+1 where id=:id and status=:expectedStatus
 				""").param("planVersionId", plan.id()).param("now", databaseInstant(now))
-				.param("periodEnd", databaseInstant(periodEnd)).param("id", payment.subscriptionId()).update();
+				.param("periodEnd", databaseInstant(periodEnd)).param("id", payment.subscriptionId())
+				.param("expectedStatus", expectedSubscriptionStatus).update();
+		if (subscriptionChanged != 1) throw new IllegalStateException("Subscription changed during payment settlement");
 		jdbc.sql("""
 				insert into subscription_status_history (id, subscription_id, from_status, to_status, reason_code, changed_at)
 				values (:id, :subscriptionId, :fromStatus, 'ACTIVE', :reason, :now)
@@ -145,7 +165,8 @@ class PaymentSettlementService {
                 row.getLong("amount_minor"), row.getString("status"), row.getString("purpose"),
                 row.getTimestamp("expires_at").toInstant(), nullableLong(row, "momo_response_time_epoch_ms"),
                 row.getObject("user_id", UUID.class), row.getString("payment_provider"),
-                nullableLong(row, "order_code"), row.getString("payos_payment_link_id"));
+                nullableLong(row, "order_code"), row.getString("payos_payment_link_id"),
+				row.getString("subscription_status"));
     }
 
     private Long nullableLong(java.sql.ResultSet row, String column) throws java.sql.SQLException {
@@ -156,6 +177,6 @@ class PaymentSettlementService {
     private OffsetDateTime databaseInstant(Instant value) { return OffsetDateTime.ofInstant(value, ZoneOffset.UTC); }
     record Payment(UUID id, UUID subscriptionId, UUID targetPlanVersionId, String requestId, long amount,
             String status, String purpose, Instant expiresAt, Long responseTime, UUID userId,
-            String provider, Long orderCode, String paymentLinkId) { }
+            String provider, Long orderCode, String paymentLinkId, String subscriptionStatus) { }
     private record Plan(UUID id, String planCode, int billingMonths) { }
 }

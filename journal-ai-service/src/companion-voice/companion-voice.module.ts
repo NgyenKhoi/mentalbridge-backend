@@ -125,8 +125,12 @@ export const registerCompanionVoiceModule = (
   const logger = createLogger(configuration);
   const telemetry =
     dependencies.telemetry ??
-    ((outcome: string) => {
-      logger.info({ event: "voice_access", outcome });
+    ((outcome: string, stage?: string) => {
+      logger.info({
+        event: "voice_access",
+        outcome,
+        ...(stage ? { stage } : {}),
+      });
     });
   const service = new VoiceAccessService(
     ledger,

@@ -74,6 +74,15 @@ void test("independent speech contract and its configuration gate are reviewable
       ...approved,
       JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
       JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
+      JOURNAL_AI_VOICE_PILOT: JSON.stringify(pilotWindow),
+    }).VOICE_SPEECH_UNITS_ENABLED,
+    true,
+  );
+  assert.equal(
+    loadConfiguration({
+      ...approved,
+      JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
       JOURNAL_AI_VOICE_PILOT: JSON.stringify({
         ...pilotWindow,
         measurement: {
@@ -98,6 +107,22 @@ void test("independent speech contract and its configuration gate are reviewable
     { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "yes" },
   ])
     assert.throws(() => loadConfiguration({ ...approved, ...env }));
+  for (const value of [
+    {
+      ...pilotWindow,
+      ownerIds: [pilotWindow.ownerIds[0], pilotWindow.ownerIds[0]],
+    },
+    { ...pilotWindow, endsAt: "2026-11-17T00:00:01.000Z" },
+    { ...pilotWindow, endsAt: pilotWindow.startsAt },
+  ])
+    assert.throws(() =>
+      loadConfiguration({
+        ...approved,
+        JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
+        JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
+        JOURNAL_AI_VOICE_PILOT: JSON.stringify(value),
+      }),
+    );
 });
 void test("measurement snapshot reports effective fixed allocations instead of the larger pilot values", () => {
   const config = loadConfiguration({

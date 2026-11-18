@@ -3,8 +3,9 @@
 MB-854 speech units use the independently versioned
 [internal JSON contract](../contracts/openapi/journal-ai-voice-speech-units-v1.json).
 `AI_VOICE_SPEECH_UNITS_ENABLED=false` stays OFF until source/policy review,
-deployment preflight and a separate live window. Opt-in requires the bound
-measurement hash; Journal must enable the matching mode or reject the claim.
+deployment preflight and a separate live window. Opt-in requires pilot mode and
+the existing voice/model pins. A bound measurement hash is required only for a
+measured campaign; Journal rejects an unexpected or mismatched claim.
 The client reads complete authorized objects incrementally, plays one unit at a
 time, ACKs successful complete playback and cancels the exact provider turn on
 barge-in. No retry/fallback, text/audio persistence or raw token speech is added.

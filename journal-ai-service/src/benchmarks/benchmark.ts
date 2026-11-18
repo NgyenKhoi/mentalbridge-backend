@@ -24,7 +24,7 @@ import {
   type NormalizedExactRevision,
 } from "../prompts/exact-revision.js";
 
-const benchmarkCaseSchema = z
+export const benchmarkCaseSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9-]{1,64}$/),
     text: z.string().min(1).max(10_000),
@@ -34,7 +34,7 @@ const benchmarkCaseSchema = z
   })
   .strict();
 
-const benchmarkDatasetSchema = z
+export const benchmarkDatasetSchema = z
   .object({
     datasetId: z.string().regex(/^[A-Za-z0-9._-]{1,96}$/),
     version: z.string().regex(/^[A-Za-z0-9._-]{1,32}$/),
@@ -61,6 +61,19 @@ const benchmarkDatasetSchema = z
 
 export type BenchmarkCase = z.infer<typeof benchmarkCaseSchema>;
 export type BenchmarkDataset = z.infer<typeof benchmarkDatasetSchema>;
+
+export const BENCHMARK_RUBRIC_VERSION = "exact-revision-rubric-v1";
+export const BENCHMARK_RUBRIC_SHA256 = createHash("sha256")
+  .update(
+    JSON.stringify({
+      version: BENCHMARK_RUBRIC_VERSION,
+      actionWeight: 0.5,
+      signalCoverageWeight: 0.5,
+      signalCoveragePassThreshold: 0.5,
+      forbiddenClaimsPolicy: "ALL_MUST_BE_ABSENT",
+    }),
+  )
+  .digest("hex");
 
 export interface BenchmarkEvaluation {
   readonly normalizedOutput: NormalizedExactRevision;
@@ -136,6 +149,8 @@ interface BenchmarkRunDocument {
   datasetVersion: string;
   datasetSha256: string;
   promptVersion: string;
+  rubricVersion: string;
+  rubricSha256: string;
   schemaVersion: 1;
   status: "RUNNING" | "COMPLETED" | "FAILED";
   candidates: {
@@ -147,6 +162,8 @@ interface BenchmarkRunDocument {
   aggregates?: BenchmarkAggregate[];
   startedAt: Date;
   completedAt: Date | null;
+  failureClassification?:
+    "ALL_CASES_PROVIDER_FAILED" | "EXECUTION_FAILED" | null;
 }
 
 interface BenchmarkCaseResultDocument {
@@ -156,6 +173,8 @@ interface BenchmarkCaseResultDocument {
   provider: Exclude<AiProviderId, "DETERMINISTIC_FAKE">;
   model: string;
   promptVersion: string;
+  rubricVersion: string;
+  rubricSha256: string;
   schemaVersion: 1;
   status: "SUCCEEDED" | "FAILED";
   errorClassification: string | null;
@@ -204,6 +223,9 @@ export interface BenchmarkFailureDiagnostic {
 
 export interface BenchmarkRunResult {
   readonly runId: string;
+  readonly status: "COMPLETED" | "FAILED";
+  readonly failureClassification:
+    "ALL_CASES_PROVIDER_FAILED" | "EXECUTION_FAILED" | null;
   readonly aggregates: BenchmarkAggregate[];
   readonly failures: BenchmarkFailureDiagnostic[];
 }
@@ -385,6 +407,14 @@ export class BenchmarkRunner {
       new Promise((resolveWait) => {
         setTimeout(resolveWait, milliseconds);
       }),
+    private readonly datasetLoader?: () => Promise<{
+      dataset: BenchmarkDataset;
+      sha256: string;
+    }>,
+    private readonly acceptedRun?: Readonly<{
+      runId: string;
+      precreated: boolean;
+    }>,
   ) {
     this.client = new MongoClient(configuration.MONGODB_URI, {
       serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
@@ -403,7 +433,7 @@ export class BenchmarkRunner {
     const candidates = buildBenchmarkCandidates(this.configuration);
     const { dataset, sha256 } = await this.loadDataset();
     await this.client.connect();
-    const runId = randomUUID();
+    const runId = this.acceptedRun?.runId ?? randomUUID();
     try {
       const now = new Date();
       const datasetDocumentId = `${dataset.datasetId}:${dataset.version}`;
@@ -432,25 +462,29 @@ export class BenchmarkRunner {
         },
         { upsert: true },
       );
-      await this.runs.insertOne({
-        _id: runId,
-        datasetId: dataset.datasetId,
-        datasetVersion: dataset.version,
-        datasetSha256: sha256,
-        promptVersion: EXACT_REVISION_PROMPT_VERSION,
-        schemaVersion: 1,
-        status: "RUNNING",
-        candidates: candidates.map(({ route }) => ({
-          provider: route.provider,
-          model: route.model,
-          inputCostMicroUsdPerMillionTokens:
-            route.inputCostMicroUsdPerMillionTokens,
-          outputCostMicroUsdPerMillionTokens:
-            route.outputCostMicroUsdPerMillionTokens,
-        })),
-        startedAt: now,
-        completedAt: null,
-      });
+      if (!this.acceptedRun?.precreated)
+        await this.runs.insertOne({
+          _id: runId,
+          datasetId: dataset.datasetId,
+          datasetVersion: dataset.version,
+          datasetSha256: sha256,
+          promptVersion: EXACT_REVISION_PROMPT_VERSION,
+          rubricVersion: BENCHMARK_RUBRIC_VERSION,
+          rubricSha256: BENCHMARK_RUBRIC_SHA256,
+          schemaVersion: 1,
+          status: "RUNNING",
+          candidates: candidates.map(({ route }) => ({
+            provider: route.provider,
+            model: route.model,
+            inputCostMicroUsdPerMillionTokens:
+              route.inputCostMicroUsdPerMillionTokens,
+            outputCostMicroUsdPerMillionTokens:
+              route.outputCostMicroUsdPerMillionTokens,
+          })),
+          startedAt: now,
+          completedAt: null,
+          failureClassification: null,
+        });
       const aggregates: BenchmarkAggregate[] = [];
       const failures: BenchmarkFailureDiagnostic[] = [];
       for (const candidate of candidates) {
@@ -463,22 +497,36 @@ export class BenchmarkRunner {
         }
         aggregates.push(aggregate(candidate, outcomes));
       }
+      const allCasesFailed = aggregates.every(
+        (candidateAggregate) => candidateAggregate.successCount === 0,
+      );
+      const status = allCasesFailed ? "FAILED" : "COMPLETED";
+      const failureClassification = allCasesFailed
+        ? "ALL_CASES_PROVIDER_FAILED"
+        : null;
       await this.runs.updateOne(
         { _id: runId, status: "RUNNING" },
         {
           $set: {
-            status: "COMPLETED",
+            status,
             aggregates,
             completedAt: new Date(),
+            failureClassification,
           },
         },
       );
-      return { runId, aggregates, failures };
+      return { runId, status, failureClassification, aggregates, failures };
     } catch (error) {
       try {
         await this.runs.updateOne(
           { _id: runId, status: "RUNNING" },
-          { $set: { status: "FAILED", completedAt: new Date() } },
+          {
+            $set: {
+              status: "FAILED",
+              completedAt: new Date(),
+              failureClassification: "EXECUTION_FAILED",
+            },
+          },
         );
       } catch {
         // Preserve the original benchmark/setup failure.
@@ -493,6 +541,7 @@ export class BenchmarkRunner {
     dataset: BenchmarkDataset;
     sha256: string;
   }> {
+    if (this.datasetLoader) return this.datasetLoader();
     const bytes = await readFile(
       resolve(this.configuration.BENCHMARK_DATASET_PATH),
     );
@@ -520,6 +569,8 @@ export class BenchmarkRunner {
       >,
       model: candidate.route.model,
       promptVersion: EXACT_REVISION_PROMPT_VERSION,
+      rubricVersion: BENCHMARK_RUBRIC_VERSION,
+      rubricSha256: BENCHMARK_RUBRIC_SHA256,
       schemaVersion: 1 as const,
       requiredSignalTerms: benchmarkCase.requiredSignalTerms.length,
       createdAt: new Date(),
