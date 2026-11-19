@@ -377,6 +377,62 @@ void test("runs a consented exact revision and persists only normalized output",
   );
 });
 
+void test("normalizes Bedrock length and array overflow before exact-revision validation", async () => {
+  const value = subject(
+    new SequenceConsent([granted, granted, granted]),
+    new SequenceProvider([
+      {
+        ...normalized,
+        summary: "x".repeat(801),
+        sentiment: "Cảm xúc rất dài ".repeat(4),
+        modelConfidence: 1.2,
+        contextSignals: [
+          "  ",
+          `  ${"a".repeat(70)}  `,
+          ...Array.from({ length: 13 }, () => "  work  "),
+        ],
+        suggestedAction: " NONE ",
+      },
+    ]),
+  );
+  await value.service.create(request(), journalId, "1");
+  await waitForTerminal(value.repository);
+  assert.equal(value.repository.jobs[0]?.status, "SUCCEEDED");
+  const result = value.repository.results[0]?.result;
+  assert.ok(result);
+  assert.equal(result.summary, undefined);
+  assert.equal(result.sentiment, undefined);
+  assert.equal(result.modelConfidence, undefined);
+  assert.equal(result.contextSignals.length, 12);
+  assert.equal(result.contextSignals[0], "a".repeat(64));
+  assert.equal(result.contextSignals[1], "work");
+  assert.equal(result.suggestedAction, "NONE");
+});
+
+void test("rejects an invalid suggested action with paths and codes only", async () => {
+  const value = subject(
+    new SequenceConsent([granted, granted, granted]),
+    new SequenceProvider([{ ...normalized, suggestedAction: "UNSAFE_ACTION" }]),
+  );
+  const warnings: unknown[] = [];
+  Object.assign(value.worker, {
+    logger: { warn: (warning: unknown) => warnings.push(warning) },
+  });
+  await value.service.create(request(), journalId, "1");
+  await waitForTerminal(value.repository);
+  assert.equal(
+    value.repository.jobs[0]?.terminalReason,
+    "INVALID_PROVIDER_RESULT",
+  );
+  assert.equal(value.provider.calls, 1);
+  assert.deepEqual(warnings, [
+    {
+      event: "analysis_provider_result_invalid",
+      issues: [{ path: ["suggestedAction"], code: "invalid_value" }],
+    },
+  ]);
+});
+
 void test("retries one eligible provider failure and returns the same idempotent job", async () => {
   const provider = new SequenceProvider([
     new ProviderFailure("RETRYABLE", "UNAVAILABLE"),

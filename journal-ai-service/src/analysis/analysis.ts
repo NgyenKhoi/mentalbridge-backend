@@ -48,6 +48,7 @@ import {
 import { createLogger } from "../observability/logger.js";
 import {
   normalizedExactRevisionSchema,
+  normalizeExactRevisionOutput,
   type NormalizedExactRevision,
 } from "../prompts/exact-revision.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
@@ -821,8 +822,17 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
       const analysis = await this.withTimeout(
         this.provider.analyze(source.text, route),
       );
-      const parsed = normalizedExactRevisionSchema.safeParse(analysis.output);
+      const parsed = normalizedExactRevisionSchema.safeParse(
+        normalizeExactRevisionOutput(analysis.output),
+      );
       if (!parsed.success) {
+        this.logger.warn({
+          event: "analysis_provider_result_invalid",
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path,
+            code: issue.code,
+          })),
+        });
         await this.finishFailure(activeJob, "INVALID_PROVIDER_RESULT");
         return;
       }
