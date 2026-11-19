@@ -47,6 +47,7 @@ import {
 import { createLogger } from "../observability/logger.js";
 import {
   normalizedLongitudinalSchema,
+  normalizeLongitudinalOutput,
   type LongitudinalPromptCoverage,
   type LongitudinalPromptSource,
   type LongitudinalPromptVersion,
@@ -741,8 +742,17 @@ export class LongitudinalAnalysisWorker
       const analysis = await this.withTimeout(
         this.provider.analyze(source.sources, job.dataCoverage, route),
       );
-      const parsed = normalizedLongitudinalSchema.safeParse(analysis.output);
+      const parsed = normalizedLongitudinalSchema.safeParse(
+        normalizeLongitudinalOutput(analysis.output),
+      );
       if (!parsed.success) {
+        this.logger.warn({
+          event: "longitudinal_provider_result_invalid",
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path,
+            code: issue.code,
+          })),
+        });
         await this.finishFailure(activeJob, "INVALID_PROVIDER_RESULT");
         return;
       }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeSignals } from "./normalize-signals.js";
 
 export const EXACT_REVISION_PROMPT_VERSION = "exact-revision-v2";
 
@@ -113,7 +114,34 @@ export const exactRevisionPrompt = (
 export const normalizeExactRevisionOutput = (value: unknown): unknown => {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return value;
-  return Object.fromEntries(
+  const normalized: Record<string, unknown> = Object.fromEntries(
     Object.entries(value).filter(([, fieldValue]) => fieldValue !== null),
   );
+  for (const field of [
+    "contextSignals",
+    "emotionIndicators",
+    "themes",
+    "preferenceSignals",
+    "barrierSignals",
+  ]) {
+    if (field in normalized)
+      normalized[field] = normalizeSignals(normalized[field]);
+  }
+  if (typeof normalized.summary === "string") {
+    const summary = normalized.summary.trim();
+    if (summary.length === 0 || summary.length > 800) delete normalized.summary;
+    else normalized.summary = summary;
+  }
+  if (typeof normalized.sentiment === "string") {
+    const sentiment = normalized.sentiment.trim();
+    if (sentiment.length === 0 || sentiment.length > 32)
+      delete normalized.sentiment;
+    else normalized.sentiment = sentiment;
+  }
+  const confidence = normalized.modelConfidence;
+  if (typeof confidence === "number" && (confidence < 0 || confidence > 1))
+    delete normalized.modelConfidence;
+  if (typeof normalized.suggestedAction === "string")
+    normalized.suggestedAction = normalized.suggestedAction.trim();
+  return normalized;
 };

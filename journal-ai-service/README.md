@@ -1,5 +1,16 @@
 # Journal and AI Service
 
+## Demo fix 2026-11-20: journal analysis output bounds
+
+Exact-revision and longitudinal journal results now trim and bound optional
+provider-generated labels before strict validation. Empty labels are discarded,
+long labels and arrays are capped, and unusable optional exact-revision fields
+are omitted. Unknown fields and invalid action or direction enums still fail
+closed. Validation warnings contain only Zod issue paths and codes; journal text
+and provider output are never logged. Bedrock removes unsupported length and
+array limits from the request schema, so the runtime validator remains the
+authoritative bound. No API, persistence, consent, or provider routing changes.
+
 MB-854 independently publishable speech units are a default-OFF review proposal:
 `JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`. Enabling requires reviewed policy,
 ConverseStream enabled and approved Bedrock. Since MB-891 (owner decision,
