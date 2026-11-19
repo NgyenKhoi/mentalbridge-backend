@@ -60,15 +60,20 @@ describe('specialist notification live eligibility HTTP authorization', () => {
       .expect(200);
     expect(response.body).toEqual({ notificationId });
     expect(response.headers['cache-control']).toBe('private, no-store');
-    expect(eligible).toHaveBeenCalledWith(notificationId, owner);
+    expect(eligible).toHaveBeenCalledWith(notificationId, owner, 'SPECIALIST');
   });
 
-  it('rejects USER and ADMIN roles before any owner query', async () => {
-    for (const role of ['USER', 'ADMIN'])
-      await request(app.getHttpServer())
-        .get(path())
-        .auth(await token(owner, [role]), { type: 'bearer' })
-        .expect(403);
+  it('adopts the exact USER role and rejects ADMIN before an owner query', async () => {
+    await request(app.getHttpServer())
+      .get(path())
+      .auth(await token(owner, ['USER']), { type: 'bearer' })
+      .expect(200);
+    expect(eligible).toHaveBeenCalledWith(notificationId, owner, 'USER');
+    eligible.mockClear();
+    await request(app.getHttpServer())
+      .get(path())
+      .auth(await token(owner, ['ADMIN']), { type: 'bearer' })
+      .expect(403);
     expect(eligible).not.toHaveBeenCalled();
   });
 

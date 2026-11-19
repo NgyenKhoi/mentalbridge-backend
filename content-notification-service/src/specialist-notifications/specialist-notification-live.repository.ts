@@ -7,19 +7,24 @@ import type { SpecialistNotificationLiveClaim } from './specialist-notification-
 
 const ELIGIBILITY = `n.category='APPOINTMENT' AND n.source='CONSULTATION_APPOINTMENT_V1'
   AND n.delivery_state='DELIVERED' AND n.deleted_at IS NULL AND n.expires_at > clock_timestamp()
-  AND p.owner_type='SPECIALIST' AND p.notifications_enabled AND p.channel_in_app_enabled
+  AND p.owner_type=o.recipient_role AND p.notifications_enabled AND p.channel_in_app_enabled
   AND p.group_appointment_message_enabled`;
 
 @Injectable()
 export class SpecialistNotificationLiveRepository {
   constructor(@Inject(DATABASE_SERVICE_TOKEN) private readonly db: DatabaseService) {}
 
-  async eligible(notificationId: string, accountId: string): Promise<string | null> {
+  async eligible(
+    notificationId: string,
+    accountId: string,
+    role: 'SPECIALIST' | 'USER' = 'SPECIALIST',
+  ): Promise<string | null> {
     const result = await this.db.query<{ id: string }>(
       `SELECT n.id FROM notification n
        JOIN notification_preference p ON p.user_id=n.recipient_id
-       WHERE n.id=$1 AND n.recipient_id=$2 AND ${ELIGIBILITY}`,
-      [notificationId, accountId],
+       JOIN specialist_notification_live_outbox o ON o.notification_id=n.id
+       WHERE n.id=$1 AND n.recipient_id=$2 AND o.recipient_role=$3 AND ${ELIGIBILITY}`,
+      [notificationId, accountId, role],
     );
     return result.rows[0]?.id ?? null;
   }
@@ -44,7 +49,7 @@ export class SpecialistNotificationLiveRepository {
          SET claim_token=$1, claim_until=clock_timestamp()+interval '30 seconds',
              attempt_count=attempt_count+1
          FROM candidate WHERE o.id=candidate.id
-         RETURNING o.id,o.notification_id,o.recipient_account_id,o.aggregate_version,
+         RETURNING o.id,o.notification_id,o.recipient_account_id,o.recipient_role,o.aggregate_version,
            o.correlation_id,o.causation_id,o.occurred_at,o.expires_at,o.claim_token,o.attempt_count`,
         [randomUUID()],
       );
@@ -58,7 +63,7 @@ export class SpecialistNotificationLiveRepository {
        JOIN notification n ON n.id=o.notification_id AND n.recipient_id=o.recipient_account_id
        JOIN notification_preference p ON p.user_id=n.recipient_id
        WHERE o.id=$1 AND o.claim_token=$2 AND o.claim_until > clock_timestamp()
-         AND o.state='PENDING' AND o.recipient_role='SPECIALIST'
+         AND o.state='PENDING' AND o.recipient_role IN ('SPECIALIST','USER')
          AND o.expires_at > clock_timestamp() AND ${ELIGIBILITY}`,
       [row.id, row.claim_token],
     );

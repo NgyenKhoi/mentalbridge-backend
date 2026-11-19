@@ -22,7 +22,7 @@ export const notificationCreatedSchema = z
       .object({
         notificationId: z.uuid(),
         recipientAccountId: z.uuid(),
-        recipientRole: z.literal('SPECIALIST'),
+        recipientRole: z.enum(['SPECIALIST', 'USER']),
         expiresAt: z.iso.datetime({ offset: true }),
       })
       .strict(),
@@ -37,6 +37,7 @@ export const notificationPointerSchema = z
     occurredAt: z.iso.datetime({ offset: true }),
     notificationId: z.uuid(),
     recipientAccountId: z.uuid(),
+    recipientRole: z.enum(['SPECIALIST', 'USER']),
     expiresAt: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -63,6 +64,7 @@ export const toNotificationPointer = (event: NotificationCreated): NotificationP
   occurredAt: event.occurredAt,
   notificationId: event.payload.notificationId,
   recipientAccountId: event.payload.recipientAccountId,
+  recipientRole: event.payload.recipientRole,
   expiresAt: event.payload.expiresAt,
 });
 

@@ -119,6 +119,7 @@ describe('Database Integration', () => {
       '30_add_appointment_push_reminders.sql',
       '31_add_specialist_notification_live_outbox.sql',
       '32_add_daily_reminder_time_and_support_plan_reminder.sql',
+      '33_allow_user_appointment_live_outbox.sql',
     ]) {
       if (migration === '10_persist_notification_preferences.sql') {
         await pool.query(

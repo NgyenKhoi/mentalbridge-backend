@@ -59,6 +59,7 @@ describe('Specialist notifications with the real Content owner', { concurrent: f
   let database: ContentDatabase;
   let content: INestApplication;
   let materializer: Materializer;
+  let userMaterializer: Materializer;
   let relay: Relay;
   let contentUrl: string;
   let configuration: ServiceConfiguration;
@@ -177,6 +178,12 @@ describe('Specialist notifications with the real Content owner', { concurrent: f
       SpecialistAppointmentNotificationRepository: new (database: ContentDatabase) => Materializer;
     };
     materializer = new materializerModule.SpecialistAppointmentNotificationRepository(database);
+    const userMaterializerModule = (await loadContent(
+      'appointment-reminders/user-appointment-notification.repository.js',
+    )) as {
+      UserAppointmentNotificationRepository: new (database: ContentDatabase) => Materializer;
+    };
+    userMaterializer = new userMaterializerModule.UserAppointmentNotificationRepository(database);
     const repositoryModule = (await loadContent(
       'specialist-notifications/specialist-notification-live.repository.js',
     )) as {
@@ -422,6 +429,39 @@ describe('Specialist notifications with the real Content owner', { concurrent: f
       [created.messageId],
     );
     expect(persisted.rows[0]?.state).toBe('PUBLISHED');
+  });
+
+  it('delivers a committed USER appointment notification to only that user on both replicas', async () => {
+    const source = event();
+    source.payload.status = 'CONFIRMED';
+    const accountId = source.payload.ownerAccountId;
+    const token = await issueToken(signingKey, configuration, accountId, { role: 'USER' });
+    const first = await connect(0, token);
+    const second = await connect(1, token);
+    const specialistSocket = await connect(0);
+    const otherUser = await connect(
+      1,
+      await issueToken(signingKey, configuration, foreignSpecialist, { role: 'USER' }),
+    );
+    await userMaterializer.materialize(source);
+    await userMaterializer.materialize({ ...source, messageId: randomUUID() });
+    const rows = await database.query(
+      'SELECT id,notification_id,recipient_role FROM specialist_notification_live_outbox',
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.recipient_role).toBe('USER');
+    await relay.publishDue();
+    await vi.waitFor(
+      () => {
+        expect(first.events).toHaveLength(1);
+        expect(second.events).toHaveLength(1);
+      },
+      { timeout: 15_000 },
+    );
+    expect(first.events[0]?.payload).toEqual({ notificationId: rows.rows[0]?.notification_id });
+    expect(second.events[0]).toEqual(first.events[0]);
+    expect(specialistSocket.events).toEqual([]);
+    expect(otherUser.events).toEqual([]);
   });
 
   it('repairs an offline interval through current REST list and absolute unread count', async () => {

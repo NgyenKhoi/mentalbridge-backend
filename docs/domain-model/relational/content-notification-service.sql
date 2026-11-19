@@ -588,7 +588,7 @@ CREATE TABLE content.specialist_notification_live_outbox (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     notification_id uuid NOT NULL UNIQUE REFERENCES content.notification(id) ON DELETE CASCADE,
     recipient_account_id uuid NOT NULL,
-    recipient_role varchar(16) NOT NULL DEFAULT 'SPECIALIST' CHECK (recipient_role = 'SPECIALIST'),
+    recipient_role varchar(16) NOT NULL DEFAULT 'SPECIALIST' CHECK (recipient_role IN ('SPECIALIST', 'USER')),
     aggregate_version bigint NOT NULL CHECK (aggregate_version >= 0),
     correlation_id uuid NOT NULL,
     causation_id uuid NOT NULL,

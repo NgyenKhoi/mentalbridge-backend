@@ -40,6 +40,11 @@
         "appointmentId": { "type": "string", "format": "uuid" },
         "ownerAccountId": { "type": "string", "format": "uuid" },
         "specialistAccountId": { "type": "string", "format": "uuid" },
+        "cancellationActorRole": {
+          "description": "SPECIALIST only when the recorded cancellation actor is the assigned specialist; null or absent for other transitions and historical v2 events.",
+          "type": ["string", "null"],
+          "enum": ["SPECIALIST", null]
+        },
         "status": {
           "enum": [
             "REQUESTED",

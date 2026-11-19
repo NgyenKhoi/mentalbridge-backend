@@ -18,6 +18,7 @@ import type { ReminderClock } from '../reminders/reminder-materialization.servic
 import type { AppointmentReminderRepository } from './appointment-reminder.repository.js';
 import type { AppointmentStatusChangedEvent } from './appointment-reminder.types.js';
 import { SpecialistAppointmentNotificationRepository } from './specialist-appointment-notification.repository.js';
+import { UserAppointmentNotificationRepository } from './user-appointment-notification.repository.js';
 
 export const APPOINTMENT_STATUS_TOPIC = 'mentalbridge.consultation.appointment-status.v1';
 
@@ -61,7 +62,10 @@ const EventSchema = z.discriminatedUnion('schemaVersion', [
   }).strict(),
   EnvelopeSchema.extend({
     schemaVersion: z.literal('2.0'),
-    payload: PayloadV1Schema.extend({ specialistAccountId: z.uuid() }).strict(),
+    payload: PayloadV1Schema.extend({
+      specialistAccountId: z.uuid(),
+      cancellationActorRole: z.enum(['SPECIALIST']).nullable().optional(),
+    }).strict(),
   }).strict(),
 ]);
 
@@ -74,6 +78,7 @@ export class AppointmentStatusProjector {
     private readonly repository: AppointmentReminderRepository,
     @Inject(REMINDER_CLOCK_TOKEN) private readonly clock: ReminderClock,
     private readonly specialistNotifications: SpecialistAppointmentNotificationRepository,
+    private readonly userNotifications: UserAppointmentNotificationRepository,
   ) {}
 
   async project(value: unknown): Promise<void> {
@@ -81,7 +86,10 @@ export class AppointmentStatusProjector {
     if (event.aggregateId !== event.payload.appointmentId)
       throw new Error('Appointment aggregate identity mismatch');
     await this.repository.apply(event, this.clock.now());
-    if (event.schemaVersion === '2.0') await this.specialistNotifications.materialize(event);
+    if (event.schemaVersion === '2.0') {
+      await this.specialistNotifications.materialize(event);
+      await this.userNotifications.materialize(event);
+    }
   }
 }
 

@@ -20,7 +20,7 @@ import { SpecialistNotificationLiveRepository } from './specialist-notification-
 
 @Controller('internal/v1/notifications')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SPECIALIST')
+@Roles('SPECIALIST', 'USER')
 export class SpecialistNotificationLiveController {
   constructor(
     @Inject(SpecialistNotificationLiveRepository)
@@ -32,7 +32,8 @@ export class SpecialistNotificationLiveController {
     @Param('notificationId') notificationId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Readonly<{ notificationId: string }>> {
-    if (user.roles.length !== 1 || user.roles[0] !== 'SPECIALIST') throw new ForbiddenException();
+    if (user.roles.length !== 1 || !['SPECIALIST', 'USER'].includes(user.roles[0]))
+      throw new ForbiddenException();
     if (!NotificationIdSchema.safeParse(notificationId).success)
       throw new UnprocessableEntityException({
         type: 'https://mentalbridge.io/errors/NOTIFICATION_ID_INVALID',
@@ -42,7 +43,11 @@ export class SpecialistNotificationLiveController {
       });
     let eligibleId;
     try {
-      eligibleId = await this.repository.eligible(notificationId, user.accountId);
+      eligibleId = await this.repository.eligible(
+        notificationId,
+        user.accountId,
+        user.roles[0] as 'SPECIALIST' | 'USER',
+      );
     } catch {
       throw new ServiceUnavailableException();
     }

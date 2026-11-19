@@ -19,6 +19,7 @@ const pointer = (): NotificationPointer => ({
   occurredAt: new Date().toISOString(),
   notificationId: randomUUID(),
   recipientAccountId: accountId,
+  recipientRole: 'SPECIALIST',
   expiresAt: new Date(Date.now() + 60_000).toISOString(),
 });
 const socket = (role: 'SPECIALIST' | 'USER' | 'ADMIN' = 'SPECIALIST', owner = accountId) => ({
@@ -76,6 +77,24 @@ describe('Per-socket specialist notification delivery', () => {
         payload: { notificationId: event.notificationId },
       });
     for (const client of [user, admin, foreign]) expect(client.emit).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends a USER pointer only to the exact user sockets', async () => {
+    const first = socket('USER');
+    const second = socket('USER');
+    const specialist = socket('SPECIALIST');
+    const foreign = socket('USER', randomUUID());
+    for (const client of [first, second, specialist, foreign]) delivery.add(client);
+    const event = { ...pointer(), recipientRole: 'USER' as const };
+    delivery.receive(event);
+    await settle();
+    for (const client of [first, second])
+      expect(client.emit).toHaveBeenCalledExactlyOnceWith(
+        'notification.created',
+        expect.objectContaining({ payload: { notificationId: event.notificationId } }),
+      );
+    for (const client of [specialist, foreign]) expect(client.emit).not.toHaveBeenCalled();
     expect(check).toHaveBeenCalledTimes(2);
   });
 
