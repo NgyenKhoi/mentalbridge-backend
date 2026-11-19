@@ -45,7 +45,26 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 	@Autowired AppointmentDecisionService decisions;
 	@Autowired ChatSessionSettlementService settlements;
 	@Autowired AppointmentExpiryScheduler expiryScheduler;
+	@Autowired AppointmentStatusOutbox statusOutbox;
 	@Autowired DataSource dataSource;
+
+	@Test
+	void appointmentOutboxIdentifiesOnlySpecialistCancellationActor() throws Exception {
+		var fixture = requestedAppointment();
+		jdbc.sql("""
+				update appointment set status='CANCELLED', cancelled_by=:specialistId,
+				    cancelled_at=now(), cancellation_reason='SPECIALIST_CANCELLED',
+				    cancellation_credit_outcome='RELEASED', version=version+1
+				where id=:appointmentId
+				""").param("specialistId", fixture.specialistId())
+				.param("appointmentId", fixture.appointmentId()).update();
+		statusOutbox.record(fixture.appointmentId(), UUID.randomUUID(), Instant.now());
+		var role = jdbc.sql("""
+				select payload->>'cancellationActorRole' from appointment_outbox_event
+				where appointment_id=:appointmentId and appointment_version=1
+				""").param("appointmentId", fixture.appointmentId()).query(String.class).single();
+		assertThat(role).isEqualTo("SPECIALIST");
+	}
 
 	@Test
 	void assignedSpecialistAcceptsOnceAndCreditRemainsHeld() throws Exception {
@@ -109,6 +128,7 @@ class AppointmentDecisionIntegrationTests extends ConsultationTestProperties {
 		assertThat(outbox.get(0).get(1).toString()).contains("REQUESTED");
 		assertThat(outbox.get(1).get(1).toString()).contains("CONFIRMED");
 		assertThat(outbox.get(2).get(1).toString()).contains("CANCELLED");
+		assertThat(outbox.get(2).get(1).toString()).contains("\"cancellationActorRole\": null");
 		assertThat(outbox.get(0).get(1).toString()).contains(fixture.specialistId().toString());
 		assertThat(outbox.toString()).doesNotContainIgnoringCase("journal", "assessment", "brief", "chat content");
 	}

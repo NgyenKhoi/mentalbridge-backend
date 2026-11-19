@@ -28,6 +28,7 @@ public class AppointmentStatusOutbox {
 				   'appointmentId', appointment.id::text,
 				   'ownerAccountId', appointment.user_account_id::text,
 				   'specialistAccountId', appointment.specialist_account_id::text,
+				   'cancellationActorRole', case when appointment.status='CANCELLED' and appointment.cancelled_by=appointment.specialist_account_id then 'SPECIALIST' else null end,
 				   'status', appointment.status,
 				   'scheduledStartAt', to_char(appointment.scheduled_start_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				   'modality', appointment.modality,
