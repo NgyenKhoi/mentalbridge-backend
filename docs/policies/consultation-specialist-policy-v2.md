@@ -197,6 +197,14 @@ The consolidated executable interpretation and exact credit effects are in
 [consultation-journey-v1](consultation-journey-state-map-v1.md). This clarifies
 existing runtime dimensions, not a new settlement policy.
 
+For an in-app appointment status notice, Content may notify the owning USER on
+confirmation, specialist rejection, and decision expiry. A cancellation notice
+that says the specialist cancelled requires a specialist actor fact from
+Consultation; user and administrative cancellations do not use that copy.
+Notification delivery follows the USER's appointment and in-app preferences.
+Credit wording requires an explicit outcome in the event; a status alone does
+not establish the amount or availability of a returned credit.
+
 The exact transition into `COMPLETED` requires a versioned evidence policy.
 Chat evidence is server-observed. Video evidence is server/provider-observed
 and must remain attributable to the appointment and both participants. A clock

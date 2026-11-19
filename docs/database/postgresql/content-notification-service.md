@@ -8,11 +8,13 @@ Original owner/conceptual section labels and section-specific status notes are r
 
 [All PostgreSQL owners](../postgresql-field-data-dictionary.md)
 
-## Specialist inbox live outbox (MB-800)
+## Appointment inbox live outbox (MB-800, MB-891)
 
 Migration `31_add_specialist_notification_live_outbox.sql` adds the Content-owned
 `public.specialist_notification_live_outbox`. Only a newly inserted eligible
 specialist appointment inbox row enqueues, in that row's existing transaction.
+Migration `33_allow_user_appointment_live_outbox.sql` extends this ledger to
+new eligible USER appointment rows without changing historical specialist rows.
 There is no history scan or legacy-recipient inference. The local notification
 foreign key cascades only upon deliberate owner hard deletion; ordinary inbox
 deletion remains soft. This ledger proves Kafka handoff, never browser receipt.
@@ -21,8 +23,8 @@ deletion remains soft. This ledger proves Kafka handoff, never browser receipt.
 | --- | --- |
 | `id` | Immutable opaque event UUID used unchanged as Kafka `messageId` and the socket event identity on every retry. |
 | `notification_id` | Unique local notification foreign key and aggregate/Kafka key; one creation event per newly committed logical inbox item. |
-| `recipient_account_id` | Immutable external Identity specialist account UUID captured from the owner inbox row; routing metadata, never authorization by itself. |
-| `recipient_role` | Immutable literal `SPECIALIST`; prevents routing this feature to another role. |
+| `recipient_account_id` | Immutable external Identity USER or SPECIALIST account UUID captured from the owner inbox row; routing metadata, never authorization by itself. |
+| `recipient_role` | Immutable `USER` or `SPECIALIST` role matching the inbox owner; prevents routing to another role. |
 | `aggregate_version` | Non-negative notification version captured at creation, currently zero; later read/delete mutations never rewrite the event. |
 | `correlation_id` | Immutable source correlation UUID grouping safe diagnostics. |
 | `causation_id` | Immutable source appointment event message UUID identifying the intake that first created this inbox row. |
@@ -43,11 +45,11 @@ use `FOR UPDATE SKIP LOCKED`, then finish before Kafka I/O. Relay workers claim 
 row at a time, at most 20 per tick, so later rows do not consume their leases while
 earlier rows wait for Kafka. Expired fifth claims become observable `FAILED` rows.
 Kafka ACK followed by process loss may repeat the same event UUID. Current
-SPECIALIST ownership, appointment/source, delivery/deletion/expiry and locked
+USER or SPECIALIST ownership, appointment/source, delivery/deletion/expiry and locked
 preference decisions remain Content authority; Redis/socket state is ephemeral.
 
 `GET /internal/v1/notifications/{notificationId}/live-eligibility` derives the
-owner from verified Identity `sub`, admits SPECIALIST role, and returns only the
+owner from verified Identity `sub`, admits exact USER or SPECIALIST role, and returns only the
 currently eligible ID. Foreign/absent/suppressed rows have the same 404. It does
 not create preferences or mutate the ledger. Eligibility holds at the owner
 query; concurrent state changes are reconciled by current inbox REST reads.

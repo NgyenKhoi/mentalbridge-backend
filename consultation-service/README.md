@@ -1,5 +1,13 @@
 # Consultation Service
 
+## MB-891 appointment notification actor fact
+
+The v2 appointment-status event now includes an optional `cancellationActorRole`
+fact. Consultation emits `SPECIALIST` only when the assigned specialist account
+cancelled the appointment; other transitions emit null. Content uses this fact
+to avoid attributing user or administrative cancellations to the specialist.
+The event does not claim a credit outcome.
+
 ## MB-795 staging scheduler hotfix
 
 Each due video end and room closure runs independently, so one failing item

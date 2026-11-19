@@ -25,6 +25,7 @@ describe('specialist live creation contract and owner read', () => {
       id: randomUUID(),
       notification_id: randomUUID(),
       recipient_account_id: randomUUID(),
+      recipient_role: 'SPECIALIST' as const,
       aggregate_version: '0',
       correlation_id: randomUUID(),
       causation_id: randomUUID(),
@@ -69,7 +70,7 @@ describe('specialist live creation contract and owner read', () => {
     await expect(
       controller.eligible(notificationId, { accountId, roles: ['SPECIALIST'] }),
     ).resolves.toEqual({ notificationId });
-    expect(eligible).toHaveBeenCalledWith(notificationId, accountId);
+    expect(eligible).toHaveBeenCalledWith(notificationId, accountId, 'SPECIALIST');
   });
 
   it('uses the same not-found outcome for every ineligible row and fails closed on storage failure', async () => {

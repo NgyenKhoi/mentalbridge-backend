@@ -84,6 +84,7 @@ describe('Specialist notification broker handoff', () => {
       eventId: event.messageId,
       notificationId: event.aggregateId,
       recipientAccountId: event.payload.recipientAccountId,
+      recipientRole: event.payload.recipientRole,
       correlationId: event.correlationId,
       occurredAt: event.occurredAt,
       expiresAt: event.payload.expiresAt,
@@ -98,7 +99,7 @@ describe('Specialist notification broker handoff', () => {
     async (kind) => {
       const payload = {
         ...event.payload,
-        ...(kind === 'role' ? { recipientRole: 'USER' } : {}),
+        ...(kind === 'role' ? { recipientRole: 'ADMIN' } : {}),
         ...(kind === 'raw' ? { body: 'secret' } : {}),
       };
       const invalid = {

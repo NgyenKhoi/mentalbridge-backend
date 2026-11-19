@@ -36,15 +36,15 @@ The browser exchanges its server-owned Identity session through a same-origin BF
 
 Message acknowledgements use `liveDelivery: not_applicable` because this baseline cannot prove recipient delivery. An idempotent duplicate returns the original message acknowledgement without emitting another `message.created` event.
 
-## Specialist inbox signals (MB-800)
+## Appointment inbox signals (MB-800, MB-891)
 
-`REALTIME_SPECIALIST_LIVE_ENABLED=false` independently controls specialist
+`REALTIME_SPECIALIST_LIVE_ENABLED=false` independently controls appointment
 notification delivery on the existing authenticated `/realtime` namespace. When
 enabled, one shared Kafka consumer group reads Content's committed
 `mentalbridge.content.notification-created.v1` pointers and publishes minimized
 routing metadata on Redis channel
 `mentalbridge:realtime:specialist-notifications:v1`. Every replica checks its
-local SPECIALIST sockets against Content's current
+local USER or SPECIALIST sockets against Content's current
 `GET /internal/v1/notifications/{notificationId}/live-eligibility`, forwarding
 the socket's existing Identity bearer. It checks account, role, connection and
 the original credential expiry again after the owner request.

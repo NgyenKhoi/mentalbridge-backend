@@ -1432,11 +1432,11 @@ paths:
     get:
       x-mentalbridge-operation-status: implemented
       tags: [Notification inbox]
-      summary: Revalidate one currently eligible specialist inbox notification
+      summary: Revalidate one currently eligible appointment inbox notification
       description: >
-        Realtime forwards the socket's existing Identity bearer. Only exact SPECIALIST
+        Realtime forwards the socket's existing Identity bearer. Only exact USER or SPECIALIST
         role is admitted; the owner comes exclusively from verified sub, never from
-        recipient input. The row must be owned by that SPECIALIST, APPOINTMENT kind,
+        recipient input. The row must be owned by that actor, APPOINTMENT kind,
         CONSULTATION_APPOINTMENT_V1 source, DELIVERED, undeleted and unexpired, with
         current master, in-app and appointment-group preferences enabled. Absent,
         foreign or suppressed rows uniformly return 404 NOTIFICATION_NOT_FOUND.
@@ -1460,7 +1460,7 @@ paths:
                 notificationId: "44444444-4444-4444-8444-444444444444"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
-          description: Authenticated actor does not have exact SPECIALIST role
+          description: Authenticated actor does not have exact USER or SPECIALIST role
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }

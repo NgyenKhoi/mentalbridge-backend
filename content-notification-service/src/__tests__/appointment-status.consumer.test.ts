@@ -28,25 +28,38 @@ const event = {
 function harness() {
   const apply = vi.fn().mockResolvedValue(undefined);
   const materialize = vi.fn().mockResolvedValue(undefined);
+  const materializeUser = vi.fn().mockResolvedValue(undefined);
   const projector = new AppointmentStatusProjector(
     { apply } as never,
     { now: () => new Date('2029-01-01T00:00:00.000Z') } as never,
     { materialize } as never,
+    { materialize: materializeUser } as never,
   );
   const consumer = new AppointmentStatusConsumer(
     { CONTENT_APPOINTMENT_CONSUMER_ENABLED: false } as never,
     projector,
   );
-  return { apply, materialize, consumer };
+  return { apply, materialize, materializeUser, consumer };
 }
 
 describe('appointment status consumer', () => {
   it('projects a valid v2 event to reminder and specialist notification state', async () => {
-    const { apply, materialize, consumer } = harness();
+    const { apply, materialize, materializeUser, consumer } = harness();
     await consumer.handle(Buffer.from(JSON.stringify(event)));
     expect(apply).toHaveBeenCalledOnce();
     expect(apply).toHaveBeenCalledWith(event, new Date('2029-01-01T00:00:00.000Z'));
     expect(materialize).toHaveBeenCalledWith(event);
+    expect(materializeUser).toHaveBeenCalledWith(event);
+  });
+
+  it('passes a specialist cancellation actor through to user materialization', async () => {
+    const { materializeUser, consumer } = harness();
+    const cancelled = {
+      ...event,
+      payload: { ...event.payload, status: 'CANCELLED', cancellationActorRole: 'SPECIALIST' },
+    };
+    await consumer.handle(Buffer.from(JSON.stringify(cancelled)));
+    expect(materializeUser).toHaveBeenCalledWith(cancelled);
   });
 
   it('accepts historical v1 replay for reminders without creating a specialist notification', async () => {
