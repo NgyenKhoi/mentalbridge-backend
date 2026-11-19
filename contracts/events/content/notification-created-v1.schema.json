@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mentalbridge.dev/contracts/events/content/notification-created-v1.schema.json",
   "title": "Content notification created v1",
-  "description": "Committed specialist inbox creation pointer. Kafka key and aggregateId equal payload.notificationId. Immutable creation identity is retained on retries; DELIVERED means inbox availability, not socket receipt.",
+  "description": "Committed appointment inbox creation pointer for USER or SPECIALIST. Kafka key and aggregateId equal payload.notificationId. Immutable creation identity is retained on retries; DELIVERED means inbox availability, not socket receipt.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -39,7 +39,7 @@
       "properties": {
         "notificationId": { "type": "string", "format": "uuid" },
         "recipientAccountId": { "type": "string", "format": "uuid" },
-        "recipientRole": { "const": "SPECIALIST" },
+        "recipientRole": { "enum": ["SPECIALIST", "USER"] },
         "expiresAt": { "type": "string", "format": "date-time" }
       }
     }

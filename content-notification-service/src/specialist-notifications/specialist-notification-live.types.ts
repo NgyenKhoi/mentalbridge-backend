@@ -4,6 +4,7 @@ export interface SpecialistNotificationLiveClaim {
   readonly id: string;
   readonly notification_id: string;
   readonly recipient_account_id: string;
+  readonly recipient_role: 'SPECIALIST' | 'USER';
   readonly aggregate_version: string | number;
   readonly correlation_id: string;
   readonly causation_id: string;
@@ -27,7 +28,7 @@ export function toNotificationCreatedEvent(row: SpecialistNotificationLiveClaim)
     payload: {
       notificationId: row.notification_id,
       recipientAccountId: row.recipient_account_id,
-      recipientRole: 'SPECIALIST' as const,
+      recipientRole: row.recipient_role,
       expiresAt: new Date(row.expires_at).toISOString(),
     },
   };

@@ -19,6 +19,7 @@ import {
   SpecialistAppointmentNotificationDedupeConflictError,
   SpecialistAppointmentNotificationRepository,
 } from '../../appointment-reminders/specialist-appointment-notification.repository.js';
+import { UserAppointmentNotificationRepository } from '../../appointment-reminders/user-appointment-notification.repository.js';
 import { loadConfiguration, type ServiceConfiguration } from '../../configuration/configuration.js';
 import { DatabaseService } from '../../database/database.service.js';
 import { NotificationPreferenceRepository } from '../../notification-preferences/notification-preference.repository.js';
@@ -36,6 +37,7 @@ describe('specialist live outbox on owned PostgreSQL, Kafka and real Content HTT
   let configuration: ServiceConfiguration;
   let repository: SpecialistNotificationLiveRepository;
   let materializer: SpecialistAppointmentNotificationRepository;
+  let userMaterializer: UserAppointmentNotificationRepository;
   let relay: SpecialistNotificationLiveRelay;
   let producer: Producer;
   let consumer: Consumer;
@@ -142,6 +144,7 @@ describe('specialist live outbox on owned PostgreSQL, Kafka and real Content HTT
         await readFile(new URL('../../../migrations/' + name, import.meta.url), 'utf8'),
       );
     materializer = new SpecialistAppointmentNotificationRepository(db);
+    userMaterializer = new UserAppointmentNotificationRepository(db);
     repository = new SpecialistNotificationLiveRepository(db);
     const brokers = [broker.getHost() + ':' + String(broker.getMappedPort(9093))];
     const kafka = new Kafka({
@@ -184,6 +187,100 @@ describe('specialist live outbox on owned PostgreSQL, Kafka and real Content HTT
   beforeEach(async () => {
     await db.query('TRUNCATE notification,notification_preference CASCADE');
   });
+
+  it.each([
+    ['CONFIRMED', 'Lịch hẹn đã được xác nhận', 'Chuyên gia đã xác nhận lịch hẹn của bạn.'],
+    ['REJECTED', 'Lịch hẹn chưa được nhận', 'Chuyên gia không nhận lịch này.'],
+    ['EXPIRED', 'Lịch hẹn đã hết hạn chờ', 'Chuyên gia chưa phản hồi kịp.'],
+    ['CANCELLED', 'Lịch hẹn đã bị hủy', 'Chuyên gia đã hủy lịch hẹn này.'],
+  ] as const)(
+    'materializes %s for the user once without changing the specialist row',
+    async (status, title, body) => {
+      const source = event();
+      const changed = {
+        ...source,
+        payload: {
+          ...source.payload,
+          status,
+          cancellationActorRole: status === 'CANCELLED' ? ('SPECIALIST' as const) : null,
+        },
+      };
+      await materializer.materialize(changed);
+      await userMaterializer.materialize(changed);
+      await userMaterializer.materialize({ ...changed, messageId: randomUUID() });
+      const notifications = (
+        await db.query<{
+          recipient_id: string;
+          title: string;
+          body: string;
+          action_type: string;
+        }>('SELECT recipient_id,title,body,action_type FROM notification ORDER BY recipient_id')
+      ).rows;
+      expect(notifications).toHaveLength(2);
+      expect(notifications).toContainEqual({
+        recipient_id: changed.payload.ownerAccountId,
+        title,
+        body,
+        action_type: 'OPEN_APPOINTMENTS',
+      });
+      expect(notifications.find((row) => row.recipient_id === owner)?.action_type).toBe(
+        'OPEN_SPECIALIST_APPOINTMENTS',
+      );
+      const live = (await rows()).find(
+        (row) => row.recipient_account_id === changed.payload.ownerAccountId,
+      );
+      expect(live?.recipient_role).toBe('USER');
+    },
+  );
+
+  it('does not notify the user for user or administrative cancellations', async () => {
+    const source = event();
+    await userMaterializer.materialize({
+      ...source,
+      payload: { ...source.payload, status: 'CANCELLED' },
+    });
+    expect((await db.query('SELECT id FROM notification')).rows).toHaveLength(0);
+  });
+
+  it('projects a v2 status through the consumer into both owner inboxes once on replay', async () => {
+    const source = event();
+    const confirmed = { ...source, payload: { ...source.payload, status: 'CONFIRMED' as const } };
+    const intake = new AppointmentStatusConsumer(
+      configuration,
+      new AppointmentStatusProjector(
+        new AppointmentReminderRepository(db),
+        { now: () => new Date() },
+        materializer,
+        userMaterializer,
+      ),
+    );
+    await intake.handle(Buffer.from(JSON.stringify(confirmed)));
+    await intake.handle(Buffer.from(JSON.stringify({ ...confirmed, messageId: randomUUID() })));
+    expect((await db.query('SELECT recipient_id FROM notification')).rows).toHaveLength(2);
+    expect(await rows()).toHaveLength(2);
+  });
+
+  it.each(['notifications_enabled', 'channel_in_app_enabled', 'group_appointment_message_enabled'])(
+    'respects the USER %s preference at intake',
+    async (column) => {
+      const source = event();
+      await new NotificationPreferenceRepository(db).createDefaults(
+        source.payload.ownerAccountId,
+        'USER',
+      );
+      await db.query(`UPDATE notification_preference SET ${column}=false WHERE user_id=$1`, [
+        source.payload.ownerAccountId,
+      ]);
+      await userMaterializer.materialize({
+        ...source,
+        payload: { ...source.payload, status: 'CONFIRMED' },
+      });
+      expect((await db.query('SELECT delivery_state FROM notification')).rows).toEqual([
+        { delivery_state: 'CANCELLED' },
+      ]);
+      expect(await rows()).toHaveLength(0);
+    },
+  );
   afterAll(async () => {
     await app?.close();
     await relay?.onApplicationShutdown();
@@ -247,6 +344,7 @@ describe('specialist live outbox on owned PostgreSQL, Kafka and real Content HTT
         new AppointmentReminderRepository(db),
         { now: () => new Date() },
         materializer,
+        userMaterializer,
       ),
     );
     await intake.handle(Buffer.from(JSON.stringify({ ...source, schemaVersion: '1.0', payload })));
@@ -530,11 +628,14 @@ describe('specialist live outbox on owned PostgreSQL, Kafka and real Content HTT
       .get(path)
       .auth(await token(randomUUID()), { type: 'bearer' })
       .expect(404);
-    for (const role of ['USER', 'ADMIN'])
-      await request(app.getHttpServer())
-        .get(path)
-        .auth(await token(owner, [role]), { type: 'bearer' })
-        .expect(403);
+    await request(app.getHttpServer())
+      .get(path)
+      .auth(await token(owner, ['USER']), { type: 'bearer' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(path)
+      .auth(await token(owner, ['ADMIN']), { type: 'bearer' })
+      .expect(403);
     await relay.publishDue(1);
     await db.query(
       'UPDATE notification_preference SET group_appointment_message_enabled=false WHERE user_id=$1',

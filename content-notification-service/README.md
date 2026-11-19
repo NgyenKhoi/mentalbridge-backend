@@ -3,11 +3,16 @@
 The service OpenAPI is v1.12.0. MB-677 adds the closed `OPEN_APPOINTMENT`
 notification action used by Content-owned appointment push reminders.
 
-## Specialist live inbox signals (MB-800)
+## Appointment live inbox signals (MB-800, MB-891)
 
 New eligible specialist appointment inbox inserts atomically enqueue migration
 `31_add_specialist_notification_live_outbox.sql`'s dedicated outbox. Intake locks
 the exact SPECIALIST preference row consistently with preference updates.
+MB-891 adds USER rows for confirmation, rejection, decision expiry, and
+specialist-actor cancellation, using the USER appointment preference and
+`OPEN_APPOINTMENTS` action. The event does not carry a credit outcome, so copy
+does not assert a refund. Migration `33_allow_user_appointment_live_outbox.sql`
+allows new eligible USER rows in the same outbox.
 Duplicates, fingerprint conflicts, rolled-back inserts and notification
 `CANCELLED` rows create no creation event. Appointment status `CANCELLED` remains
 an allowed notification and must not be confused with notification delivery state.
@@ -28,7 +33,7 @@ then remain observable `FAILED`; current suppression is terminal `SUPPRESSED`.
 Safe event/correlation IDs, lag and outcome counts are logged without payloads.
 
 `GET /internal/v1/notifications/{notificationId}/live-eligibility` reuses the
-forwarded Identity bearer, requires SPECIALIST role and derives owner only from
+forwarded Identity bearer, requires exact USER or SPECIALIST role and derives owner only from
 verified `sub`. It returns strict `{notificationId}` for current eligible rows,
 uniform `404 NOTIFICATION_NOT_FOUND` for foreign/absent/suppressed rows, and 503
 on storage uncertainty. Responses are `Cache-Control: private, no-store`.

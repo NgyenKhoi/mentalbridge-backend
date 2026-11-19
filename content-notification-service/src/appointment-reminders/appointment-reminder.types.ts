@@ -39,6 +39,7 @@ export interface AppointmentStatusChangedEventV2 extends AppointmentStatusChange
   readonly schemaVersion: '2.0';
   readonly payload: AppointmentStatusChangedEventBase['payload'] & {
     readonly specialistAccountId: string;
+    readonly cancellationActorRole?: 'SPECIALIST' | null;
   };
 }
 
