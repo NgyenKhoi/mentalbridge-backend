@@ -132,6 +132,9 @@ describe('specialist notification v1 contracts', () => {
     );
     const validateChat = await validator('websocket/realtime/server-event-v1.schema.json');
     expect(validateCreation(event)).toBe(true);
+    expect(validateCreation({ ...event, payload: { ...payload, recipientRole: 'USER' } })).toBe(
+      true,
+    );
     expect(event.aggregateId).toBe(payload.notificationId);
     expect(socket).toEqual({
       schemaVersion: 1,
@@ -159,7 +162,7 @@ describe('specialist notification v1 contracts', () => {
       { ...event, schemaVersion: 1 },
       { ...event, aggregateVersion: -1 },
       { ...event, causationId: 'invalid' },
-      { ...event, payload: { ...payload, recipientRole: 'USER' } },
+      { ...event, payload: { ...payload, recipientRole: 'ADMIN' } },
       { ...event, payload: { ...payload, recipientAccountId: 'invalid' } },
       { ...event, payload: { ...payload, expiresAt: 'invalid' } },
       { ...event, payload: { ...payload, body: 'private' } },

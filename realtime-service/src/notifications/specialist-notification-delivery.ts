@@ -145,7 +145,7 @@ export class SpecialistNotificationDelivery implements OnApplicationShutdown {
       this.sockets.get(socket.id) === state &&
       socket.connected &&
       !!socket.data.bearerToken &&
-      principal?.role === 'SPECIALIST' &&
+      principal?.role === pointer.recipientRole &&
       principal.accountId === pointer.recipientAccountId &&
       Date.now() < principal.expiresAtEpochSeconds * 1000 &&
       Date.now() < Date.parse(pointer.expiresAt)
