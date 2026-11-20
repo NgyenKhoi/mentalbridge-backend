@@ -21,6 +21,7 @@ import io.swagger.v3.parser.core.models.ParseOptions;
 class CareOpenApiContractTests {
 
 	private static final Set<String> ALL_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans/initial-proposal",
 			"GET /api/v1/ai-voice-processing-disclosure",
 			"GET /api/v1/consents/ai-voice-processing",
 			"POST /api/v1/consents/ai-voice-processing",
@@ -123,6 +124,7 @@ class CareOpenApiContractTests {
 			"POST /api/v1/safety-directory-lookups");
 
 	private static final Set<String> IMPLEMENTED_PATHS = Set.of(
+			"/api/v2/support-plans/initial-proposal",
 			"/api/v1/ai-voice-processing-disclosure",
 			"/api/v1/consents/ai-voice-processing",
 			"/internal/v1/ai-companion/voice-consent-authorizations",
@@ -215,6 +217,7 @@ class CareOpenApiContractTests {
 			"/api/v1/safety-directory-lookups");
 
 	private static final Set<String> BEARER_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans/initial-proposal",
 			"GET /api/v1/ai-voice-processing-disclosure",
 			"GET /api/v1/consents/ai-voice-processing",
 			"POST /api/v1/consents/ai-voice-processing",
@@ -310,6 +313,7 @@ class CareOpenApiContractTests {
 			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
 
 	private static final Set<String> IDEMPOTENT_OPERATIONS = Set.of(
+			"POST /api/v2/support-plans/initial-proposal",
 			"POST /api/v1/consents/ai-voice-processing",
 			"POST /api/v2/support-plans",
 			"POST /api/v2/support-plans/{supportPlanId}/activate",
