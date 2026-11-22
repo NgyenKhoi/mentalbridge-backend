@@ -161,24 +161,40 @@ recorded in `.artifacts/mb-810-contract-ready.md` for the implementation PR.
 
 ## MB-846c companion cross-conversation memory — 2026-11-22 (owner to approve wording)
 
-While Mầm TEXT v3 is enabled, a conversation may carry one optional encrypted
-`memoryNote` (at most 400 characters, third person: what the user shared, what
-Mầm suggested, how they seemed at the end), with `memoryNoteUpdatedAt` (the
-conversation `updatedAt` it summarises) and `memoryNoteVersion`. It uses the
-message AES-256-GCM key with AAD `${owner}:${conversationId}:memory-note` and
-never appears in the public API. On a v3 TEXT turn with effective L2, Journal/AI
-reads the owner's three newest other unexpired conversations updated in the
-last 30 days, generates a missing or stale note with one provider call per
-conversation on the FREE/PLUS route (bounded input: the last 20 messages within
-8,000 bytes, pairs with deselected context kinds dropped), and sends up to three
-notes (date, title, note) to the provider as `previous_conversations` before the
-current history. Generation shares at most 6 seconds and leaves the reply at
-least 12 seconds of the 24-second deadline; each call is reserved and settled
-against the owner's daily token budget on the same command, and any failure,
-timeout or exhausted budget leaves that note out without failing the turn. The
-note lives in the conversation document, so deletion, the retention TTL and
-account hard delete remove it. Migration `023_companion_memory_note.cjs` adds
-the optional fields to the strict validator.
+A Mầm TEXT conversation may carry one optional encrypted `memoryNote` (at most
+400 characters, third person: what the user shared, what Mầm suggested, how
+they seemed at the end), with `memoryNoteUpdatedAt` (the conversation
+`updatedAt` it summarises) and `memoryNoteVersion`. It uses the message
+AES-256-GCM key with AAD `${owner}:${conversationId}:memory-note` and never
+appears in the public API.
+
+On a Mầm TEXT turn with effective L2 that is not a `SAFETY` turn, Journal/AI
+reads the owner's three newest other unexpired conversations that have at least
+one reply and were updated in the last 30 days. It generates a missing or stale
+note with one provider call per conversation on the FREE/PLUS route. The input
+is bounded to the last 20 messages within 8,000 bytes, and every pair that used
+any personal context (Journal, SupportPlan, reassessment or resources) is
+dropped, so a note holds only what was said in the conversation. Up to three
+notes (date, title, note) reach the provider as `previous_conversations`,
+before the current history. A `SAFETY` turn reads, generates and injects no
+notes.
+
+Generation shares about 6 seconds and leaves the reply about 12 seconds of the
+24-second deadline. Each call is reserved and settled against the owner's
+daily token budget on the same command, but only below the reply's own
+headroom (its estimate plus the output cap and room for the notes), so notes
+are skipped before the reply could hit `CHAT_TOKEN_BUDGET_EXHAUSTED`. Any
+failure, timeout, unsafe or over-long note, or exhausted headroom leaves that
+note out without failing the turn. Within one process, parallel turns share
+one generation per conversation state; two processes may still generate the
+same note once each (the last write wins).
+
+The note lives in the conversation document, so the owner's conversation
+delete and the retention TTL remove it. Journal/AI has no account-deletion or
+erasure consumer for companion conversations: notes, like messages, stay until
+owner delete or TTL (named follow-up). Migration
+`023_companion_memory_note.cjs` adds the optional fields to the strict
+validator.
 
 ## Rejected alternatives
 

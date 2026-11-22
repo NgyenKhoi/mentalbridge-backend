@@ -1650,6 +1650,10 @@ void test("MB-846c: migration 023 stores encrypted memory notes; the repository 
     const conversations = database.collection("ai_companion_conversations");
     for (const [index, id] of ids.entries())
       await conversations.insertOne(conversation(id, index) as never);
+    // A newer conversation with no reply yet takes no candidate slot.
+    await conversations.insertOne(
+      conversation("a6666666-6666-4666-8666-666666666666", 8, 0) as never,
+    );
     const candidates = await repository.memoryCandidates(
       owner,
       ids[4] ?? "",

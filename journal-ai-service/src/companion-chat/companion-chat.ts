@@ -466,6 +466,13 @@ const linkOrMarkup = /https?:\/\/|www\.|<[^>]+>|\[[^\]]+\]\([^)]+\)/iu;
 export const providerAttemptMs = (mamTextV3: boolean): number =>
   mamTextV3 ? 18_000 : 10_000;
 
+// Room kept for up to three notes in the reply request (3 × 400 characters of Vietnamese, bytes/4).
+const MEMORY_BLOCK_TOKENS = 1_000;
+
+/** About 6 s for note generation, leaving the reply about 12 s of the 24 s send deadline; 0 or less skips notes. */
+export const noteGenerationMs = (sendDeadline: number, now: number): number =>
+  Math.min(6_000, sendDeadline - now - 12_000);
+
 /** A long note keeps its whole sentences up to the limit (the real model overshot 350 once in 9 runs); none fit means no note. */
 export const memoryNoteWithinLimit = (note: string): string | null => {
   const characters = Array.from(note);
@@ -1072,6 +1079,7 @@ export class MongoChatRepository
         {
           ownerAccountId,
           _id: { $ne: excludeConversationId },
+          "messages.1": { $exists: true },
           updatedAt: { $gte: since },
           expiresAt: { $gt: now },
         },
@@ -1911,8 +1919,9 @@ export class RoutedChatProvider implements ChatProvider {
       throw new VoiceProviderFailure("INVALID_RESPONSE");
     if (route.provider === "DETERMINISTIC_FAKE") {
       return {
-        message:
-          context.kinds.length === 0
+        message: options?.memoryNote
+          ? "Người dùng đã trò chuyện với Mầm ở cuộc trò chuyện này (ghi chú giả lập cục bộ)."
+          : context.kinds.length === 0
             ? "Mình đang lắng nghe. Bạn muốn bắt đầu từ điều gì đang khiến bạn bận tâm nhất lúc này?"
             : "Mình đã xem phần bối cảnh bạn cho phép. Ta có thể chọn một bước nhỏ, phù hợp với kế hoạch hiện tại và điều bạn vừa chia sẻ.",
         inputTokens: Math.ceil(
@@ -2878,23 +2887,6 @@ export class CompanionChatService {
           ).history,
         };
       }
-      // MB-846c: earlier-conversation notes need effective L2 at the final check; without it they are purged.
-      if (mamTextV3 && friend) {
-        if (finalAuthorization.context.authorized) {
-          const previousConversations = await this.previousConversations(
-            owner,
-            conversationId,
-            command,
-            tokenBudget,
-            sendDeadline,
-          );
-          if (previousConversations.length > 0)
-            friend = { ...friend, previousConversations };
-        } else
-          await this.repository.purgeMemoryNotes(owner).catch(() => {
-            this.logger.warn("CHAT_MEMORY_PURGE_FAILED");
-          });
-      }
       const requestTitle = canInitializeTitle(conversation);
       // Count the arc on every recent message, not the byte-capped provider history; only the mode leaves the server.
       // A message that used personal context the owner no longer allows is counted but never decrypted (ADR 0050).
@@ -2907,20 +2899,41 @@ export class CompanionChatService {
           this.crypto.decrypt(owner, conversationId, message),
         ),
       );
-      const estimate = estimateInputTokens(
-        companionGuidanceSystem({
-          channel: "TEXT",
-          friend: true,
-          mamTextV3: true,
-          responseMode,
-          plan: decision.packageCode,
-        }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
-        companionUserInput({
-          message: parsed.data.message,
-          context: minimized,
-          friend,
-        }),
-      );
+      const replyEstimate = () =>
+        estimateInputTokens(
+          companionGuidanceSystem({
+            channel: "TEXT",
+            friend: true,
+            mamTextV3: true,
+            responseMode,
+            plan: decision.packageCode,
+          }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
+          companionUserInput({
+            message: parsed.data.message,
+            context: minimized,
+            friend,
+          }),
+        );
+      // MB-846c: notes need effective L2 at the final check (without it they are purged) and never delay a SAFETY turn.
+      if (!finalAuthorization.context.authorized)
+        await this.repository.purgeMemoryNotes(owner).catch(() => {
+          this.logger.warn("CHAT_MEMORY_PURGE_FAILED");
+        });
+      else if (responseMode !== "SAFETY") {
+        // Notes reserve below what the reply itself may need, so they are skipped before the reply can hit 429.
+        const replyHeadroom =
+          replyEstimate() + companionMaxOutputTokens + MEMORY_BLOCK_TOKENS;
+        const previousConversations = await this.previousConversations(
+          owner,
+          conversationId,
+          command,
+          tokenBudget - replyHeadroom,
+          sendDeadline,
+        );
+        if (previousConversations.length > 0)
+          friend = { ...friend, previousConversations };
+      }
+      const estimate = replyEstimate();
       const deadlineFailure = () =>
         new ChatProblem(
           503,
@@ -3306,7 +3319,7 @@ export class CompanionChatService {
       return [];
     }
     // Leave the reply at least 12 s of the send deadline.
-    const generationMs = Math.min(6_000, sendDeadline - Date.now() - 12_000);
+    const generationMs = noteGenerationMs(sendDeadline, Date.now());
     const day = new Intl.DateTimeFormat("en-GB", {
       timeZone: this.configuration.CHAT_DEFAULT_TIMEZONE,
       day: "2-digit",
@@ -3328,7 +3341,7 @@ export class CompanionChatService {
                   conversation.memoryNote,
                 )
               : generationMs > 0
-                ? await this.writeMemoryNote(
+                ? await this.singleFlightNote(
                     owner,
                     conversation,
                     command,
@@ -3352,6 +3365,30 @@ export class CompanionChatService {
     return notes.filter((note) => note !== null);
   }
 
+  // shortcut: in-process only; two service instances can still both generate the same note (last write wins), fine at demo scale.
+  private readonly notesInFlight = new Map<string, Promise<string | null>>();
+
+  private singleFlightNote(
+    owner: string,
+    conversation: Conversation,
+    command: ChatCommand,
+    tokenBudget: number,
+    timeoutMs: number,
+  ): Promise<string | null> {
+    const key = `${owner}:${conversation._id}:${conversation.updatedAt.toISOString()}`;
+    const running = this.notesInFlight.get(key);
+    if (running) return running;
+    const note = this.writeMemoryNote(
+      owner,
+      conversation,
+      command,
+      tokenBudget,
+      timeoutMs,
+    ).finally(() => this.notesInFlight.delete(key));
+    this.notesInFlight.set(key, note);
+    return note;
+  }
+
   /** One provider call on the cheaper FREE/PLUS route, charged to the owner's daily token budget. */
   private async writeMemoryNote(
     owner: string,
@@ -3362,7 +3399,7 @@ export class CompanionChatService {
   ): Promise<string | null> {
     const transcript = conversationMemory(
       conversation.messages,
-      conversation.context.sources,
+      emptySources(),
       (message) => this.crypto.decrypt(owner, conversation._id, message),
       MAM_NOTE_TRANSCRIPT_LIMITS,
     ).history;
@@ -3376,19 +3413,29 @@ export class CompanionChatService {
     await this.repository.reserveAttempt(command, estimate, tokenBudget);
     let usage: { input: number; output: number } | undefined;
     let reply: ProviderReply | undefined;
+    const signal = AbortSignal.timeout(timeoutMs);
     try {
-      reply = await this.provider.reply(
-        message,
-        empty,
-        selectCompanionProviderRoute(this.configuration, "FREE"),
-        {
-          memoryNote: true,
-          signal: AbortSignal.timeout(timeoutMs),
-          onUsage: (input, output) => {
-            usage = { input, output };
+      reply = await Promise.race([
+        this.provider.reply(
+          message,
+          empty,
+          selectCompanionProviderRoute(this.configuration, "FREE"),
+          {
+            memoryNote: true,
+            signal,
+            onUsage: (input, output) => {
+              usage = { input, output };
+            },
           },
-        },
-      );
+        ),
+        new Promise<never>((_resolve, reject) => {
+          const timeout = () => {
+            reject(new ProviderFailure("RETRYABLE", "TIMEOUT"));
+          };
+          if (signal.aborted) timeout();
+          else signal.addEventListener("abort", timeout, { once: true });
+        }),
+      ]);
     } finally {
       const actual = usage
         ? usage.input + usage.output
@@ -3398,7 +3445,12 @@ export class CompanionChatService {
       await this.repository.settleAttempt(command, actual - estimate);
     }
     const note = memoryNoteWithinLimit(reply.message.trim());
-    if (!note || linkOrMarkup.test(note)) return null;
+    if (
+      !note ||
+      linkOrMarkup.test(note) ||
+      unsafeAssistantPatterns.some((pattern) => pattern.test(note))
+    )
+      return null;
     await this.repository.saveMemoryNote(
       owner,
       conversation._id,

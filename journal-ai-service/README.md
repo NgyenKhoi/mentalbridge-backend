@@ -194,7 +194,8 @@ Voice is unchanged; see ADR 0049.
 With effective L2, Mầm v3 also reads encrypted memory notes on the owner's three
 newest other conversations from the last 30 days (MB-846c, migration 023),
 generating a missing or stale note with one FREE/PLUS-route call charged to
-the daily token budget; without L2 it purges them.
+the daily token budget below the reply headroom; a SAFETY turn reads none;
+without L2 it purges them.
 
 `JOURNAL_AI_VOICE_FRIEND_ENABLED` (default false) independently selects the
 spoken friend persona. It is separate from the TEXT v2 flag and preserves the
