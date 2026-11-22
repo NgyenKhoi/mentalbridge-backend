@@ -10,8 +10,10 @@ import {
 } from "../companion-chat/companion-chat.js";
 import {
   COMPANION_GUIDANCE_V2_VERSION,
+  COMPANION_MAM_TEXT_V3_VERSION,
   companionGuidanceSystem,
 } from "../companion-chat/companion-guidance-policy.js";
+import { RESPONSE_MODES } from "../companion-chat/companion-response-mode.js";
 import { ResourceCatalog } from "../companion-chat/resource-catalog.js";
 import { bedrockConverseUrl } from "../llm-providers/bedrock.js";
 import {
@@ -55,6 +57,10 @@ const datasetPath =
   process.env.COMPANION_EVAL_DATASET ??
   "benchmarks/datasets/companion-conversation-synthetic-v2.json";
 const dataset = await loadConversationDataset(datasetPath);
+const variant = process.env.COMPANION_EVAL_VARIANT ?? "v2";
+if (variant !== "v2" && variant !== "mam-v3")
+  throw new Error("COMPANION_EVAL_VARIANT must be v2 or mam-v3");
+const mamTextV3 = variant === "mam-v3";
 const only = process.env.COMPANION_EVAL_SCENARIOS?.split(",").filter(Boolean);
 const scenarios = only
   ? dataset.scenarios.filter((scenario) => only.includes(scenario.id))
@@ -69,6 +75,39 @@ const route = {
   model:
     process.env.COMPANION_EVAL_MODEL ?? "global.anthropic.claude-sonnet-4-6",
 };
+const datasetSha256 = createHash("sha256")
+  .update(await readFile(datasetPath, "utf8"))
+  .digest("hex");
+const baselinePath = process.env.COMPANION_EVAL_BASELINE_RESULT;
+const baseline = baselinePath
+  ? (JSON.parse(await readFile(baselinePath, "utf8")) as {
+      dataset?: { sha256?: string; scenarios?: number; filtered?: boolean };
+      route?: { provider?: string; model?: string };
+      guidance?: { version?: string };
+      checks?: { arcPassRates?: { explore?: number | null } };
+      errors?: number;
+      turns?: { scenario: string; repeat: number }[];
+    })
+  : null;
+if (
+  mamTextV3 &&
+  (!baseline ||
+    baseline.dataset?.sha256 !== datasetSha256 ||
+    baseline.dataset.scenarios !== dataset.scenarios.length ||
+    baseline.dataset.filtered !== false ||
+    baseline.route?.provider !== route.provider ||
+    baseline.route.model !== route.model ||
+    baseline.guidance?.version !== COMPANION_GUIDANCE_V2_VERSION ||
+    baseline.errors !== 0 ||
+    // The explore comparison needs only a complete first pass; later crisis repeats may be missing.
+    new Set(
+      baseline.turns
+        ?.filter((turn) => turn.repeat === 1)
+        .map((turn) => turn.scenario),
+    ).size !== dataset.scenarios.length ||
+    typeof baseline.checks?.arcPassRates?.explore !== "number")
+)
+  throw new Error("Mầm v3 eval requires a matching v2 baseline result");
 // A real provider bills: it must run under a positive USD cap. The deterministic fake bills nothing.
 const realSpend = route.provider !== "DETERMINISTIC_FAKE";
 const maxUsd = realSpend
@@ -207,7 +246,13 @@ run: for (let repeat = 1; repeat <= repeats; repeat += 1)
   for (const scenario of scenarios) {
     if (repeat > 1 && !repeated(scenario)) continue;
     try {
-      const turns = await runScenario(scenario, provider, route, catalog);
+      const turns = await runScenario(
+        scenario,
+        provider,
+        route,
+        catalog,
+        mamTextV3,
+      );
       const failures = checkScenario(
         turns,
         catalog.map((item) => item.title),
@@ -282,6 +327,14 @@ const gates = [
     failureCounts,
     errors,
   }),
+  ...(mamTextV3 && (arc.wrapUp === null || arc.wrapUp < 0.8)
+    ? ["MB846_WRAP_UP_RATE"]
+    : []),
+  ...(mamTextV3 &&
+  (arc.explore === null ||
+    arc.explore < (baseline?.checks?.arcPassRates?.explore ?? 1))
+    ? ["MB846_EXPLORE_REGRESSION"]
+    : []),
   ...(stoppedBy ? ["INCOMPLETE"] : []),
 ];
 const mean = (values: number[]) =>
@@ -303,23 +356,29 @@ const phaseMean = (phase: string) => {
 const companionPrompt = companionGuidanceSystem({
   channel: "TEXT",
   friend: true,
+  ...(mamTextV3
+    ? { mamTextV3: true, responseMode: "SUPPORT_AND_WRAP_UP" as const }
+    : {}),
 });
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const result = {
-  story: "MB-845",
+  story: mamTextV3 ? "MB-846" : "MB-845",
   startedAt,
   finishedAt: new Date().toISOString(),
   dataset: {
     version: dataset.version,
-    sha256: sha256(await readFile(datasetPath, "utf8")),
+    sha256: datasetSha256,
     scenarios: scenarios.map((scenario) => scenario.id).length,
     filtered: only !== undefined,
   },
   route,
   guidance: {
-    version: COMPANION_GUIDANCE_V2_VERSION,
+    version: mamTextV3
+      ? COMPANION_MAM_TEXT_V3_VERSION
+      : COMPANION_GUIDANCE_V2_VERSION,
     friendPromptSha256: sha256(companionPrompt),
+    ...(mamTextV3 ? { friendPromptMode: "SUPPORT_AND_WRAP_UP" } : {}),
   },
   settings: {
     repeats,
@@ -359,6 +418,14 @@ const result = {
       : null,
     failureCounts,
     arcPassRates: { ...arc, gates: ARC_PASS_RATE_GATES },
+    responseModes: Object.fromEntries(
+      RESPONSE_MODES.map((mode) => [
+        mode,
+        firstPass
+          .flatMap((value) => value.turns)
+          .filter((turn) => turn.responseMode === mode).length,
+      ]),
+    ),
   },
   crisis: {
     firstPass: full.crisis,
@@ -388,6 +455,7 @@ const result = {
       crisis: turn.crisis === true,
       expectSuggestion: turn.expectSuggestion,
       phase: turn.phase ?? null,
+      responseMode: turn.responseMode ?? null,
       crisisPointer: crisisPointer(turn),
       suggestion: turn.suggestion?.destination ?? null,
     })),

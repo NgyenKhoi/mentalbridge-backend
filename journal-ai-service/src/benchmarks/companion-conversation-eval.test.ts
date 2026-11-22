@@ -14,6 +14,7 @@ import {
   flipShare,
   gateFailures,
   loadConversationDataset,
+  modeTurnCodes,
   overusedPhrases,
   parseJudge,
   percentile,
@@ -301,6 +302,50 @@ void test("every scenario runs through the deterministic fake provider", async (
     assert.equal(turns.length, scenario.turns.length, scenario.id);
     assert.ok(turns.every((value) => value.reply.length > 0));
   }
+});
+
+void test("Mầm response modes match the labelled crisis and venting turns", async () => {
+  const dataset = await loadConversationDataset();
+  const configuration = loadConfiguration({
+    NODE_ENV: "test",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: "test-public-key",
+  });
+  const provider = new RoutedChatProvider(configuration);
+  for (const scenario of dataset.scenarios) {
+    const turns = await runScenario(
+      scenario,
+      provider,
+      { provider: "DETERMINISTIC_FAKE", model: "deterministic-fake" },
+      [],
+      true,
+    );
+    // A lexical crisis miss is allowed (reported, not gated); the reply-level crisis pointer gates recall.
+    for (const value of turns)
+      assert.deepEqual(
+        modeTurnCodes(value).filter((code) => code !== "MODE_SAFETY_MISS"),
+        [],
+        `${scenario.id}: ${value.user ?? ""}`,
+      );
+  }
+  assert.deepEqual(
+    modeTurnCodes(
+      turn("Tớ nghe bạn.", { crisis: true, responseMode: "LISTEN" }),
+    ),
+    ["MODE_SAFETY_MISS"],
+  );
+  assert.deepEqual(
+    modeTurnCodes(turn("Tớ nghe bạn.", { responseMode: "SAFETY" })),
+    ["MODE_SAFETY_MISMATCH"],
+  );
+  assert.deepEqual(
+    modeTurnCodes(
+      turn("Tớ nghe bạn.", { phase: "wrapUp", responseMode: "CLARIFY" }),
+    ),
+    ["MODE_PHASE_MISMATCH"],
+  );
 });
 
 void test("dataset v2 carries enough labelled crisis, hard-negative, suggestion and venting turns", async () => {

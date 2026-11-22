@@ -42,6 +42,7 @@ import {
   type FriendInput,
 } from "./companion-text-request.js";
 import type { CatalogItem } from "./resource-catalog.js";
+import type { ResponseMode } from "./companion-response-mode.js";
 
 const neutralTitle = "Cuộc trò chuyện mới";
 const titleRequest = (
@@ -650,11 +651,19 @@ void test("per-plan token budgets and the guidance v2 flag have bounded defaults
   assert.equal(defaults.CHAT_PLUS_DAILY_TOKEN_BUDGET, 250_000);
   assert.equal(defaults.CHAT_PREMIUM_DAILY_TOKEN_BUDGET, 600_000);
   assert.equal(defaults.COMPANION_GUIDANCE_V2_ENABLED, false);
+  assert.equal(defaults.COMPANION_MAM_TEXT_V3_ENABLED, false);
   assert.equal(
     loadConfiguration({
       ...base,
       JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "true",
     }).COMPANION_GUIDANCE_V2_ENABLED,
+    true,
+  );
+  assert.equal(
+    loadConfiguration({
+      ...base,
+      JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED: "true",
+    }).COMPANION_MAM_TEXT_V3_ENABLED,
     true,
   );
   for (const name of [
@@ -667,6 +676,12 @@ void test("per-plan token budgets and the guidance v2 flag have bounded defaults
     loadConfiguration({
       ...base,
       JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "yes",
+    }),
+  );
+  assert.throws(() =>
+    loadConfiguration({
+      ...base,
+      JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED: "yes",
     }),
   );
 });
@@ -685,10 +700,15 @@ const recordingProvider = (
   suggestion: { destination: string; resourceRef: string | null } | null,
   message = "Ừ, mình mở bài thở cho bạn nha.",
 ) => {
-  const calls: { friend?: FriendInput }[] = [];
+  const calls: { friend?: FriendInput; responseMode?: ResponseMode }[] = [];
   const value: ChatProvider = {
     reply: (_message, _context, _route, options) => {
-      calls.push({ ...(options?.friend ? { friend: options.friend } : {}) });
+      calls.push({
+        ...(options?.friend ? { friend: options.friend } : {}),
+        ...(options?.responseMode
+          ? { responseMode: options.responseMode }
+          : {}),
+      });
       return Promise.resolve({
         message,
         inputTokens: 20,
@@ -735,6 +755,86 @@ void test("flag on sends recent turns and the catalogue and returns the resolved
     resourceId: breathing.resourceId,
     resourceTitle: "Thở 4-7-8",
   });
+});
+
+void test("Mầm TEXT v3 flag enables friend history and mode binding without enabling v2", async () => {
+  const recorder = recordingProvider(null, "Tớ nghe rồi, việc nào gấp nhất?");
+  const { service } = subject(
+    "FREE",
+    { provider: recorder.value, catalog: { items: () => Promise.resolve([]) } },
+    {
+      ...configuration,
+      COMPANION_GUIDANCE_V2_ENABLED: false,
+      COMPANION_MAM_TEXT_V3_ENABLED: true,
+    },
+  );
+  const conversation = await create(service);
+  await service.send(
+    request({ message: "Ba deadline dí cùng lúc." }, "chat-mam-v3-0001"),
+    conversation.conversationId,
+  );
+  await service.send(
+    request({ message: "Báo cáo sáng mai." }, "chat-mam-v3-0002"),
+    conversation.conversationId,
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.responseMode),
+    ["LISTEN", "CLARIFY"],
+  );
+  assert.deepEqual(recorder.calls[0]?.friend?.history, []);
+  assert.equal(
+    recorder.calls[1]?.friend?.history[0]?.text,
+    "Ba deadline dí cùng lúc.",
+  );
+});
+
+void test("Mầm TEXT v3 counts the arc on all recent messages, so long turns still wrap up", async () => {
+  const recorder = recordingProvider(null, "Tớ nghe rồi, phần nào nặng nhất?");
+  const { service } = subject(
+    "FREE",
+    { provider: recorder.value, catalog: { items: () => Promise.resolve([]) } },
+    { ...configuration, COMPANION_MAM_TEXT_V3_ENABLED: true },
+  );
+  const conversation = await create(service);
+  const long = (seed: string) =>
+    `${seed} ${"Mình kể thêm chuyện ở công ty dạo này cho bạn nghe nhé. ".repeat(25)}`.slice(
+      0,
+      1_900,
+    );
+  for (const [index, seed] of [
+    "Ba tháng nay mình làm tới khuya.",
+    "Sếp giao thêm dự án mới.",
+    "Cuối tuần cũng phải trả lời tin nhắn.",
+  ].entries())
+    await service.send(
+      request({ message: long(seed) }, `chat-mam-long-000${String(index)}`),
+      conversation.conversationId,
+    );
+  // The byte-capped provider history keeps one pair, yet the third turn wraps up.
+  assert.equal(recorder.calls[2]?.friend?.history.length, 2);
+  assert.deepEqual(
+    recorder.calls.map((call) => call.responseMode),
+    ["LISTEN", "CLARIFY", "SUPPORT_AND_WRAP_UP"],
+  );
+});
+
+void test("Mầm TEXT v3 drops any suggestion on a SAFETY turn", async () => {
+  const recorder = recordingProvider(
+    { destination: "RESOURCE_LIBRARY", resourceRef: null },
+    "Mình rất lo khi nghe bạn nói vậy, và bạn không phải chịu chuyện này một mình. Hãy mở Cần trợ giúp ngay trong ứng dụng ngay bây giờ để được hỗ trợ kịp thời.",
+  );
+  const { service } = subject(
+    "FREE",
+    { provider: recorder.value, catalog: { items: () => Promise.resolve([]) } },
+    { ...configuration, COMPANION_MAM_TEXT_V3_ENABLED: true },
+  );
+  const conversation = await create(service);
+  const sent = await service.send(
+    request({ message: "Mình muốn tự sát." }, "chat-mam-safety-0001"),
+    conversation.conversationId,
+  );
+  assert.equal(recorder.calls[0]?.responseMode, "SAFETY");
+  assert.equal(sent.suggestion ?? null, null);
 });
 
 void test("a suggestion is stored encrypted and survives reload", async () => {
@@ -925,6 +1025,41 @@ void test("MB-869 paid Text accepts up to 900 reply characters while FREE keeps 
     else assert.equal((await send()).assistant, long);
     assert.ok(plans.length > 0 && plans.every((value) => value === plan));
   }
+});
+
+void test("Mầm TEXT v3 enforces 400 characters for paid and free replies", async () => {
+  // Real Vietnamese text, so only the length decides (a reply without diacritics is rejected anyway).
+  const vietnamese = (length: number) =>
+    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(30).slice(0, length - 1)}.`;
+  const send = async (
+    plan: "FREE" | "PLUS",
+    length: number,
+    mamTextV3: boolean,
+  ) => {
+    const recorder = recordingProvider(null, vietnamese(length));
+    const { service } = subject(
+      plan,
+      { provider: recorder.value },
+      { ...configuration, COMPANION_MAM_TEXT_V3_ENABLED: mamTextV3 },
+    );
+    const conversation = await create(service);
+    return service.send(
+      request(
+        { message: "Mình hơi rối" },
+        `chat-mam-limit-${plan}-${String(length)}-${String(mamTextV3)}`,
+      ),
+      conversation.conversationId,
+    );
+  };
+  for (const plan of ["FREE", "PLUS"] as const) {
+    assert.equal((await send(plan, 400, true)).assistant.length, 400);
+    await assert.rejects(
+      () => send(plan, 401, true),
+      chatProblem(503, "CHAT_PROVIDER_INVALID_RESPONSE"),
+    );
+  }
+  // With v3 off, PLUS keeps MB-869's longer replies.
+  assert.equal((await send("PLUS", 401, false)).assistant.length, 401);
 });
 
 void test("an over-budget estimate refuses before the provider call", async () => {
