@@ -12,6 +12,7 @@ import {
   COMPANION_GUIDANCE_POLICY_VERSION,
   COMPANION_KNOWLEDGE_VERSION,
   COMPANION_GUIDANCE_V2_VERSION,
+  COMPANION_MAM_TEXT_V3_VERSION,
   COMPANION_KNOWLEDGE_V2_VERSION,
   companionGuidanceSystem,
   companionReplyMaxCharacters,
@@ -19,6 +20,11 @@ import {
 import { v1Guidance } from "./companion-guidance-v1.fixture.js";
 import { v1ProviderBodies } from "./companion-provider-v1.fixture.js";
 import type { FriendInput } from "./companion-text-request.js";
+import {
+  selectResponseMode,
+  RESPONSE_MODES,
+  type ResponseMode,
+} from "./companion-response-mode.js";
 import type { ServicePlan } from "../model-routing/model-routing.js";
 
 const configuration = loadConfiguration({
@@ -559,6 +565,7 @@ const captureBodies = async (
     friend?: FriendInput;
     replyStyle?: "BRIEF" | "SUPPORTIVE";
     plan?: ServicePlan;
+    responseMode?: ResponseMode;
   },
 ) => {
   const original = globalThis.fetch;
@@ -587,6 +594,7 @@ const captureBodies = async (
       {
         ...(options.voice ? { voice: true } : {}),
         ...(options.friend ? { friend: options.friend } : {}),
+        ...(options.responseMode ? { responseMode: options.responseMode } : {}),
         ...(options.plan ? { plan: options.plan } : {}),
       },
     );
@@ -662,6 +670,168 @@ void test("friend requests use the v2 schema, temperature 0.7 and return the raw
       resourceRef: "R1",
     });
   }
+});
+
+void test("Mầm TEXT v3 selects a server mode for every turn and preserves the crisis reply", () => {
+  assert.equal(COMPANION_MAM_TEXT_V3_VERSION, "companion-mam-text-v3");
+  assert.deepEqual(RESPONSE_MODES, [
+    "LISTEN",
+    "CLARIFY",
+    "SUPPORT_AND_WRAP_UP",
+    "BOUNDARY",
+    "SAFETY",
+  ]);
+  const history: FriendInput["history"] = [
+    { role: "USER", text: "Ba deadline dí cùng lúc." },
+    { role: "ASSISTANT", text: "Việc nào gấp nhất?" },
+    { role: "USER", text: "Báo cáo sáng mai." },
+    { role: "ASSISTANT", text: "Báo cáo còn phần nào?" },
+  ];
+  assert.equal(selectResponseMode("Ba deadline dí cùng lúc.", []), "LISTEN");
+  assert.equal(
+    selectResponseMode("Báo cáo sáng mai.", history.slice(0, 2)),
+    "CLARIFY",
+  );
+  assert.equal(
+    selectResponseMode("Còn slide chiều thứ sáu.", history),
+    "SUPPORT_AND_WRAP_UP",
+  );
+  assert.equal(
+    selectResponseMode("Giờ mình nên làm gì?", history.slice(0, 2)),
+    "SUPPORT_AND_WRAP_UP",
+  );
+  assert.equal(
+    selectResponseMode("Viết giúp mình code Python làm bài tập này.", []),
+    "BOUNDARY",
+  );
+  assert.equal(
+    selectResponseMode("Có bài tập thở nào giúp mình bình tĩnh lại không?", []),
+    "SUPPORT_AND_WRAP_UP",
+  );
+  assert.equal(selectResponseMode("Mình không muốn sống nữa.", []), "SAFETY");
+  assert.equal(
+    selectResponseMode("Phim có cảnh nhân vật tự tử, buồn ghê.", []),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Phim có cảnh nhân vật buồn, mình muốn tự tử.", []),
+    "SAFETY",
+  );
+  assert.equal(
+    selectResponseMode("Deadline dí quá, mệt muốn chết luôn á.", []),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Mình không muốn làm bài tập gì đâu.", []),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Bài tập nhóm này làm mình mệt.", []),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Hôm nay mình lại có chuyện khác.", [
+      ...history,
+      { role: "USER", text: "Còn slide chiều thứ sáu." },
+      { role: "ASSISTANT", text: "Tớ nghĩ bạn nên chốt báo cáo trước nha." },
+    ]),
+    "LISTEN",
+  );
+  // A new topic after a wrap-up statement restarts the count instead of wrapping on its second turn.
+  assert.equal(
+    selectResponseMode("Sếp mắng mình trước cả phòng.", [
+      ...history,
+      { role: "USER", text: "Còn slide chiều thứ sáu." },
+      { role: "ASSISTANT", text: "Tớ nghĩ bạn nên chốt báo cáo trước nha." },
+      { role: "USER", text: "Hôm nay mình lại có chuyện khác." },
+      { role: "ASSISTANT", text: "Chuyện gì vậy?" },
+    ]),
+    "CLARIFY",
+  );
+  assert.equal(selectResponseMode("Làm sao mình chịu nổi nữa.", []), "LISTEN");
+  assert.equal(
+    selectResponseMode("Đi phỏng vấn năm chỗ rồi mà không chỗ nào nhận.", []),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Mình muốn viết hết ra, viết ở đâu được?", []),
+    "SUPPORT_AND_WRAP_UP",
+  );
+  assert.equal(
+    selectResponseMode("Bài tập nhóm, họ bắt mình làm hết.", []),
+    "LISTEN",
+  );
+  const prompt = companionGuidanceSystem({
+    channel: "TEXT",
+    friend: true,
+    mamTextV3: true,
+    responseMode: "SAFETY",
+  });
+  assert.match(prompt, /Mầm speaks as “tớ” to “bạn”/u);
+  assert.match(prompt, /Server response_mode: SAFETY/u);
+  assert.match(prompt, /Keep message under 400 characters/u);
+  // v3 patches v2 lines by index and text; these fail loudly if v2 is reordered or reworded.
+  const lines = prompt.split("\n");
+  assert.equal(lines.length, 30);
+  assert.match(lines[13] ?? "", /^Return only the requested JSON object/u);
+  assert.match(lines[4] ?? "", /“tớ hiểu”, “tớ hiểu sao”/u);
+  assert.match(lines[4] ?? "", /“tớ ở đây”/u);
+  assert.equal(prompt.includes("“mình hiểu”"), false);
+  assert.equal(prompt.includes("mình không chẩn đoán được"), false);
+  assert.equal(
+    (
+      prompt.match(
+        /Example (?:LISTEN|CLARIFY|SUPPORT_AND_WRAP_UP|BOUNDARY)/gu,
+      ) ?? []
+    ).length,
+    8,
+  );
+  assert.match(
+    prompt,
+    /Mình rất lo khi nghe bạn nói vậy, và bạn không phải chịu chuyện này một mình/u,
+  );
+  assert.equal(
+    prompt.includes("Guidance policy: companion-guidance-v2"),
+    false,
+  );
+});
+
+void test("Mầm mode is explicit in the provider system request and v2 is unchanged", async () => {
+  const baseline = await captureBodies("BEDROCK", plainReply, {
+    friend: friendInput,
+  });
+  const mam = await captureBodies("BEDROCK", plainReply, {
+    friend: friendInput,
+    responseMode: "CLARIFY",
+  });
+  assert.match(mam.bodies[0] ?? "", /companion-mam-text-v3/u);
+  assert.match(mam.bodies[0] ?? "", /Server response_mode: CLARIFY/u);
+  const gemini = await captureBodies("GEMINI", plainReply, {
+    friend: friendInput,
+    responseMode: "CLARIFY",
+  });
+  const schema = captured("GEMINI", gemini.bodies[0] ?? "{}").schema;
+  assert.equal(
+    (schema.properties as { message: { maxLength: number } }).message.maxLength,
+    400,
+  );
+  assert.match(baseline.bodies[0] ?? "", /companion-guidance-v2/u);
+  assert.equal((baseline.bodies[0] ?? "").includes("response_mode"), false);
+  // Real Vietnamese text, so only the length decides (a reply without diacritics is rejected anyway).
+  const vietnamese = (length: number) =>
+    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(20).slice(0, length - 1)}.`;
+  const accepted = await captureBodies(
+    "BEDROCK",
+    JSON.stringify(output(vietnamese(400))),
+    { friend: friendInput, responseMode: "CLARIFY" },
+  );
+  assert.equal(accepted.result.message.length, 400);
+  await assert.rejects(() =>
+    captureBodies("BEDROCK", JSON.stringify(output(vietnamese(401))), {
+      friend: friendInput,
+      responseMode: "CLARIFY",
+    }),
+  );
 });
 
 void test("a malformed suggestion is dropped but a link in the message is rejected", async () => {

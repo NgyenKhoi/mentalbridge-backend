@@ -249,9 +249,23 @@ precision, recall and F1: the crisis pointer (reply sends the user to Cần tr�
 giúp ngay and sets no suggestion) and resource suggestion, with destination
 accuracy. Deterministic follow-up-arc checks gate the caring-question arc; a
 same-model LLM judge scores it but never gates. The metric measures reply
-behaviour only; no runtime crisis classifier is added and AI still decides
-nothing about safety. Method, thresholds and before/after results:
+behaviour only; MB-845 adds no runtime crisis classifier and AI still decides
+nothing about safety (MB-846 below adds a lexical crisis-cue heuristic that only
+selects the fixed crisis wording). Method, thresholds and before/after results:
 [MB-845 evidence](../story-mb-845-companion-eval.md).
+
+## Mầm TEXT response mode (MB-846)
+
+The separate default-off Mầm TEXT v3 flag selects a server directive for each
+turn from the current message and consent-filtered recent conversation history:
+LISTEN, CLARIFY, SUPPORT_AND_WRAP_UP, BOUNDARY or SAFETY. This is a bounded
+conversation-structure heuristic, not a Care safety determination. The
+existing provider crisis instruction and fixed crisis example remain in place
+for cues the heuristic misses; the real-provider crisis pointer gate checks
+the replies. The mode is neither persisted nor exposed in the public API.
+Voice, v2 rollback behavior, suggestion schema and consent boundaries remain
+unchanged. See the [ADR 0049 MB-846 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md)
+and [MB-846 evaluation](../story-mb-846-companion-eval.md).
 
 ## Story 6201 authoring decision
 

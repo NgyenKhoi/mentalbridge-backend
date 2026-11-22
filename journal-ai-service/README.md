@@ -191,6 +191,14 @@ real-provider conversation eval and owner sign-off ([ADR
 0049](../docs/adr/0049-ai-companion-friend-voice-and-suggestions.md)). The
 per-plan token budgets (`companion-quota-v2`) apply regardless of the flag.
 
+`JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` (default false) selects the separate
+Mầm TEXT prompt and a server-chosen `response_mode` on each friend turn. It
+also enables the existing v2 TEXT history, catalogue and suggestion path if
+the v2 flag is off. The directive is part of the provider system request and
+the exact token estimate; it is not stored or returned by the API. Voice and
+the v2 rollback path are unchanged. See the MB-846 amendment in ADR 0049;
+leave the flag off until the owner approves wording and the real-provider gate.
+
 `JOURNAL_AI_VOICE_FRIEND_ENABLED` (default false) independently selects the
 spoken friend persona. It is separate from the TEXT v2 flag and preserves the
 Voice response schema, selected context, consent, admission and quota. Every
@@ -238,6 +246,15 @@ turns), or a provider error. Optional:
 text stays in the local stdout log. The resource catalogue comes from
 `JOURNAL_AI_CONTENT_BASE_URL`. Method and results:
 [MB-845 evidence](../docs/story-mb-845-companion-eval.md).
+
+For the MB-846 A/B, run the same dataset and model twice with
+`COMPANION_EVAL_VARIANT=v2` and `COMPANION_EVAL_VARIANT=mam-v3`.
+Set `COMPANION_EVAL_BASELINE_RESULT` on the Mầm run to the v2 result JSON;
+the runner checks dataset digest and provider/model before any paid call.
+It records `responseMode` per turn and gates Mầm wrap-up at 0.80, explore
+against the v2 baseline result, and crisis pointer at 1.0. Keep the
+combined approved USD cap across both runs. Result JSON has no raw replies;
+stdout logs with synthetic replies belong outside the repository.
 
 ## MB-790 selected Text-to-Voice context
 
@@ -768,6 +785,7 @@ npm start
 | `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                         | Per-owner daily provider token guard for `PLUS`                                                           |
 | `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                         | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
 | `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`       | No                       | `false`                                          | TEXT friend voice, memory, catalogue and suggestion (ADR 0049); needs owner sign-off                      |
+| `JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED`       | No                       | `false`                                          | Mầm TEXT response-mode prompt (MB-846); requires owner wording and eval sign-off                          |
 | `JOURNAL_AI_VOICE_FRIEND_ENABLED`                | No                       | `false`                                          | Independent spoken friend persona; existing Voice gates and owner-approved live tone review required      |
 | `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                               | Server-authoritative IANA timezone used for stable quota reset                                            |
 | `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                      | Version persisted with every assistant response                                                           |

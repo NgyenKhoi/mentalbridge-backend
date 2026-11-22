@@ -23,11 +23,11 @@ Text replies reflected and then asked a question every turn, gave no encourageme
 
 `companion-guidance-v2` and `companion-domain-knowledge-v2` apply only to TEXT while the flag is on. The companion talks like a warm long-time friend in Vietnamese, grounded only in what the user said.
 
-It comforts first. While the user is sharing a feeling and has not asked what to do, it only comforts: no tip, exercise or MentalBridge offer. Once the user asks what to do or where to go, it encourages them and gives one small idea, with one MentalBridge action when that fits. Owner review of the real-provider replies set this rule, and comforting research supports it: unsolicited advice tends to read as a judgement that the person cannot cope. (Replaced for TEXT by the [MB-845 amendment](#mb-845-amendment--caring-follow-up-arc-text-2026-11-14).)
+It comforts first. While the user is sharing a feeling and has not asked what to do, it only comforts: no tip, exercise or MentalBridge offer. Once the user asks what to do or where to go, it encourages them and gives one small idea, with one MentalBridge action when that fits. Owner review of the real-provider replies set this rule, and comforting research supports it: unsolicited advice tends to read as a judgement that the person cannot cope. (Replaced for TEXT by the MB-845 and MB-846 amendments below.)
 
 It avoids templated empathy. It does not open every reply by restating the situation and labelling the feeling, and it does not reuse a phrase from its earlier replies in the same conversation. It may use a light wish that takes the user's side for everyday troubles. It uses at most one emoji per reply, only now and then, and only in light moments, never on grief, distress, health or crisis.
 
-It asks a question only when the question moves the conversation, and never ends two replies in a row with one (replaced for TEXT by the MB-845 amendment). It addresses the user as "bạn" and itself as "mình", mirrors tui/cậu/bà/ông lightly, and never uses mày/tao.
+It asks a question only when the question moves the conversation, and never ends two replies in a row with one (replaced for TEXT by the MB-845 and MB-846 amendments below). The v2 voice addresses the user as "bạn" and itself as "mình"; the flagged Mầm v3 uses "tớ" and "bạn".
 
 It never minimises, jokes at the user or about grief, loss, self-worth, health or danger, sells features, or speaks as a clinician. Every v1 boundary stays: no diagnosis, medication, scoring, safety, eligibility or SupportPlan decisions. On a crisis cue it drops playfulness and offers, uses plain serious warmth, and points to Cần trợ giúp ngay. TEXT v2 uses temperature 0.7 on Bedrock and Gemini; OpenAI receives no temperature.
 
@@ -156,3 +156,50 @@ replaces "length rules are unchanged" above for the cases below.
 
 The package comes from the existing Consultation entitlement decision; no new
 package value or entitlement call is added.
+
+## MB-846 amendment — Mầm TEXT response mode, 2026-11-22 (owner wording review pending)
+
+The owner approved implementation of a separate, disabled-by-default
+`JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` variant. It uses
+`companion-mam-text-v3` and retains the v2 consent-filtered history, catalogue,
+suggestion schema, provider route, retry, quota and crisis pointer. With this
+flag off, v2 requests are unchanged. Voice is unchanged.
+
+For each Mầm TEXT turn, Journal/AI selects `LISTEN`, `CLARIFY`,
+`SUPPORT_AND_WRAP_UP`, `BOUNDARY` or `SAFETY` from the current user message and
+the roles and text of the last eight messages of the same conversation. The
+count does not depend on the byte-capped history sent to the provider, so long
+messages still reach wrap-up; only the mode leaves the server. The selection is sent as an
+explicit provider directive and counted in the preflight token estimate. It
+is not a public API field, persisted record, safety diagnosis or entitlement
+decision. A direct request for practical help wraps up immediately; an explicit
+code or homework request gets a scope boundary; crisis cues take priority.
+Otherwise the first two replies in a venting arc explore with one grounded
+question each. A third short-answer turn may clarify once; the next reply
+must wrap up. An assistant reply without a question ends the arc, so the next
+message starts a new count. The lexical crisis rule matches accented
+phrases on the original text, and unaccented phrases only in messages typed
+without diacritics, so words such as “từ từ” never trigger it. It is a
+heuristic, not a Care safety determination: the provider's existing crisis
+instruction still applies when it misses a cue, and every other mode's
+directive states that this crisis rule overrides it.
+
+`SUPPORT_AND_WRAP_UP` briefly reflects the user's details, comforts, then
+gives one or two concrete practical steps fitted to those details. It ends
+without a question unless information critical for immediate safety is
+missing. `BOUNDARY` supports emotions and how to approach a problem; it does
+not write code or complete homework. Mầm says “tớ” to “bạn”, varies openers,
+avoids templated empathy, uses only occasional fitting emoji, and keeps
+replies to 400 characters. While the flag is on, the 400-character limit
+applies to every package and supersedes the MB-869 900-character paid limit.
+The server enforces it on every reply (an over-limit reply is retried once,
+then refused); the output schema also carries it where the provider supports
+it, which Bedrock does not. Humour is light and never about pain or risk.
+`SAFETY` retains the existing fixed crisis reply, and the server drops any
+suggestion on a `SAFETY` turn. The
+earlier MB-845 question/advice rule remains the v2 rollback behavior.
+
+The real Sonnet 4.6 A/B gate is wrap-up ≥0.80 per turn, explore no worse than
+the v2 baseline on the same dataset and model, and crisis pointer 1.0. The rollout gate and owner
+tone review above still apply; this amendment is pending owner wording
+approval before activation.

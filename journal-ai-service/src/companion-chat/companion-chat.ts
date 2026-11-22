@@ -66,6 +66,10 @@ import {
   type FriendInput,
 } from "./companion-text-request.js";
 import { conversationMemory } from "./conversation-history.js";
+import {
+  selectResponseMode,
+  type ResponseMode,
+} from "./companion-response-mode.js";
 import { ResourceCatalog } from "./resource-catalog.js";
 
 import {
@@ -482,6 +486,7 @@ export interface ChatProvider {
       voiceObserver?: VoiceObserver;
       onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
       friend?: FriendInput;
+      responseMode?: ResponseMode;
       plan?: ServicePlan;
       requestTitle?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
@@ -1756,6 +1761,7 @@ export class RoutedChatProvider implements ChatProvider {
       voiceObserver?: VoiceObserver;
       onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
       friend?: FriendInput;
+      responseMode?: ResponseMode;
       plan?: ServicePlan;
       requestTitle?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
@@ -1772,8 +1778,11 @@ export class RoutedChatProvider implements ChatProvider {
     )
       throw new VoiceProviderFailure("AUTHORITY_OR_STATE");
     const friend = options?.voice ? undefined : options?.friend;
+    // The caller selects the mode once, so the preflight estimate and this request share it.
+    const responseMode = friend ? options?.responseMode : undefined;
+    const mamTextV3 = responseMode !== undefined;
     const plan = options?.voice ? undefined : options?.plan;
-    const maxLength = companionReplyMaxCharacters(plan);
+    const maxLength = mamTextV3 ? 400 : companionReplyMaxCharacters(plan);
     if (options?.voice && context.kinds.length !== 0)
       throw new VoiceProviderFailure("INVALID_RESPONSE");
     if (route.provider === "DETERMINISTIC_FAKE") {
@@ -1801,6 +1810,7 @@ export class RoutedChatProvider implements ChatProvider {
           }
         : {}),
       ...(friend ? { friend: true } : {}),
+      ...(responseMode ? { mamTextV3: true, responseMode } : {}),
       ...(plan ? { plan } : {}),
     });
     const requestTitle = options?.requestTitle === true && !options.voice;
@@ -1822,15 +1832,27 @@ export class RoutedChatProvider implements ChatProvider {
         : maxLength > 500
           ? paidProviderOutputJsonSchema
           : providerOutputJsonSchema;
-    const outputJsonSchema = requestTitle
+    const boundedOutputJsonSchema = mamTextV3
       ? {
           ...coreOutputJsonSchema,
-          required:
-            route.provider === "OPENAI"
-              ? [...coreOutputJsonSchema.required, "title"]
-              : coreOutputJsonSchema.required,
           properties: {
             ...coreOutputJsonSchema.properties,
+            message: {
+              ...coreOutputJsonSchema.properties.message,
+              maxLength: 400,
+            },
+          },
+        }
+      : coreOutputJsonSchema;
+    const outputJsonSchema = requestTitle
+      ? {
+          ...boundedOutputJsonSchema,
+          required:
+            route.provider === "OPENAI"
+              ? [...boundedOutputJsonSchema.required, "title"]
+              : boundedOutputJsonSchema.required,
+          properties: {
+            ...boundedOutputJsonSchema.properties,
             title: { anyOf: [{ type: "string" }, { type: "null" }] },
           },
         }
@@ -1839,7 +1861,7 @@ export class RoutedChatProvider implements ChatProvider {
             ...coreOutputJsonSchema,
             required: [...coreOutputJsonSchema.required, "expression"],
           }
-        : coreOutputJsonSchema;
+        : boundedOutputJsonSchema;
     const temperature = friend ? 0.7 : 0.2;
     const wireOutputJsonSchema = speechUnits
       ? { type: "array", minItems: 1, maxItems: 2, items: outputJsonSchema }
@@ -2686,13 +2708,16 @@ export class CompanionChatService {
       const sources = authorization.context.authorized
         ? conversation.context.sources
         : emptySources();
-      const memory = this.configuration.COMPANION_GUIDANCE_V2_ENABLED
+      const mamTextV3 =
+        this.configuration.COMPANION_MAM_TEXT_V3_ENABLED === true;
+      const friendEnabled =
+        this.configuration.COMPANION_GUIDANCE_V2_ENABLED === true || mamTextV3;
+      const memory = friendEnabled
         ? conversationMemory(conversation.messages, sources, (message) =>
             this.crypto.decrypt(owner, conversationId, message),
           )
         : { history: [], kinds: [] };
-      let friend: FriendInput | undefined = this.configuration
-        .COMPANION_GUIDANCE_V2_ENABLED
+      let friend: FriendInput | undefined = friendEnabled
         ? {
             history: memory.history,
             catalog: await this.catalog.items(),
@@ -2725,10 +2750,22 @@ export class CompanionChatService {
           };
       }
       const requestTitle = canInitializeTitle(conversation);
+      // Count the arc on every recent message, not the byte-capped provider history; only the mode leaves the server.
+      const responseMode =
+        mamTextV3 && friend
+          ? selectResponseMode(
+              parsed.data.message,
+              conversation.messages.slice(-8).map((message) => ({
+                role: message.role,
+                text: this.crypto.decrypt(owner, conversationId, message),
+              })),
+            )
+          : undefined;
       const estimate = estimateInputTokens(
         companionGuidanceSystem({
           channel: "TEXT",
           friend: !!friend,
+          ...(responseMode ? { mamTextV3: true, responseMode } : {}),
           plan: decision.packageCode,
         }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
         companionUserInput({
@@ -2760,6 +2797,7 @@ export class CompanionChatService {
           attemptedReply = await Promise.race([
             this.provider.reply(parsed.data.message, minimized, route, {
               ...(friend ? { friend } : {}),
+              ...(responseMode ? { responseMode } : {}),
               ...(requestTitle ? { requestTitle: true } : {}),
               plan: decision.packageCode,
               signal,
@@ -2777,7 +2815,9 @@ export class CompanionChatService {
           ]);
           assistant = validatedAssistantMessage(attemptedReply.message, {
             rejectLinks: friend !== undefined,
-            maxLength: companionReplyMaxCharacters(decision.packageCode),
+            maxLength: responseMode
+              ? 400
+              : companionReplyMaxCharacters(decision.packageCode),
           });
         } catch (error) {
           attemptError = error;
@@ -2820,9 +2860,11 @@ export class CompanionChatService {
         firstFailure = terminalFailure;
       }
       if (!reply || !assistant) throw deadlineFailure();
-      const suggestion = friend
-        ? resolveSuggestion(reply.suggestion, friend.catalog)
-        : null;
+      // A SAFETY turn never shows a suggestion button, whatever the model returned.
+      const suggestion =
+        friend && responseMode !== "SAFETY"
+          ? resolveSuggestion(reply.suggestion, friend.catalog)
+          : null;
       const createdAt = this.clock.now();
       const userMessageId = randomUUID();
       const assistantMessageId = randomUUID();
