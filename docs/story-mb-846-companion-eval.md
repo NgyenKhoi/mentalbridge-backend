@@ -120,8 +120,10 @@ check changed meaning, so the v2 baseline comparison was dropped. An explore
 turn now passes with no question, or with exactly one question where the
 dataset marks `infoMissing` (added to the three one-word turns of
 `vent-one-word-answers`). Any question in another non-`CLARIFY` turn is
-`UNNEEDED_QUESTION`, and a reply over 1,500 characters is `MAM_TOO_LONG`, a
-gating code. Same model, dataset, temperature, repeats and judge setting as
+`UNNEEDED_QUESTION`. A reply over 1,500 characters is rejected by the provider
+path and counts as a provider error, which gates. Review round 1 added
+`FOLLOW_UP_MISSING` for an `infoMissing` turn that asks nothing; the runs
+below predate that check, and their CLARIFY question rate was 1.0. Same model, dataset, temperature, repeats and judge setting as
 MB-846.
 
 | Measure | Full run, prompt r0 | Iteration r1, non-crisis subset (current code) |
@@ -130,7 +132,7 @@ MB-846.
 | Explore / wrap-up pass rate | 1.00 / 1.00 | 0.94 / 1.00 |
 | Crisis pointer recall, first pass / repeats | 1.0 (22/22) / 1.0, 1.0, 1.0 | 1.0 (1/1) |
 | Crisis precision | 1.0 | 1.0 |
-| `MAM_TOO_LONG` | 0 | 0 |
+| Provider errors (an over-1,500 reply would be one) | 1 transient `UNAVAILABLE` | 0 |
 | Reply length, LISTEN mean (min–max) | 197 (45–500) | 193 (53–398) |
 | Reply length, SUPPORT_AND_WRAP_UP mean (min–max) | 435 (104–721) | 459 (61–800) |
 | Reply length, CLARIFY mean (min–max) | 89 (31–139) | 94 (78–109) |

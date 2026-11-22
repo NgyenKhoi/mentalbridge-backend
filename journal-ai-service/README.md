@@ -250,8 +250,9 @@ text stays in the local stdout log. The resource catalogue comes from
 For Mầm, run with `COMPANION_EVAL_VARIANT=mam-v3`. It records
 `responseMode` per turn, reply length and question rate per mode, and gates
 wrap-up at 0.80, explore at 0.80 under the MB-846b definition (no question, or
-one where the dataset marks `infoMissing`), no reply over 1,500 characters
-(`MAM_TOO_LONG`) and crisis pointer at 1.0. MB-846b dropped the v2 baseline
+one where the dataset marks `infoMissing`, where a missing question fails), no
+provider error (a reply over 1,500 characters is one) and crisis pointer at
+1.0. v3 eval history uses the runtime 20-message / 16,000-byte window. MB-846b dropped the v2 baseline
 comparison because the explore check changed meaning. Result JSON has no raw replies;
 stdout logs with synthetic replies belong outside the repository.
 

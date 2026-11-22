@@ -186,11 +186,18 @@ const EXPLORE = phrases(
     "hoi (?:minh|toi|tui) (?:di|nha|nhe|them)",
     "(?:muon|cho minh) (?:ke|noi|tam su) them",
     "giup (?:minh|toi) hieu",
-    "(?:khong|chang) (?:biet|hieu) (?:tai|vi) sao",
+    "(?:khong|chang) (?:biet|hieu) (?:tai |vi )?sao",
   ].join("|"),
 );
 
-const closing = (message: string): boolean => CLOSING.test(plain(message));
+// “Cảm ơn nha, nhưng mình vẫn buồn” or “thử xem rồi mà vẫn không được” keeps the topic open.
+const STILL_OPEN = phrases(
+  "nhung|ma (?:van|khong|chua)|van (?:khong|chua|con)",
+);
+const closing = (message: string): boolean => {
+  const text = plain(message);
+  return CLOSING.test(text) && !STILL_OPEN.test(text);
+};
 
 const modeFor = (message: string, topic: readonly string[]): ResponseMode => {
   if (crisisCue(message)) return "SAFETY";

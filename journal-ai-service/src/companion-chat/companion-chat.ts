@@ -451,6 +451,10 @@ const unsafeAssistantPatterns = [
 // The server and web own every link; same block as support-plan-companion.ts.
 const linkOrMarkup = /https?:\/\/|www\.|<[^>]+>|\[[^\]]+\]\([^)]+\)/iu;
 
+// A deep Mầm v3 reply (up to 1500 characters) needs longer generation than a 10 s attempt allows.
+export const providerAttemptMs = (mamTextV3: boolean): number =>
+  mamTextV3 ? 18_000 : 10_000;
+
 const withoutCutOffTail = (message: string): string =>
   /[.!?…”»)\p{Extended_Pictographic}]️?$/u.test(message)
     ? message
@@ -2808,9 +2812,8 @@ export class CompanionChatService {
           throw firstFailure ?? deadlineFailure();
         if (remainingMs <= 0) throw deadlineFailure();
         await this.repository.reserveAttempt(command, estimate, tokenBudget);
-        // A deep Mầm v3 reply (up to 1500 characters) needs longer generation than a 10 s attempt allows.
         const signal = AbortSignal.timeout(
-          Math.min(responseMode ? 18_000 : 10_000, remainingMs),
+          Math.min(providerAttemptMs(responseMode !== undefined), remainingMs),
         );
         let usage: { input: number; output: number } | undefined;
         let attemptedReply: ProviderReply | undefined;

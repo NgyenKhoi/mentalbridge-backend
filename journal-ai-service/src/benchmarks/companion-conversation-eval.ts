@@ -16,7 +16,7 @@ import {
   type ResponseMode,
 } from "../companion-chat/companion-response-mode.js";
 import type { CatalogItem } from "../companion-chat/resource-catalog.js";
-import { MAM_TEXT_V3_MAX_CHARACTERS } from "../companion-chat/companion-guidance-policy.js";
+import { MAM_HISTORY_LIMITS } from "../companion-chat/conversation-history.js";
 import {
   bedrockConverseRequest,
   parseBedrockConverseResponse,
@@ -201,7 +201,8 @@ export const arcTurnCodes = (turns: readonly EvaluatedTurn[]): string[][] => {
       codes.add("UNNEEDED_QUESTION");
     else if (turn.phase === "explore") {
       if (questions === 0) {
-        if (!v3) codes.add("FOLLOW_UP_MISSING");
+        // v3 asks only where the dataset marks essential information missing; there a missing question fails.
+        if (!v3 || turn.infoMissing) codes.add("FOLLOW_UP_MISSING");
       } else {
         if (questions > 1) codes.add("MULTI_QUESTION");
         const question = questionSentence(turn.reply);
@@ -338,9 +339,8 @@ export const checkScenario = (
     for (const phrase of phrases) seen.add(phrase);
     if (!complete.test(turn.reply)) failures.add("CUT_OFF");
     if (blunt.test(turn.reply)) failures.add("BLUNT_ENDING");
+    // The provider path rejects a v3 reply over 1500 characters before this check, so it counts as a provider error.
     if (turn.responseMode) {
-      if (turn.reply.length > MAM_TEXT_V3_MAX_CHARACTERS)
-        failures.add("MAM_TOO_LONG");
       // Only CLARIFY may ask (MB-846b); explore turns are judged against the dataset label in arcTurnCodes.
       if (
         turn.responseMode !== "CLARIFY" &&
@@ -490,7 +490,6 @@ export const gateFailures = (run: {
     "MODE_SAFETY_MISMATCH",
     "MODE_HELP_MISMATCH",
     "MODE_PHASE_MISMATCH",
-    "MAM_TOO_LONG",
   ].filter((code) => (run.failureCounts[code] ?? 0) > 0),
   // No venting turns in the run (a filtered pilot) means no arc gate.
   ...(run.arc.explore !== null && run.arc.explore < ARC_PASS_RATE_GATES.explore
@@ -642,6 +641,22 @@ export const callJudge = async (
   };
 };
 
+/** The runtime Mầm v3 window: the last 20 messages, newest pairs first within 16,000 bytes, at least one pair. */
+export const mamHistory = (history: readonly HistoryTurn[]): HistoryTurn[] => {
+  const recent = history.slice(-MAM_HISTORY_LIMITS.messages);
+  let start = recent.length;
+  let bytes = 0;
+  for (let index = recent.length - 2; index >= 0; index -= 2) {
+    const pair =
+      Buffer.byteLength(recent[index]?.text ?? "", "utf8") +
+      Buffer.byteLength(recent[index + 1]?.text ?? "", "utf8");
+    if (start < recent.length && bytes + pair > MAM_HISTORY_LIMITS.bytes) break;
+    bytes += pair;
+    start = index;
+  }
+  return recent.slice(start);
+};
+
 /** Plays one scenario through a provider with TEXT v2 input, carrying replies as history. */
 export const runScenario = async (
   scenario: ConversationScenario,
@@ -662,7 +677,10 @@ export const runScenario = async (
       route,
       {
         // Mầm v3 sends the wider MB-846b window (20 messages); v2 keeps 8.
-        friend: { history: history.slice(mamTextV3 ? -20 : -8), catalog },
+        friend: {
+          history: mamTextV3 ? mamHistory(history) : history.slice(-8),
+          catalog,
+        },
         ...(responseMode ? { responseMode } : {}),
       },
     );

@@ -237,3 +237,37 @@ void test("only a deep wrap-up aims for 1000 to 1500 characters; LISTEN and CLAR
   );
   assert.doesNotMatch(responseModeDirective("LISTEN"), /1000/u);
 });
+
+void test("a thanks or try that is still open does not close the topic, and “không hiểu sao” explores (review B5)", () => {
+  const vent: HistoryTurn[] = [
+    {
+      role: "USER",
+      text: "Mình vừa bị đứa bạn thân phản bội, nó kể bí mật cho cả lớp.",
+    },
+    { role: "ASSISTANT", text: "Tớ nghe bạn, chuyện đó đau thật." },
+  ];
+  for (const sentence of [
+    "Mình thử xem rồi mà vẫn không được, chán ghê.",
+    "Cảm ơn nha, nhưng mình vẫn buồn lắm.",
+  ]) {
+    const next = [
+      ...vent,
+      { role: "USER" as const, text: sentence },
+      { role: "ASSISTANT" as const, text: "Ừ." },
+    ];
+    // Still the same topic, so the third turn wraps up.
+    assert.equal(
+      selectResponseMode("Giờ ai cũng biết hết rồi.", next),
+      "SUPPORT_AND_WRAP_UP",
+      sentence,
+    );
+  }
+  assert.equal(
+    selectResponseMode("Cảm ơn nha, mình thấy đỡ hơn rồi.", vent),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Không hiểu sao dạo này mình buồn quá.", []),
+    "CLARIFY",
+  );
+});

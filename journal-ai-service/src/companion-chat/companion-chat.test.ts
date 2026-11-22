@@ -21,6 +21,7 @@ import {
   CompanionChatService,
   ChatCrypto,
   RoutedChatProvider,
+  providerAttemptMs,
   OwnerVerifiedContextAssembler,
   providerOutputJsonSchemaV2,
   type ChatCommand,
@@ -3908,4 +3909,33 @@ void test("rejects a real-provider envelope that claims a business action", asyn
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+void test("MB-846b: v3 sends up to 20 history messages and waits up to 18 s; v2 keeps 8 and 10 s", async () => {
+  for (const [runtime, expected] of [
+    [
+      {
+        ...configuration,
+        COMPANION_MAM_TEXT_V3_ENABLED: true,
+        CHAT_FREE_DAILY_ANSWERS: 50,
+      },
+      20,
+    ],
+    [{ ...friendConfiguration, CHAT_FREE_DAILY_ANSWERS: 50 }, 8],
+  ] as const) {
+    const recorder = recordingProvider(null, "Tớ nghe rồi nè.");
+    const { service } = subject("FREE", { provider: recorder.value }, runtime);
+    const conversation = await create(service);
+    for (let index = 0; index < 12; index += 1)
+      await service.send(
+        request(
+          { message: `Lượt ${String(index)} mình kể tiếp chuyện ở công ty.` },
+          `chat-window-${String(expected)}-${String(index).padStart(4, "0")}`,
+        ),
+        conversation.conversationId,
+      );
+    assert.equal(recorder.calls.at(-1)?.friend?.history.length, expected);
+  }
+  assert.equal(providerAttemptMs(true), 18_000);
+  assert.equal(providerAttemptMs(false), 10_000);
 });

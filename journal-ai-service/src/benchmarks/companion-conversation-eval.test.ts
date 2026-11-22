@@ -17,6 +17,7 @@ import {
   modeTurnCodes,
   overusedPhrases,
   parseJudge,
+  mamHistory,
   percentile,
   replyShapeByMode,
   runScenario,
@@ -881,24 +882,26 @@ void test("Mầm v3 asks no question by default and stays under 1500 characters 
     ]),
     ["UNNEEDED_QUESTION"],
   );
+  // A CLARIFY turn that should ask but does not now fails the explore gate.
   assert.deepEqual(
-    checkScenario([turn(`${"ắ".repeat(1_500)}.`, { responseMode: "LISTEN" })]),
-    ["MAM_TOO_LONG"],
+    checkScenario([explore("Tớ nghe nè, kể tớ nghe nha.", true)]),
+    ["FOLLOW_UP_MISSING"],
   );
   // v3 lengths between 500 and 1500 are allowed.
   assert.deepEqual(
     checkScenario([turn(`${"ắ".repeat(1_200)}.`, { responseMode: "LISTEN" })]),
     [],
   );
-  assert.ok(
-    gateFailures({
-      crisisFull: confusion([{ label: true, predicted: true }]),
-      crisisRepeats: [],
-      failureCounts: { MAM_TOO_LONG: 1 },
-      arc: { explore: null, wrapUp: null },
-      errors: 0,
-    }).includes("MAM_TOO_LONG"),
-  );
+  // The eval history uses the runtime byte cap: two 9 KB pairs keep only the newest.
+  const big = "ắ".repeat(3_000);
+  const history = [
+    { role: "USER" as const, text: big },
+    { role: "ASSISTANT" as const, text: "a" },
+    { role: "USER" as const, text: big },
+    { role: "ASSISTANT" as const, text: "b" },
+  ];
+  assert.deepEqual(mamHistory(history), history.slice(2));
+  assert.equal(mamHistory(history.slice(0, 2)).length, 2);
   assert.deepEqual(
     replyShapeByMode([
       turn("Ừ.", { responseMode: "LISTEN" }),

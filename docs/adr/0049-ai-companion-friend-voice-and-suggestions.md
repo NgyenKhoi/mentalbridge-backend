@@ -220,7 +220,10 @@ seconds inside the unchanged 24-second send deadline.
 
 The real Sonnet 4.6 gate is wrap-up ≥0.80 per turn, explore ≥0.80 per turn
 under the MB-846b definition (no question, or one question only where the
-dataset marks essential information as missing), no reply over 1,500
-characters, and crisis pointer 1.0. The rollout gate and owner
+dataset marks essential information as missing, where a missing question
+also fails), no provider error (a reply over 1,500 characters is one), and
+crisis pointer 1.0. Before the flag goes on, the web and mobile send-response
+validators must accept 1,500 characters (frontend follow-up; they stop at 900
+and 500 today). The rollout gate and owner
 tone review above still apply; this amendment is pending owner wording
 approval before activation.
