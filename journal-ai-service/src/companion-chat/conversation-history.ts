@@ -15,6 +15,12 @@ const HISTORY_MAX_BYTES = 3_000;
 /** Mầm TEXT v3 window (MB-846b): replies reach 1500 characters, so 8 messages / 3 KB would keep about one pair. */
 export const MAM_HISTORY_LIMITS = { messages: 20, bytes: 16_000 } as const;
 
+/** Bounded input for one MB-846c memory note on an earlier conversation. */
+export const MAM_NOTE_TRANSCRIPT_LIMITS = {
+  messages: 20,
+  bytes: 8_000,
+} as const;
+
 const selected = (kind: ContextKind, sources: ConversationContextSources) =>
   kind === "JOURNAL"
     ? sources.diary

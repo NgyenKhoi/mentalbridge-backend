@@ -191,6 +191,10 @@ flag; `companion-guidance-v2` remains only as the eval A/B baseline. Migration
 017 must run before deploy. The directive is part of the provider system
 request and the exact token estimate; it is not stored or returned by the API.
 Voice is unchanged; see ADR 0049.
+With effective L2, Mầm v3 also reads encrypted memory notes on the owner's three
+newest other conversations from the last 30 days (MB-846c, migration 023),
+generating a missing or stale note with one FREE/PLUS-route call charged to
+the daily token budget; without L2 it purges them.
 
 `JOURNAL_AI_VOICE_FRIEND_ENABLED` (default false) independently selects the
 spoken friend persona. It is separate from the TEXT v2 flag and preserves the

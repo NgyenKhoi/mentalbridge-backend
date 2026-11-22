@@ -60,3 +60,45 @@ void test("token estimate counts UTF-8 bytes of system and input, rounded up", (
   // "ệ" is 3 UTF-8 bytes.
   assert.equal(estimateInputTokens("ệệệệ", ""), 3);
 });
+
+void test("MB-846c: previous conversations come before history only when supplied", () => {
+  const friend = {
+    history: [{ role: "USER" as const, text: "Lúc nãy" }],
+    catalog: [],
+  };
+  const without = companionUserInput({
+    message: "x",
+    context: { kinds: [], prompt: "" },
+    friend,
+  });
+  assert.equal(without.includes("previous_conversations"), false);
+  const empty = companionUserInput({
+    message: "x",
+    context: { kinds: [], prompt: "" },
+    friend: { ...friend, previousConversations: [] },
+  });
+  assert.equal(empty, without);
+  const withNotes = JSON.parse(
+    companionUserInput({
+      message: "x",
+      context: { kinds: [], prompt: "" },
+      friend: {
+        ...friend,
+        previousConversations: [
+          {
+            date: "20/09",
+            title: "Ba deadline",
+            note: "Người dùng kể về ba deadline.",
+          },
+        ],
+      },
+    }),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(withNotes), [
+    "message",
+    "context",
+    "previous_conversations",
+    "history",
+    "catalog",
+  ]);
+});

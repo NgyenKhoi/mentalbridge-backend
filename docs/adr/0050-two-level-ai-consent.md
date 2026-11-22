@@ -108,6 +108,16 @@ Encryption, retention, no saved prompts/bearers/raw provider output, AI-support-
 and Care-decides rules, public-catalogue suggestions, quotas, source limits and
 deterministic fallbacks remain unchanged.
 
+## MB-846c companion cross-conversation memory (owner to approve wording)
+
+Same-conversation memory remains L1. Reading or summarising the owner's other
+Mầm TEXT conversations reads personal history and requires effective L2 at the
+final pre-dispatch check; without it the request carries same-conversation
+history only, generates nothing, and purges every stored memory note for that
+owner (`$unset`) on that request. Nobody receives L2 for memory automatically.
+The notes are data for the provider, never instructions, and never change the
+crisis path; see the ADR 0021 MB-846c amendment.
+
 ## Compatibility and rollout
 
 Care OpenAPI advances from 1.10.0 to 1.11.0; Journal/AI from 1.17.0 to 1.18.0.

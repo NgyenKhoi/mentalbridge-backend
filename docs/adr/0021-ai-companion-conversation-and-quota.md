@@ -159,6 +159,27 @@ worktree while parallel, then merged `dev`, and preserves operation ordering or
 refetches after overlapping send/rename results. Contract-ready details are
 recorded in `.artifacts/mb-810-contract-ready.md` for the implementation PR.
 
+## MB-846c companion cross-conversation memory — 2026-11-22 (owner to approve wording)
+
+While Mầm TEXT v3 is enabled, a conversation may carry one optional encrypted
+`memoryNote` (at most 400 characters, third person: what the user shared, what
+Mầm suggested, how they seemed at the end), with `memoryNoteUpdatedAt` (the
+conversation `updatedAt` it summarises) and `memoryNoteVersion`. It uses the
+message AES-256-GCM key with AAD `${owner}:${conversationId}:memory-note` and
+never appears in the public API. On a v3 TEXT turn with effective L2, Journal/AI
+reads the owner's three newest other unexpired conversations updated in the
+last 30 days, generates a missing or stale note with one provider call per
+conversation on the FREE/PLUS route (bounded input: the last 20 messages within
+8,000 bytes, pairs with deselected context kinds dropped), and sends up to three
+notes (date, title, note) to the provider as `previous_conversations` before the
+current history. Generation shares at most 6 seconds and leaves the reply at
+least 12 seconds of the 24-second deadline; each call is reserved and settled
+against the owner's daily token budget on the same command, and any failure,
+timeout or exhausted budget leaves that note out without failing the turn. The
+note lives in the conversation document, so deletion, the retention TTL and
+account hard delete remove it. Migration `023_companion_memory_note.cjs` adds
+the optional fields to the strict validator.
+
 ## Rejected alternatives
 
 - Count sends or tokens in the browser: rejected because retries, multiple
