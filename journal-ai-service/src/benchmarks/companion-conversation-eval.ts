@@ -309,6 +309,32 @@ export const replyShapeByMode = (turns: readonly EvaluatedTurn[]) => {
   };
 };
 
+// Owner soft target (2026-11-23): a wrap-up after a venting arc should average 1000+ characters; warn only.
+export const WRAP_UP_DEPTH_SOFT_TARGET = 1_000;
+
+/** Length of the dataset wrap-up turns, the replies that need depth; belowTarget warns and never gates. */
+export const wrapUpDepth = (turns: readonly EvaluatedTurn[]) => {
+  const lengths = turns
+    .filter((turn) => turn.phase === "wrapUp")
+    .map((turn) => turn.reply.length)
+    .sort((a, b) => a - b);
+  const mean =
+    lengths.length === 0
+      ? null
+      : Math.round(
+          lengths.reduce((sum, value) => sum + value, 0) / lengths.length,
+        );
+  return {
+    turns: lengths.length,
+    meanChars: mean,
+    minChars: lengths[0] ?? null,
+    maxChars: lengths.at(-1) ?? null,
+    lengths,
+    softTarget: WRAP_UP_DEPTH_SOFT_TARGET,
+    belowTarget: mean !== null && mean < WRAP_UP_DEPTH_SOFT_TARGET,
+  };
+};
+
 /** Deterministic failure codes for one scenario; an empty list passes. */
 export const checkScenario = (
   turns: readonly EvaluatedTurn[],

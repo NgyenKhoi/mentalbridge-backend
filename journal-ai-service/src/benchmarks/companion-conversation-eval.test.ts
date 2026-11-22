@@ -18,6 +18,7 @@ import {
   overusedPhrases,
   parseJudge,
   mamHistory,
+  wrapUpDepth,
   percentile,
   replyShapeByMode,
   runScenario,
@@ -936,4 +937,31 @@ void test("Mầm v3 asks no question by default and stays under 1500 characters 
       stockClosers: 1,
     },
   );
+});
+
+void test("wrap-up depth reports the dataset wrap-up lengths against a soft 1000-character target", () => {
+  const wrap = (length: number) =>
+    turn(`${"ắ".repeat(length - 1)}.`, {
+      phase: "wrapUp",
+      responseMode: "SUPPORT_AND_WRAP_UP",
+    });
+  const report = wrapUpDepth([
+    wrap(800),
+    wrap(1_200),
+    turn("Ừ.", { responseMode: "LISTEN" }),
+  ]);
+  assert.deepEqual(
+    { ...report, lengths: undefined },
+    {
+      turns: 2,
+      meanChars: 1_000,
+      minChars: 800,
+      maxChars: 1_200,
+      lengths: undefined,
+      softTarget: 1_000,
+      belowTarget: false,
+    },
+  );
+  assert.equal(wrapUpDepth([wrap(700)]).belowTarget, true);
+  assert.equal(wrapUpDepth([]).meanChars, null);
 });

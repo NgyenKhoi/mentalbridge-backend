@@ -31,6 +31,7 @@ import {
   overusedPhrases,
   percentile,
   replyShapeByMode,
+  wrapUpDepth,
   runScenario,
   templatedOpener,
   type ConversationScenario,
@@ -386,6 +387,7 @@ const result = {
     failureCounts,
     arcPassRates: { ...arc, gates: ARC_PASS_RATE_GATES },
     replyShape: replyShapeByMode(firstPass.flatMap((value) => value.turns)),
+    wrapUpDepth: wrapUpDepth(firstPass.flatMap((value) => value.turns)),
     responseModes: Object.fromEntries(
       RESPONSE_MODES.map((mode) => [
         mode,
@@ -439,7 +441,10 @@ const replies = firstPass.map((value) => value.turns.map((turn) => turn.reply));
 process.stdout.write(
   `${JSON.stringify({ overusedPhrases: overusedPhrases(replies, 3), templatedOpeners: `${String(replies.flat().filter(templatedOpener).length)}/${String(replies.flat().length)}` })}\n`,
 );
-
+if (result.checks.wrapUpDepth.belowTarget)
+  process.stdout.write(
+    `WARNING: wrap-up mean ${String(result.checks.wrapUpDepth.meanChars)} characters is below the soft target ${String(result.checks.wrapUpDepth.softTarget)} (report only).\n`,
+  );
 process.stdout.write(`${JSON.stringify({ ...result, turns: undefined })}\n`);
 process.stdout.write(
   [
