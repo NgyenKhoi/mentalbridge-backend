@@ -5,7 +5,11 @@ import type {
   ContextKind,
   ConversationContextSources,
 } from "./companion-chat.js";
-import { conversationMemory, recentHistory } from "./conversation-history.js";
+import {
+  conversationMemory,
+  MAM_HISTORY_LIMITS,
+  recentHistory,
+} from "./conversation-history.js";
 
 const texts = new Map<string, string>();
 const message = (
@@ -185,4 +189,40 @@ void test("returns the kinds of retained complete pairs and excludes orphan mess
     ],
     kinds: ["JOURNAL", "SUPPORT_PLAN"],
   });
+});
+
+void test("the Mầm v3 window keeps up to 20 messages within 16 KB of Vietnamese text (MB-846b)", () => {
+  const short = Array.from({ length: 24 }, (_, index) =>
+    message(index, `lượt ${String(index)}`),
+  );
+  const wide = conversationMemory(
+    short,
+    allSelected,
+    decrypt,
+    MAM_HISTORY_LIMITS,
+  );
+  assert.equal(wide.history.length, 20);
+  assert.equal(wide.history[0]?.text, "lượt 4");
+  // The default v2 window is unchanged.
+  assert.equal(recentHistory(short, allSelected, decrypt).length, 8);
+  // 1,500-character Vietnamese replies (about 2 KB each in UTF-8) hit the byte cap first.
+  const reply = "Tớ hiểu cảm giác đó, mình gỡ từng chuyện một nha. "
+    .repeat(30)
+    .slice(0, 1_500);
+  const long = Array.from({ length: 20 }, (_, index) =>
+    message(index + 100, index % 2 === 0 ? "Mình kể tiếp nè." : reply),
+  );
+  const capped = conversationMemory(
+    long,
+    allSelected,
+    decrypt,
+    MAM_HISTORY_LIMITS,
+  );
+  const bytes = capped.history.reduce(
+    (sum, turn) => sum + Buffer.byteLength(turn.text, "utf8"),
+    0,
+  );
+  assert.ok(capped.history.length >= 8 && capped.history.length < 20);
+  assert.ok(bytes <= MAM_HISTORY_LIMITS.bytes);
+  assert.equal(capped.history.at(-1)?.text, reply);
 });

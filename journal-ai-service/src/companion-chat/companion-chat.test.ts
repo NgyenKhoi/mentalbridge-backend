@@ -779,7 +779,7 @@ void test("Mầm TEXT v3 flag enables friend history and mode binding without en
   );
   assert.deepEqual(
     recorder.calls.map((call) => call.responseMode),
-    ["LISTEN", "CLARIFY"],
+    ["LISTEN", "LISTEN"],
   );
   assert.deepEqual(recorder.calls[0]?.friend?.history, []);
   assert.equal(
@@ -810,11 +810,11 @@ void test("Mầm TEXT v3 counts the arc on all recent messages, so long turns st
       request({ message: long(seed) }, `chat-mam-long-000${String(index)}`),
       conversation.conversationId,
     );
-  // The byte-capped provider history keeps one pair, yet the third turn wraps up.
-  assert.equal(recorder.calls[2]?.friend?.history.length, 2);
+  // The v3 window (20 messages / 16 KB) keeps both earlier pairs; the mode counts recent turns either way.
+  assert.equal(recorder.calls[2]?.friend?.history.length, 4);
   assert.deepEqual(
     recorder.calls.map((call) => call.responseMode),
-    ["LISTEN", "CLARIFY", "SUPPORT_AND_WRAP_UP"],
+    ["LISTEN", "LISTEN", "SUPPORT_AND_WRAP_UP"],
   );
 });
 
@@ -1027,10 +1027,10 @@ void test("MB-869 paid Text accepts up to 900 reply characters while FREE keeps 
   }
 });
 
-void test("Mầm TEXT v3 enforces 400 characters for paid and free replies", async () => {
+void test("Mầm TEXT v3 enforces 1500 characters for paid and free replies", async () => {
   // Real Vietnamese text, so only the length decides (a reply without diacritics is rejected anyway).
   const vietnamese = (length: number) =>
-    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(30).slice(0, length - 1)}.`;
+    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(40).slice(0, length - 1)}.`;
   const send = async (
     plan: "FREE" | "PLUS",
     length: number,
@@ -1052,9 +1052,9 @@ void test("Mầm TEXT v3 enforces 400 characters for paid and free replies", asy
     );
   };
   for (const plan of ["FREE", "PLUS"] as const) {
-    assert.equal((await send(plan, 400, true)).assistant.length, 400);
+    assert.equal((await send(plan, 1_500, true)).assistant.length, 1_500);
     await assert.rejects(
-      () => send(plan, 401, true),
+      () => send(plan, 1_501, true),
       chatProblem(503, "CHAT_PROVIDER_INVALID_RESPONSE"),
     );
   }

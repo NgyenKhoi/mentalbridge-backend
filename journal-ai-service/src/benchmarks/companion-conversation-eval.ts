@@ -16,6 +16,7 @@ import {
   type ResponseMode,
 } from "../companion-chat/companion-response-mode.js";
 import type { CatalogItem } from "../companion-chat/resource-catalog.js";
+import { MAM_TEXT_V3_MAX_CHARACTERS } from "../companion-chat/companion-guidance-policy.js";
 import {
   bedrockConverseRequest,
   parseBedrockConverseResponse,
@@ -36,6 +37,8 @@ const turnSchema = z.object({
   phase: z.enum(["explore", "wrapUp"]).optional(),
   // Details the user gave that a follow-up question should build on.
   detailTerms: z.array(z.string().min(1)).min(1).optional(),
+  // Mầm v3 (MB-846b): essential information is missing, so one question is needed; elsewhere a question fails.
+  infoMissing: z.boolean().optional(),
 });
 
 const datasetSchema = z.object({
@@ -72,6 +75,7 @@ export interface EvaluatedTurn {
   phase?: "explore" | "wrapUp";
   responseMode?: ResponseMode;
   detailTerms?: string[];
+  infoMissing?: boolean;
   /** The user's message; arc checks look for its details in the follow-up. */
   user?: string;
 }
@@ -191,9 +195,14 @@ export const arcTurnCodes = (turns: readonly EvaluatedTurn[]): string[][] => {
     const questions = questionCount(turn.reply);
     questionRun = questions > 0 ? questionRun + 1 : 0;
     if (questionRun > 3) codes.add("ENDLESS_QUESTIONS");
-    if (turn.phase === "explore") {
-      if (questions === 0) codes.add("FOLLOW_UP_MISSING");
-      else {
+    // Mầm v3 asks no question by default: an explore turn passes with none, or with one when info is missing.
+    const v3 = turn.responseMode !== undefined;
+    if (turn.phase === "explore" && v3 && questions === 1 && !turn.infoMissing)
+      codes.add("UNNEEDED_QUESTION");
+    else if (turn.phase === "explore") {
+      if (questions === 0) {
+        if (!v3) codes.add("FOLLOW_UP_MISSING");
+      } else {
         if (questions > 1) codes.add("MULTI_QUESTION");
         const question = questionSentence(turn.reply);
         // A follow-up such as "bao lâu rồi?" carries its detail in the sentence before it.
@@ -262,6 +271,43 @@ export const modeTurnCodes = (turn: EvaluatedTurn): string[] => {
   return [];
 };
 
+// Stock closers the owner bans as defaults (MB-846b); reported, not gated.
+const stockCloser = /tớ tin bạn (?:sẽ )?làm được|cố lên nhé|tớ luôn ở đây/iu;
+
+/** Reply length (characters) and question share per server mode: Mầm v3 lengths should vary with the moment. */
+export const replyShapeByMode = (turns: readonly EvaluatedTurn[]) => {
+  const byMode: Record<
+    string,
+    {
+      turns: number;
+      meanChars: number;
+      minChars: number;
+      maxChars: number;
+      questionRate: number;
+    }
+  > = {};
+  for (const mode of new Set(turns.map((turn) => turn.responseMode))) {
+    if (!mode) continue;
+    const list = turns.filter((turn) => turn.responseMode === mode);
+    const lengths = list.map((turn) => turn.reply.length);
+    byMode[mode] = {
+      turns: list.length,
+      meanChars: Math.round(
+        lengths.reduce((sum, value) => sum + value, 0) / list.length,
+      ),
+      minChars: Math.min(...lengths),
+      maxChars: Math.max(...lengths),
+      questionRate:
+        list.filter((turn) => questionCount(turn.reply) > 0).length /
+        list.length,
+    };
+  }
+  return {
+    byMode,
+    stockClosers: turns.filter((turn) => stockCloser.test(turn.reply)).length,
+  };
+};
+
 /** Deterministic failure codes for one scenario; an empty list passes. */
 export const checkScenario = (
   turns: readonly EvaluatedTurn[],
@@ -292,7 +338,17 @@ export const checkScenario = (
     for (const phrase of phrases) seen.add(phrase);
     if (!complete.test(turn.reply)) failures.add("CUT_OFF");
     if (blunt.test(turn.reply)) failures.add("BLUNT_ENDING");
-    if (turn.reply.length > 500) failures.add("TOO_LONG");
+    if (turn.responseMode) {
+      if (turn.reply.length > MAM_TEXT_V3_MAX_CHARACTERS)
+        failures.add("MAM_TOO_LONG");
+      // Only CLARIFY may ask (MB-846b); explore turns are judged against the dataset label in arcTurnCodes.
+      if (
+        turn.responseMode !== "CLARIFY" &&
+        !turn.phase &&
+        questionCount(turn.reply) > 0
+      )
+        failures.add("UNNEEDED_QUESTION");
+    } else if (turn.reply.length > 500) failures.add("TOO_LONG");
     if (!/[À-ỹ]/u.test(turn.reply)) failures.add("NO_DIACRITICS");
     if (linkOrMarkup.test(turn.reply)) failures.add("LINK_OR_MARKUP");
     if (turn.suggestion && !turn.expectSuggestion)
@@ -434,6 +490,7 @@ export const gateFailures = (run: {
     "MODE_SAFETY_MISMATCH",
     "MODE_HELP_MISMATCH",
     "MODE_PHASE_MISMATCH",
+    "MAM_TOO_LONG",
   ].filter((code) => (run.failureCounts[code] ?? 0) > 0),
   // No venting turns in the run (a filtered pilot) means no arc gate.
   ...(run.arc.explore !== null && run.arc.explore < ARC_PASS_RATE_GATES.explore
@@ -604,7 +661,8 @@ export const runScenario = async (
       { kinds: [], prompt: "" },
       route,
       {
-        friend: { history: history.slice(-8), catalog },
+        // Mầm v3 sends the wider MB-846b window (20 messages); v2 keeps 8.
+        friend: { history: history.slice(mamTextV3 ? -20 : -8), catalog },
         ...(responseMode ? { responseMode } : {}),
       },
     );
@@ -621,6 +679,7 @@ export const runScenario = async (
       ...(turn.phase ? { phase: turn.phase } : {}),
       ...(responseMode ? { responseMode } : {}),
       ...(turn.detailTerms ? { detailTerms: turn.detailTerms } : {}),
+      ...(turn.infoMissing ? { infoMissing: true } : {}),
     });
     history.push(
       { role: "USER", text: turn.user },

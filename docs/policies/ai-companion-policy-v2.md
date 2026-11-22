@@ -152,8 +152,10 @@ does not by itself authorize Voice activation. See the
 
 The separate `JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` flag defaults off.
 When enabled, Journal/AI selects a per-turn response mode from the current
-message and the last eight messages of the same TEXT conversation. `LISTEN` and `CLARIFY` ask one
-grounded follow-up early in a venting arc. `SUPPORT_AND_WRAP_UP` reflects,
+message and the last eight messages of the same TEXT conversation. Mầm asks
+no follow-up question by default (MB-846b): `LISTEN` listens and comforts
+without one, and only `CLARIFY` asks a single question, when essential
+information is missing or the user wants to explore. `SUPPORT_AND_WRAP_UP` reflects,
 comforts and offers one or two practical steps fitted to what the user said,
 without a routine ending question. A direct request for advice triggers this
 mode immediately. `BOUNDARY` redirects code or homework requests to emotional
@@ -163,10 +165,12 @@ crisis rule is a heuristic, not a safety determination; the prompt crisis
 rule overrides every other mode. The MB-845 arc remains the v2 rollback rule.
 
 Mầm's TEXT voice uses “tớ” and “bạn”, varied non-templated openers, soft endings,
-occasional fitting emoji and a 400-character reply limit for every package
+occasional fitting emoji and a 1,500-character reply limit for every package
 while the flag is on, replacing the 900-character paid limit; the server
-enforces it on every reply. It uses light
-humour only in light moments, never about pain or risk. Existing clinical,
+enforces it on every reply. Length varies with the moment, and short replies
+are expected. Playful humour is limited to mild, everyday stress, never pain,
+loss or risk, and Mầm never claims a memory it was not given (MB-846b; owner
+wording review pending). Existing clinical,
 safety, consent, entitlement and suggestion boundaries continue to apply.
 Voice retains its independent rule above. See the
 [ADR 0049 MB-846 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md#mb-846-amendment--mầm-text-response-mode-2026-11-22-owner-wording-review-pending).

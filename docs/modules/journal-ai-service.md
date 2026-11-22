@@ -263,6 +263,10 @@ conversation-structure heuristic, not a Care safety determination. The
 existing provider crisis instruction and fixed crisis example remain in place
 for cues the heuristic misses; the real-provider crisis pointer gate checks
 the replies. The mode is neither persisted nor exposed in the public API.
+Since MB-846b, Mầm asks no follow-up question by default (only `CLARIFY`
+asks one), reply length varies under a 1,500-character limit for every
+package, and the send response `assistant` field allows up to 1,500
+characters.
 Voice, v2 rollback behavior, suggestion schema and consent boundaries remain
 unchanged. See the [ADR 0049 MB-846 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md)
 and [MB-846 evaluation](../story-mb-846-companion-eval.md).

@@ -12,6 +12,9 @@ export interface HistoryTurn {
 const HISTORY_MAX_MESSAGES = 8;
 const HISTORY_MAX_BYTES = 3_000;
 
+/** Mầm TEXT v3 window (MB-846b): replies reach 1500 characters, so 8 messages / 3 KB would keep about one pair. */
+export const MAM_HISTORY_LIMITS = { messages: 20, bytes: 16_000 } as const;
+
 const selected = (kind: ContextKind, sources: ConversationContextSources) =>
   kind === "JOURNAL"
     ? sources.diary
@@ -25,11 +28,15 @@ export const conversationMemory = (
   messages: readonly ChatMessage[],
   sources: ConversationContextSources,
   decrypt: (message: ChatMessage) => string,
+  limits: { messages: number; bytes: number } = {
+    messages: HISTORY_MAX_MESSAGES,
+    bytes: HISTORY_MAX_BYTES,
+  },
 ): { history: HistoryTurn[]; kinds: ContextKind[] } => {
   const history: HistoryTurn[] = [];
   const kinds = new Set<ContextKind>();
   let bytes = 0;
-  const recent = messages.slice(-HISTORY_MAX_MESSAGES);
+  const recent = messages.slice(-limits.messages);
   for (let index = recent.length - 1; index > 0; index -= 1) {
     const assistant = recent[index];
     const user = recent[index - 1];
@@ -42,7 +49,7 @@ export const conversationMemory = (
     const pairBytes =
       Buffer.byteLength(userText, "utf8") +
       Buffer.byteLength(assistantText, "utf8");
-    if (history.length > 0 && bytes + pairBytes > HISTORY_MAX_BYTES) break;
+    if (history.length > 0 && bytes + pairBytes > limits.bytes) break;
     bytes += pairBytes;
     history.unshift(
       { role: "USER", text: userText },

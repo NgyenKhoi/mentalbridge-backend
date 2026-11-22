@@ -174,10 +174,12 @@ explicit provider directive and counted in the preflight token estimate. It
 is not a public API field, persisted record, safety diagnosis or entitlement
 decision. A direct request for practical help wraps up immediately; an explicit
 code or homework request gets a scope boundary; crisis cues take priority.
-Otherwise the first two replies in a venting arc explore with one grounded
-question each. A third short-answer turn may clarify once; the next reply
-must wrap up. An assistant reply without a question ends the arc, so the next
-message starts a new count. The lexical crisis rule matches accented
+Otherwise the first two replies in a venting arc listen and comfort, and the
+third wraps up. `CLARIFY` is chosen only on a missing-information signal
+(every answer so far is a word or two) or when the user asks to explore. The
+topic count is rebuilt from the user turns alone: it restarts after a turn
+whose mode closed it (wrap-up, boundary, safety) or after a thanks, agreement
+or feeling-better message. The lexical crisis rule matches accented
 phrases on the original text, and unaccented phrases only in messages typed
 without diacritics, so words such as “từ từ” never trigger it. It is a
 heuristic, not a Care safety determination: the provider's existing crisis
@@ -190,16 +192,35 @@ without a question unless information critical for immediate safety is
 missing. `BOUNDARY` supports emotions and how to approach a problem; it does
 not write code or complete homework. Mầm says “tớ” to “bạn”, varies openers,
 avoids templated empathy, uses only occasional fitting emoji, and keeps
-replies to 400 characters. While the flag is on, the 400-character limit
+replies to 1,500 characters. While the flag is on, the 1,500-character limit
 applies to every package and supersedes the MB-869 900-character paid limit.
 The server enforces it on every reply (an over-limit reply is retried once,
 then refused); the output schema also carries it where the provider supports
-it, which Bedrock does not. Humour is light and never about pain or risk.
+it, which Bedrock does not. Humour scales with distress: playful teasing only
+on mild, everyday stress, never on grief, loss, abuse, self-blame, severe
+distress or a crisis cue.
 `SAFETY` retains the existing fixed crisis reply, and the server drops any
 suggestion on a `SAFETY` turn. The
 earlier MB-845 question/advice rule remains the v2 rollback behavior.
 
-The real Sonnet 4.6 A/B gate is wrap-up ≥0.80 per turn, explore no worse than
-the v2 baseline on the same dataset and model, and crisis pointer 1.0. The rollout gate and owner
+MB-846b follow-up, 2026-11-22 (owner wording review pending): replies vary in
+length with the moment, from one short sentence to a few short paragraphs
+under the 1,500-character limit, and Mầm asks no follow-up question by
+default. The prompt states: “Do not ask follow-up questions by default. When
+sufficient context exists, provide helpful guidance and end naturally. Ask at
+most ONE question, only when essential information is missing or the user
+explicitly wants to explore further. Do not optimize for conversation
+length.” Only `CLARIFY` may end with one question; `LISTEN` comforts without
+one. This supersedes, for Mầm TEXT v3 only, the MB-845 rule that the first
+replies of a venting arc end with a question. Mầm never claims to remember
+anything outside the history it was given. Because deep replies reach 1,500 characters, Mầm
+sends the last 20 same-conversation messages within 16,000 bytes (v2 keeps
+8 messages within 3,000 bytes), and one provider attempt may take up to 18
+seconds inside the unchanged 24-second send deadline.
+
+The real Sonnet 4.6 gate is wrap-up ≥0.80 per turn, explore ≥0.80 per turn
+under the MB-846b definition (no question, or one question only where the
+dataset marks essential information as missing), no reply over 1,500
+characters, and crisis pointer 1.0. The rollout gate and owner
 tone review above still apply; this amendment is pending owner wording
 approval before activation.

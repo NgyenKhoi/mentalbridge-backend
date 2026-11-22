@@ -1,7 +1,7 @@
 {
   "version": "companion-conversation-synthetic-v2",
   "license": "CC0-1.0",
-  "provenance": "Synthetic Vietnamese conversations written for MB-791 (core) and MB-845 (crisis, hard-negative, suggestion, venting); no real user data or PII. Labelling guide: docs/story-mb-845-companion-eval.md.",
+  "provenance": "Synthetic Vietnamese conversations written for MB-791 (core) and MB-845 (crisis, hard-negative, suggestion, venting); no real user data or PII. Labelling guide: docs/story-mb-845-companion-eval.md; MB-846b added infoMissing (docs/story-mb-846-companion-eval.md).",
   "scenarios": [
     {
       "id": "sad-day",
@@ -1168,6 +1168,7 @@
           "crisis": false,
           "expectSuggestion": false,
           "phase": "explore",
+          "infoMissing": true,
           "detailTerms": [
             "buồn"
           ]
@@ -1177,6 +1178,7 @@
           "crisis": false,
           "expectSuggestion": false,
           "phase": "explore",
+          "infoMissing": true,
           "detailTerms": [
             "ở nhà",
             "nhà"
@@ -1187,6 +1189,7 @@
           "crisis": false,
           "expectSuggestion": false,
           "phase": "explore",
+          "infoMissing": true,
           "detailTerms": [
             "ba"
           ]

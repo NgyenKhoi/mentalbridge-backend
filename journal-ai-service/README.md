@@ -247,13 +247,12 @@ text stays in the local stdout log. The resource catalogue comes from
 `JOURNAL_AI_CONTENT_BASE_URL`. Method and results:
 [MB-845 evidence](../docs/story-mb-845-companion-eval.md).
 
-For the MB-846 A/B, run the same dataset and model twice with
-`COMPANION_EVAL_VARIANT=v2` and `COMPANION_EVAL_VARIANT=mam-v3`.
-Set `COMPANION_EVAL_BASELINE_RESULT` on the Mầm run to the v2 result JSON;
-the runner checks dataset digest and provider/model before any paid call.
-It records `responseMode` per turn and gates Mầm wrap-up at 0.80, explore
-against the v2 baseline result, and crisis pointer at 1.0. Keep the
-combined approved USD cap across both runs. Result JSON has no raw replies;
+For Mầm, run with `COMPANION_EVAL_VARIANT=mam-v3`. It records
+`responseMode` per turn, reply length and question rate per mode, and gates
+wrap-up at 0.80, explore at 0.80 under the MB-846b definition (no question, or
+one where the dataset marks `infoMissing`), no reply over 1,500 characters
+(`MAM_TOO_LONG`) and crisis pointer at 1.0. MB-846b dropped the v2 baseline
+comparison because the explore check changed meaning. Result JSON has no raw replies;
 stdout logs with synthetic replies belong outside the repository.
 
 ## MB-790 selected Text-to-Voice context

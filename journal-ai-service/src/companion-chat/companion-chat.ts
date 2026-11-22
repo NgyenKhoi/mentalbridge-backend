@@ -53,6 +53,7 @@ import {
 import {
   companionGuidanceSystem,
   companionReplyMaxCharacters,
+  MAM_TEXT_V3_MAX_CHARACTERS,
 } from "./companion-guidance-policy.js";
 import {
   SUGGESTION_DESTINATIONS,
@@ -65,7 +66,10 @@ import {
   estimateInputTokens,
   type FriendInput,
 } from "./companion-text-request.js";
-import { conversationMemory } from "./conversation-history.js";
+import {
+  conversationMemory,
+  MAM_HISTORY_LIMITS,
+} from "./conversation-history.js";
 import {
   selectResponseMode,
   type ResponseMode,
@@ -424,6 +428,10 @@ const paidProviderOutputJsonSchemaV2 = {
 
 const paidProviderOutputSchema = providerOutputSchema.extend({
   message: z.string().trim().min(1).max(900),
+});
+
+const mamProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(MAM_TEXT_V3_MAX_CHARACTERS),
 });
 
 const unsafeAssistantPatterns = [
@@ -1782,7 +1790,9 @@ export class RoutedChatProvider implements ChatProvider {
     const responseMode = friend ? options?.responseMode : undefined;
     const mamTextV3 = responseMode !== undefined;
     const plan = options?.voice ? undefined : options?.plan;
-    const maxLength = mamTextV3 ? 400 : companionReplyMaxCharacters(plan);
+    const maxLength = mamTextV3
+      ? MAM_TEXT_V3_MAX_CHARACTERS
+      : companionReplyMaxCharacters(plan);
     if (options?.voice && context.kinds.length !== 0)
       throw new VoiceProviderFailure("INVALID_RESPONSE");
     if (route.provider === "DETERMINISTIC_FAKE") {
@@ -1839,7 +1849,7 @@ export class RoutedChatProvider implements ChatProvider {
             ...coreOutputJsonSchema.properties,
             message: {
               ...coreOutputJsonSchema.properties.message,
-              maxLength: 400,
+              maxLength: MAM_TEXT_V3_MAX_CHARACTERS,
             },
           },
         }
@@ -2309,7 +2319,11 @@ export class RoutedChatProvider implements ChatProvider {
       output = rest;
     }
     const parsedOutput = (
-      maxLength > 500 ? paidProviderOutputSchema : providerOutputSchema
+      mamTextV3
+        ? mamProviderOutputSchema
+        : maxLength > 500
+          ? paidProviderOutputSchema
+          : providerOutputSchema
     ).safeParse(output);
     if (!parsedOutput.success) {
       if (options?.voice && responseProvider === "BEDROCK")
@@ -2712,9 +2726,13 @@ export class CompanionChatService {
         this.configuration.COMPANION_MAM_TEXT_V3_ENABLED === true;
       const friendEnabled =
         this.configuration.COMPANION_GUIDANCE_V2_ENABLED === true || mamTextV3;
+      const historyLimits = mamTextV3 ? MAM_HISTORY_LIMITS : undefined;
       const memory = friendEnabled
-        ? conversationMemory(conversation.messages, sources, (message) =>
-            this.crypto.decrypt(owner, conversationId, message),
+        ? conversationMemory(
+            conversation.messages,
+            sources,
+            (message) => this.crypto.decrypt(owner, conversationId, message),
+            historyLimits,
           )
         : { history: [], kinds: [] };
       let friend: FriendInput | undefined = friendEnabled
@@ -2746,6 +2764,7 @@ export class CompanionChatService {
               conversation.messages,
               emptySources(),
               (message) => this.crypto.decrypt(owner, conversationId, message),
+              historyLimits,
             ).history,
           };
       }
@@ -2789,7 +2808,10 @@ export class CompanionChatService {
           throw firstFailure ?? deadlineFailure();
         if (remainingMs <= 0) throw deadlineFailure();
         await this.repository.reserveAttempt(command, estimate, tokenBudget);
-        const signal = AbortSignal.timeout(Math.min(10_000, remainingMs));
+        // A deep Mầm v3 reply (up to 1500 characters) needs longer generation than a 10 s attempt allows.
+        const signal = AbortSignal.timeout(
+          Math.min(responseMode ? 18_000 : 10_000, remainingMs),
+        );
         let usage: { input: number; output: number } | undefined;
         let attemptedReply: ProviderReply | undefined;
         let attemptError: unknown;
@@ -2816,7 +2838,7 @@ export class CompanionChatService {
           assistant = validatedAssistantMessage(attemptedReply.message, {
             rejectLinks: friend !== undefined,
             maxLength: responseMode
-              ? 400
+              ? MAM_TEXT_V3_MAX_CHARACTERS
               : companionReplyMaxCharacters(decision.packageCode),
           });
         } catch (error) {

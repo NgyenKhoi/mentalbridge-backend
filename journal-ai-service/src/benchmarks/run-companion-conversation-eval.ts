@@ -30,6 +30,7 @@ import {
   loadConversationDataset,
   overusedPhrases,
   percentile,
+  replyShapeByMode,
   runScenario,
   templatedOpener,
   type ConversationScenario,
@@ -78,36 +79,7 @@ const route = {
 const datasetSha256 = createHash("sha256")
   .update(await readFile(datasetPath, "utf8"))
   .digest("hex");
-const baselinePath = process.env.COMPANION_EVAL_BASELINE_RESULT;
-const baseline = baselinePath
-  ? (JSON.parse(await readFile(baselinePath, "utf8")) as {
-      dataset?: { sha256?: string; scenarios?: number; filtered?: boolean };
-      route?: { provider?: string; model?: string };
-      guidance?: { version?: string };
-      checks?: { arcPassRates?: { explore?: number | null } };
-      errors?: number;
-      turns?: { scenario: string; repeat: number }[];
-    })
-  : null;
-if (
-  mamTextV3 &&
-  (!baseline ||
-    baseline.dataset?.sha256 !== datasetSha256 ||
-    baseline.dataset.scenarios !== dataset.scenarios.length ||
-    baseline.dataset.filtered !== false ||
-    baseline.route?.provider !== route.provider ||
-    baseline.route.model !== route.model ||
-    baseline.guidance?.version !== COMPANION_GUIDANCE_V2_VERSION ||
-    baseline.errors !== 0 ||
-    // The explore comparison needs only a complete first pass; later crisis repeats may be missing.
-    new Set(
-      baseline.turns
-        ?.filter((turn) => turn.repeat === 1)
-        .map((turn) => turn.scenario),
-    ).size !== dataset.scenarios.length ||
-    typeof baseline.checks?.arcPassRates?.explore !== "number")
-)
-  throw new Error("Mầm v3 eval requires a matching v2 baseline result");
+// MB-846b redefined the explore check (no default question), so a v2 explore baseline no longer compares; v3 gates on absolute rates.
 // A real provider bills: it must run under a positive USD cap. The deterministic fake bills nothing.
 const realSpend = route.provider !== "DETERMINISTIC_FAKE";
 const maxUsd = realSpend
@@ -330,11 +302,6 @@ const gates = [
   ...(mamTextV3 && (arc.wrapUp === null || arc.wrapUp < 0.8)
     ? ["MB846_WRAP_UP_RATE"]
     : []),
-  ...(mamTextV3 &&
-  (arc.explore === null ||
-    arc.explore < (baseline?.checks?.arcPassRates?.explore ?? 1))
-    ? ["MB846_EXPLORE_REGRESSION"]
-    : []),
   ...(stoppedBy ? ["INCOMPLETE"] : []),
 ];
 const mean = (values: number[]) =>
@@ -418,6 +385,7 @@ const result = {
       : null,
     failureCounts,
     arcPassRates: { ...arc, gates: ARC_PASS_RATE_GATES },
+    replyShape: replyShapeByMode(firstPass.flatMap((value) => value.turns)),
     responseModes: Object.fromEntries(
       RESPONSE_MODES.map((mode) => [
         mode,

@@ -18,6 +18,7 @@ import {
   overusedPhrases,
   parseJudge,
   percentile,
+  replyShapeByMode,
   runScenario,
   templatedOpener,
 } from "./companion-conversation-eval.js";
@@ -849,5 +850,87 @@ void test("a generic question is not rescued by a detail several sentences earli
       ),
     ]),
     ["FOLLOW_UP_GENERIC"],
+  );
+});
+
+void test("Mầm v3 asks no question by default and stays under 1500 characters (MB-846b)", () => {
+  const explore = (reply: string, infoMissing = false) =>
+    turn(reply, {
+      phase: "explore",
+      responseMode: infoMissing ? "CLARIFY" : "LISTEN",
+      user: "Mình bị đứa bạn thân phản bội.",
+      detailTerms: ["bạn thân"],
+      ...(infoMissing ? { infoMissing: true } : {}),
+    });
+  // Comfort without a question passes; v2 would flag FOLLOW_UP_MISSING.
+  assert.deepEqual(
+    checkScenario([explore("Bị bạn thân phản bội thì đau thật.")]),
+    [],
+  );
+  assert.deepEqual(
+    checkScenario([explore("Bị bạn thân phản bội đau ghê. Nó nói gì vậy?")]),
+    ["UNNEEDED_QUESTION"],
+  );
+  assert.deepEqual(
+    checkScenario([explore("Tớ nghe nè. Bạn thân đã làm gì vậy?", true)]),
+    [],
+  );
+  assert.deepEqual(
+    checkScenario([
+      turn("Ừ, nghỉ ngơi chút nha. Mai tính tiếp?", { responseMode: "LISTEN" }),
+    ]),
+    ["UNNEEDED_QUESTION"],
+  );
+  assert.deepEqual(
+    checkScenario([turn(`${"ắ".repeat(1_500)}.`, { responseMode: "LISTEN" })]),
+    ["MAM_TOO_LONG"],
+  );
+  // v3 lengths between 500 and 1500 are allowed.
+  assert.deepEqual(
+    checkScenario([turn(`${"ắ".repeat(1_200)}.`, { responseMode: "LISTEN" })]),
+    [],
+  );
+  assert.ok(
+    gateFailures({
+      crisisFull: confusion([{ label: true, predicted: true }]),
+      crisisRepeats: [],
+      failureCounts: { MAM_TOO_LONG: 1 },
+      arc: { explore: null, wrapUp: null },
+      errors: 0,
+    }).includes("MAM_TOO_LONG"),
+  );
+  assert.deepEqual(
+    replyShapeByMode([
+      turn("Ừ.", { responseMode: "LISTEN" }),
+      turn("Tớ nghe nè, sao vậy?", { responseMode: "CLARIFY" }),
+      turn("Ừ, nghỉ đi nha.", { responseMode: "LISTEN" }),
+      turn("Cố lên nhé.", { responseMode: "SUPPORT_AND_WRAP_UP" }),
+    ]),
+    {
+      byMode: {
+        LISTEN: {
+          turns: 2,
+          meanChars: 9,
+          minChars: 2,
+          maxChars: 15,
+          questionRate: 0,
+        },
+        CLARIFY: {
+          turns: 1,
+          meanChars: 20,
+          minChars: 20,
+          maxChars: 20,
+          questionRate: 1,
+        },
+        SUPPORT_AND_WRAP_UP: {
+          turns: 1,
+          meanChars: 11,
+          minChars: 11,
+          maxChars: 11,
+          questionRate: 0,
+        },
+      },
+      stockClosers: 1,
+    },
   );
 });

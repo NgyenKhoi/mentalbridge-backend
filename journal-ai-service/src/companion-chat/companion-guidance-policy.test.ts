@@ -688,9 +688,10 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
     { role: "ASSISTANT", text: "Báo cáo còn phần nào?" },
   ];
   assert.equal(selectResponseMode("Ba deadline dí cùng lúc.", []), "LISTEN");
+  // No question by default (MB-846b): a second detailed venting turn stays LISTEN.
   assert.equal(
     selectResponseMode("Báo cáo sáng mai.", history.slice(0, 2)),
-    "CLARIFY",
+    "LISTEN",
   );
   assert.equal(
     selectResponseMode("Còn slide chiều thứ sáu.", history),
@@ -746,7 +747,7 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
       { role: "USER", text: "Hôm nay mình lại có chuyện khác." },
       { role: "ASSISTANT", text: "Chuyện gì vậy?" },
     ]),
-    "CLARIFY",
+    "LISTEN",
   );
   assert.equal(selectResponseMode("Làm sao mình chịu nổi nữa.", []), "LISTEN");
   assert.equal(
@@ -769,10 +770,25 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
   });
   assert.match(prompt, /Mầm speaks as “tớ” to “bạn”/u);
   assert.match(prompt, /Server response_mode: SAFETY/u);
-  assert.match(prompt, /Keep message under 400 characters/u);
+  assert.match(
+    prompt,
+    /Keep message under 1500 characters, for every package/u,
+  );
+  assert.match(
+    prompt,
+    /Do not ask follow-up questions by default\. When sufficient context exists, provide helpful guidance and end naturally\. Ask at most ONE question, only when essential information is missing or the user explicitly wants to explore further\. Do not optimize for conversation length\./u,
+  );
+  assert.match(prompt, /Never claim to remember anything you were not given/u);
+  assert.match(prompt, /“tớ tin bạn làm được”, “cố lên nhé”, “tớ luôn ở đây”/u);
+  assert.equal(prompt.includes("Do not open with “Ôi”"), false);
+  assert.equal(prompt.includes("1–4 short sentences"), false);
   // v3 patches v2 lines by index and text; these fail loudly if v2 is reordered or reworded.
+  // Multi-paragraph examples add line breaks, so pin where the examples start instead of the total.
   const lines = prompt.split("\n");
-  assert.equal(lines.length, 30);
+  assert.equal(
+    lines.findIndex((line) => line.startsWith("Example ")),
+    20,
+  );
   assert.match(lines[13] ?? "", /^Return only the requested JSON object/u);
   assert.match(lines[4] ?? "", /“tớ hiểu”, “tớ hiểu sao”/u);
   assert.match(lines[4] ?? "", /“tớ ở đây”/u);
@@ -784,7 +800,7 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
         /Example (?:LISTEN|CLARIFY|SUPPORT_AND_WRAP_UP|BOUNDARY)/gu,
       ) ?? []
     ).length,
-    8,
+    7,
   );
   assert.match(
     prompt,
@@ -813,21 +829,21 @@ void test("Mầm mode is explicit in the provider system request and v2 is uncha
   const schema = captured("GEMINI", gemini.bodies[0] ?? "{}").schema;
   assert.equal(
     (schema.properties as { message: { maxLength: number } }).message.maxLength,
-    400,
+    1_500,
   );
   assert.match(baseline.bodies[0] ?? "", /companion-guidance-v2/u);
   assert.equal((baseline.bodies[0] ?? "").includes("response_mode"), false);
   // Real Vietnamese text, so only the length decides (a reply without diacritics is rejected anyway).
   const vietnamese = (length: number) =>
-    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(20).slice(0, length - 1)}.`;
+    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(40).slice(0, length - 1)}.`;
   const accepted = await captureBodies(
     "BEDROCK",
-    JSON.stringify(output(vietnamese(400))),
+    JSON.stringify(output(vietnamese(1_500))),
     { friend: friendInput, responseMode: "CLARIFY" },
   );
-  assert.equal(accepted.result.message.length, 400);
+  assert.equal(accepted.result.message.length, 1_500);
   await assert.rejects(() =>
-    captureBodies("BEDROCK", JSON.stringify(output(vietnamese(401))), {
+    captureBodies("BEDROCK", JSON.stringify(output(vietnamese(1_501))), {
       friend: friendInput,
       responseMode: "CLARIFY",
     }),
