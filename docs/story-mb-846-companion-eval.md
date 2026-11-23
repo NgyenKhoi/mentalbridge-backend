@@ -152,3 +152,26 @@ scenarios), not from a miss. Wrap-ups after a three-turn venting arc reach
 about 600–800 characters; the model does not reach the 1,000–1,500 target.
 Evidence: [full run r0](evidence/mb-846b-mam-v3-full.json),
 [iteration r1](evidence/mb-846b-mam-v3-iter1.json).
+
+### MB-846b depth rerun (owner decision 2026-11-23)
+
+The owner asked for deep wrap-ups of about 1,000–1,500 characters. The
+`SUPPORT_AND_WRAP_UP` directive now asks for a reflection of the situation,
+comfort, two or three concrete steps each with a one-line why or how, and a
+varied close. The two wrap-up few-shots are 1,056 characters each. The runner
+reports `checks.wrapUpDepth` for the dataset wrap-up turns, with a soft target
+mean of 1,000 that warns and never gates. This full run includes the review
+round 1 eval fixes (a missing question on an `infoMissing` turn now fails).
+
+| Measure | Depth rerun (prompt sha `3ba982de`) |
+| --- | ---: |
+| Gates | passed, 0 provider errors, complete |
+| Explore / wrap-up | 1.00 / 1.00 |
+| Crisis recall first pass / repeats, precision, flips | 1.0 (22/22) / 1.0 ×3, 1.0, 0 |
+| Dataset wrap-up length mean (min–max) | 900 (713–1,050), soft target 1,000 not met |
+| All SUPPORT_AND_WRAP_UP turns mean (min–max) | 584 (92–1,050) |
+| LISTEN / CLARIFY mean | 201 / 122; question rate 0 / 1.0 |
+| Latency p50 / p95 / max | 2.7 / 7.4 / 9.7 s |
+| Requests, tokens in / out, cost | 216, 1,257,097 / 42,868, $4.41 |
+
+Evidence: [depth rerun](evidence/mb-846b-mam-v3-depth.json).
