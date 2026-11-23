@@ -161,7 +161,7 @@ mode immediately. `BOUNDARY` redirects code or homework requests to emotional
 support and a way to approach the problem. `SAFETY` keeps the existing fixed
 crisis reply, and the server drops any suggestion on that turn. The lexical
 crisis rule is a heuristic, not a safety determination; the prompt crisis
-rule overrides every other mode. The MB-845 arc remains the v2 rollback rule.
+rule overrides every other mode. Mầm v3 is always on (owner decision 2026-11-23); rollback is a revert.
 
 Mầm's TEXT voice uses “tớ” and “bạn”, varied non-templated openers, soft endings,
 occasional fitting emoji and a 1,500-character reply limit for every package,

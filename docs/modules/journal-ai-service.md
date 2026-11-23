@@ -271,7 +271,7 @@ With effective L2, MB-846c adds up to three encrypted memory notes on the
 owner's other recent Mầm conversations to the provider request; without L2 it
 sends none and purges stored notes. See the ADR 0021 and ADR 0050 MB-846c
 amendments.
-Voice, v2 rollback behavior, suggestion schema and consent boundaries remain
+Voice, the suggestion schema and consent boundaries remain
 unchanged. See the [ADR 0049 MB-846 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md)
 and [MB-846 evaluation](../story-mb-846-companion-eval.md).
 
