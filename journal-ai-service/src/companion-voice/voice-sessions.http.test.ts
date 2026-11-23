@@ -98,7 +98,6 @@ void test("Voice public and worker REST separate identities, validate closed com
     IDENTITY_JWT_KEY_ID: "voice-http-key",
     IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
     JOURNAL_AI_LOG_LEVEL: "silent",
-    JOURNAL_AI_ANALYSIS_ENABLED: "false",
     JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: worker,
   };
   const jwt = (account = owner, role = "USER") =>

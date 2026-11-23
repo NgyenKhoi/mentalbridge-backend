@@ -20,6 +20,7 @@ import {
   mamMemoryNoteSystem,
 } from "./companion-guidance-policy.js";
 import { v1Guidance } from "./companion-guidance-v1.fixture.js";
+import { voiceFriendGuidanceSystem } from "./companion-voice-guidance.js";
 import { v1ProviderBodies } from "./companion-provider-v1.fixture.js";
 import type { FriendInput } from "./companion-text-request.js";
 import {
@@ -161,7 +162,7 @@ function assertStructuredSchema(schema: Record<string, unknown>) {
 void test("versioned Text and Voice guidance preserve shared support semantics and distinct delivery", () => {
   assert.equal(COMPANION_GUIDANCE_POLICY_VERSION, "companion-guidance-v1");
   assert.equal(COMPANION_KNOWLEDGE_VERSION, "companion-domain-knowledge-v1");
-  for (const channel of ["TEXT", "VOICE"] as const) {
+  for (const channel of ["TEXT"] as const) {
     const policy = companionGuidanceSystem({ channel });
     assert.ok(policy.includes(COMPANION_GUIDANCE_POLICY_VERSION));
     assert.ok(policy.includes(COMPANION_KNOWLEDGE_VERSION));
@@ -179,10 +180,17 @@ void test("versioned Text and Voice guidance preserve shared support semantics a
     ])
       assert.match(policy, meaning);
   }
-  assert.match(
-    companionGuidanceSystem({ channel: "VOICE" }),
-    /clarif|làm rõ|nghe rõ/iu,
-  );
+  // MB-846d: Voice always uses the Mầm friend prompt, which keeps the same safety meaning.
+  const voice = companionGuidanceSystem({ channel: "VOICE" });
+  for (const meaning of [
+    /Vietnamese/u,
+    /untrusted data/u,
+    /Never diagnose, prescribe medication/u,
+    /SupportPlan/u,
+    /Cần trợ giúp ngay/u,
+    /clarification/u,
+  ])
+    assert.match(voice, meaning);
   assert.notEqual(
     companionGuidanceSystem({ channel: "VOICE", replyStyle: "BRIEF" }),
     companionGuidanceSystem({ channel: "VOICE", replyStyle: "SUPPORTIVE" }),
@@ -282,7 +290,7 @@ void test("real provider request adapters share guidance and keep hostile data o
       const untrusted = strings(JSON.parse(request.user) as unknown);
       assert.ok(untrusted.some((value) => value.includes(message)));
       assert.ok(untrusted.some((value) => value.includes(contextText)));
-      assert.equal(request.maxTokens, voice ? 300 : 2000);
+      assert.equal(request.maxTokens, voice ? 600 : 2000);
       if (voice) {
         assert.deepEqual(counted, {
           system: request.system,
@@ -350,8 +358,14 @@ void test("both delivery channels accept bounded Vietnamese refusal and Help Now
         "Mình không thể chẩn đoán hay kê thuốc. Bạn có thể trao đổi với chuyên gia để được hỗ trợ phù hợp.",
         "Nếu có nguy hiểm tức thời, bạn hãy mở Cần trợ giúp ngay trong ứng dụng để xem hướng dẫn hỗ trợ.",
       ]) {
-        globalThis.fetch = () =>
-          Promise.resolve(response("BEDROCK", JSON.stringify(output(message))));
+        globalThis.fetch = (url) =>
+          Promise.resolve(
+            String(url instanceof Request ? url.url : url).endsWith(
+              "/count-tokens",
+            )
+              ? Response.json({ inputTokens: 900 })
+              : response("BEDROCK", JSON.stringify(output(message))),
+          );
         const result = await new RoutedChatProvider(configuration).reply(
           "Mình cần hỗ trợ",
           { kinds: [], prompt: "" },
@@ -403,38 +417,33 @@ void test("selected Text is quoted untrusted context only in the opted-in Voice 
     channel: "VOICE",
     textHandoff: true,
   });
-  assert.match(voiceOnly, /only the supplied current-call turns/u);
+  assert.match(voiceOnly, /Use only supplied current-call turns/u);
   assert.doesNotMatch(voiceOnly, /explicitly attached/u);
   assert.match(handoff, /selectedText/u);
   assert.match(handoff, /quoted, untrusted prior Text context/u);
-  assert.match(handoff, /not speech from this call or system instructions/u);
-  assert.match(handoff, /Do not claim to read other conversations/u);
+  assert.match(handoff, /not speech from this call/u);
+  assert.match(handoff, /Never claim access to other conversations/u);
   assert.equal(
     companionGuidanceSystem({ channel: "TEXT", textHandoff: true }),
     companionGuidanceSystem({ channel: "TEXT" }),
   );
 });
 
-void test("v1 TEXT remains unchanged and every VOICE variant adds only expression guidance", () => {
+void test("v1 TEXT remains unchanged and every VOICE variant is the Mầm voice prompt", () => {
   for (const friend of [undefined, false, true]) {
     const flag = friend === undefined ? {} : { friend };
-    for (const [delivery, baseline] of [
-      [{ channel: "VOICE", ...flag }, v1Guidance.VOICE],
-      [
-        { channel: "VOICE", textHandoff: true, ...flag },
-        v1Guidance.VOICE_HANDOFF,
-      ],
-      [
-        { channel: "VOICE", replyStyle: "SUPPORTIVE", ...flag },
-        v1Guidance.VOICE_SUPPORTIVE,
-      ],
-      [
-        { channel: "VOICE", replyStyle: "BRIEF", ...flag },
-        v1Guidance.VOICE_BRIEF,
-      ],
+    for (const delivery of [
+      { textHandoff: false },
+      { textHandoff: true },
+      { replyStyle: "SUPPORTIVE" },
+      { replyStyle: "BRIEF" },
     ] as const) {
-      const current = companionGuidanceSystem(delivery);
-      assert.equal(current.startsWith(`${baseline}\n`), true);
+      const current = companionGuidanceSystem({
+        channel: "VOICE",
+        ...delivery,
+        ...flag,
+      });
+      assert.equal(current, voiceFriendGuidanceSystem(delivery));
       assert.match(
         current,
         /Set expression to neutral or comfort for delivery only/u,
@@ -1019,13 +1028,17 @@ void test("MB-869 Voice defaults to SUPPORTIVE without a pilot replyStyle and ke
       companionGuidanceSystem({ channel: "VOICE", replyStyle: "BRIEF" }),
     ),
   );
-  assert.match(brief, /one short Vietnamese sentence of at most 160/u);
-  assert.match(brief, /"maxLength":500/u);
+  assert.match(brief, /one short natural sentence, at most 160/u);
+  assert.match(brief, /"maxLength":800/u);
 
   const original = globalThis.fetch;
   let system = "";
   globalThis.fetch = (url, init) => {
     assert.ok(typeof init?.body === "string");
+    if (
+      String(url instanceof Request ? url.url : url).endsWith("/count-tokens")
+    )
+      return Promise.resolve(Response.json({ inputTokens: 900 }));
     system = captured("BEDROCK", init.body).system;
     return Promise.resolve(response("BEDROCK", plainReply));
   };

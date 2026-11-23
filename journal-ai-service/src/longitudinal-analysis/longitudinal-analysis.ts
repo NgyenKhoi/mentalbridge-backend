@@ -616,7 +616,6 @@ export class LongitudinalAnalysisWorker
   }
 
   onModuleInit(): void {
-    if (!this.configuration.ANALYSIS_ENABLED) return;
     this.timer = setInterval(() => {
       void this.runSafely();
     }, this.configuration.ANALYSIS_POLL_INTERVAL_MS);
@@ -914,8 +913,6 @@ export class LongitudinalAnalysisService {
   ) {}
 
   async create(request: LongitudinalRequest) {
-    if (!this.configuration.ANALYSIS_ENABLED)
-      throw new ServiceUnavailableException();
     const parsed = createRequestSchema.safeParse(request.body);
     const key = idempotencyKeySchema.safeParse(
       requestHeader(request, "idempotency-key"),

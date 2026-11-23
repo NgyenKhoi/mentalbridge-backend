@@ -36,7 +36,8 @@ export default defineAgent({
         undefined,
         diagnostic,
         configuration.finalAggregationMs ?? 750,
-        configuration.speechUnitsEnabled === true,
+        // MB-846d: speech units are always on (no feature flag).
+        true,
       );
       const active = worker;
       context.addShutdownCallback(() => active.stop("AGENT_FAILURE"));

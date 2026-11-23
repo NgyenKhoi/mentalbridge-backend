@@ -11,7 +11,11 @@ import {
   type Turn,
   type Reply,
 } from "./contract.js";
-import { SpeechEventArray, speechUnitCapability } from "./speech-units.js";
+import {
+  SpeechEventArray,
+  speechUnitCapability,
+  speechUnitMaxCharacters,
+} from "./speech-units.js";
 export class JournalClient {
   constructor(
     private readonly configuration: AgentConfiguration,
@@ -49,12 +53,8 @@ export class JournalClient {
             "X-MentalBridge-Voice-Worker-Token":
               this.configuration.journalToken,
             ...(key ? { "Idempotency-Key": key } : {}),
-            ...(path === "turns"
-              ? { "X-MentalBridge-Voice-Capabilities": "expression" }
-              : {}),
-            ...(this.configuration.speechUnitsEnabled
-              ? { "X-MentalBridge-Voice-Capabilities": speechUnitCapability }
-              : {}),
+            // MB-846d: speech units are always on, so every call advertises them.
+            "X-MentalBridge-Voice-Capabilities": speechUnitCapability,
           },
           body: JSON.stringify(body),
           signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
@@ -254,10 +254,7 @@ export class JournalClient {
     signal: AbortSignal,
     receive: (reply: Reply, sequence: number) => void,
   ): Promise<void> {
-    if (
-      !this.configuration.speechUnitsEnabled ||
-      !this.configuration.journalToken
-    )
+    if (!this.configuration.journalToken)
       throw new AgentFailure("CONFIGURATION_INVALID");
     const timeout = AbortSignal.timeout(30000);
     const abort = AbortSignal.any([timeout, signal]);
@@ -324,7 +321,8 @@ export class JournalClient {
           event.unitSequence !== ++units ||
           (replyId && event.replyId !== replyId) ||
           Date.parse(event.expiresAt) <= this.clock() ||
-          (characters += event.spokenText.length + (units > 1 ? 1 : 0)) > 500 ||
+          (characters += event.spokenText.length + (units > 1 ? 1 : 0)) >
+            speechUnitMaxCharacters ||
           !/[.!?…]$/u.test(event.spokenText)
         )
           throw new AgentFailure("INVALID_RESPONSE");

@@ -233,7 +233,6 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       JOURNAL_AI_MONGODB_URI: uri,
       JOURNAL_AI_MONGODB_DATABASE: name,
       JOURNAL_AI_LOG_LEVEL: "silent",
-      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: String(withHandoff),
       JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: token,
       ...(pilot
         ? {
@@ -254,8 +253,19 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     const config: ServiceConfiguration = {
       ...configuration,
       PROVIDER_TIMEOUT_MS: 2500,
-      VOICE_SPEECH_UNITS_ENABLED: speechUnits,
-      VOICE_CONVERSE_STREAM_ENABLED: speechUnits,
+      // Speech units follow the approved Voice Bedrock route (MB-846d: no flag).
+      ...(speechUnits
+        ? {
+            BEDROCK_API_KEY: "synthetic",
+            VOICE_BEDROCK_ROUTE: {
+              model: "global.anthropic.claude-sonnet-4-6" as const,
+              region: "ap-southeast-1",
+              approvedVersion: "synthetic-voice-approved-v1",
+              inputCostMicroUsdPerMillionTokens: 3000000,
+              outputCostMicroUsdPerMillionTokens: 15000000,
+            },
+          }
+        : {}),
     };
     if (configuration.VOICE_PILOT?.measurement)
       await new MongoVoiceMeasurementStore(
@@ -607,6 +617,62 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     );
   await t.test(
+    "MB-846d: two speech units totalling 800 characters are both published",
+    async () => {
+      const f = await fixture(
+        { maxTurns: 1, maxSessionSeconds: 90 },
+        false,
+        undefined,
+        true,
+      );
+      const first = `${"é".repeat(399)}.`;
+      const second = `${"ê".repeat(398)}.`;
+      assert.equal(`${first} ${second}`.length, 800);
+      const units: AuthorizedSpeechUnit[] = [];
+      f.respond((observe, send) => {
+        assert(send);
+        send({ message: first, expression: "neutral" });
+        send({ message: second, expression: "neutral" });
+        observe?.({
+          phase: "bedrock_stream_message_stopped",
+          stopReason: "END_TURN",
+        });
+        return Promise.resolve({ ...reply(), message: `${first} ${second}` });
+      });
+      const input = f.input();
+      const work = f.left.turns.generate(
+        f.active.id,
+        randomUUID(),
+        input,
+        randomUUID(),
+        undefined,
+        (unit) => {
+          units.push(unit);
+          return Promise.resolve();
+        },
+      );
+      for (const sequence of [1, 2]) {
+        await waitFor(() => units.length === sequence);
+        const unit = units[sequence - 1];
+        assert(unit);
+        assert.equal(unit.reservedCharacters, 800);
+        await f.left.turns.acknowledgeSpeechUnit(
+          f.active.id,
+          input.turnId,
+          input.attemptId,
+          input.leaseId,
+          sequence,
+          unit.replyId,
+        );
+      }
+      await work;
+      assert.deepEqual(
+        units.map((unit) => unit.spokenText),
+        [first, second],
+      );
+    },
+  );
+  await t.test(
     "unconfirmed provider cancellation closes the session instead of admitting a next turn",
     async () => {
       const f = await streamingFixture();
@@ -709,7 +775,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         .findOne({ _id: policy.campaignId });
       assert.equal(
         row?.reservations[0]?.speechReservations[0]?.characters,
-        500,
+        800,
       );
     },
   );
@@ -856,7 +922,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         .findOne({ _id: policy.campaignId });
       assert.equal(
         record?.reservations[0]?.speechReservations[0]?.characters,
-        500,
+        800,
       );
       assert.equal(units[0]?.policyVersion, "companion-voice-speech-unit-v1");
       await assert.rejects(
@@ -1002,7 +1068,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           (sum, value) => sum + value.characters,
           0,
         ),
-        1000,
+        1600,
       );
       f.revoke();
       await assert.rejects(
@@ -1860,7 +1926,13 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
             { voice: true, ...(voiceObserver ? { voiceObserver } : {}) },
           ),
         );
-        globalThis.fetch = () => {
+        globalThis.fetch = (input) => {
+          if (
+            String(input instanceof Request ? input.url : input).endsWith(
+              "/count-tokens",
+            )
+          )
+            return Promise.resolve(Response.json({ inputTokens: 90 }));
           requests++;
           return Promise.resolve(
             Response.json({
@@ -2126,7 +2198,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         "",
         "English only reply",
         "Tôi chẩn đoán bạn đang mắc trầm cảm",
-        "é".repeat(501),
+        "é".repeat(801),
         "<script>lời nói</script>",
       ]) {
         const f = await fixture();
@@ -2147,6 +2219,18 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       );
       const result = await f.send(f.input(), randomUUID(), 503);
       assert.equal(JSON.stringify(result.body).includes("PRIVATE"), false);
+      assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "MB-846d: a 700-character plain reply is accepted by the turn service",
+    async () => {
+      const f = await fixture();
+      const message = `${"é".repeat(699)}.`;
+      f.respond(() => Promise.resolve({ ...reply(), message }));
+      const result = await f.generate(f.input());
+      assert.equal(result.spokenText, message);
       assert.equal(f.calls(), 1);
     },
   );

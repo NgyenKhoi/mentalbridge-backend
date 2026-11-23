@@ -2,9 +2,11 @@
 
 MB-854 speech units use the independently versioned
 [internal JSON contract](../contracts/openapi/journal-ai-voice-speech-units-v1.json).
-`AI_VOICE_SPEECH_UNITS_ENABLED=false` stays OFF until source/policy review,
-deployment preflight and a separate live window. Opt-in requires pilot mode and
-the existing voice/model pins. A bound measurement hash is required only for a
+Speech units are always on since MB-846d (owner decision 2026-11-23: enabled
+by default; rollback = revert); there is no `AI_VOICE_SPEECH_UNITS_ENABLED`
+flag. A spoken reply is at most 800 characters across its units. Journal and
+Agent images must deploy together in one step: either one alone fails every
+Voice call (old 500 vs new 800 limit, and the speech-unit capability check). A bound measurement hash is required only for a
 measured campaign; Journal rejects an unexpected or mismatched claim.
 The client reads complete authorized objects incrementally, plays one unit at a
 time, ACKs successful complete playback and cancels the exact provider turn on

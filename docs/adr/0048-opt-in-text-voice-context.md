@@ -62,7 +62,8 @@ disable the feature for rollback and retain the compatible schema until those
 rows expire through the normal reconciler.
 
 Deploy the owner migration and coordinated Care/Journal contracts before Web.
-`JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED=false` is the default. Enabling it does
+Since MB-846d (owner decision 2026-11-23) the handoff is always available and
+`JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED` is removed. It does
 not enable Voice admission, providers or agents. Old Voice v1 clients must
 refresh to obtain and accept the v2 disclosure. Web sends only the selected ID,
 then the opaque ticket; it never supplies a summary or message array. An unknown

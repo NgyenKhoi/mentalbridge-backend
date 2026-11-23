@@ -13,6 +13,7 @@ import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import { measurementPolicy } from "./voice-measurement-policy.js";
+import { VOICE_REPLY_MAX_CHARACTERS } from "../companion-chat/companion-voice-guidance.js";
 import { selectVoiceProviderRoute } from "./voice-provider.js";
 import type { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import {
@@ -58,7 +59,7 @@ export interface AuthorizedSpeechUnit extends Omit<
 > {
   type: "SPEECH_UNIT";
   unitSequence: number;
-  reservedCharacters: 500;
+  reservedCharacters: typeof VOICE_REPLY_MAX_CHARACTERS;
   policyVersion: "companion-voice-speech-unit-v1";
 }
 interface Pair {
@@ -480,14 +481,22 @@ export class VoiceTurnService {
       const queuedText: string[] = [];
       const queueUnit = onAuthorizedUnit
         ? (unit: ProviderSpeechUnit) => {
-            const message = validatedAssistantMessage(unit.message, {
-              rejectLinks: true,
-            });
+            let message: string;
+            try {
+              message = validatedAssistantMessage(unit.message, {
+                rejectLinks: true,
+                maxLength: VOICE_REPLY_MAX_CHARACTERS,
+              });
+              validatedAssistantMessage([...queuedText, message].join(" "), {
+                rejectLinks: true,
+                maxLength: VOICE_REPLY_MAX_CHARACTERS,
+              });
+            } catch {
+              // A closed safety code, not a misleading envelope error.
+              throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+            }
             if (queuedText.length >= 2 || !/[.!?…]$/u.test(message))
               throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
-            validatedAssistantMessage([...queuedText, message].join(" "), {
-              rejectLinks: true,
-            });
             queuedText.push(message);
             const selected: ProviderSpeechUnit = {
               message,
@@ -525,7 +534,7 @@ export class VoiceTurnService {
                 ...streamedReply,
                 type: "SPEECH_UNIT",
                 unitSequence: sequence,
-                reservedCharacters: 500,
+                reservedCharacters: VOICE_REPLY_MAX_CHARACTERS,
                 policyVersion: "companion-voice-speech-unit-v1",
               });
               await acknowledged;
@@ -612,7 +621,9 @@ export class VoiceTurnService {
         report({ outcome: "GENERATED", phase });
         return result;
       }
-      const spokenText = validatedAssistantMessage(reply.message);
+      const spokenText = validatedAssistantMessage(reply.message, {
+        maxLength: VOICE_REPLY_MAX_CHARACTERS,
+      });
       if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
       const expression = session.contextHandoffHash
         ? "neutral"
@@ -773,8 +784,12 @@ export class VoiceTurnService {
   private isAborted(signal: AbortSignal) {
     return signal.aborted;
   }
+  // Speech units need the approved Bedrock ConverseStream route; the local fake route keeps plain turns.
   speechUnitsEnabled(): boolean {
-    return this.configuration.VOICE_SPEECH_UNITS_ENABLED === true;
+    return Boolean(
+      this.configuration.VOICE_BEDROCK_ROUTE?.approvedVersion &&
+      this.configuration.BEDROCK_API_KEY,
+    );
   }
   async cancelSpeechTurn(
     id: string,
@@ -894,6 +909,7 @@ export class VoiceTurnService {
       throw new VoiceLedgerError("SESSION_EXPIRED");
     const spokenText = validatedAssistantMessage(unit.message, {
       rejectLinks: true,
+      maxLength: VOICE_REPLY_MAX_CHARACTERS,
     });
     if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
     stage("output_validated");
@@ -927,7 +943,7 @@ export class VoiceTurnService {
           id,
           input.turnId,
           replyId,
-          500,
+          VOICE_REPLY_MAX_CHARACTERS,
         );
       }
       if (this.isAborted(signal)) throw new VoiceLedgerError("SESSION_EXPIRED");

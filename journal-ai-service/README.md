@@ -11,29 +11,26 @@ and provider output are never logged. Bedrock removes unsupported length and
 array limits from the request schema, so the runtime validator remains the
 authoritative bound. No API, persistence, consent, or provider routing changes.
 
-MB-854 independently publishable speech units are a default-OFF review proposal:
-`JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`. Enabling requires reviewed policy,
-ConverseStream enabled and approved Bedrock. Since MB-891 (owner decision,
-2026-11-18) a pilot is optional: without `JOURNAL_AI_VOICE_PILOT` every eligible
-PLUS/PREMIUM owner is admitted on entitlement quota alone, and speech units still
-apply. A measurement profile or plain pilot remains available for bounded campaigns.
+MB-854 independently publishable speech units are always on since MB-846d
+(owner decision 2026-11-23: enabled by default; rollback = revert) whenever the
+approved Voice Bedrock route is configured; there is no feature flag. Since MB-891 a
+pilot is optional: without `JOURNAL_AI_VOICE_PILOT` every eligible PLUS/PREMIUM
+owner is admitted on entitlement quota alone. A measurement profile or plain pilot
+remains available for bounded campaigns.
 Each complete unit retains schema/safety, fresh publication authorization,
 state/lease checks,
-and the 500 combined-character limit. Measured mode keeps its conservative500
+and the 800 combined-character limit. Measured mode keeps its conservative 800
 campaign TTS reservation; plain mode uses Agent pilot TTS limits without a
 campaign reservation. No raw token reaches TTS.
 Read [the prospective policy](../docs/policies/companion-voice-speech-unit-v1.md)
-before considering activation; source approval is not a live window. Text and
-ordinary Voice remain on their existing contracts while the flag isOFF.
+for the unit rules. Text keeps its own contract.
 
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
 ## MB-854 incoming Voice ConverseStream
 
-`JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED=false` is an independent, explicit
-Voice-only opt-in. When enabled on a reviewed deployment, Journal sends the
-unchanged bounded request to Bedrock `/converse-stream`, using the existing
-Bearer credential and pinned Sonnet route. Text and default Voice still use
+Voice speech units always use Bedrock `/converse-stream` (MB-846d, no flag),
+with the existing Bearer credential and pinned Sonnet route. Text uses
 `/converse`. CountTokens, request deadline, input/output ceilings and current
 authorization remain unchanged. The API requires the separate AWS permission
 `bedrock:InvokeModelWithResponseStream`; source or a working Converse key does
@@ -197,18 +194,16 @@ generating a missing or stale note with one FREE/PLUS-route call charged to
 the daily token budget below the reply headroom; a SAFETY turn reads none;
 without L2 it purges them.
 
-`JOURNAL_AI_VOICE_FRIEND_ENABLED` (default false) independently selects the
-spoken friend persona. It is separate from the TEXT v2 flag and preserves the
-Voice response schema, selected context, consent, admission and quota. Every
-friend-mode Bedrock turn counts its exact input before inference and refuses
-more than 1,900 tokens, including outside pilot mode. Its output cap is 300
-tokens for the complete JSON object when using the default pilot; an explicitly
-approved pilot may set 300 through 600. Non-pilot requests keep their existing
-2,000-output-token ceiling, with the friend flag on or off. This flag
-does not enable Voice admission or a provider.
-Real speech quality remains unverified until an owner-approved live listening
-review of this tone; enabling it requires that review and the existing Voice
-live rollout gates. Existing approval-version configuration is retained.
+Voice always speaks as Mầm (`companion-voice-friend-v2`, MB-846d; owner decision
+2026-11-23: enabled by default; rollback = revert): tớ/bạn, comfort first, then one
+or two concrete steps when the user needs help, no default follow-up question,
+humour scaled to distress and no claimed memory beyond the supplied turns. A spoken
+reply is at most 800 characters, enforced by the schema and the server validator
+(an over-length reply fails the turn; the Voice turn has no provider retry). Every
+Voice Bedrock turn counts its exact input before inference and refuses more than
+1,900 tokens. A pilot output cap defaults to 600 tokens (300–600 allowed; a
+measurement pilot needs 600); non-pilot requests keep 2,000.
+Existing approval-version configuration is retained.
 
 ## MB-845 companion conversation eval
 
@@ -256,8 +251,7 @@ stdout logs with synthetic replies belong outside the repository.
 
 ## MB-790 selected Text-to-Voice context
 
-Set `JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED=true` only after coordinated Care
-Voice v2 and migration 016 rollout; the default is false. This capability does
+Selected Text handoff is always available since MB-846d (no flag). It does
 not enable Voice admission or providers. Every caller needs current independent
 Voice v2 consent plus unchanged AI_PROCESSING. See
 [the accepted context amendment](../docs/adr/0048-opt-in-text-voice-context.md)
@@ -734,57 +728,59 @@ npm start
 
 ## Configuration
 
-| Variable                                         | Required                 | Default                                          | Purpose                                                                                                   |
-| ------------------------------------------------ | ------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `JOURNAL_AI_PORT`                                | No                       | `3000`                                           | HTTP port, from 1 through 65535                                                                           |
-| `NODE_ENV`                                       | No                       | `development`                                    | Runtime environment: `development`, `test`, or `production`                                               |
-| `JOURNAL_AI_LOG_LEVEL`                           | No                       | `info`                                           | Pino log level                                                                                            |
-| `JOURNAL_AI_MONGODB_URI`                         | Production               | `mongodb://localhost:27017` outside production   | MongoDB server used by the service and `migrate-mongo`                                                    |
-| `JOURNAL_AI_MONGODB_DATABASE`                    | Production               | `mentalbridge_journal_ai` outside production     | MongoDB database owned by this service                                                                    |
-| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS`       | No                       | `2000`                                           | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds                              |
-| `JOURNAL_AI_ENCRYPTION_KEY`                      | Production               | Local-only deterministic development key         | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key                               |
-| `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`                | Production               | Local-only deterministic development key         | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints                   |
-| `IDENTITY_JWT_ISSUER`                            | Yes                      | None                                             | Exact Identity issuer accepted by this resource service                                                   |
-| `IDENTITY_JWT_AUDIENCE`                          | Yes                      | None                                             | Exact MentalBridge API audience accepted by this resource service                                         |
-| `IDENTITY_JWT_KEY_ID`                            | Yes                      | None                                             | Exact active Identity signing-key identifier accepted by this resource service                            |
-| `IDENTITY_JWT_PUBLIC_KEY`                        | Yes                      | None                                             | X.509 RSA public key matching the Identity signing key; the private key is never shared                   |
-| `JOURNAL_AI_CARE_BASE_URL`                       | Production               | `http://localhost:8081` outside production       | Care base URL for current AI-processing consent checks                                                    |
-| `JOURNAL_AI_CARE_TIMEOUT_MS`                     | No                       | `2000`                                           | Bounded Care consent REST timeout from 100 through 5000 milliseconds                                      |
-| `JOURNAL_AI_CONTENT_BASE_URL`                    | Production               | `http://localhost:3003` outside production       | Content base URL for validating and assembling selected resource context                                  |
-| `JOURNAL_AI_CONTENT_TIMEOUT_MS`                  | No                       | `2000`                                           | Bounded Content resource/progress REST timeout from 100 through 5000 milliseconds                         |
-| `JOURNAL_AI_CONSULTATION_BASE_URL`               | Production               | `http://localhost:8082` outside production       | Consultation base URL for authoritative current entitlement lookup                                        |
-| `JOURNAL_AI_CONSULTATION_TIMEOUT_MS`             | No                       | `2000`                                           | Bounded Consultation entitlement REST timeout                                                             |
-| `JOURNAL_AI_REMINDER_SERVICE_TOKEN`              | Reminder scheduler       | None                                             | Dedicated 32+ character credential for Content's minimized activity projection                            |
-| `JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN`     | SupportPlan Companion    | None                                             | Dedicated 32+ character credential proving the caller is Care; the forwarded user bearer remains required |
-| `JOURNAL_AI_PROVIDER_MODE`                       | No                       | `DETERMINISTIC_FAKE`                             | Selects fake runtime or explicitly approved real routes; tests require fake                               |
-| `JOURNAL_AI_ROUTING_POLICY_VERSION`              | No                       | `exact-revision-routing-v1`                      | Version attached to every workload/package route                                                          |
-| `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`           | Approved real only       | None                                             | Accepted benchmark approval identifier required before real routing                                       |
-| `JOURNAL_AI_FREE_PLUS_PROVIDER/MODEL`            | Approved real only       | None                                             | Pinned baseline route; provider is `GEMINI`, `OPENAI`, or `BEDROCK`                                       |
-| `JOURNAL_AI_PREMIUM_PROVIDER/MODEL`              | Approved real only       | None                                             | Pinned Premium route; it may be stronger but is never selected from client input                          |
-| `JOURNAL_AI_GEMINI_API_KEY`                      | Selected route/benchmark | None                                             | Gemini credential; never committed or logged                                                              |
-| `JOURNAL_AI_OPENAI_API_KEY`                      | Selected route/benchmark | None                                             | OpenAI credential; never committed or logged                                                              |
-| `JOURNAL_AI_BEDROCK_REGION`                      | Bedrock route/benchmark  | `ap-southeast-1`                                 | Region used to build the Bedrock Runtime Converse endpoint                                                |
-| `AWS_BEARER_TOKEN_BEDROCK`                       | Bedrock route/benchmark  | None                                             | Bedrock long-term API key used as a bearer token; never committed or logged                               |
-| `JOURNAL_AI_PROVIDER_TIMEOUT_MS`                 | No                       | `30000`                                          | Per-provider HTTP timeout                                                                                 |
-| `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`    | No                       | `300000`                                         | Bedrock-only timeout for the explicit cold structured-output compile command                              |
-| `JOURNAL_AI_BENCHMARK_ENABLED`                   | No                       | `false`                                          | Explicit paid-run gate; rejected in test/CI                                                               |
-| `JOURNAL_AI_BENCHMARK_DATASET_PATH`              | No                       | synthetic v1 dataset path                        | Version-controlled exact-revision benchmark input                                                         |
-| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                             | At least one complete pinned Gemini, OpenAI, or Bedrock candidate; no latest alias                        |
-| `JOURNAL_AI_*_COST_MICRO_USD_PER_MILLION_TOKENS` | Real route/benchmark     | None                                             | Explicit pricing snapshot used only for cost estimation                                                   |
-| `JOURNAL_AI_ANALYSIS_ENABLED`                    | No                       | `true` outside production; `false` in production | Enables the deterministic exact-revision backend runtime; production remains gated                        |
-| `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`           | No                       | `250`                                            | Interval for due/expired-lease job claims                                                                 |
-| `JOURNAL_AI_ANALYSIS_LEASE_MS`                   | No                       | `35000`                                          | Claim lease, always longer than the fixed 30-second provider-attempt timeout                              |
-| `JOURNAL_AI_CHAT_RETENTION_DAYS`                 | No                       | `90`                                             | Conversation expiry and encrypted-message retention                                                       |
-| `JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS`             | No                       | `5`                                              | Successfully delivered answers per local day for `FREE`                                                   |
-| `JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS`             | No                       | `30`                                             | Configurable successfully delivered answers per local day for `PLUS`                                      |
-| `JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS` | No                       | `200`                                            | Hidden backend fair-use ceiling for `PREMIUM`; never displayed as a daily quota                           |
-| `JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE`          | No                       | `10`                                             | Per-owner bounded request-rate control                                                                    |
-| `JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET`        | No                       | `100000`                                         | Per-owner daily provider token guard for `FREE` (`companion-quota-v2`)                                    |
-| `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                         | Per-owner daily provider token guard for `PLUS`                                                           |
-| `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                         | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
-| `JOURNAL_AI_VOICE_FRIEND_ENABLED`                | No                       | `false`                                          | Independent spoken friend persona; existing Voice gates and owner-approved live tone review required      |
-| `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                               | Server-authoritative IANA timezone used for stable quota reset                                            |
-| `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                      | Version persisted with every assistant response                                                           |
+| Variable                                         | Required                 | Default                                        | Purpose                                                                                                   |
+| ------------------------------------------------ | ------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_PORT`                                | No                       | `3000`                                         | HTTP port, from 1 through 65535                                                                           |
+| `NODE_ENV`                                       | No                       | `development`                                  | Runtime environment: `development`, `test`, or `production`                                               |
+| `JOURNAL_AI_LOG_LEVEL`                           | No                       | `info`                                         | Pino log level                                                                                            |
+| `JOURNAL_AI_MONGODB_URI`                         | Production               | `mongodb://localhost:27017` outside production | MongoDB server used by the service and `migrate-mongo`                                                    |
+| `JOURNAL_AI_MONGODB_DATABASE`                    | Production               | `mentalbridge_journal_ai` outside production   | MongoDB database owned by this service                                                                    |
+| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS`       | No                       | `2000`                                         | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds                              |
+| `JOURNAL_AI_ENCRYPTION_KEY`                      | Production               | Local-only deterministic development key       | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key                               |
+| `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`                | Production               | Local-only deterministic development key       | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints                   |
+| `IDENTITY_JWT_ISSUER`                            | Yes                      | None                                           | Exact Identity issuer accepted by this resource service                                                   |
+| `IDENTITY_JWT_AUDIENCE`                          | Yes                      | None                                           | Exact MentalBridge API audience accepted by this resource service                                         |
+| `IDENTITY_JWT_KEY_ID`                            | Yes                      | None                                           | Exact active Identity signing-key identifier accepted by this resource service                            |
+| `IDENTITY_JWT_PUBLIC_KEY`                        | Yes                      | None                                           | X.509 RSA public key matching the Identity signing key; the private key is never shared                   |
+| `JOURNAL_AI_CARE_BASE_URL`                       | Production               | `http://localhost:8081` outside production     | Care base URL for current AI-processing consent checks                                                    |
+| `JOURNAL_AI_CARE_TIMEOUT_MS`                     | No                       | `2000`                                         | Bounded Care consent REST timeout from 100 through 5000 milliseconds                                      |
+| `JOURNAL_AI_CONTENT_BASE_URL`                    | Production               | `http://localhost:3003` outside production     | Content base URL for validating and assembling selected resource context                                  |
+| `JOURNAL_AI_CONTENT_TIMEOUT_MS`                  | No                       | `2000`                                         | Bounded Content resource/progress REST timeout from 100 through 5000 milliseconds                         |
+| `JOURNAL_AI_CONSULTATION_BASE_URL`               | Production               | `http://localhost:8082` outside production     | Consultation base URL for authoritative current entitlement lookup                                        |
+| `JOURNAL_AI_CONSULTATION_TIMEOUT_MS`             | No                       | `2000`                                         | Bounded Consultation entitlement REST timeout                                                             |
+| `JOURNAL_AI_REMINDER_SERVICE_TOKEN`              | Reminder scheduler       | None                                           | Dedicated 32+ character credential for Content's minimized activity projection                            |
+| `JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN`     | SupportPlan Companion    | None                                           | Dedicated 32+ character credential proving the caller is Care; the forwarded user bearer remains required |
+| `JOURNAL_AI_PROVIDER_MODE`                       | No                       | `DETERMINISTIC_FAKE`                           | Selects fake runtime or explicitly approved real routes; tests require fake                               |
+| `JOURNAL_AI_ROUTING_POLICY_VERSION`              | No                       | `exact-revision-routing-v1`                    | Version attached to every workload/package route                                                          |
+| `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`           | Approved real only       | None                                           | Accepted benchmark approval identifier required before real routing                                       |
+| `JOURNAL_AI_FREE_PLUS_PROVIDER/MODEL`            | Approved real only       | None                                           | Pinned baseline route; provider is `GEMINI`, `OPENAI`, or `BEDROCK`                                       |
+| `JOURNAL_AI_PREMIUM_PROVIDER/MODEL`              | Approved real only       | None                                           | Pinned Premium route; it may be stronger but is never selected from client input                          |
+| `JOURNAL_AI_GEMINI_API_KEY`                      | Selected route/benchmark | None                                           | Gemini credential; never committed or logged                                                              |
+| `JOURNAL_AI_OPENAI_API_KEY`                      | Selected route/benchmark | None                                           | OpenAI credential; never committed or logged                                                              |
+| `JOURNAL_AI_BEDROCK_REGION`                      | Bedrock route/benchmark  | `ap-southeast-1`                               | Region used to build the Bedrock Runtime Converse endpoint                                                |
+| `AWS_BEARER_TOKEN_BEDROCK`                       | Bedrock route/benchmark  | None                                           | Bedrock long-term API key used as a bearer token; never committed or logged                               |
+| `JOURNAL_AI_PROVIDER_TIMEOUT_MS`                 | No                       | `30000`                                        | Per-provider HTTP timeout                                                                                 |
+| `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`    | No                       | `300000`                                       | Bedrock-only timeout for the explicit cold structured-output compile command                              |
+| `JOURNAL_AI_BENCHMARK_ENABLED`                   | No                       | `false`                                        | Explicit paid-run gate; rejected in test/CI                                                               |
+| `JOURNAL_AI_BENCHMARK_DATASET_PATH`              | No                       | synthetic v1 dataset path                      | Version-controlled exact-revision benchmark input                                                         |
+| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                           | At least one complete pinned Gemini, OpenAI, or Bedrock candidate; no latest alias                        |
+| `JOURNAL_AI_*_COST_MICRO_USD_PER_MILLION_TOKENS` | Real route/benchmark     | None                                           | Explicit pricing snapshot used only for cost estimation                                                   |
+| `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`           | No                       | `2000`                                         | Interval for due/expired-lease job claims                                                                 |
+| `JOURNAL_AI_ANALYSIS_LEASE_MS`                   | No                       | `35000`                                        | Claim lease, always longer than the fixed 30-second provider-attempt timeout                              |
+| `JOURNAL_AI_CHAT_RETENTION_DAYS`                 | No                       | `90`                                           | Conversation expiry and encrypted-message retention                                                       |
+| `JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS`             | No                       | `5`                                            | Successfully delivered answers per local day for `FREE`                                                   |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS`             | No                       | `30`                                           | Configurable successfully delivered answers per local day for `PLUS`                                      |
+| `JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS` | No                       | `200`                                          | Hidden backend fair-use ceiling for `PREMIUM`; never displayed as a daily quota                           |
+| `JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE`          | No                       | `10`                                           | Per-owner bounded request-rate control                                                                    |
+| `JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET`        | No                       | `100000`                                       | Per-owner daily provider token guard for `FREE` (`companion-quota-v2`)                                    |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                       | Per-owner daily provider token guard for `PLUS`                                                           |
+| `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                       | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
+| `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                             | Server-authoritative IANA timezone used for stable quota reset                                            |
+| `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                    | Version persisted with every assistant response                                                           |
+
+Exact-revision and longitudinal journal analysis always run (MB-846d, owner
+decision 2026-11-23: no feature flags; rollback = revert). Provider mode,
+credentials and spend settings still decide which provider answers.
 
 Local `.env` files are loaded only outside production and never override real
 environment variables. Copy `.env.example` to `.env` for local development,

@@ -81,8 +81,8 @@ The signed-off run is the approval evidence for a bumped `PROVIDER_APPROVAL_VERS
 ## F1 amendment — spoken friend persona, 2026-11-03
 
 The owner selected the named Voice follow-up in the implementation session.
-This prospectively adds an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
-default `false`. The original TEXT delivery, approvals and historical Voice
+This prospectively added an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
+default `false` (removed by the MB-846d amendment below: the persona is always on). The original TEXT delivery, approvals and historical Voice
 campaigns remain under their original settings.
 
 Voice uses a compact `companion-voice-friend-v1` prompt: natural Vietnamese,
@@ -227,3 +227,64 @@ crisis pointer 1.0. The web and mobile send-response validators must accept
 1,500 characters before this backend deploys; the frontend PRs merge first
 (mobile #340 is merged). The owner's wording review of this amendment is
 pending.
+
+## MB-846d amendment — Mầm Voice always on, about 800 characters, 2026-11-23
+
+Owner decision 2026-11-23: enabled by default; rollback = revert. There are no
+Voice feature flags: `JOURNAL_AI_VOICE_FRIEND_ENABLED`,
+`JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED`, `JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED`,
+`JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED` and the Agent's
+`AI_VOICE_SPEECH_UNITS_ENABLED` are removed and old values are ignored. Voice
+always uses the Mầm prompt `companion-voice-friend-v2`, selected Text handoff is
+always available, and speech units stream through ConverseStream whenever the
+approved Voice Bedrock route is configured. `JOURNAL_AI_VOICE_ENABLED` (the live
+credential switch), the pilot and spend caps, the 1,900-token input cap (fail
+closed), entitlement, consent, quota, lease, deadlines, recording and retention
+are unchanged and are not feature flags.
+
+The persona mirrors Mầm TEXT v3: tớ/bạn; the owner's no-default-question rule
+verbatim; comfort first, then one or two concrete steps with a short how or why
+when the user needs help; varied natural endings; humour only on everyday stress
+and never on a crisis cue; no claimed memory beyond the supplied turns; no emoji,
+emoticons, markup, lists or URLs read aloud. Cross-conversation memory notes
+(MB-846c) are not injected into Voice in this change. The crisis line is
+unchanged: serious warmth and a pointer to Cần trợ giúp ngay.
+
+A spoken reply is at most 800 characters (was 500), enforced by the provider
+schema, the server validator for each speech unit and their combined text, the
+speech-unit contract and the Agent. An over-length reply fails the turn; the
+Voice turn is one counted provider call, so there is no retry. A pilot output
+cap now defaults to 600 tokens and a measurement pilot requires 600; a measured
+turn reserves 800 campaign TTS characters. The prompt asks for about 400–650
+characters on help replies (never more than 700) and a first speech unit of at
+most about 400, leaving margin under the hard 800, because a failed Voice turn
+ends the call (Agent outcome `TEXT_OR_PUSH_TO_TALK`) and a later unit can fail
+after the first was already heard.
+
+Consequences of removing the flags:
+- Every Voice Bedrock turn now makes one serial CountTokens call before
+  inference (about one extra HTTPS round trip). A 4xx/5xx from CountTokens fails
+  the turn. Over 1,900 tokens, Journal drops the oldest history pair (selected
+  Text first, then current call) and counts again; it refuses only when no
+  history is left. The system and safety text are never trimmed. CountTokens is
+  not the counted provider call, so the one-call contract holds.
+- Bounded Voice omits Bedrock `outputConfig` so CountTokens counts the exact
+  input; the JSON shape comes from the schema inlined in the prompt. This is an
+  accepted gap: the server schema and validator stay the guard, and an invalid
+  shape fails the turn (`OUTPUT_JSON_INVALID` / `OUTPUT_SCHEMA_INVALID`).
+- **Deploy coupling:** Journal and Agent images must deploy together in one
+  step. Either one alone fails every Voice call: the speech-unit limit changed
+  from 500 to 800 on both sides, and a Journal with the approved route always
+  expects the speech-unit capability.
+- A `JOURNAL_AI_VOICE_PILOT` measurement JSON that still sets
+  `maxOutputTokens: 300` now fails configuration load, and existing measurement
+  config hashes no longer match; open only new windows. The Agent plain-pilot
+  TTS budget (`AI_VOICE_PILOT_TTS_MAX_CHARACTERS`, default 1,200 per session)
+  covers about one 800-character turn; raise it for a pilot.
+- Journal analysis: removing `JOURNAL_AI_ANALYSIS_ENABLED` is the same owner
+  decision. Production, where the old default was off, now starts the
+  exact-revision and longitudinal workers in every instance. Each polls Mongo for
+  due retries and expired leases every 2,000 ms by default (was 250 ms; requests
+  dispatch immediately, so the poll is only recovery), and leases keep multiple
+  instances correct. Provider spend follows consented user analysis requests;
+  there is no extra per-user analysis cap.

@@ -58,6 +58,7 @@ import {
   MAM_TEXT_V3_MAX_CHARACTERS,
   mamMemoryNoteSystem,
 } from "./companion-guidance-policy.js";
+import { VOICE_REPLY_MAX_CHARACTERS } from "./companion-voice-guidance.js";
 import {
   SUGGESTION_DESTINATIONS,
   resolveSuggestion,
@@ -358,6 +359,11 @@ export const voiceProviderOutputJsonSchema = {
   ...providerOutputJsonSchema,
   properties: {
     ...providerOutputJsonSchema.properties,
+    message: {
+      type: "string",
+      minLength: 1,
+      maxLength: VOICE_REPLY_MAX_CHARACTERS,
+    },
     expression: {
       anyOf: [
         { type: "string", enum: ["neutral", "comfort"] },
@@ -445,6 +451,10 @@ const mamProviderOutputSchema = providerOutputSchema.extend({
   message: z.string().trim().min(1).max(MAM_TEXT_V3_MAX_CHARACTERS),
 });
 
+const voiceProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(VOICE_REPLY_MAX_CHARACTERS),
+});
+
 const unsafeAssistantPatterns = [
   /(?:ignore|disregard) (?:all )?(?:previous|system|developer) (?:instructions?|messages?)/iu,
   /(?:bỏ qua|phớt lờ).{0,40}(?:chỉ dẫn|hướng dẫn|system|developer)/iu,
@@ -488,6 +498,26 @@ const withoutCutOffTail = (message: string): string =>
     : (/^([\s\S]*(?:[.!?…]|\p{Extended_Pictographic}️?))\s+\S[\s\S]*$/u.exec(
         message,
       )?.[1] ?? message);
+
+/** Voice history minus its oldest pair (selected Text first, then current call); null when nothing is left. */
+export const withoutOldestVoicePair = (prompt: string): string | null => {
+  let value: unknown;
+  try {
+    value = JSON.parse(prompt);
+  } catch {
+    return null;
+  }
+  if (Array.isArray(value))
+    return value.length ? JSON.stringify(value.slice(1)) : null;
+  if (value && typeof value === "object") {
+    const { selectedText, currentCall } = value as Record<string, unknown>;
+    if (Array.isArray(selectedText) && selectedText.length)
+      return JSON.stringify({ ...value, selectedText: selectedText.slice(1) });
+    if (Array.isArray(currentCall) && currentCall.length)
+      return JSON.stringify({ ...value, currentCall: currentCall.slice(1) });
+  }
+  return null;
+};
 
 export const validatedAssistantMessage = (
   value: string,
@@ -1899,13 +1929,7 @@ export class RoutedChatProvider implements ChatProvider {
   ): Promise<ProviderReply> {
     options?.signal?.throwIfAborted();
     const speechUnits = options?.onSpeechUnit;
-    if (
-      speechUnits &&
-      (!options.voice ||
-        route.provider !== "BEDROCK" ||
-        !this.configuration.VOICE_CONVERSE_STREAM_ENABLED ||
-        !this.configuration.VOICE_SPEECH_UNITS_ENABLED)
-    )
+    if (speechUnits && (!options.voice || route.provider !== "BEDROCK"))
       throw new VoiceProviderFailure("AUTHORITY_OR_STATE");
     const friend = options?.voice ? undefined : options?.friend;
     // The caller selects the mode once, so the preflight estimate and this request share it.
@@ -1914,7 +1938,9 @@ export class RoutedChatProvider implements ChatProvider {
     const plan = options?.voice ? undefined : options?.plan;
     const maxLength = mamTextV3
       ? MAM_TEXT_V3_MAX_CHARACTERS
-      : companionReplyMaxCharacters(plan);
+      : options?.voice
+        ? VOICE_REPLY_MAX_CHARACTERS
+        : companionReplyMaxCharacters(plan);
     if (options?.voice && context.kinds.length !== 0)
       throw new VoiceProviderFailure("INVALID_RESPONSE");
     if (route.provider === "DETERMINISTIC_FAKE") {
@@ -1934,9 +1960,6 @@ export class RoutedChatProvider implements ChatProvider {
       ? mamMemoryNoteSystem
       : companionGuidanceSystem({
           channel: options?.voice ? "VOICE" : "TEXT",
-          ...(options?.voice && this.configuration.VOICE_FRIEND_ENABLED
-            ? { voiceFriend: true }
-            : {}),
           ...(options?.voice && options.textHandoff
             ? { textHandoff: true }
             : {}),
@@ -1952,10 +1975,9 @@ export class RoutedChatProvider implements ChatProvider {
         });
     const requestTitle = options?.requestTitle === true && !options.voice;
     if (speechUnits)
-      system +=
-        "\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. All messages combined must fit 500 characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.";
+      system += `\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. Keep the first object at most about 400 characters so a long reply never stops halfway. All messages combined must fit ${String(VOICE_REPLY_MAX_CHARACTERS)} characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.`;
     if (requestTitle) system += `\n${providerTitleInstruction}`;
-    const input = companionUserInput({
+    let input = companionUserInput({
       message: userMessage,
       context,
       ...(friend ? { friend } : {}),
@@ -2107,13 +2129,32 @@ export class RoutedChatProvider implements ChatProvider {
             throw new Error("Voice pilot route unavailable");
           system += `\nReturn the JSON ${speechUnits ? "array" : "object"} directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(wireOutputJsonSchema)}`;
           options?.voiceObserver?.({ phase: "provider_prompt_prepared" });
-          await authorizeVoiceInput(
-            this.configuration.BEDROCK_API_KEY,
-            system,
-            input,
-            requestSignal,
-            options?.voiceObserver,
-          );
+          let voicePrompt = context.prompt;
+          for (;;) {
+            try {
+              await authorizeVoiceInput(
+                this.configuration.BEDROCK_API_KEY,
+                system,
+                input,
+                requestSignal,
+                options?.voiceObserver,
+              );
+              break;
+            } catch (error) {
+              // Over the cap: drop the oldest history pair and count again; system and safety text never shrink.
+              const trimmed =
+                error instanceof VoiceProviderFailure &&
+                error.code === "INPUT_BUDGET_EXCEEDED"
+                  ? withoutOldestVoicePair(voicePrompt)
+                  : null;
+              if (trimmed === null) throw error;
+              voicePrompt = trimmed;
+              input = companionUserInput({
+                message: userMessage,
+                context: { ...context, prompt: voicePrompt },
+              });
+            }
+          }
         }
         const request = bedrockConverseRequest(
           system,
@@ -2129,8 +2170,7 @@ export class RoutedChatProvider implements ChatProvider {
         );
         options?.voiceObserver?.({ phase: "bedrock_request_body_prepared" });
         options?.voiceObserver?.({ phase: "bedrock_requested" });
-        if (options?.voice && this.configuration.VOICE_CONVERSE_STREAM_ENABLED)
-          streamSignal = requestSignal;
+        if (speechUnits) streamSignal = requestSignal;
         response = await fetch(
           streamSignal
             ? bedrockConverseStreamUrl(
@@ -2200,13 +2240,14 @@ export class RoutedChatProvider implements ChatProvider {
             string,
             unknown
           >;
-          const parsed = providerOutputSchema.safeParse(rest);
+          const parsed = voiceProviderOutputSchema.safeParse(rest);
           if (!parsed.success)
             throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
           let message: string;
           try {
             message = validatedAssistantMessage(parsed.data.message, {
               rejectLinks: true,
+              maxLength: VOICE_REPLY_MAX_CHARACTERS,
             });
             if (
               Buffer.from(message, "utf8").toString("utf8") !== message ||
@@ -2215,7 +2256,7 @@ export class RoutedChatProvider implements ChatProvider {
               throw new Error();
             validatedAssistantMessage(
               [...spokenUnits.map((unit) => unit.message), message].join(" "),
-              { rejectLinks: true },
+              { rejectLinks: true, maxLength: VOICE_REPLY_MAX_CHARACTERS },
             );
           } catch {
             throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
@@ -2235,11 +2276,10 @@ export class RoutedChatProvider implements ChatProvider {
             response,
             streamSignal,
             options?.voiceObserver,
-            unitCollector
-              ? (text) => {
-                  unitCollector.accept(text);
-                }
-              : undefined,
+            // streamSignal is set only for speech units, so the collector always exists here.
+            (text) => {
+              unitCollector?.accept(text);
+            },
           )
         : await response.json();
     } catch (error) {
@@ -2448,9 +2488,11 @@ export class RoutedChatProvider implements ChatProvider {
     const parsedOutput = (
       mamTextV3
         ? mamProviderOutputSchema
-        : maxLength > 500
-          ? paidProviderOutputSchema
-          : providerOutputSchema
+        : options?.voice
+          ? voiceProviderOutputSchema
+          : maxLength > 500
+            ? paidProviderOutputSchema
+            : providerOutputSchema
     ).safeParse(output);
     if (!parsedOutput.success) {
       if (options?.voice && responseProvider === "BEDROCK")
@@ -2465,10 +2507,7 @@ export class RoutedChatProvider implements ChatProvider {
     try {
       normalized = validatedAssistantMessage(parsedOutput.data.message, {
         maxLength,
-        rejectLinks:
-          friend !== undefined ||
-          (options?.voice === true &&
-            this.configuration.VOICE_FRIEND_ENABLED === true),
+        rejectLinks: friend !== undefined || options?.voice === true,
       });
     } catch (error) {
       if (options?.voice && responseProvider === "BEDROCK")

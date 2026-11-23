@@ -133,9 +133,10 @@ AI does not select their recipient, timing, suppression, or retry outcome.
 
 ## Spoken friend-persona opt-in (MB-791 F1)
 
-The independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag defaults off. When
-explicitly enabled after an approved real-Voice tone review, spoken guidance
-comforts first, offers advice only when requested and avoids repetitive questions,
+Since MB-846d (owner decision 2026-11-23: enabled by default; rollback = revert)
+Voice always speaks as Mầm, with no flag. Spoken guidance comforts first, then
+gives one or two concrete steps when the user needs help, asks no default
+follow-up question, keeps each reply within 800 characters and avoids
 emoji, markup, model-authored links and navigation suggestions. It never invents
 personal facts or takes over clinical, safety, eligibility or business decisions.
 Urgent cues retain serious Help Now guidance.

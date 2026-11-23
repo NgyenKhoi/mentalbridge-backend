@@ -252,7 +252,6 @@ const configuration = {
   NODE_ENV: "test",
   LOG_LEVEL: "silent",
   SERVICE_NAME: "journal-ai-service",
-  ANALYSIS_ENABLED: true,
   ANALYSIS_POLL_INTERVAL_MS: 10_000,
   ANALYSIS_LEASE_MS: 35_000,
   JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2),

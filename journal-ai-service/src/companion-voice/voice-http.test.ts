@@ -27,7 +27,6 @@ const identity = {
   IDENTITY_JWT_KEY_ID: "voice-test-key",
   IDENTITY_JWT_PUBLIC_KEY: await exportSPKI(publicKey),
   JOURNAL_AI_LOG_LEVEL: "silent",
-  JOURNAL_AI_ANALYSIS_ENABLED: "false",
 };
 const token = (role = "USER") =>
   new SignJWT({ roles: [role] })
@@ -273,20 +272,23 @@ void test("Voice credentials are optional when disabled and cannot alias another
     JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: "",
   });
   assert.deepEqual(empty.VOICE_OWNER_TOKENS, { care: null, entitlement: null });
-  assert.equal(empty.VOICE_TEXT_HANDOFF_ENABLED, false);
-  assert.equal(
-    loadConfiguration({
-      ...identity,
-      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: "true",
-    }).VOICE_TEXT_HANDOFF_ENABLED,
-    true,
-  );
-  assert.throws(() =>
-    loadConfiguration({
-      ...identity,
-      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: "yes",
-    }),
-  );
+  // MB-846d: Voice has no feature flags (owner decision 2026-11-23); old values are ignored.
+  const legacy = loadConfiguration({
+    ...identity,
+    JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: "yes",
+    JOURNAL_AI_VOICE_FRIEND_ENABLED: "no",
+    JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "false",
+    JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "false",
+    JOURNAL_AI_ANALYSIS_ENABLED: "false",
+  });
+  for (const key of [
+    "VOICE_TEXT_HANDOFF_ENABLED",
+    "VOICE_FRIEND_ENABLED",
+    "VOICE_CONVERSE_STREAM_ENABLED",
+    "VOICE_SPEECH_UNITS_ENABLED",
+    "ANALYSIS_ENABLED",
+  ])
+    assert.equal(Object.hasOwn(legacy, key), false);
   const credential = "synthetic-purpose-only-credential-32-characters";
   assert.throws(() =>
     loadConfiguration({

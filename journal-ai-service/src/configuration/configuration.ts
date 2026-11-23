@@ -109,16 +109,6 @@ const environmentSchema = z
     JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: voiceServiceToken,
     JOURNAL_AI_VOICE_ENABLED: z.enum(["true", "false"]).default("false"),
-    JOURNAL_AI_VOICE_FRIEND_ENABLED: z.enum(["true", "false"]).default("false"),
-    JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: z
-      .enum(["true", "false"])
-      .default("false"),
-    JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: z
-      .enum(["true", "false"])
-      .default("false"),
-    JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: z
-      .enum(["true", "false"])
-      .default("false"),
     JOURNAL_AI_VOICE_PILOT: z.preprocess((value) => {
       if (value === undefined || value === "") return undefined;
       if (typeof value !== "string") return null;
@@ -258,13 +248,13 @@ const environmentSchema = z
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS:
       z.coerce.number().int().min(0).max(1_000_000_000).optional(),
-    JOURNAL_AI_ANALYSIS_ENABLED: z.enum(["true", "false"]).optional(),
     JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS: z.coerce
       .number()
       .int()
       .min(25)
       .max(10_000)
-      .default(250),
+      // Requests dispatch at once; polling only recovers due retries and expired leases (MB-846d).
+      .default(2_000),
     JOURNAL_AI_ANALYSIS_LEASE_MS: z.coerce
       .number()
       .int()
@@ -330,16 +320,6 @@ const environmentSchema = z
       .default("companion-chat-routing-v1"),
   })
   .superRefine((environment, context) => {
-    if (
-      environment.JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED === "true" &&
-      (environment.JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED !== "true" ||
-        environment.JOURNAL_AI_VOICE_PROVIDER_MODE !== "APPROVED_BEDROCK")
-    )
-      context.addIssue({
-        code: "custom",
-        path: ["JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED"],
-        message: "Approved Bedrock streaming is required",
-      });
     if (environment.JOURNAL_AI_VOICE_PROVIDER_MODE === "APPROVED_BEDROCK") {
       for (const key of [
         "AWS_BEARER_TOKEN_BEDROCK",
@@ -615,14 +595,6 @@ const environmentSchema = z
         environment.JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN ?? null,
     },
     VOICE_PILOT: environment.JOURNAL_AI_VOICE_PILOT,
-    VOICE_FRIEND_ENABLED:
-      environment.JOURNAL_AI_VOICE_FRIEND_ENABLED === "true",
-    VOICE_CONVERSE_STREAM_ENABLED:
-      environment.JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED === "true",
-    VOICE_SPEECH_UNITS_ENABLED:
-      environment.JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED === "true",
-    VOICE_TEXT_HANDOFF_ENABLED:
-      environment.JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED === "true",
     VOICE_MEDIA: {
       enabled: environment.JOURNAL_AI_VOICE_ENABLED === "true",
       approvedVersion: environment.JOURNAL_AI_VOICE_APPROVAL_VERSION ?? null,
@@ -688,10 +660,6 @@ const environmentSchema = z
       environment.JOURNAL_AI_BENCHMARK_BEDROCK_INPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
       environment.JOURNAL_AI_BENCHMARK_BEDROCK_OUTPUT_COST_MICRO_USD_PER_MILLION_TOKENS,
     ),
-    ANALYSIS_ENABLED:
-      environment.JOURNAL_AI_ANALYSIS_ENABLED !== undefined
-        ? environment.JOURNAL_AI_ANALYSIS_ENABLED === "true"
-        : environment.NODE_ENV !== "production",
     ANALYSIS_POLL_INTERVAL_MS: environment.JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS,
     ANALYSIS_LEASE_MS: environment.JOURNAL_AI_ANALYSIS_LEASE_MS,
     CHAT_RETENTION_DAYS: environment.JOURNAL_AI_CHAT_RETENTION_DAYS,
@@ -714,20 +682,9 @@ const environmentSchema = z
 
 export type ServiceConfiguration = Omit<
   z.infer<typeof environmentSchema>,
-  | "VOICE_OWNER_TOKENS"
-  | "VOICE_MEDIA"
-  | "VOICE_BEDROCK_ROUTE"
-  | "VOICE_PILOT"
-  | "VOICE_FRIEND_ENABLED"
-  | "VOICE_CONVERSE_STREAM_ENABLED"
-  | "VOICE_SPEECH_UNITS_ENABLED"
-  | "VOICE_TEXT_HANDOFF_ENABLED"
+  "VOICE_OWNER_TOKENS" | "VOICE_MEDIA" | "VOICE_BEDROCK_ROUTE" | "VOICE_PILOT"
 > & {
   readonly VOICE_PILOT?: z.infer<typeof environmentSchema>["VOICE_PILOT"];
-  readonly VOICE_FRIEND_ENABLED?: boolean;
-  readonly VOICE_CONVERSE_STREAM_ENABLED?: boolean;
-  readonly VOICE_SPEECH_UNITS_ENABLED?: boolean;
-  readonly VOICE_TEXT_HANDOFF_ENABLED?: boolean;
   readonly VOICE_BEDROCK_ROUTE?: z.infer<
     typeof environmentSchema
   >["VOICE_BEDROCK_ROUTE"];

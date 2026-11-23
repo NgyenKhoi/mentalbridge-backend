@@ -49,7 +49,6 @@ export class VoiceContextHandoffs {
     { owner: string; expiresAt: number; session?: string }
   >();
   constructor(
-    private readonly enabled: boolean,
     private readonly secret: Buffer,
     private readonly conversations: {
       findConversation(owner: string, id: string): Promise<Conversation | null>;
@@ -57,14 +56,8 @@ export class VoiceContextHandoffs {
     private readonly crypto: Pick<ChatCrypto, "decrypt">,
     private readonly clock: () => Date = () => new Date(),
   ) {}
-  get available() {
-    return this.enabled;
-  }
   private digest(value: string) {
     return createHmac("sha256", this.secret).update(value).digest("base64url");
-  }
-  private requireEnabled() {
-    if (!this.enabled) throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
   }
   private async snapshot(owner: string, id: string) {
     const row = await this.conversations.findConversation(owner, id);
@@ -98,7 +91,6 @@ export class VoiceContextHandoffs {
     return { snapshot, pairs };
   }
   async prepare(owner: string, conversation: string) {
-    this.requireEnabled();
     const { snapshot, pairs } = await this.snapshot(owner, conversation);
     const issuedAt = this.clock().getTime(),
       expiresAt = issuedAt + 120000;
@@ -132,7 +124,6 @@ export class VoiceContextHandoffs {
     };
   }
   private ticket(owner: string, token: string, allowExpired: boolean) {
-    this.requireEnabled();
     const [payload, signature, extra] = token.split(".");
     if (!payload || !signature || extra || !/^[A-Za-z0-9_-]+$/.test(payload))
       throw new VoiceAccessError("INVALID_REQUEST");
@@ -205,7 +196,6 @@ export class VoiceContextHandoffs {
   }
   bind(session: VoiceSession, prepared?: PreparedHandoff) {
     if (!session.contextHandoffHash) return;
-    this.requireEnabled();
     const prior = this.bound.get(session.voiceSessionId);
     if (prior) {
       if (
