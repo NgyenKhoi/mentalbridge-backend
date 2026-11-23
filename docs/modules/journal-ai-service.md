@@ -256,7 +256,7 @@ selects the fixed crisis wording). Method, thresholds and before/after results:
 
 ## Mầm TEXT response mode (MB-846)
 
-The separate default-off Mầm TEXT v3 flag selects a server directive for each
+Owner decision 2026-11-23: enabled by default; rollback = revert: Mầm TEXT v3 selects a server directive for every TEXT
 turn from the current message and consent-filtered recent conversation history:
 LISTEN, CLARIFY, SUPPORT_AND_WRAP_UP, BOUNDARY or SAFETY. This is a bounded
 conversation-structure heuristic, not a Care safety determination. The

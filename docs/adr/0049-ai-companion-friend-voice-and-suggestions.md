@@ -8,7 +8,7 @@ plus its separate unchanged Voice v2 grant and eligible empty-kind Text handoff.
 
 
 - Decision ID: `MB-AI-COMPANION-FRIEND-001`
-- Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime ships behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`, default `false`.
+- Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime first shipped behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`. Owner decision 2026-11-23: enabled by default; rollback = revert: TEXT always runs the Mầm v3 path with this friend history, catalogue and suggestion, and both TEXT flags are removed (owner to approve wording).
 - Owners: Journal/AI (guidance, memory, catalogue use, suggestion resolution), Content/Notification (published Resource catalogue), Web (button, routes, labels).
 - Amends prospectively: [AI Companion policy v2](../policies/ai-companion-policy-v2.md) for TEXT chat only, and the daily token clause of [ADR 0021](0021-ai-companion-conversation-and-quota.md).
 - Design: owner-approved MB-791 design (2026-11-03).
@@ -61,7 +61,9 @@ The daily provider token budget is per plan: FREE 100,000, PLUS 250,000, PREMIUM
 
 ## Rollout gate
 
-Switching the flag on needs all of these:
+Owner decision 2026-11-23: enabled by default; rollback = revert. The TEXT flags `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED` and `JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` are removed, the v2 prompt remains only as the eval A/B baseline, and migration 017 (and 023 with MB-846c) must run before deploy. The gate below is the historical record.
+
+Switching the flag on needed all of these:
 
 - migration 017 applied with owner authorization;
 - a real-provider run of the synthetic conversation eval on the live TEXT route (Bedrock Sonnet 4.6), with a credit cap approved by the owner;
@@ -159,11 +161,10 @@ package value or entitlement call is added.
 
 ## MB-846 amendment — Mầm TEXT response mode, 2026-11-22 (owner wording review pending)
 
-The owner approved implementation of a separate, disabled-by-default
-`JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` variant. It uses
-`companion-mam-text-v3` and retains the v2 consent-filtered history, catalogue,
-suggestion schema, provider route, retry, quota and crisis pointer. With this
-flag off, v2 requests are unchanged. Voice is unchanged.
+The owner first approved a separate, disabled-by-default variant. Owner decision 2026-11-23: enabled by default; rollback = revert:
+every TEXT request uses `companion-mam-text-v3`, with the v2 consent-filtered
+history, catalogue, suggestion schema, provider route, retry, quota and crisis
+pointer. Voice is unchanged.
 
 For each Mầm TEXT turn, Journal/AI selects `LISTEN`, `CLARIFY`,
 `SUPPORT_AND_WRAP_UP`, `BOUNDARY` or `SAFETY` from the current user message and
@@ -192,8 +193,8 @@ without a question unless information critical for immediate safety is
 missing. `BOUNDARY` supports emotions and how to approach a problem; it does
 not write code or complete homework. Mầm says “tớ” to “bạn”, varies openers,
 avoids templated empathy, uses only occasional fitting emoji, and keeps
-replies to 1,500 characters. While the flag is on, the 1,500-character limit
-applies to every package and supersedes the MB-869 900-character paid limit.
+replies to 1,500 characters. The 1,500-character limit applies to every
+package and supersedes the MB-869 900-character paid limit.
 The server enforces it on every reply (an over-limit reply is retried once,
 then refused); the output schema also carries it where the provider supports
 it, which Bedrock does not. Humour scales with distress: playful teasing only
@@ -222,8 +223,7 @@ The real Sonnet 4.6 gate is wrap-up ≥0.80 per turn, explore ≥0.80 per turn
 under the MB-846b definition (no question, or one question only where the
 dataset marks essential information as missing, where a missing question
 also fails), no provider error (a reply over 1,500 characters is one), and
-crisis pointer 1.0. Before the flag goes on, the web and mobile send-response
-validators must accept 1,500 characters (frontend follow-up; they stop at 900
-and 500 today). The rollout gate and owner
-tone review above still apply; this amendment is pending owner wording
-approval before activation.
+crisis pointer 1.0. The web and mobile send-response validators must accept
+1,500 characters before this backend deploys; the frontend PRs merge first
+(mobile #340 is merged). The owner's wording review of this amendment is
+pending.

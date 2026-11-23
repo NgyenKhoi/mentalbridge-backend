@@ -68,6 +68,7 @@ import {
 } from "./companion-text-request.js";
 import {
   conversationMemory,
+  readableTurns,
   MAM_HISTORY_LIMITS,
 } from "./conversation-history.js";
 import {
@@ -2726,25 +2727,17 @@ export class CompanionChatService {
       const sources = authorization.context.authorized
         ? conversation.context.sources
         : emptySources();
-      const mamTextV3 =
-        this.configuration.COMPANION_MAM_TEXT_V3_ENABLED === true;
-      const friendEnabled =
-        this.configuration.COMPANION_GUIDANCE_V2_ENABLED === true || mamTextV3;
-      const historyLimits = mamTextV3 ? MAM_HISTORY_LIMITS : undefined;
-      const memory = friendEnabled
-        ? conversationMemory(
-            conversation.messages,
-            sources,
-            (message) => this.crypto.decrypt(owner, conversationId, message),
-            historyLimits,
-          )
-        : { history: [], kinds: [] };
-      let friend: FriendInput | undefined = friendEnabled
-        ? {
-            history: memory.history,
-            catalog: await this.catalog.items(),
-          }
-        : undefined;
+      // Owner decision 2026-11-23: TEXT always runs Mầm v3 with its friend history, catalogue and suggestion.
+      const memory = conversationMemory(
+        conversation.messages,
+        sources,
+        (message) => this.crypto.decrypt(owner, conversationId, message),
+        MAM_HISTORY_LIMITS,
+      );
+      let friend: FriendInput = {
+        history: memory.history,
+        catalog: await this.catalog.items(),
+      };
       minimized = {
         ...minimized,
         kinds: [...new Set([...minimized.kinds, ...memory.kinds])],
@@ -2761,40 +2754,40 @@ export class CompanionChatService {
         );
       if (!finalAuthorization.context.authorized) {
         minimized = { kinds: [], prompt: "" };
-        if (friend)
-          friend = {
-            ...friend,
-            history: conversationMemory(
-              conversation.messages,
-              emptySources(),
-              (message) => this.crypto.decrypt(owner, conversationId, message),
-              historyLimits,
-            ).history,
-          };
+        friend = {
+          ...friend,
+          history: conversationMemory(
+            conversation.messages,
+            emptySources(),
+            (message) => this.crypto.decrypt(owner, conversationId, message),
+            MAM_HISTORY_LIMITS,
+          ).history,
+        };
       }
       const requestTitle = canInitializeTitle(conversation);
       // Count the arc on every recent message, not the byte-capped provider history; only the mode leaves the server.
-      const responseMode =
-        mamTextV3 && friend
-          ? selectResponseMode(
-              parsed.data.message,
-              conversation.messages.slice(-8).map((message) => ({
-                role: message.role,
-                text: this.crypto.decrypt(owner, conversationId, message),
-              })),
-            )
-          : undefined;
+      // A message that used personal context the owner no longer allows is counted but never decrypted (ADR 0050).
+      const modeSources = finalAuthorization.context.authorized
+        ? sources
+        : emptySources();
+      const responseMode = selectResponseMode(
+        parsed.data.message,
+        readableTurns(conversation.messages.slice(-8), modeSources, (message) =>
+          this.crypto.decrypt(owner, conversationId, message),
+        ),
+      );
       const estimate = estimateInputTokens(
         companionGuidanceSystem({
           channel: "TEXT",
-          friend: !!friend,
-          ...(responseMode ? { mamTextV3: true, responseMode } : {}),
+          friend: true,
+          mamTextV3: true,
+          responseMode,
           plan: decision.packageCode,
         }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
         companionUserInput({
           message: parsed.data.message,
           context: minimized,
-          ...(friend ? { friend } : {}),
+          friend,
         }),
       );
       const deadlineFailure = () =>
@@ -2813,7 +2806,7 @@ export class CompanionChatService {
         if (remainingMs <= 0) throw deadlineFailure();
         await this.repository.reserveAttempt(command, estimate, tokenBudget);
         const signal = AbortSignal.timeout(
-          Math.min(providerAttemptMs(responseMode !== undefined), remainingMs),
+          Math.min(providerAttemptMs(true), remainingMs),
         );
         let usage: { input: number; output: number } | undefined;
         let attemptedReply: ProviderReply | undefined;
@@ -2821,8 +2814,8 @@ export class CompanionChatService {
         try {
           attemptedReply = await Promise.race([
             this.provider.reply(parsed.data.message, minimized, route, {
-              ...(friend ? { friend } : {}),
-              ...(responseMode ? { responseMode } : {}),
+              friend,
+              responseMode,
               ...(requestTitle ? { requestTitle: true } : {}),
               plan: decision.packageCode,
               signal,
@@ -2839,10 +2832,8 @@ export class CompanionChatService {
             }),
           ]);
           assistant = validatedAssistantMessage(attemptedReply.message, {
-            rejectLinks: friend !== undefined,
-            maxLength: responseMode
-              ? MAM_TEXT_V3_MAX_CHARACTERS
-              : companionReplyMaxCharacters(decision.packageCode),
+            rejectLinks: true,
+            maxLength: MAM_TEXT_V3_MAX_CHARACTERS,
           });
         } catch (error) {
           attemptError = error;
@@ -2887,7 +2878,7 @@ export class CompanionChatService {
       if (!reply || !assistant) throw deadlineFailure();
       // A SAFETY turn never shows a suggestion button, whatever the model returned.
       const suggestion =
-        friend && responseMode !== "SAFETY"
+        responseMode !== "SAFETY"
           ? resolveSuggestion(reply.suggestion, friend.catalog)
           : null;
       const createdAt = this.clock.now();

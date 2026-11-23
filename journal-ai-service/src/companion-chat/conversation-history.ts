@@ -24,6 +24,30 @@ const selected = (kind: ContextKind, sources: ConversationContextSources) =>
         ? sources.screening
         : sources.resourceIds.length > 0;
 
+/**
+ * Roles and readable text of recent messages for the mode selector. A message whose pair used personal
+ * context that is no longer selected and authorized keeps its role but is never decrypted (ADR 0050).
+ */
+export const readableTurns = (
+  messages: readonly ChatMessage[],
+  sources: ConversationContextSources,
+  decrypt: (message: ChatMessage) => string,
+): HistoryTurn[] =>
+  messages.map((message, index) => {
+    const partner =
+      message.role === "USER" ? messages[index + 1] : messages[index - 1];
+    const pairKinds = [
+      ...message.contextKinds,
+      ...(partner && partner.role !== message.role ? partner.contextKinds : []),
+    ];
+    return {
+      role: message.role,
+      text: pairKinds.every((kind) => selected(kind, sources))
+        ? decrypt(message)
+        : "(nội dung riêng tư không đọc)",
+    };
+  });
+
 export const conversationMemory = (
   messages: readonly ChatMessage[],
   sources: ConversationContextSources,

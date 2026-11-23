@@ -8,6 +8,7 @@ import type {
 import {
   conversationMemory,
   MAM_HISTORY_LIMITS,
+  readableTurns,
   recentHistory,
 } from "./conversation-history.js";
 
@@ -225,4 +226,28 @@ void test("the Mầm v3 window keeps up to 20 messages within 16 KB of Vietnames
   assert.ok(capped.history.length >= 8 && capped.history.length < 20);
   assert.ok(bytes <= MAM_HISTORY_LIMITS.bytes);
   assert.equal(capped.history.at(-1)?.text, reply);
+});
+
+void test("readable turns never decrypt a pair whose personal context is not allowed", () => {
+  const messages = [
+    message(300, "Chào"),
+    message(301, "Tớ nghe bạn."),
+    message(302, "Nhật ký hôm qua"),
+    message(303, "Theo nhật ký", ["JOURNAL"]),
+  ];
+  const decrypted: string[] = [];
+  const turns = readableTurns(
+    messages,
+    { ...allSelected, diary: false },
+    (value) => {
+      decrypted.push(value.messageId);
+      return decrypt(value);
+    },
+  );
+  assert.deepEqual(decrypted, ["message-300", "message-301"]);
+  assert.deepEqual(
+    turns.map((turn) => turn.role),
+    ["USER", "ASSISTANT", "USER", "ASSISTANT"],
+  );
+  assert.equal(turns[2]?.text, "(nội dung riêng tư không đọc)");
 });

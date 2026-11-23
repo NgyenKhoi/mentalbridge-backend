@@ -480,9 +480,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     assert.equal(premiumLedger?.usedTokens, premiumUsed + 40_040);
     assert.deepEqual(premiumLedger.reservations, []);
 
-    (
-      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
-    ).COMPANION_GUIDANCE_V2_ENABLED = true;
     configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET = 600_000;
     replyOutputTokens = 10;
     const friendSend = () =>
@@ -531,9 +528,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     );
     assert.ok(storedMessage?.suggestion?.ciphertext);
     assert.deepEqual((await friendSend().expect(201)).body, friendBody);
-    (
-      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
-    ).COMPANION_GUIDANCE_V2_ENABLED = false;
 
     await request(server)
       .delete(`/api/v1/ai-companion/conversations/${conversationId}`)
@@ -553,9 +547,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     );
 
     configuration.CHAT_RATE_LIMIT_PER_MINUTE = 20;
-    (
-      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
-    ).COMPANION_GUIDANCE_V2_ENABLED = true;
     plan = "FREE";
     now = new Date("2026-10-01T00:00:00Z");
     const crypto = new ChatCrypto(configuration);
