@@ -397,11 +397,10 @@ void test("speaker echo from an earlier speech unit cannot interrupt a later uni
 void test("plain pilot without a measurement hash plays and acknowledges a bounded speech unit", async () => {
   const config = loadConfiguration({
     AI_VOICE_PILOT: "true",
-    AI_VOICE_SPEECH_UNITS_ENABLED: "true",
     AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
   });
   assert.equal(config.measurementPolicyHash, null);
-  const f = fixture(config.finalAggregationMs, config.speechUnitsEnabled);
+  const f = fixture(config.finalAggregationMs, true);
   await f.start();
   f.emit("Xin chào, đây là câu thử tổng hợp.");
   f.advance(800);

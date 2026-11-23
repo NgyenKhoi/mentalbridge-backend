@@ -238,6 +238,17 @@ Source/fixture checks do not establish real-model tone quality; activation needs
 an approved live listening/evaluation window. Details are in
 [ADR 0049](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
 
+MB-846d (owner decision 2026-11-23: enabled by default; rollback = revert)
+removes the Voice flags: Voice always uses the Mầm prompt
+`companion-voice-friend-v2` (tớ/bạn, comfort then one or two concrete steps,
+no default question), selected Text handoff is always available, and speech
+units stream whenever the approved Voice Bedrock route is configured. A spoken
+reply is at most 800 characters; a pilot output cap defaults to 600 tokens.
+Journal exact-revision and longitudinal analysis always run; the
+`JOURNAL_AI_ANALYSIS_ENABLED` toggle is removed (poll interval and lease stay
+configurable). See the
+[ADR 0049 MB-846d amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
+
 ## Companion conversation eval (MB-845)
 
 The TEXT companion eval replays synthetic CC0 dataset v2 (core, crisis,

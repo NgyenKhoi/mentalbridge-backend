@@ -24,7 +24,6 @@ const secret = z.string().regex(/^[\x21-\x7e]{32,256}$/);
 const environmentSchema = z.object({
   AI_VOICE_AGENT_ENABLED: z.enum(["true", "false"]).default("false"),
   AI_VOICE_PILOT: z.enum(["true", "false"]).default("false"),
-  AI_VOICE_SPEECH_UNITS_ENABLED: z.enum(["true", "false"]).default("false"),
   AI_VOICE_MEASUREMENT_POLICY_HASH: optional(
     z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   ),
@@ -86,7 +85,6 @@ const environmentSchema = z.object({
   AI_VOICE_TTS_VOICE_ID: optional(z.uuid()),
 });
 export interface AgentConfiguration {
-  speechUnitsEnabled?: boolean;
   measurementPolicyHash?: string | null;
   pilot?: boolean;
   pilotTtsMaxCharacters?: number;
@@ -112,7 +110,6 @@ export function loadConfiguration(
   const optionalString = (input: unknown): string | null =>
     typeof input === "string" ? input : null;
   const configuration: AgentConfiguration = {
-    speechUnitsEnabled: value.AI_VOICE_SPEECH_UNITS_ENABLED === "true",
     measurementPolicyHash: optionalString(
       value.AI_VOICE_MEASUREMENT_POLICY_HASH,
     ),

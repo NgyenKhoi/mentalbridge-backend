@@ -53,9 +53,8 @@ function fixture() {
       });
     }
   };
-  const create = (enabled = true) =>
+  const create = () =>
     new VoiceContextHandoffs(
-      enabled,
       config.JOURNAL_IDEMPOTENCY_HMAC_KEY,
       {
         findConversation: (o, c) =>
@@ -233,10 +232,6 @@ void test("oversized latest pair is not silently truncated or skipped to an olde
   await assert.rejects(
     f.handoffs.prepare(f.owner, f.id),
     code("INVALID_REQUEST"),
-  );
-  await assert.rejects(
-    f.create(false).prepare(f.owner, f.id),
-    code("PROVIDER_UNAVAILABLE"),
   );
 });
 

@@ -80,7 +80,6 @@ void test("runs the bounded longitudinal owner and Care flow against migrated Mo
     BENCHMARK_GEMINI_ROUTE: null,
     BENCHMARK_OPENAI_ROUTE: null,
     BENCHMARK_BEDROCK_ROUTE: null,
-    ANALYSIS_ENABLED: true,
     ANALYSIS_POLL_INTERVAL_MS: 25,
     ANALYSIS_LEASE_MS: 35_000,
     CHAT_RETENTION_DAYS: 90,

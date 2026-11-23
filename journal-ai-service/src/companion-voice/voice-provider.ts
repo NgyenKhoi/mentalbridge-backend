@@ -20,9 +20,7 @@ export const selectVoiceProviderRoute = (
       model: voice.model,
       providerApprovalVersion: voice.approvedVersion,
       routingPolicyVersion: "companion-voice-sonnet-v1",
-      promptVersion: configuration.VOICE_FRIEND_ENABLED
-        ? VOICE_FRIEND_GUIDANCE_VERSION
-        : "companion-chat-v1",
+      promptVersion: VOICE_FRIEND_GUIDANCE_VERSION,
     };
   }
   if (

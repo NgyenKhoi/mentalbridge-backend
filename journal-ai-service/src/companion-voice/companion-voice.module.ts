@@ -110,7 +110,6 @@ export const registerCompanionVoiceModule = (
   );
   const ledger = dependencies.ledger ?? coreLedger;
   const handoffs = new VoiceContextHandoffs(
-    configuration.VOICE_TEXT_HANDOFF_ENABLED === true,
     configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
     {
       findConversation: (ownerAccountId, _id) =>

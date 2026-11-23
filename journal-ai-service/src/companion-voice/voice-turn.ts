@@ -13,6 +13,7 @@ import { VoiceMediaError } from "./voice-media-provider.js";
 import type { VoiceSessionsService } from "./voice-sessions.js";
 import type { MongoVoiceTurnStore } from "./voice-turn-store.js";
 import { measurementPolicy } from "./voice-measurement-policy.js";
+import { VOICE_REPLY_MAX_CHARACTERS } from "../companion-chat/companion-voice-guidance.js";
 import { selectVoiceProviderRoute } from "./voice-provider.js";
 import type { VoiceContextHandoffs } from "./voice-context-handoff.js";
 import {
@@ -58,7 +59,7 @@ export interface AuthorizedSpeechUnit extends Omit<
 > {
   type: "SPEECH_UNIT";
   unitSequence: number;
-  reservedCharacters: 500;
+  reservedCharacters: typeof VOICE_REPLY_MAX_CHARACTERS;
   policyVersion: "companion-voice-speech-unit-v1";
 }
 interface Pair {
@@ -525,7 +526,7 @@ export class VoiceTurnService {
                 ...streamedReply,
                 type: "SPEECH_UNIT",
                 unitSequence: sequence,
-                reservedCharacters: 500,
+                reservedCharacters: VOICE_REPLY_MAX_CHARACTERS,
                 policyVersion: "companion-voice-speech-unit-v1",
               });
               await acknowledged;
@@ -773,8 +774,12 @@ export class VoiceTurnService {
   private isAborted(signal: AbortSignal) {
     return signal.aborted;
   }
+  // Speech units need the approved Bedrock ConverseStream route; the local fake route keeps plain turns.
   speechUnitsEnabled(): boolean {
-    return this.configuration.VOICE_SPEECH_UNITS_ENABLED === true;
+    return Boolean(
+      this.configuration.VOICE_BEDROCK_ROUTE?.approvedVersion &&
+      this.configuration.BEDROCK_API_KEY,
+    );
   }
   async cancelSpeechTurn(
     id: string,
@@ -927,7 +932,7 @@ export class VoiceTurnService {
           id,
           input.turnId,
           replyId,
-          500,
+          VOICE_REPLY_MAX_CHARACTERS,
         );
       }
       if (this.isAborted(signal)) throw new VoiceLedgerError("SESSION_EXPIRED");

@@ -81,8 +81,8 @@ The signed-off run is the approval evidence for a bumped `PROVIDER_APPROVAL_VERS
 ## F1 amendment — spoken friend persona, 2026-11-03
 
 The owner selected the named Voice follow-up in the implementation session.
-This prospectively adds an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
-default `false`. The original TEXT delivery, approvals and historical Voice
+This prospectively added an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
+default `false` (removed by the MB-846d amendment below: the persona is always on). The original TEXT delivery, approvals and historical Voice
 campaigns remain under their original settings.
 
 Voice uses a compact `companion-voice-friend-v1` prompt: natural Vietnamese,
@@ -227,3 +227,32 @@ crisis pointer 1.0. The web and mobile send-response validators must accept
 1,500 characters before this backend deploys; the frontend PRs merge first
 (mobile #340 is merged). The owner's wording review of this amendment is
 pending.
+
+## MB-846d amendment — Mầm Voice always on, about 800 characters, 2026-11-23
+
+Owner decision 2026-11-23: enabled by default; rollback = revert. There are no
+Voice feature flags: `JOURNAL_AI_VOICE_FRIEND_ENABLED`,
+`JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED`, `JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED`,
+`JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED` and the Agent's
+`AI_VOICE_SPEECH_UNITS_ENABLED` are removed and old values are ignored. Voice
+always uses the Mầm prompt `companion-voice-friend-v2`, selected Text handoff is
+always available, and speech units stream through ConverseStream whenever the
+approved Voice Bedrock route is configured. `JOURNAL_AI_VOICE_ENABLED` (the live
+credential switch), the pilot and spend caps, the 1,900-token input cap (fail
+closed), entitlement, consent, quota, lease, deadlines, recording and retention
+are unchanged and are not feature flags.
+
+The persona mirrors Mầm TEXT v3: tớ/bạn; the owner's no-default-question rule
+verbatim; comfort first, then one or two concrete steps with a short how or why
+when the user needs help; varied natural endings; humour only on everyday stress
+and never on a crisis cue; no claimed memory beyond the supplied turns; no emoji,
+emoticons, markup, lists or URLs read aloud. Cross-conversation memory notes
+(MB-846c) are not injected into Voice in this change. The crisis line is
+unchanged: serious warmth and a pointer to Cần trợ giúp ngay.
+
+A spoken reply is at most 800 characters (was 500), enforced by the provider
+schema, the server validator for each speech unit and their combined text, the
+speech-unit contract and the Agent. An over-length reply fails the turn; the
+Voice turn is one counted provider call, so there is no retry. A pilot output
+cap now defaults to 600 tokens and a measurement pilot requires 600; a measured
+turn reserves 800 campaign TTS characters.

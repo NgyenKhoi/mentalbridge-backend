@@ -4,10 +4,7 @@ export const companionMaxOutputTokens = 2_000;
 export const voiceMaxInputTokens = 1_900;
 
 export function effectiveBedrockRequestLimits(
-  configuration: Pick<
-    ServiceConfiguration,
-    "VOICE_PILOT" | "VOICE_FRIEND_ENABLED"
-  >,
+  configuration: Pick<ServiceConfiguration, "VOICE_PILOT">,
   voice: boolean,
 ): {
   inputGuardEnabled: boolean;
@@ -15,14 +12,12 @@ export function effectiveBedrockRequestLimits(
   outputTokenLimit: number;
 } {
   const pilot = voice ? configuration.VOICE_PILOT : undefined;
-  const inputGuardEnabled =
-    pilot !== undefined ||
-    (voice && configuration.VOICE_FRIEND_ENABLED === true);
   return {
-    inputGuardEnabled,
-    inputTokenLimit: inputGuardEnabled ? voiceMaxInputTokens : null,
+    inputGuardEnabled: voice,
+    inputTokenLimit: voice ? voiceMaxInputTokens : null,
+    // 600 tokens fit an 800-character Vietnamese reply plus its JSON envelope (MB-846d).
     outputTokenLimit: pilot
-      ? (pilot.maxOutputTokens ?? 300)
+      ? (pilot.maxOutputTokens ?? 600)
       : companionMaxOutputTokens,
   };
 }

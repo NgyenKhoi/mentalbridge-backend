@@ -110,10 +110,10 @@ void test("measurement hash is stable for owner ordering but binds every approve
       measurementPolicy(voicePilotSchema.parse(changed))?.configHash,
     );
 });
-void test("measurement rejects excessive scope, duplicate owners, schema bypass and non-300 output without altering legacy pilot", () => {
+void test("measurement rejects excessive scope, duplicate owners, schema bypass and non-600 output without altering legacy pilot", () => {
   const value = config();
   for (const changed of [
-    { ...value, maxOutputTokens: 600 },
+    { ...value, maxOutputTokens: 300 },
     { ...value, endsAt: "2030-01-01T01:00:00Z" },
     { ...value, ownerIds: [value.ownerIds[0], value.ownerIds[0]] },
     {

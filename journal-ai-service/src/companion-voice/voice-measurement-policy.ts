@@ -56,7 +56,7 @@ export function measurementPolicy(pilot?: MeasurementPilot) {
         endsAt: pilot.endsAt.toISOString(),
         owners: [...pilot.ownerIds].sort(),
         allocation,
-        outputTokens: pilot.maxOutputTokens ?? 300,
+        outputTokens: pilot.maxOutputTokens ?? 600,
         replyStyle: pilot.replyStyle ?? "SUPPORTIVE",
         inputTokens: 1900,
         model: "global.anthropic.claude-sonnet-4-6",

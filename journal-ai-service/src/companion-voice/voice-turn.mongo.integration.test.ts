@@ -233,7 +233,6 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       JOURNAL_AI_MONGODB_URI: uri,
       JOURNAL_AI_MONGODB_DATABASE: name,
       JOURNAL_AI_LOG_LEVEL: "silent",
-      JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED: String(withHandoff),
       JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN: token,
       ...(pilot
         ? {
@@ -254,8 +253,19 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
     const config: ServiceConfiguration = {
       ...configuration,
       PROVIDER_TIMEOUT_MS: 2500,
-      VOICE_SPEECH_UNITS_ENABLED: speechUnits,
-      VOICE_CONVERSE_STREAM_ENABLED: speechUnits,
+      // Speech units follow the approved Voice Bedrock route (MB-846d: no flag).
+      ...(speechUnits
+        ? {
+            BEDROCK_API_KEY: "synthetic",
+            VOICE_BEDROCK_ROUTE: {
+              model: "global.anthropic.claude-sonnet-4-6" as const,
+              region: "ap-southeast-1",
+              approvedVersion: "synthetic-voice-approved-v1",
+              inputCostMicroUsdPerMillionTokens: 3000000,
+              outputCostMicroUsdPerMillionTokens: 15000000,
+            },
+          }
+        : {}),
     };
     if (configuration.VOICE_PILOT?.measurement)
       await new MongoVoiceMeasurementStore(
@@ -709,7 +719,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         .findOne({ _id: policy.campaignId });
       assert.equal(
         row?.reservations[0]?.speechReservations[0]?.characters,
-        500,
+        800,
       );
     },
   );
@@ -856,7 +866,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         .findOne({ _id: policy.campaignId });
       assert.equal(
         record?.reservations[0]?.speechReservations[0]?.characters,
-        500,
+        800,
       );
       assert.equal(units[0]?.policyVersion, "companion-voice-speech-unit-v1");
       await assert.rejects(
@@ -1002,7 +1012,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
           (sum, value) => sum + value.characters,
           0,
         ),
-        1000,
+        1600,
       );
       f.revoke();
       await assert.rejects(
@@ -1860,7 +1870,13 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
             { voice: true, ...(voiceObserver ? { voiceObserver } : {}) },
           ),
         );
-        globalThis.fetch = () => {
+        globalThis.fetch = (input) => {
+          if (
+            String(input instanceof Request ? input.url : input).endsWith(
+              "/count-tokens",
+            )
+          )
+            return Promise.resolve(Response.json({ inputTokens: 90 }));
           requests++;
           return Promise.resolve(
             Response.json({

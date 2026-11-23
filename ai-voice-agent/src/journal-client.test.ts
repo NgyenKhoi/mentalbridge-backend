@@ -31,7 +31,7 @@ void test("real loopback Journal JSON stream delivers a bound speech unit before
     language: "vi-VN",
     spokenText: "Mình đang lắng nghe bạn.",
     expiresAt: new Date(Date.now() + 9000).toISOString(),
-    reservedCharacters: 500,
+    reservedCharacters: 800,
     policyVersion: "companion-voice-speech-unit-v1",
   };
   let finish: (() => void) | undefined;
@@ -62,7 +62,6 @@ void test("real loopback Journal JSON stream delivers a bound speech unit before
   try {
     const client = new JournalClient({
       ...configuration(),
-      speechUnitsEnabled: true,
       journalUrl: `http://127.0.0.1:${String(address.port)}`,
     });
     const work = client
@@ -116,7 +115,7 @@ void test("speech stream denies mismatched, truncated, replayed, invalid UTF8 an
     language: "vi-VN",
     spokenText: "Mình đang lắng nghe bạn.",
     expiresAt: new Date(Date.now() + 9000).toISOString(),
-    reservedCharacters: 500,
+    reservedCharacters: 800,
     policyVersion: "companion-voice-speech-unit-v1",
   };
   for (const text of [
@@ -133,21 +132,18 @@ void test("speech stream denies mismatched, truncated, replayed, invalid UTF8 an
       "PRIVATE",
   ]) {
     let calls = 0;
-    const client = new JournalClient(
-      { ...configuration(), speechUnitsEnabled: true },
-      () => {
-        calls++;
-        return Promise.resolve(
-          new Response(text, {
-            headers: {
-              "content-type": "application/json",
-              "cache-control": "no-store",
-              "x-mentalbridge-voice-protocol": speechUnitCapability,
-            },
-          }),
-        );
-      },
-    );
+    const client = new JournalClient(configuration(), () => {
+      calls++;
+      return Promise.resolve(
+        new Response(text, {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "x-mentalbridge-voice-protocol": speechUnitCapability,
+          },
+        }),
+      );
+    });
     await assert.rejects(
       client.turnSpeechUnits(
         dispatch,
@@ -163,25 +159,23 @@ void test("speech stream denies mismatched, truncated, replayed, invalid UTF8 an
   }
   let cancelled = 0;
   const controller = new AbortController();
-  const client = new JournalClient(
-    { ...configuration(), speechUnitsEnabled: true },
-    () =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            cancel() {
-              cancelled++;
-            },
-          }),
-          {
-            headers: {
-              "content-type": "application/json",
-              "cache-control": "no-store",
-              "x-mentalbridge-voice-protocol": speechUnitCapability,
-            },
+  const client = new JournalClient(configuration(), () =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled++;
           },
-        ),
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "x-mentalbridge-voice-protocol": speechUnitCapability,
+          },
+        },
       ),
+    ),
   );
   const work = client.turnSpeechUnits(
     dispatch,
@@ -211,40 +205,26 @@ const configuration = () =>
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
   });
-void test("Agent speech-unit opt-in works without a pilot and permits an unmeasured claim", () => {
-  assert.equal(configuration().speechUnitsEnabled, false);
+void test("Agent speech units are always on; a pilot needs no measurement hash and the old flag is ignored", () => {
   assert.equal(
     loadConfiguration({
-      AI_VOICE_SPEECH_UNITS_ENABLED: "true",
       AI_VOICE_PILOT: "true",
       AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
     }).measurementPolicyHash,
     null,
   );
   assert.equal(
-    loadConfiguration({
-      AI_VOICE_SPEECH_UNITS_ENABLED: "true",
-      AI_VOICE_PILOT: "true",
-      AI_VOICE_MEASUREMENT_POLICY_HASH: "h".repeat(43),
-      AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
-    }).speechUnitsEnabled,
-    true,
-  );
-  assert.equal(
-    loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "true" })
-      .speechUnitsEnabled,
-    true,
-  );
-  assert.throws(
-    () => loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "invalid" }),
-    AgentFailure,
+    Object.hasOwn(
+      loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "invalid" }),
+      "speechUnitsEnabled",
+    ),
+    false,
   );
 });
 void test("plain pilot claim omits measurement hash and rejects an unexpected campaign", async () => {
   const config = loadConfiguration({
     AI_VOICE_JOURNAL_SERVICE_TOKEN:
       "synthetic-worker-service-credential-32-chars",
-    AI_VOICE_SPEECH_UNITS_ENABLED: "true",
     AI_VOICE_PILOT: "true",
     AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
   });
@@ -694,7 +674,7 @@ void test("Journal consumer authenticates purpose, validates bindings/expiry and
       assert.equal(req.headers.authorization, undefined);
       assert.equal(
         req.headers["x-mentalbridge-voice-capabilities"],
-        req.url?.endsWith("/turns") ? "expression" : undefined,
+        speechUnitCapability,
       );
       assert.equal(
         req.headers["x-mentalbridge-voice-worker-token"],

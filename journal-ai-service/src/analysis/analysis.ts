@@ -694,7 +694,6 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   onModuleInit(): void {
-    if (!this.configuration.ANALYSIS_ENABLED) return;
     this.timer = setInterval(() => {
       void this.runSafely();
     }, this.configuration.ANALYSIS_POLL_INTERVAL_MS);
@@ -979,8 +978,6 @@ export class AnalysisService {
     journalIdValue: string,
     revisionValue: string,
   ) {
-    if (!this.configuration.ANALYSIS_ENABLED)
-      throw new ServiceUnavailableException();
     const journalId = uuid.safeParse(journalIdValue);
     const revision = revisionSchema.safeParse(revisionValue);
     const key = idempotencyKeySchema.safeParse(

@@ -261,9 +261,7 @@ export class VoiceUserController {
       subject(request),
       request.id ?? randomUUID(),
     );
-    return this.handoffs.available
-      ? { ...value, textContextHandoffEnabled: true }
-      : value;
+    return { ...value, textContextHandoffEnabled: true };
   }
   @Post("voice-context-handoffs")
   @HttpCode(200)
@@ -279,8 +277,6 @@ export class VoiceUserController {
         "application/json"
     )
       throw new VoiceBoundaryError("INVALID_REQUEST");
-    if (!this.handoffs.available)
-      throw new VoiceAccessError("PROVIDER_UNAVAILABLE");
     const owner = subject(request),
       eligibility = await this.access.eligibility(
         owner,

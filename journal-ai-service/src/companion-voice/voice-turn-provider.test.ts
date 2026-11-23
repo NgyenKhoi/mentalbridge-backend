@@ -38,6 +38,13 @@ const route: ChatRoute = {
   model: "global.anthropic.claude-sonnet-4-6",
 };
 
+// MB-846d: every Voice request counts its exact input first (1,900-token cap).
+const counting = (input: string | URL | Request) =>
+  new URL(input instanceof Request ? input.url : input).pathname.endsWith(
+    "/count-tokens",
+  );
+const counted = () => Promise.resolve(Response.json({ inputTokens: 100 }));
+
 const streamMessage = {
   message: "Mình đang lắng nghe bạn. Bạn muốn bắt đầu từ điều gì?",
   language: "vi",
@@ -106,7 +113,7 @@ void test("opt-in speech units are fully schema/safety validated before model co
           inferenceConfig: { maxTokens: number };
         }
       ).inferenceConfig.maxTokens,
-      300,
+      600,
     );
     return Promise.resolve(
       new Response(
@@ -129,8 +136,6 @@ void test("opt-in speech units are fully schema/safety validated before model co
   const provider = new RoutedChatProvider({
     ...configuration,
     BEDROCK_API_KEY: "PRIVATE_KEY",
-    VOICE_CONVERSE_STREAM_ENABLED: true,
-    VOICE_SPEECH_UNITS_ENABLED: true,
     VOICE_PILOT: {
       startsAt: new Date(),
       endsAt: new Date(Date.now() + 60000),
@@ -247,8 +252,6 @@ void test("speech-unit mode rejects unsafe/schema/prefix and abnormal outer comp
       const provider = new RoutedChatProvider({
         ...configuration,
         BEDROCK_API_KEY: "PRIVATE_KEY",
-        VOICE_CONVERSE_STREAM_ENABLED: true,
-        VOICE_SPEECH_UNITS_ENABLED: true,
         VOICE_PILOT: pilot,
       });
       await assert.rejects(
@@ -502,205 +505,23 @@ void test("ConverseStream provider exceptions remain closed and do not expose th
   );
 });
 
-void test("Voice ConverseStream preserves CountTokens, strict final validation, usage and no retry", async () => {
-  const original = globalThis.fetch;
-  try {
-    for (const item of [
-      { reason: "end_turn", text: JSON.stringify(streamMessage), code: null },
-      {
-        reason: "max_tokens",
-        text: JSON.stringify(streamMessage),
-        code: "OUTPUT_TOKEN_LIMIT",
-      },
-      {
-        reason: "stop_sequence",
-        text: JSON.stringify(streamMessage),
-        code: "UNEXPECTED_STOP_REASON",
-      },
-      {
-        reason: undefined,
-        text: JSON.stringify(streamMessage),
-        code: "UNEXPECTED_STOP_REASON",
-      },
-      {
-        reason: "end_turn",
-        text: "PRIVATE_BROKEN_JSON",
-        code: "OUTPUT_JSON_INVALID",
-      },
-      {
-        reason: "end_turn",
-        text: JSON.stringify({ ...streamMessage, authority: "PRIVATE" }),
-        code: "OUTPUT_SCHEMA_INVALID",
-      },
-      {
-        reason: "end_turn",
-        text: JSON.stringify({
-          ...streamMessage,
-          message: "Tôi chẩn đoán bạn đang mắc trầm cảm",
-        }),
-        code: "OUTPUT_SAFETY_REJECTED",
-      },
-    ]) {
-      const calls: string[] = [];
-      const observations: VoiceProviderObservation[] = [];
-      globalThis.fetch = (url, init) => {
-        const path = new URL(url instanceof Request ? url.url : url).pathname;
-        calls.push(path);
-        if (path.endsWith("/count-tokens"))
-          return Promise.resolve(Response.json({ inputTokens: 100 }));
-        assert.ok(path.endsWith("/converse-stream"));
-        assert.ok(init);
-        assert.equal(init.redirect, "error");
-        assert.equal(
-          new Headers(init.headers).get("authorization"),
-          "Bearer PRIVATE_KEY",
-        );
-        assert.ok(typeof init.body === "string");
-        const request = JSON.parse(init.body) as {
-          inferenceConfig: { maxTokens: number };
-        };
-        assert.equal(request.inferenceConfig.maxTokens, 300);
-        const frames = streamFrames(item.text);
-        frames[3] = eventFrame("messageStop", { stopReason: item.reason });
-        return Promise.resolve(streamResponse(frames));
-      };
-      const work = new RoutedChatProvider({
-        ...configuration,
-        BEDROCK_API_KEY: "PRIVATE_KEY",
-        VOICE_CONVERSE_STREAM_ENABLED: true,
-        VOICE_PILOT: {
-          startsAt: new Date("2026-11-16T00:00:00.000Z"),
-          endsAt: new Date("2026-11-16T00:30:00.000Z"),
-          ownerIds: [randomUUID()],
-        },
-      }).reply(
-        "PRIVATE_INPUT",
-        { kinds: [], prompt: "PRIVATE_CONTEXT" },
-        route,
-        { voice: true, voiceObserver: (value) => observations.push(value) },
-      );
-      if (item.code === null)
-        assert.equal((await work).message, streamMessage.message);
-      else
-        await assert.rejects(
-          work,
-          (error: unknown) =>
-            error instanceof VoiceProviderFailure && error.code === item.code,
-        );
-      assert.equal(calls.length, 2);
-      assert.equal(
-        observations.filter((value) => value.phase === "provider_usage").length,
-        1,
-      );
-      if (item.reason === undefined || item.reason === "stop_sequence")
-        assert.deepEqual(
-          observations.find(
-            (value) => value.phase === "bedrock_output_validation",
-          ),
-          {
-            phase: "bedrock_output_validation",
-            stopReason: item.reason === undefined ? "MISSING" : "STOP_SEQUENCE",
-          },
-        );
-      assert.doesNotMatch(
-        JSON.stringify(observations),
-        /PRIVATE|lắng nghe|chẩn đoán/,
-      );
-      assert.equal(
-        observations.some(
-          (value) => value.phase === "bedrock_response_validated",
-        ),
-        item.code === null,
-      );
-    }
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-void test("Voice stream never releases a partial reply before messageStop, metadata and EOF", async () => {
-  const original = globalThis.fetch;
-  const observations: VoiceProviderObservation[] = [];
-  let streamController!: ReadableStreamDefaultController<Uint8Array>;
-  const frames = streamFrames();
-  globalThis.fetch = () =>
-    Promise.resolve(
-      new Response(
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            streamController = controller;
-            controller.enqueue(frames[0]);
-            controller.enqueue(frames[1]);
-          },
-        }),
-        { headers: { "content-type": "application/vnd.amazon.eventstream" } },
-      ),
-    );
-  try {
-    let settled = false;
-    const work = new RoutedChatProvider({
-      ...configuration,
-      BEDROCK_API_KEY: "PRIVATE",
-      VOICE_CONVERSE_STREAM_ENABLED: true,
-    }).reply("PRIVATE", { kinds: [], prompt: "" }, route, {
-      voice: true,
-      voiceObserver: (value) => observations.push(value),
-    });
-    void work.then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(settled, false);
-    assert.equal(
-      observations.some((value) => value.phase === "bedrock_stream_first_text"),
-      true,
-    );
-    assert.equal(
-      observations.some(
-        (value) => value.phase === "bedrock_response_validated",
-      ),
-      false,
-    );
-    for (const frame of frames.slice(2)) streamController.enqueue(frame);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(settled, false);
-    streamController.close();
-    assert.equal((await work).message, streamMessage.message);
-    assert.ok(
-      observations.findIndex(
-        (value) => value.phase === "bedrock_stream_message_stopped",
-      ) <
-        observations.findIndex(
-          (value) => value.phase === "bedrock_response_validated",
-        ),
-    );
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-void test("Voice stream opt-in preserves Text and default Voice Converse requests", async () => {
+// MB-846d: speech units are the only Voice ConverseStream path (tests above); single-object Voice streaming was removed with the flags.
+void test("Text and plain Voice use Converse; plain Voice is counted and schema-in-prompt", async () => {
   const original = globalThis.fetch;
   try {
     for (const voice of [false, true]) {
-      let calls = 0;
+      const paths: string[] = [];
       globalThis.fetch = (url, init) => {
-        calls++;
-        assert.ok(
-          new URL(url instanceof Request ? url.url : url).pathname.endsWith(
-            "/converse",
-          ),
-        );
+        const path = new URL(url instanceof Request ? url.url : url).pathname;
+        paths.push(path);
+        if (path.endsWith("/count-tokens"))
+          return Promise.resolve(Response.json({ inputTokens: 100 }));
+        assert.ok(path.endsWith("/converse"));
         assert.equal(init?.redirect, undefined);
         assert.ok(init);
         assert.ok(typeof init.body === "string");
         const request = JSON.parse(init.body) as { outputConfig?: unknown };
-        assert.ok(request.outputConfig);
+        assert.equal(Boolean(request.outputConfig), !voice);
         return Promise.resolve(
           Response.json({
             stopReason: "end_turn",
@@ -714,10 +535,9 @@ void test("Voice stream opt-in preserves Text and default Voice Converse request
       const result = await new RoutedChatProvider({
         ...configuration,
         BEDROCK_API_KEY: "PRIVATE",
-        VOICE_CONVERSE_STREAM_ENABLED: !voice,
       }).reply("PRIVATE", { kinds: [], prompt: "" }, route, { voice });
       assert.equal(result.message, streamMessage.message);
-      assert.equal(calls, 1);
+      assert.equal(paths.length, voice ? 2 : 1);
     }
   } finally {
     globalThis.fetch = original;
@@ -904,7 +724,8 @@ void test("Voice classifies stopped and invalid output without leaking content o
     for (const item of cases) {
       let calls = 0;
       const observations: VoiceProviderObservation[] = [];
-      globalThis.fetch = () => {
+      globalThis.fetch = (input) => {
+        if (counting(input)) return counted();
         calls++;
         return Promise.resolve(
           Response.json({
@@ -973,10 +794,10 @@ void test("Voice classifies stopped and invalid output without leaking content o
   }
 });
 
-void test("Voice output allowance stays 300 unless an explicit bounded pilot opts into 600", async () => {
+void test("Voice pilot output allowance defaults to 600 for an 800-character reply unless the pilot sets 300", async () => {
   const original = globalThis.fetch;
   try {
-    for (const maxOutputTokens of [undefined, 600] as const) {
+    for (const maxOutputTokens of [undefined, 300] as const) {
       let calls = 0;
       globalThis.fetch = (_input, init) => {
         calls++;
@@ -987,7 +808,7 @@ void test("Voice output allowance stays 300 unless an explicit bounded pilot opt
         const body = JSON.parse(init.body) as {
           inferenceConfig: { maxTokens: number };
         };
-        assert.equal(body.inferenceConfig.maxTokens, maxOutputTokens ?? 300);
+        assert.equal(body.inferenceConfig.maxTokens, maxOutputTokens ?? 600);
         assert.equal(
           Object.hasOwn(body.inferenceConfig, "stopSequences"),
           false,
@@ -1015,7 +836,7 @@ void test("Voice output allowance stays 300 unless an explicit bounded pilot opt
             },
             usage: {
               inputTokens: 1620,
-              outputTokens: maxOutputTokens === 600 ? 400 : 200,
+              outputTokens: maxOutputTokens === 300 ? 200 : 400,
             },
           }),
         );
@@ -1033,7 +854,7 @@ void test("Voice output allowance stays 300 unless an explicit bounded pilot opt
         voice: true,
       });
       assert.equal(calls, 2);
-      assert.equal(result.outputTokens, maxOutputTokens === 600 ? 400 : 200);
+      assert.equal(result.outputTokens, maxOutputTokens === 300 ? 200 : 400);
     }
   } finally {
     globalThis.fetch = original;
@@ -1170,7 +991,8 @@ void test("Voice distinguishes response headers from the complete Bedrock body b
       const observations: VoiceProviderObservation[] = [];
       let calls = 0;
       let settled = false;
-      globalThis.fetch = () => {
+      globalThis.fetch = (input) => {
+        if (counting(input)) return counted();
         calls++;
         return Promise.resolve(
           new Response(
@@ -1237,6 +1059,9 @@ void test("Voice distinguishes response headers from the complete Bedrock body b
       assert.deepEqual(
         observations.map((value) => value.phase),
         [
+          "provider_prompt_prepared",
+          "token_count_requested",
+          "token_count_authorized",
           "bedrock_request_body_prepared",
           "bedrock_requested",
           "bedrock_response_received",
@@ -1284,7 +1109,8 @@ void test("Voice distinguishes response headers from the complete Bedrock body b
 void test("voice reuses the Companion Bedrock schema/prompt/validator without tools or prompt cache", async () => {
   const original = globalThis.fetch;
   let body: Record<string, unknown> = {};
-  globalThis.fetch = (_input, init) => {
+  globalThis.fetch = (input, init) => {
+    if (counting(input)) return counted();
     assert.equal(typeof init?.body, "string");
     body = JSON.parse(init?.body as string) as Record<string, unknown>;
     return Promise.resolve(
@@ -1326,7 +1152,10 @@ void test("voice reuses the Companion Bedrock schema/prompt/validator without to
     assert.equal(result.inputTokens, 120);
     assert.equal(result.outputTokens, 30);
     assert.match(JSON.stringify(body.system), /MentalBridge AI Companion/);
-    assert.match(JSON.stringify(body.system), /ask a short clarification/);
+    assert.match(
+      JSON.stringify(body.system),
+      /calls for a short clarification/,
+    );
     assert.equal(Object.hasOwn(body, "toolConfig"), false);
     assert.equal(JSON.stringify(body).includes("cachePoint"), false);
     assert.equal(validatedAssistantMessage(result.message), result.message);
@@ -1372,25 +1201,27 @@ void test("voice-only expression accepts only neutral or comfort and every other
       [null, "neutral"],
       [undefined, "neutral"],
     ] as const) {
-      globalThis.fetch = () =>
-        Promise.resolve(
-          Response.json({
-            stopReason: "end_turn",
-            output: {
-              message: {
-                content: [
-                  {
-                    text: JSON.stringify({
-                      ...core,
-                      ...(tag === undefined ? {} : { expression: tag }),
-                    }),
+      globalThis.fetch = (input) =>
+        counting(input)
+          ? counted()
+          : Promise.resolve(
+              Response.json({
+                stopReason: "end_turn",
+                output: {
+                  message: {
+                    content: [
+                      {
+                        text: JSON.stringify({
+                          ...core,
+                          ...(tag === undefined ? {} : { expression: tag }),
+                        }),
+                      },
+                    ],
                   },
-                ],
-              },
-            },
-            usage: { inputTokens: 120, outputTokens: 30 },
-          }),
-        );
+                },
+                usage: { inputTokens: 120, outputTokens: 30 },
+              }),
+            );
       const result = await new RoutedChatProvider({
         ...configuration,
         BEDROCK_API_KEY: "synthetic-bedrock-credential",
@@ -1444,7 +1275,8 @@ void test("voice decodes one fenced Bedrock JSON object without relaxing schema 
       ],
     ] as const) {
       let calls = 0;
-      globalThis.fetch = () => {
+      globalThis.fetch = (input) => {
+        if (counting(input)) return counted();
         calls++;
         return Promise.resolve(
           Response.json({
@@ -1474,6 +1306,7 @@ void test("voice decodes one fenced Bedrock JSON object without relaxing schema 
 void test("worker cancellation reaches the existing Bedrock fetch and blocks late publication", async () => {
   const original = globalThis.fetch;
   let calls = 0;
+  // The first Voice fetch is now CountTokens; cancellation must reach it.
   globalThis.fetch = (_input, init) =>
     new Promise((_resolve, reject) => {
       calls++;

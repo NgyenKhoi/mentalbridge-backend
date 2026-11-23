@@ -41,53 +41,35 @@ const response = (value = output()) =>
     usage: { inputTokens: 1200, outputTokens: 180 },
   });
 
-void test("friend Voice is compact, speech-only and separate from every Text/legacy variant", () => {
+void test("Voice always speaks as Mầm: compact, speech-only, comfort plus a step, no default question", () => {
   for (const textHandoff of [false, true])
     for (const replyStyle of [undefined, "BRIEF", "SUPPORTIVE"] as const) {
-      const delivery = {
-        channel: "VOICE" as const,
+      const friend = companionGuidanceSystem({
+        channel: "VOICE",
         textHandoff,
         ...(replyStyle ? { replyStyle } : {}),
-      };
-      const legacy = companionGuidanceSystem(delivery);
-      assert.equal(
-        companionGuidanceSystem({ ...delivery, voiceFriend: false }),
-        legacy,
-      );
-      const friend = companionGuidanceSystem({
-        ...delivery,
-        voiceFriend: true,
       });
-      assert.match(friend, /Comfort first/u);
       assert.match(friend, /You are Mầm/u);
-      assert.match(friend, /only when asked for advice/u);
-      assert.match(friend, /Most replies end with a statement/u);
-      assert.match(friend, /at most 500 characters/u);
+      assert.match(friend, /as tớ to bạn/u);
+      assert.match(
+        friend,
+        /Do not ask follow-up questions by default. When sufficient context exists, provide helpful guidance and end naturally. Ask at most ONE question, only when essential information is missing or the user explicitly wants to explore further. Do not optimize for conversation length./u,
+      );
+      assert.match(friend, /then one or two concrete small steps/u);
+      assert.match(friend, /Humour scales with distress/u);
+      assert.match(friend, /never claim to remember an earlier call/u);
+      assert.match(friend, /at most 800 characters/u);
       assert.match(friend, /No suggestion field/u);
       assert.match(friend, /Cần trợ giúp ngay/u);
       assert.match(friend, /Never diagnose/u);
       assert.match(friend, /No humour, playful particles/u);
-      assert.match(friend, /no emoji, markup/u);
-      assert.equal(
-        Buffer.byteLength(friend, "utf8") <= Buffer.byteLength(legacy, "utf8"),
-        true,
-      );
+      assert.match(friend, /no emoji, emoticons/u);
+      // The 1,900-token Voice input cap must leave room for history.
+      assert.equal(Buffer.byteLength(friend, "utf8") <= 3_300, true);
       assert.equal(friend.includes("selectedText"), textHandoff);
     }
-  for (const friend of [false, true])
-    assert.equal(
-      companionGuidanceSystem({ channel: "TEXT", friend, voiceFriend: true }),
-      companionGuidanceSystem({ channel: "TEXT", friend }),
-    );
   assert.equal(
     selectVoiceProviderRoute(configuration, "PLUS").promptVersion,
-    "companion-chat-v1",
-  );
-  assert.equal(
-    selectVoiceProviderRoute(
-      { ...configuration, VOICE_FRIEND_ENABLED: true },
-      "PLUS",
-    ).promptVersion,
     VOICE_FRIEND_GUIDANCE_VERSION,
   );
 });
@@ -135,7 +117,6 @@ void test("friend Voice counts the exact prompt before inference with or without
         };
         const provider = new RoutedChatProvider({
           ...configuration,
-          VOICE_FRIEND_ENABLED: true,
           ...(pilot
             ? {
                 VOICE_PILOT: {
@@ -176,22 +157,9 @@ void test("friend Voice counts the exact prompt before inference with or without
   }
 });
 
-void test("Voice persona switch cannot alter Text provider bytes or add navigation suggestions", async () => {
+void test("Voice rejects authority changes, navigation suggestions and links", async () => {
   const original = globalThis.fetch;
   try {
-    const textBodies: string[] = [];
-    for (const enabled of [false, true]) {
-      globalThis.fetch = (_url, init) => {
-        if (typeof init?.body !== "string") throw Error("EXPECTED_BODY");
-        textBodies.push(init.body);
-        return Promise.resolve(response());
-      };
-      await new RoutedChatProvider({
-        ...configuration,
-        VOICE_FRIEND_ENABLED: enabled,
-      }).reply("Câu thử tiếng Việt", { kinds: [], prompt: "" }, route);
-    }
-    assert.equal(textBodies[0], textBodies[1]);
     for (const [patch, code] of [
       [{ clinicalAssessment: "DIAGNOSIS" }, "OUTPUT_SCHEMA_INVALID"],
       [{ suggestion: { destination: "JOURNAL" } }, "OUTPUT_SCHEMA_INVALID"],
@@ -208,12 +176,14 @@ void test("Voice persona switch cannot alter Text provider bytes or add navigati
             : response({ ...output(), ...patch }),
         );
       await assert.rejects(
-        new RoutedChatProvider({
-          ...configuration,
-          VOICE_FRIEND_ENABLED: true,
-        }).reply("Câu thử tiếng Việt", { kinds: [], prompt: "" }, route, {
-          voice: true,
-        }),
+        new RoutedChatProvider(configuration).reply(
+          "Câu thử tiếng Việt",
+          { kinds: [], prompt: "" },
+          route,
+          {
+            voice: true,
+          },
+        ),
         (e) => e instanceof VoiceProviderFailure && e.code === code,
       );
       assert.equal(calls, 2);
