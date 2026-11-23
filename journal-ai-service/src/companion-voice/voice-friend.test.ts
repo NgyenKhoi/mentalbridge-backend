@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfiguration } from "../configuration/configuration.js";
-import { RoutedChatProvider } from "../companion-chat/companion-chat.js";
+import {
+  RoutedChatProvider,
+  withoutOldestVoicePair,
+} from "../companion-chat/companion-chat.js";
 import { companionGuidanceSystem } from "../companion-chat/companion-guidance-policy.js";
 import { VOICE_FRIEND_GUIDANCE_VERSION } from "../companion-chat/companion-voice-guidance.js";
 import {
@@ -187,6 +190,75 @@ void test("Voice rejects authority changes, navigation suggestions and links", a
         (e) => e instanceof VoiceProviderFailure && e.code === code,
       );
       assert.equal(calls, 2);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+void test("MB-846d: over the input cap Voice drops the oldest history pair and recounts before refusing", async () => {
+  assert.equal(
+    withoutOldestVoicePair(
+      JSON.stringify({
+        selectedText: [{ user: "t1", assistant: "a1" }],
+        currentCall: [{ user: "c1", assistant: "b1" }],
+      }),
+    ),
+    JSON.stringify({
+      selectedText: [],
+      currentCall: [{ user: "c1", assistant: "b1" }],
+    }),
+  );
+  assert.equal(withoutOldestVoicePair("[]"), null);
+  assert.equal(withoutOldestVoicePair("not json"), null);
+  const original = globalThis.fetch;
+  const history = JSON.stringify([
+    { user: "OLDEST_PAIR", assistant: "Mình nghe." },
+    { user: "NEWEST_PAIR", assistant: "Mình hiểu." },
+  ]);
+  try {
+    for (const alwaysOver of [false, true]) {
+      const counted: string[] = [];
+      let inferred = "";
+      globalThis.fetch = (url, init) => {
+        if (typeof init?.body !== "string") throw Error("EXPECTED_BODY");
+        if (
+          String(url instanceof Request ? url.url : url).endsWith(
+            "/count-tokens",
+          )
+        ) {
+          counted.push(init.body);
+          const over = alwaysOver || init.body.includes("OLDEST_PAIR");
+          return Promise.resolve(
+            Response.json({ inputTokens: over ? 1901 : 1800 }),
+          );
+        }
+        inferred = init.body;
+        return Promise.resolve(response());
+      };
+      const work = new RoutedChatProvider(configuration).reply(
+        "Câu thử tiếng Việt",
+        { kinds: [], prompt: history },
+        route,
+        { voice: true },
+      );
+      if (alwaysOver) {
+        await assert.rejects(
+          work,
+          (e) =>
+            e instanceof VoiceProviderFailure &&
+            e.code === "INPUT_BUDGET_EXCEEDED",
+        );
+        assert.equal(counted.length, 3);
+        assert.equal(inferred, "");
+      } else {
+        await work;
+        assert.equal(counted.length, 2);
+        assert.equal(inferred.includes("OLDEST_PAIR"), false);
+        assert.equal(inferred.includes("NEWEST_PAIR"), true);
+        assert.equal(inferred.includes(VOICE_FRIEND_GUIDANCE_VERSION), true);
+        assert.match(inferred, /Cần trợ giúp ngay/u);
+      }
     }
   } finally {
     globalThis.fetch = original;

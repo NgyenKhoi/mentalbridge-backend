@@ -658,7 +658,7 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
         }
         if (supportive) {
           assert.match(system, /Length follows the moment/);
-          assert.match(system, /450–750/);
+          assert.match(system, /400–650, never more than 700/);
           assert.match(system, /grounded only in what the user said/);
           assert.match(system, /Do not ask follow-up questions by default/);
           assert.match(

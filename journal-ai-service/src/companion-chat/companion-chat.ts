@@ -499,6 +499,26 @@ const withoutCutOffTail = (message: string): string =>
         message,
       )?.[1] ?? message);
 
+/** Voice history minus its oldest pair (selected Text first, then current call); null when nothing is left. */
+export const withoutOldestVoicePair = (prompt: string): string | null => {
+  let value: unknown;
+  try {
+    value = JSON.parse(prompt);
+  } catch {
+    return null;
+  }
+  if (Array.isArray(value))
+    return value.length ? JSON.stringify(value.slice(1)) : null;
+  if (value && typeof value === "object") {
+    const { selectedText, currentCall } = value as Record<string, unknown>;
+    if (Array.isArray(selectedText) && selectedText.length)
+      return JSON.stringify({ ...value, selectedText: selectedText.slice(1) });
+    if (Array.isArray(currentCall) && currentCall.length)
+      return JSON.stringify({ ...value, currentCall: currentCall.slice(1) });
+  }
+  return null;
+};
+
 export const validatedAssistantMessage = (
   value: string,
   options?: { rejectLinks?: boolean; maxLength?: number },
@@ -1955,9 +1975,9 @@ export class RoutedChatProvider implements ChatProvider {
         });
     const requestTitle = options?.requestTitle === true && !options.voice;
     if (speechUnits)
-      system += `\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. All messages combined must fit ${String(VOICE_REPLY_MAX_CHARACTERS)} characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.`;
+      system += `\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. Keep the first object at most about 400 characters so a long reply never stops halfway. All messages combined must fit ${String(VOICE_REPLY_MAX_CHARACTERS)} characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.`;
     if (requestTitle) system += `\n${providerTitleInstruction}`;
-    const input = companionUserInput({
+    let input = companionUserInput({
       message: userMessage,
       context,
       ...(friend ? { friend } : {}),
@@ -2109,13 +2129,32 @@ export class RoutedChatProvider implements ChatProvider {
             throw new Error("Voice pilot route unavailable");
           system += `\nReturn the JSON ${speechUnits ? "array" : "object"} directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(wireOutputJsonSchema)}`;
           options?.voiceObserver?.({ phase: "provider_prompt_prepared" });
-          await authorizeVoiceInput(
-            this.configuration.BEDROCK_API_KEY,
-            system,
-            input,
-            requestSignal,
-            options?.voiceObserver,
-          );
+          let voicePrompt = context.prompt;
+          for (;;) {
+            try {
+              await authorizeVoiceInput(
+                this.configuration.BEDROCK_API_KEY,
+                system,
+                input,
+                requestSignal,
+                options?.voiceObserver,
+              );
+              break;
+            } catch (error) {
+              // Over the cap: drop the oldest history pair and count again; system and safety text never shrink.
+              const trimmed =
+                error instanceof VoiceProviderFailure &&
+                error.code === "INPUT_BUDGET_EXCEEDED"
+                  ? withoutOldestVoicePair(voicePrompt)
+                  : null;
+              if (trimmed === null) throw error;
+              voicePrompt = trimmed;
+              input = companionUserInput({
+                message: userMessage,
+                context: { ...context, prompt: voicePrompt },
+              });
+            }
+          }
         }
         const request = bedrockConverseRequest(
           system,
@@ -2237,11 +2276,10 @@ export class RoutedChatProvider implements ChatProvider {
             response,
             streamSignal,
             options?.voiceObserver,
-            unitCollector
-              ? (text) => {
-                  unitCollector.accept(text);
-                }
-              : undefined,
+            // streamSignal is set only for speech units, so the collector always exists here.
+            (text) => {
+              unitCollector?.accept(text);
+            },
           )
         : await response.json();
     } catch (error) {

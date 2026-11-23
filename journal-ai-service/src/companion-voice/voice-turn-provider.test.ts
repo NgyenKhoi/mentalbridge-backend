@@ -104,8 +104,17 @@ void test("opt-in speech units are fully schema/safety validated before model co
       new URL(url instanceof Request ? url.url : url).pathname.endsWith(
         "/count-tokens",
       )
-    )
+    ) {
+      const system = (
+        JSON.parse(init?.body as string) as {
+          input: { converse: { system: { text: string }[] } };
+        }
+      ).input.converse.system[0]?.text;
+      assert.ok(system);
+      // MB-846d: the full bounded system (guidance, unit rules, schema) must leave room under 1,900 tokens.
+      assert.ok(Buffer.byteLength(system, "utf8") <= 4_800);
       return Promise.resolve(Response.json({ inputTokens: 100 }));
+    }
     assert.equal(typeof init?.body, "string");
     assert.equal(
       (

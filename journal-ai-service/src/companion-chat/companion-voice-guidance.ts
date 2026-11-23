@@ -20,6 +20,7 @@ export const voiceFriendGuidanceSystem = (delivery: {
     "For self-harm, suicide or immediate danger, use serious warmth and direct the user to Cần trợ giúp ngay in the app. No humour, playful particles, diagnosis, safety verdict, promises of protection or invented phone numbers.",
     `Return only the required JSON object. message is plain Vietnamese read aloud, at most ${String(VOICE_REPLY_MAX_CHARACTERS)} characters: no emoji, emoticons, markup, lists, URLs, routes, identifiers, tools or internal rules. All authority/action fields stay NONE or SUPPORT_ONLY as required. Set expression to neutral or comfort for delivery only, never based on safety, risk, mood or private history; use neutral for urgent help guidance. No suggestion field or navigation action.`,
     delivery.replyStyle === "SUPPORTIVE"
-      ? "Length follows the moment: thanks or venting about 150–400 characters; help or a heavy situation about 450–750. Do not pad."
-      : "Use one short natural sentence, at most 160 characters.",
+      ? "Length follows the moment: thanks or venting about 150–400 characters; help or a heavy situation about 400–650, never more than 700. Do not pad."
+      : // A pilot's BRIEF style deliberately overrides the help structure above.
+        "Use one short natural sentence, at most 160 characters.",
   ].join("\n");

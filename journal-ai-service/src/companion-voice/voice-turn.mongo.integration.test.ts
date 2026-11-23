@@ -617,6 +617,62 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       },
     );
   await t.test(
+    "MB-846d: two speech units totalling 800 characters are both published",
+    async () => {
+      const f = await fixture(
+        { maxTurns: 1, maxSessionSeconds: 90 },
+        false,
+        undefined,
+        true,
+      );
+      const first = `${"é".repeat(399)}.`;
+      const second = `${"ê".repeat(398)}.`;
+      assert.equal(`${first} ${second}`.length, 800);
+      const units: AuthorizedSpeechUnit[] = [];
+      f.respond((observe, send) => {
+        assert(send);
+        send({ message: first, expression: "neutral" });
+        send({ message: second, expression: "neutral" });
+        observe?.({
+          phase: "bedrock_stream_message_stopped",
+          stopReason: "END_TURN",
+        });
+        return Promise.resolve({ ...reply(), message: `${first} ${second}` });
+      });
+      const input = f.input();
+      const work = f.left.turns.generate(
+        f.active.id,
+        randomUUID(),
+        input,
+        randomUUID(),
+        undefined,
+        (unit) => {
+          units.push(unit);
+          return Promise.resolve();
+        },
+      );
+      for (const sequence of [1, 2]) {
+        await waitFor(() => units.length === sequence);
+        const unit = units[sequence - 1];
+        assert(unit);
+        assert.equal(unit.reservedCharacters, 800);
+        await f.left.turns.acknowledgeSpeechUnit(
+          f.active.id,
+          input.turnId,
+          input.attemptId,
+          input.leaseId,
+          sequence,
+          unit.replyId,
+        );
+      }
+      await work;
+      assert.deepEqual(
+        units.map((unit) => unit.spokenText),
+        [first, second],
+      );
+    },
+  );
+  await t.test(
     "unconfirmed provider cancellation closes the session instead of admitting a next turn",
     async () => {
       const f = await streamingFixture();
@@ -2142,7 +2198,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
         "",
         "English only reply",
         "Tôi chẩn đoán bạn đang mắc trầm cảm",
-        "é".repeat(501),
+        "é".repeat(801),
         "<script>lời nói</script>",
       ]) {
         const f = await fixture();
@@ -2163,6 +2219,18 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       );
       const result = await f.send(f.input(), randomUUID(), 503);
       assert.equal(JSON.stringify(result.body).includes("PRIVATE"), false);
+      assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "MB-846d: a 700-character plain reply is accepted by the turn service",
+    async () => {
+      const f = await fixture();
+      const message = `${"é".repeat(699)}.`;
+      f.respond(() => Promise.resolve({ ...reply(), message }));
+      const result = await f.generate(f.input());
+      assert.equal(result.spokenText, message);
       assert.equal(f.calls(), 1);
     },
   );

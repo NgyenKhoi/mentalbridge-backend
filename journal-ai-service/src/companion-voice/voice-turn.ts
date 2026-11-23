@@ -481,14 +481,22 @@ export class VoiceTurnService {
       const queuedText: string[] = [];
       const queueUnit = onAuthorizedUnit
         ? (unit: ProviderSpeechUnit) => {
-            const message = validatedAssistantMessage(unit.message, {
-              rejectLinks: true,
-            });
+            let message: string;
+            try {
+              message = validatedAssistantMessage(unit.message, {
+                rejectLinks: true,
+                maxLength: VOICE_REPLY_MAX_CHARACTERS,
+              });
+              validatedAssistantMessage([...queuedText, message].join(" "), {
+                rejectLinks: true,
+                maxLength: VOICE_REPLY_MAX_CHARACTERS,
+              });
+            } catch {
+              // A closed safety code, not a misleading envelope error.
+              throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+            }
             if (queuedText.length >= 2 || !/[.!?…]$/u.test(message))
               throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
-            validatedAssistantMessage([...queuedText, message].join(" "), {
-              rejectLinks: true,
-            });
             queuedText.push(message);
             const selected: ProviderSpeechUnit = {
               message,
@@ -613,7 +621,9 @@ export class VoiceTurnService {
         report({ outcome: "GENERATED", phase });
         return result;
       }
-      const spokenText = validatedAssistantMessage(reply.message);
+      const spokenText = validatedAssistantMessage(reply.message, {
+        maxLength: VOICE_REPLY_MAX_CHARACTERS,
+      });
       if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
       const expression = session.contextHandoffHash
         ? "neutral"
@@ -899,6 +909,7 @@ export class VoiceTurnService {
       throw new VoiceLedgerError("SESSION_EXPIRED");
     const spokenText = validatedAssistantMessage(unit.message, {
       rejectLinks: true,
+      maxLength: VOICE_REPLY_MAX_CHARACTERS,
     });
     if (/[<>{}*`#]/u.test(spokenText)) throw new VoiceMediaError();
     stage("output_validated");

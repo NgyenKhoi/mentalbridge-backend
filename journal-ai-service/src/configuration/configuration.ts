@@ -253,7 +253,8 @@ const environmentSchema = z
       .int()
       .min(25)
       .max(10_000)
-      .default(250),
+      // Requests dispatch at once; polling only recovers due retries and expired leases (MB-846d).
+      .default(2_000),
     JOURNAL_AI_ANALYSIS_LEASE_MS: z.coerce
       .number()
       .int()
