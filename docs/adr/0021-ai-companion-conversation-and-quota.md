@@ -194,7 +194,7 @@ delete and the retention TTL remove it. Journal/AI has no account-deletion or
 erasure consumer for companion conversations: notes, like messages, stay until
 owner delete or TTL (named follow-up). Migration
 `023_companion_memory_note.cjs` adds the optional fields to the strict
-validator.
+validator. It must run before this backend deploys.
 
 ## Rejected alternatives
 
