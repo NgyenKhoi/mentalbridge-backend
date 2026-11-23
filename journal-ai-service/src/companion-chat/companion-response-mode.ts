@@ -166,37 +166,72 @@ const shortAnswer = (text: string): boolean =>
     .split(/[^a-z0-9]+/u)
     .filter(Boolean).length <= 3;
 
-// Any question mark keeps the arc open: replies often close a question with a softener (“…? Tớ hỏi để hiểu đúng hơn nha.”).
-const endsWithQuestion = (text: string): boolean => /[?？]/u.test(text);
+// Thanks, agreeing to try something or feeling better closes the topic with a short warm reply.
+const CLOSING = phrases(
+  [
+    "cam on",
+    "thanks?",
+    "thank you",
+    "(?:de minh|minh se|toi se|tui se) thu",
+    "thu xem",
+    "ngu ngon",
+    "tam biet",
+    "bye",
+    "(?<!(?:khong|chang|chua) )(?:da|thay) (?:do|on|nhe|vui|khoe) hon",
+  ].join("|"),
+);
+// The user asks to dig into it, or does not know why they feel this way.
+const EXPLORE = phrases(
+  [
+    "hoi (?:minh|toi|tui) (?:di|nha|nhe|them)",
+    "(?:muon|cho minh) (?:ke|noi|tam su) them",
+    "giup (?:minh|toi) hieu",
+    "(?:khong|chang) (?:biet|hieu) (?:tai |vi )?sao",
+  ].join("|"),
+);
+
+// “Cảm ơn nha, nhưng mình vẫn buồn” or “thử xem rồi mà vẫn không được” keeps the topic open.
+const STILL_OPEN = phrases(
+  "nhung|ma (?:van|khong|chua)|van (?:khong|chua|con)",
+);
+const closing = (message: string): boolean => {
+  const text = plain(message);
+  return CLOSING.test(text) && !STILL_OPEN.test(text);
+};
+
+const modeFor = (message: string, topic: readonly string[]): ResponseMode => {
+  if (crisisCue(message)) return "SAFETY";
+  const advice = ADVICE.test(plain(message));
+  if (!advice && outsideScope(message)) return "BOUNDARY";
+  if (advice || directHelp(message)) return "SUPPORT_AND_WRAP_UP";
+  if (closing(message)) return "LISTEN";
+  // Ask only on a missing-info signal: the user wants to explore, or every answer so far is a word or two.
+  if (EXPLORE.test(plain(message))) return "CLARIFY";
+  const answers = [...topic, message];
+  if (answers.length <= 3 && answers.every(shortAnswer)) return "CLARIFY";
+  return topic.length >= 2 ? "SUPPORT_AND_WRAP_UP" : "LISTEN";
+};
 
 /**
  * Picks the turn's mode from the message and recent same-conversation turns.
  * Pass every recent turn (roles in order), not the byte-capped provider history: long messages must still reach wrap-up.
+ * Replies need not end with a question, so the topic is rebuilt from the user turns alone: it restarts after a
+ * turn whose mode closed it (wrap-up, boundary, safety) or after a thanks or closing message.
  */
 export const selectResponseMode = (
   message: string,
   recentTurns: readonly HistoryTurn[],
 ): ResponseMode => {
-  if (crisisCue(message)) return "SAFETY";
-  const advice = ADVICE.test(plain(message));
-  if (!advice && outsideScope(message)) return "BOUNDARY";
-  if (advice || directHelp(message)) return "SUPPORT_AND_WRAP_UP";
-  // An assistant statement (a wrap-up or closing) ends the topic; count only the user turns after it.
-  const topicStart =
-    recentTurns.findLastIndex(
-      (turn) => turn.role === "ASSISTANT" && !endsWithQuestion(turn.text),
-    ) + 1;
-  const earlierUsers = recentTurns
-    .slice(topicStart)
-    .filter((turn) => turn.role === "USER");
-  if (earlierUsers.length === 0) return "LISTEN";
-  if (earlierUsers.length === 1) return "CLARIFY";
-  if (
-    earlierUsers.length === 2 &&
-    [...earlierUsers.map((turn) => turn.text), message].every(shortAnswer)
-  )
-    return "CLARIFY";
-  return "SUPPORT_AND_WRAP_UP";
+  let topic: string[] = [];
+  for (const turn of recentTurns) {
+    if (turn.role !== "USER") continue;
+    const mode = modeFor(turn.text, topic);
+    topic =
+      closing(turn.text) || (mode !== "LISTEN" && mode !== "CLARIFY")
+        ? []
+        : [...topic, turn.text];
+  }
+  return modeFor(message, topic);
 };
 
 const CRISIS_OVERRIDE =
@@ -205,13 +240,13 @@ const CRISIS_OVERRIDE =
 export const responseModeDirective = (mode: ResponseMode): string => {
   switch (mode) {
     case "LISTEN":
-      return `Server response_mode: LISTEN. Reflect and comfort first. For a new difficult topic, end with exactly one short question grounded in a detail the user gave. If the user is thanking you, agreeing to try something or closing, answer with a short warm statement and no question. Give no tip, exercise or app offer.${CRISIS_OVERRIDE}`;
+      return `Server response_mode: LISTEN. The user is venting, sharing or closing. Listen and comfort: show you get the specific feeling behind what they said, then stop. No question is needed; end with a statement and use no question mark. If they are very sad, empathy first and no joking. If they are thanking you, agreeing to try something or feeling better, keep it short and light, encourage them and let the topic close. Give no tip, exercise or app offer.${CRISIS_OVERRIDE}`;
     case "CLARIFY":
-      return `Server response_mode: CLARIFY. React warmly and build on the user's last answer. End with exactly one new specific question. Give no tip, exercise or app offer.${CRISIS_OVERRIDE}`;
+      return `Server response_mode: CLARIFY. Essential information is missing or the user wants to explore. React briefly and warmly to what they said, then ask exactly one specific question (it may be a reflective either/or question). Nothing after the question. Give no tip, exercise or app offer.${CRISIS_OVERRIDE}`;
     case "SUPPORT_AND_WRAP_UP":
-      return `Server response_mode: SUPPORT_AND_WRAP_UP. This turn must wrap up now: in a few words show what you understood (do not retell their story), comfort them, then suggest one or two concrete practical steps fitted to those details, phrased softly (bạn thử…, bạn có thể…). For grief, loss or self-blame, the step is a gentle way to let the feeling be or to remember them, such as keeping one favourite memory of them. Choose steps that fit this exact situation; do not default to writing something down. End with a statement. Use no question mark anywhere, not even inside words you suggest they say. Do not ask a question unless information critical for immediate safety is missing. Do not merely comfort or offer a generic exercise.${CRISIS_OVERRIDE}`;
+      return `Server response_mode: SUPPORT_AND_WRAP_UP. There is enough context: give helpful guidance and end naturally. Show in a few words what you understood (do not retell their story), comfort them, then suggest one or two concrete practical steps fitted to those details, phrased softly (bạn thử…, bạn có thể…). If the user already chose a direction, propose the next small step for it and do not ask again. For grief, loss or self-blame, the step is a gentle way to let the feeling be or to remember them, such as keeping one favourite memory of them. Choose steps that fit this exact situation; do not default to writing something down. End with a statement. Use no question mark anywhere, not even inside words you suggest they say. Do not ask a question unless information critical for immediate safety is missing. Do not merely comfort or offer a generic exercise. Depth: when the user has shared a lot on this topic (two or more earlier messages) or the situation is complex, this reply needs depth and should be about 1000–1500 characters in five to seven short paragraphs: reflect their specific situation in one or two short paragraphs, comfort them, give two or three concrete steps, each in its own short paragraph with a one-line why or how, then a natural, varied close. For a simple direct ask with little context, a shorter reply is fine. Never pad or repeat yourself.${CRISIS_OVERRIDE}`;
     case "BOUNDARY":
-      return `Server response_mode: BOUNDARY. Mầm supports feelings and helps the user approach a problem; do not write code, solve homework or complete an assignment. If the user asks Mầm to do such a task, briefly decline it, acknowledge the pressure, and offer one practical way to approach it. If they only vent about the workload, comfort them and ask one specific question instead.${CRISIS_OVERRIDE}`;
+      return `Server response_mode: BOUNDARY. Mầm supports feelings and helps the user approach a problem; do not write code, solve homework or complete an assignment. If the user asks Mầm to do such a task, briefly decline it, acknowledge the pressure, and offer one practical way to approach it. If they only vent about the workload, comfort them without a question. Keep it short.${CRISIS_OVERRIDE}`;
     case "SAFETY":
       return "Server response_mode: SAFETY. Use the existing fixed crisis reply exactly, with null suggestion. No question, humour, emoji or other advice.";
   }

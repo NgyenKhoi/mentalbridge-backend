@@ -168,3 +168,106 @@ void test("every non-SAFETY directive yields to the crisis rule", () => {
       mode,
     );
 });
+
+void test("modes ask only on missing info and close topics without relying on reply questions (MB-846b)", () => {
+  const vent = (texts: string[]): HistoryTurn[] =>
+    texts.flatMap((text) => [
+      { role: "USER" as const, text },
+      { role: "ASSISTANT" as const, text: "Tớ nghe bạn, chuyện đó mệt thật." },
+    ]);
+  const first = "Mình vừa bị đứa bạn thân phản bội, nó kể bí mật cho cả lớp.";
+  const second = "Tụi mình chơi với nhau gần mười năm rồi.";
+  assert.equal(selectResponseMode(first, []), "LISTEN");
+  assert.equal(selectResponseMode(second, vent([first])), "LISTEN");
+  assert.equal(
+    selectResponseMode(
+      "Giờ ai cũng biết hết, mình thấy nhục lắm.",
+      vent([first, second]),
+    ),
+    "SUPPORT_AND_WRAP_UP",
+  );
+  // Missing info: a word or two, or the user asks to explore.
+  assert.equal(selectResponseMode("Buồn.", []), "CLARIFY");
+  assert.equal(selectResponseMode("Chuyện ở nhà.", vent(["Buồn."])), "CLARIFY");
+  assert.equal(
+    selectResponseMode("Dạo này buồn hoài, không biết tại sao.", []),
+    "CLARIFY",
+  );
+  assert.equal(
+    selectResponseMode("Hỏi mình đi, mình muốn nói thêm.", []),
+    "CLARIFY",
+  );
+  // Thanks or feeling better closes the topic; the next message starts over.
+  const wrapped = vent([
+    first,
+    second,
+    "Giờ ai cũng biết hết, mình thấy nhục lắm.",
+  ]);
+  assert.equal(
+    selectResponseMode("Cảm ơn nha, nói ra cũng nhẹ hơn chút.", wrapped),
+    "LISTEN",
+  );
+  assert.equal(selectResponseMode("Ừ, để mình thử.", []), "LISTEN");
+  assert.equal(
+    selectResponseMode("Sếp mắng mình trước cả phòng.", [
+      ...vent([first, second]),
+      ...vent(["Cảm ơn nha, mình thấy đỡ hơn rồi."]),
+    ]),
+    "LISTEN",
+  );
+  // A negated "better" is not a closing.
+  assert.equal(
+    selectResponseMode(
+      "Mình vẫn không thấy đỡ hơn gì cả.",
+      vent([first, second]),
+    ),
+    "SUPPORT_AND_WRAP_UP",
+  );
+});
+
+void test("only a deep wrap-up aims for 1000 to 1500 characters; LISTEN and CLARIFY stay short (MB-846b)", () => {
+  assert.match(
+    responseModeDirective("SUPPORT_AND_WRAP_UP"),
+    /about 1000–1500 characters/u,
+  );
+  assert.match(responseModeDirective("LISTEN"), /No question is needed/u);
+  assert.match(
+    responseModeDirective("CLARIFY"),
+    /exactly one specific question/u,
+  );
+  assert.doesNotMatch(responseModeDirective("LISTEN"), /1000/u);
+});
+
+void test("a thanks or try that is still open does not close the topic, and “không hiểu sao” explores (review B5)", () => {
+  const vent: HistoryTurn[] = [
+    {
+      role: "USER",
+      text: "Mình vừa bị đứa bạn thân phản bội, nó kể bí mật cho cả lớp.",
+    },
+    { role: "ASSISTANT", text: "Tớ nghe bạn, chuyện đó đau thật." },
+  ];
+  for (const sentence of [
+    "Mình thử xem rồi mà vẫn không được, chán ghê.",
+    "Cảm ơn nha, nhưng mình vẫn buồn lắm.",
+  ]) {
+    const next = [
+      ...vent,
+      { role: "USER" as const, text: sentence },
+      { role: "ASSISTANT" as const, text: "Ừ." },
+    ];
+    // Still the same topic, so the third turn wraps up.
+    assert.equal(
+      selectResponseMode("Giờ ai cũng biết hết rồi.", next),
+      "SUPPORT_AND_WRAP_UP",
+      sentence,
+    );
+  }
+  assert.equal(
+    selectResponseMode("Cảm ơn nha, mình thấy đỡ hơn rồi.", vent),
+    "LISTEN",
+  );
+  assert.equal(
+    selectResponseMode("Không hiểu sao dạo này mình buồn quá.", []),
+    "CLARIFY",
+  );
+});

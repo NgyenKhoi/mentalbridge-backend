@@ -160,7 +160,9 @@ output, and hidden reasoning are not fields. Migration
 `012_ai_companion_conversation_context.cjs` backfills the default context before
 enforcing the strict validator. Migration `017_companion_message_suggestion.cjs`
 adds an optional encrypted `suggestion` on assistant messages (destination,
-Resource ID and title; ADR 0049). Under [ADR 0050](../../adr/0050-two-level-ai-consent.md),
+Resource ID and title; ADR 0049). Migration `023_companion_memory_note.cjs` adds an optional encrypted
+`memoryNote` with its summarised-update time and version (MB-846c, L2 only).
+Under [ADR 0050](../../adr/0050-two-level-ai-consent.md),
 MB-806 changes no persisted shape or validator and needs no Mongo migration. New
 conversations select no sources; stored selections remain preferences and require
 effective L2 plus fresh source authorization. All four existing context kinds are

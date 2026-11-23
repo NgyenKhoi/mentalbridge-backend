@@ -408,7 +408,6 @@ void test("Voice friend tone defaults off and accepts only its explicit boolean 
     JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
   });
   assert.equal(configuration.VOICE_FRIEND_ENABLED, true);
-  assert.equal(configuration.COMPANION_GUIDANCE_V2_ENABLED, false);
   assert.equal(configuration.VOICE_MEDIA?.enabled, false);
   assert.throws(() =>
     loadConfiguration({

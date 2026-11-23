@@ -53,6 +53,10 @@ import {
 import {
   companionGuidanceSystem,
   companionReplyMaxCharacters,
+  MAM_MEMORY_NOTE_MAX_CHARACTERS,
+  MAM_MEMORY_NOTE_VERSION,
+  MAM_TEXT_V3_MAX_CHARACTERS,
+  mamMemoryNoteSystem,
 } from "./companion-guidance-policy.js";
 import {
   SUGGESTION_DESTINATIONS,
@@ -64,8 +68,14 @@ import {
   companionUserInput,
   estimateInputTokens,
   type FriendInput,
+  type PreviousConversation,
 } from "./companion-text-request.js";
-import { conversationMemory } from "./conversation-history.js";
+import {
+  conversationMemory,
+  readableTurns,
+  MAM_HISTORY_LIMITS,
+  MAM_NOTE_TRANSCRIPT_LIMITS,
+} from "./conversation-history.js";
 import {
   selectResponseMode,
   type ResponseMode,
@@ -238,6 +248,11 @@ export interface Conversation {
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date;
+  /** MB-846c: encrypted third-person note on this conversation, read by later Mầm conversations only with effective L2. */
+  memoryNote?: EncryptedChatText;
+  /** The conversation updatedAt the note summarises; a later updatedAt makes it stale. */
+  memoryNoteUpdatedAt?: Date;
+  memoryNoteVersion?: string;
 }
 
 export type ConversationSummary = Omit<Conversation, "messages">;
@@ -426,6 +441,10 @@ const paidProviderOutputSchema = providerOutputSchema.extend({
   message: z.string().trim().min(1).max(900),
 });
 
+const mamProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(MAM_TEXT_V3_MAX_CHARACTERS),
+});
+
 const unsafeAssistantPatterns = [
   /(?:ignore|disregard) (?:all )?(?:previous|system|developer) (?:instructions?|messages?)/iu,
   /(?:bỏ qua|phớt lờ).{0,40}(?:chỉ dẫn|hướng dẫn|system|developer)/iu,
@@ -442,6 +461,26 @@ const unsafeAssistantPatterns = [
 
 // The server and web own every link; same block as support-plan-companion.ts.
 const linkOrMarkup = /https?:\/\/|www\.|<[^>]+>|\[[^\]]+\]\([^)]+\)/iu;
+
+// A deep Mầm v3 reply (up to 1500 characters) needs longer generation than a 10 s attempt allows.
+export const providerAttemptMs = (mamTextV3: boolean): number =>
+  mamTextV3 ? 18_000 : 10_000;
+
+// Room kept for up to three notes in the reply request (3 × 400 characters of Vietnamese, bytes/4).
+const MEMORY_BLOCK_TOKENS = 1_000;
+
+/** About 6 s for note generation, leaving the reply about 12 s of the 24 s send deadline; 0 or less skips notes. */
+export const noteGenerationMs = (sendDeadline: number, now: number): number =>
+  Math.min(6_000, sendDeadline - now - 12_000);
+
+/** A long note keeps its whole sentences up to the limit (the real model overshot 350 once in 9 runs); none fit means no note. */
+export const memoryNoteWithinLimit = (note: string): string | null => {
+  const characters = Array.from(note);
+  if (characters.length <= MAM_MEMORY_NOTE_MAX_CHARACTERS) return note;
+  const head = characters.slice(0, MAM_MEMORY_NOTE_MAX_CHARACTERS).join("");
+  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "));
+  return end > 0 ? head.slice(0, end + 1) : null;
+};
 
 const withoutCutOffTail = (message: string): string =>
   /[.!?…”»)\p{Extended_Pictographic}]️?$/u.test(message)
@@ -489,6 +528,8 @@ export interface ChatProvider {
       responseMode?: ResponseMode;
       plan?: ServicePlan;
       requestTitle?: boolean;
+      /** MB-846c: userMessage is an earlier conversation; return its memory note as message. */
+      memoryNote?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
   ): Promise<ProviderReply>;
@@ -561,6 +602,23 @@ export interface ChatRepository {
     ownerAccountId: string,
     conversationId: string,
   ): Promise<boolean>;
+  /** Up to limit other unexpired conversations updated since, newest first, with their last 20 messages. */
+  memoryCandidates(
+    ownerAccountId: string,
+    excludeConversationId: string,
+    since: Date,
+    now: Date,
+    limit: number,
+  ): Promise<Conversation[]>;
+  /** Stores a note for the conversation state it summarised; a newer conversation keeps its old note. */
+  saveMemoryNote(
+    ownerAccountId: string,
+    conversationId: string,
+    summarisedUpdatedAt: Date,
+    note: EncryptedChatText,
+    version: string,
+  ): Promise<void>;
+  purgeMemoryNotes(ownerAccountId: string): Promise<void>;
   findCommand(
     ownerAccountId: string,
     keyHash: string,
@@ -785,6 +843,19 @@ export class ChatCrypto {
     );
   }
 
+  // A distinct AAD keeps a memory note from passing as a title or message.
+  encryptMemoryNote(owner: string, conversationId: string, note: string) {
+    return this.seal(`${owner}:${conversationId}:memory-note`, note);
+  }
+
+  decryptMemoryNote(
+    owner: string,
+    conversationId: string,
+    envelope: EncryptedChatText,
+  ): string {
+    return this.open(`${owner}:${conversationId}:memory-note`, envelope);
+  }
+
   encrypt(
     owner: string,
     conversationId: string,
@@ -993,6 +1064,64 @@ export class MongoChatRepository
     } finally {
       await session.endSession();
     }
+  }
+
+  async memoryCandidates(
+    ownerAccountId: string,
+    excludeConversationId: string,
+    since: Date,
+    now: Date,
+    limit: number,
+  ) {
+    await this.connect();
+    return this.conversations
+      .find(
+        {
+          ownerAccountId,
+          _id: { $ne: excludeConversationId },
+          "messages.1": { $exists: true },
+          updatedAt: { $gte: since },
+          expiresAt: { $gt: now },
+        },
+        { projection: { messages: { $slice: -20 } } },
+      )
+      .sort({ updatedAt: -1, _id: -1 })
+      .limit(limit)
+      .toArray();
+  }
+
+  async saveMemoryNote(
+    ownerAccountId: string,
+    conversationId: string,
+    summarisedUpdatedAt: Date,
+    note: EncryptedChatText,
+    version: string,
+  ) {
+    await this.connect();
+    await this.conversations.updateOne(
+      { _id: conversationId, ownerAccountId, updatedAt: summarisedUpdatedAt },
+      {
+        $set: {
+          memoryNote: note,
+          memoryNoteUpdatedAt: summarisedUpdatedAt,
+          memoryNoteVersion: version,
+        },
+      },
+    );
+  }
+
+  async purgeMemoryNotes(ownerAccountId: string) {
+    await this.connect();
+    await this.conversations.updateMany(
+      { ownerAccountId, memoryNote: { $exists: true } },
+      {
+        $unset: {
+          memoryNote: "",
+          memoryNoteUpdatedAt: "",
+          memoryNoteVersion: "",
+        },
+      },
+    );
   }
 
   async findCommand(ownerAccountId: string, keyHash: string) {
@@ -1764,6 +1893,7 @@ export class RoutedChatProvider implements ChatProvider {
       responseMode?: ResponseMode;
       plan?: ServicePlan;
       requestTitle?: boolean;
+      memoryNote?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
   ): Promise<ProviderReply> {
@@ -1782,13 +1912,16 @@ export class RoutedChatProvider implements ChatProvider {
     const responseMode = friend ? options?.responseMode : undefined;
     const mamTextV3 = responseMode !== undefined;
     const plan = options?.voice ? undefined : options?.plan;
-    const maxLength = mamTextV3 ? 400 : companionReplyMaxCharacters(plan);
+    const maxLength = mamTextV3
+      ? MAM_TEXT_V3_MAX_CHARACTERS
+      : companionReplyMaxCharacters(plan);
     if (options?.voice && context.kinds.length !== 0)
       throw new VoiceProviderFailure("INVALID_RESPONSE");
     if (route.provider === "DETERMINISTIC_FAKE") {
       return {
-        message:
-          context.kinds.length === 0
+        message: options?.memoryNote
+          ? "Người dùng đã trò chuyện với Mầm ở cuộc trò chuyện này (ghi chú giả lập cục bộ)."
+          : context.kinds.length === 0
             ? "Mình đang lắng nghe. Bạn muốn bắt đầu từ điều gì đang khiến bạn bận tâm nhất lúc này?"
             : "Mình đã xem phần bối cảnh bạn cho phép. Ta có thể chọn một bước nhỏ, phù hợp với kế hoạch hiện tại và điều bạn vừa chia sẻ.",
         inputTokens: Math.ceil(
@@ -1797,22 +1930,26 @@ export class RoutedChatProvider implements ChatProvider {
         outputTokens: 32,
       };
     }
-    let system = companionGuidanceSystem({
-      channel: options?.voice ? "VOICE" : "TEXT",
-      ...(options?.voice && this.configuration.VOICE_FRIEND_ENABLED
-        ? { voiceFriend: true }
-        : {}),
-      ...(options?.voice && options.textHandoff ? { textHandoff: true } : {}),
-      ...(options?.voice
-        ? {
-            replyStyle:
-              this.configuration.VOICE_PILOT?.replyStyle ?? "SUPPORTIVE",
-          }
-        : {}),
-      ...(friend ? { friend: true } : {}),
-      ...(responseMode ? { mamTextV3: true, responseMode } : {}),
-      ...(plan ? { plan } : {}),
-    });
+    let system = options?.memoryNote
+      ? mamMemoryNoteSystem
+      : companionGuidanceSystem({
+          channel: options?.voice ? "VOICE" : "TEXT",
+          ...(options?.voice && this.configuration.VOICE_FRIEND_ENABLED
+            ? { voiceFriend: true }
+            : {}),
+          ...(options?.voice && options.textHandoff
+            ? { textHandoff: true }
+            : {}),
+          ...(options?.voice
+            ? {
+                replyStyle:
+                  this.configuration.VOICE_PILOT?.replyStyle ?? "SUPPORTIVE",
+              }
+            : {}),
+          ...(friend ? { friend: true } : {}),
+          ...(responseMode ? { mamTextV3: true, responseMode } : {}),
+          ...(plan ? { plan } : {}),
+        });
     const requestTitle = options?.requestTitle === true && !options.voice;
     if (speechUnits)
       system +=
@@ -1839,7 +1976,7 @@ export class RoutedChatProvider implements ChatProvider {
             ...coreOutputJsonSchema.properties,
             message: {
               ...coreOutputJsonSchema.properties.message,
-              maxLength: 400,
+              maxLength: MAM_TEXT_V3_MAX_CHARACTERS,
             },
           },
         }
@@ -2309,7 +2446,11 @@ export class RoutedChatProvider implements ChatProvider {
       output = rest;
     }
     const parsedOutput = (
-      maxLength > 500 ? paidProviderOutputSchema : providerOutputSchema
+      mamTextV3
+        ? mamProviderOutputSchema
+        : maxLength > 500
+          ? paidProviderOutputSchema
+          : providerOutputSchema
     ).safeParse(output);
     if (!parsedOutput.success) {
       if (options?.voice && responseProvider === "BEDROCK")
@@ -2400,6 +2541,7 @@ const publicConversationSummary = (
 @Injectable()
 export class CompanionChatService {
   private readonly crypto: ChatCrypto;
+  private readonly logger = new Logger(CompanionChatService.name);
 
   constructor(
     @Inject(REPOSITORY) private readonly repository: ChatRepository,
@@ -2708,21 +2850,17 @@ export class CompanionChatService {
       const sources = authorization.context.authorized
         ? conversation.context.sources
         : emptySources();
-      const mamTextV3 =
-        this.configuration.COMPANION_MAM_TEXT_V3_ENABLED === true;
-      const friendEnabled =
-        this.configuration.COMPANION_GUIDANCE_V2_ENABLED === true || mamTextV3;
-      const memory = friendEnabled
-        ? conversationMemory(conversation.messages, sources, (message) =>
-            this.crypto.decrypt(owner, conversationId, message),
-          )
-        : { history: [], kinds: [] };
-      let friend: FriendInput | undefined = friendEnabled
-        ? {
-            history: memory.history,
-            catalog: await this.catalog.items(),
-          }
-        : undefined;
+      // Owner decision 2026-11-23: TEXT always runs Mầm v3 with its friend history, catalogue and suggestion.
+      const memory = conversationMemory(
+        conversation.messages,
+        sources,
+        (message) => this.crypto.decrypt(owner, conversationId, message),
+        MAM_HISTORY_LIMITS,
+      );
+      let friend: FriendInput = {
+        history: memory.history,
+        catalog: await this.catalog.items(),
+      };
       minimized = {
         ...minimized,
         kinds: [...new Set([...minimized.kinds, ...memory.kinds])],
@@ -2739,41 +2877,63 @@ export class CompanionChatService {
         );
       if (!finalAuthorization.context.authorized) {
         minimized = { kinds: [], prompt: "" };
-        if (friend)
-          friend = {
-            ...friend,
-            history: conversationMemory(
-              conversation.messages,
-              emptySources(),
-              (message) => this.crypto.decrypt(owner, conversationId, message),
-            ).history,
-          };
+        friend = {
+          ...friend,
+          history: conversationMemory(
+            conversation.messages,
+            emptySources(),
+            (message) => this.crypto.decrypt(owner, conversationId, message),
+            MAM_HISTORY_LIMITS,
+          ).history,
+        };
       }
       const requestTitle = canInitializeTitle(conversation);
       // Count the arc on every recent message, not the byte-capped provider history; only the mode leaves the server.
-      const responseMode =
-        mamTextV3 && friend
-          ? selectResponseMode(
-              parsed.data.message,
-              conversation.messages.slice(-8).map((message) => ({
-                role: message.role,
-                text: this.crypto.decrypt(owner, conversationId, message),
-              })),
-            )
-          : undefined;
-      const estimate = estimateInputTokens(
-        companionGuidanceSystem({
-          channel: "TEXT",
-          friend: !!friend,
-          ...(responseMode ? { mamTextV3: true, responseMode } : {}),
-          plan: decision.packageCode,
-        }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
-        companionUserInput({
-          message: parsed.data.message,
-          context: minimized,
-          ...(friend ? { friend } : {}),
-        }),
+      // A message that used personal context the owner no longer allows is counted but never decrypted (ADR 0050).
+      const modeSources = finalAuthorization.context.authorized
+        ? sources
+        : emptySources();
+      const responseMode = selectResponseMode(
+        parsed.data.message,
+        readableTurns(conversation.messages.slice(-8), modeSources, (message) =>
+          this.crypto.decrypt(owner, conversationId, message),
+        ),
       );
+      const replyEstimate = () =>
+        estimateInputTokens(
+          companionGuidanceSystem({
+            channel: "TEXT",
+            friend: true,
+            mamTextV3: true,
+            responseMode,
+            plan: decision.packageCode,
+          }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
+          companionUserInput({
+            message: parsed.data.message,
+            context: minimized,
+            friend,
+          }),
+        );
+      // MB-846c: notes need effective L2 at the final check (without it they are purged) and never delay a SAFETY turn.
+      if (!finalAuthorization.context.authorized)
+        await this.repository.purgeMemoryNotes(owner).catch(() => {
+          this.logger.warn("CHAT_MEMORY_PURGE_FAILED");
+        });
+      else if (responseMode !== "SAFETY") {
+        // Notes reserve below what the reply itself may need, so they are skipped before the reply can hit 429.
+        const replyHeadroom =
+          replyEstimate() + companionMaxOutputTokens + MEMORY_BLOCK_TOKENS;
+        const previousConversations = await this.previousConversations(
+          owner,
+          conversationId,
+          command,
+          tokenBudget - replyHeadroom,
+          sendDeadline,
+        );
+        if (previousConversations.length > 0)
+          friend = { ...friend, previousConversations };
+      }
+      const estimate = replyEstimate();
       const deadlineFailure = () =>
         new ChatProblem(
           503,
@@ -2789,15 +2949,17 @@ export class CompanionChatService {
           throw firstFailure ?? deadlineFailure();
         if (remainingMs <= 0) throw deadlineFailure();
         await this.repository.reserveAttempt(command, estimate, tokenBudget);
-        const signal = AbortSignal.timeout(Math.min(10_000, remainingMs));
+        const signal = AbortSignal.timeout(
+          Math.min(providerAttemptMs(true), remainingMs),
+        );
         let usage: { input: number; output: number } | undefined;
         let attemptedReply: ProviderReply | undefined;
         let attemptError: unknown;
         try {
           attemptedReply = await Promise.race([
             this.provider.reply(parsed.data.message, minimized, route, {
-              ...(friend ? { friend } : {}),
-              ...(responseMode ? { responseMode } : {}),
+              friend,
+              responseMode,
               ...(requestTitle ? { requestTitle: true } : {}),
               plan: decision.packageCode,
               signal,
@@ -2814,10 +2976,8 @@ export class CompanionChatService {
             }),
           ]);
           assistant = validatedAssistantMessage(attemptedReply.message, {
-            rejectLinks: friend !== undefined,
-            maxLength: responseMode
-              ? 400
-              : companionReplyMaxCharacters(decision.packageCode),
+            rejectLinks: true,
+            maxLength: MAM_TEXT_V3_MAX_CHARACTERS,
           });
         } catch (error) {
           attemptError = error;
@@ -2862,7 +3022,7 @@ export class CompanionChatService {
       if (!reply || !assistant) throw deadlineFailure();
       // A SAFETY turn never shows a suggestion button, whatever the model returned.
       const suggestion =
-        friend && responseMode !== "SAFETY"
+        responseMode !== "SAFETY"
           ? resolveSuggestion(reply.suggestion, friend.catalog)
           : null;
       const createdAt = this.clock.now();
@@ -3134,6 +3294,171 @@ export class CompanionChatService {
       "CHAT_TITLE_UNAVAILABLE",
       "Conversation title is unavailable",
     );
+  }
+
+  /** Notes on the owner's other recent Mầm conversations, newest first; any failure leaves a note out and never fails the turn. */
+  private async previousConversations(
+    owner: string,
+    conversationId: string,
+    command: ChatCommand,
+    tokenBudget: number,
+    sendDeadline: number,
+  ): Promise<PreviousConversation[]> {
+    const now = this.clock.now();
+    let candidates: Conversation[];
+    try {
+      candidates = await this.repository.memoryCandidates(
+        owner,
+        conversationId,
+        new Date(now.getTime() - 30 * 86_400_000),
+        now,
+        3,
+      );
+    } catch {
+      this.logger.warn("CHAT_MEMORY_UNAVAILABLE");
+      return [];
+    }
+    // Leave the reply at least 12 s of the send deadline.
+    const generationMs = noteGenerationMs(sendDeadline, Date.now());
+    const day = new Intl.DateTimeFormat("en-GB", {
+      timeZone: this.configuration.CHAT_DEFAULT_TIMEZONE,
+      day: "2-digit",
+      month: "2-digit",
+    });
+    const notes = await Promise.all(
+      candidates.map(async (conversation) => {
+        try {
+          const fresh =
+            conversation.memoryNote !== undefined &&
+            conversation.memoryNoteVersion === MAM_MEMORY_NOTE_VERSION &&
+            conversation.memoryNoteUpdatedAt !== undefined &&
+            conversation.memoryNoteUpdatedAt >= conversation.updatedAt;
+          const note =
+            fresh && conversation.memoryNote
+              ? this.crypto.decryptMemoryNote(
+                  owner,
+                  conversation._id,
+                  conversation.memoryNote,
+                )
+              : generationMs > 0
+                ? await this.singleFlightNote(
+                    owner,
+                    conversation,
+                    command,
+                    tokenBudget,
+                    generationMs,
+                  )
+                : null;
+          return note
+            ? {
+                date: day.format(conversation.updatedAt),
+                title: this.crypto.title(conversation).title,
+                note,
+              }
+            : null;
+        } catch {
+          this.logger.warn("CHAT_MEMORY_NOTE_FAILED");
+          return null;
+        }
+      }),
+    );
+    return notes.filter((note) => note !== null);
+  }
+
+  // shortcut: in-process only; two service instances can still both generate the same note (last write wins), fine at demo scale.
+  private readonly notesInFlight = new Map<string, Promise<string | null>>();
+
+  private singleFlightNote(
+    owner: string,
+    conversation: Conversation,
+    command: ChatCommand,
+    tokenBudget: number,
+    timeoutMs: number,
+  ): Promise<string | null> {
+    const key = `${owner}:${conversation._id}:${conversation.updatedAt.toISOString()}`;
+    const running = this.notesInFlight.get(key);
+    if (running) return running;
+    const note = this.writeMemoryNote(
+      owner,
+      conversation,
+      command,
+      tokenBudget,
+      timeoutMs,
+    ).finally(() => this.notesInFlight.delete(key));
+    this.notesInFlight.set(key, note);
+    return note;
+  }
+
+  /** One provider call on the cheaper FREE/PLUS route, charged to the owner's daily token budget. */
+  private async writeMemoryNote(
+    owner: string,
+    conversation: Conversation,
+    command: ChatCommand,
+    tokenBudget: number,
+    timeoutMs: number,
+  ): Promise<string | null> {
+    const transcript = conversationMemory(
+      conversation.messages,
+      emptySources(),
+      (message) => this.crypto.decrypt(owner, conversation._id, message),
+      MAM_NOTE_TRANSCRIPT_LIMITS,
+    ).history;
+    if (transcript.length === 0) return null;
+    const message = JSON.stringify(transcript);
+    const empty: MinimizedContext = { kinds: [], prompt: "" };
+    const estimate = estimateInputTokens(
+      mamMemoryNoteSystem,
+      companionUserInput({ message, context: empty }),
+    );
+    await this.repository.reserveAttempt(command, estimate, tokenBudget);
+    let usage: { input: number; output: number } | undefined;
+    let reply: ProviderReply | undefined;
+    const signal = AbortSignal.timeout(timeoutMs);
+    try {
+      reply = await Promise.race([
+        this.provider.reply(
+          message,
+          empty,
+          selectCompanionProviderRoute(this.configuration, "FREE"),
+          {
+            memoryNote: true,
+            signal,
+            onUsage: (input, output) => {
+              usage = { input, output };
+            },
+          },
+        ),
+        new Promise<never>((_resolve, reject) => {
+          const timeout = () => {
+            reject(new ProviderFailure("RETRYABLE", "TIMEOUT"));
+          };
+          if (signal.aborted) timeout();
+          else signal.addEventListener("abort", timeout, { once: true });
+        }),
+      ]);
+    } finally {
+      const actual = usage
+        ? usage.input + usage.output
+        : reply
+          ? reply.inputTokens + reply.outputTokens
+          : estimate;
+      await this.repository.settleAttempt(command, actual - estimate);
+    }
+    const note = memoryNoteWithinLimit(reply.message.trim());
+    if (
+      !note ||
+      linkOrMarkup.test(note) ||
+      unsafeAssistantPatterns.some((pattern) => pattern.test(note))
+    )
+      return null;
+    await this.repository.saveMemoryNote(
+      owner,
+      conversation._id,
+      conversation.updatedAt,
+      this.crypto.encryptMemoryNote(owner, conversation._id, note),
+      MAM_MEMORY_NOTE_VERSION,
+    );
+    return note;
   }
 
   private async withTitle(

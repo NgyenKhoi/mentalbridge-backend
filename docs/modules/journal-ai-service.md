@@ -256,14 +256,22 @@ selects the fixed crisis wording). Method, thresholds and before/after results:
 
 ## Mầm TEXT response mode (MB-846)
 
-The separate default-off Mầm TEXT v3 flag selects a server directive for each
+Owner decision 2026-11-23: enabled by default; rollback = revert: Mầm TEXT v3 selects a server directive for every TEXT
 turn from the current message and consent-filtered recent conversation history:
 LISTEN, CLARIFY, SUPPORT_AND_WRAP_UP, BOUNDARY or SAFETY. This is a bounded
 conversation-structure heuristic, not a Care safety determination. The
 existing provider crisis instruction and fixed crisis example remain in place
 for cues the heuristic misses; the real-provider crisis pointer gate checks
 the replies. The mode is neither persisted nor exposed in the public API.
-Voice, v2 rollback behavior, suggestion schema and consent boundaries remain
+Since MB-846b, Mầm asks no follow-up question by default (only `CLARIFY`
+asks one), reply length varies under a 1,500-character limit for every
+package, and the send response `assistant` field allows up to 1,500
+characters.
+With effective L2, MB-846c adds up to three encrypted memory notes on the
+owner's other recent Mầm conversations to the provider request; without L2 it
+sends none and purges stored notes. See the ADR 0021 and ADR 0050 MB-846c
+amendments.
+Voice, the suggestion schema and consent boundaries remain
 unchanged. See the [ADR 0049 MB-846 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md)
 and [MB-846 evaluation](../story-mb-846-companion-eval.md).
 

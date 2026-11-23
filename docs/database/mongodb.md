@@ -168,6 +168,12 @@ indexes for four Journal/AI collections:
   `:suggestion`.
   Migration `018_companion_conversation_title.cjs` adds optional `encryptedTitle`
   using the same envelope and key with AAD `${owner}:${conversationId}:title`.
+  Migration `023_companion_memory_note.cjs` (MB-846c) adds optional
+  `memoryNote` (same envelope and key, AAD
+  `${owner}:${conversationId}:memory-note`), `memoryNoteUpdatedAt` and
+  `memoryNoteVersion`; they are written only with effective L2, never from pairs that used
+  personal context, and unset for the owner on a TEXT send without L2. There
+  is no account-erasure consumer here; notes go with owner delete or TTL.
   New explicit-create, automatic and manual titles are encrypted; required
   `title` remains the neutral `Cuộc trò chuyện mới` on every new title write.
   Absence of the envelope alone allows an old document's plaintext `title`

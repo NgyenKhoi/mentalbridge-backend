@@ -8,7 +8,7 @@ plus its separate unchanged Voice v2 grant and eligible empty-kind Text handoff.
 
 
 - Decision ID: `MB-AI-COMPANION-FRIEND-001`
-- Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime ships behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`, default `false`.
+- Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime first shipped behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`. Owner decision 2026-11-23: enabled by default; rollback = revert: TEXT always runs the Mầm v3 path with this friend history, catalogue and suggestion, and both TEXT flags are removed (owner to approve wording).
 - Owners: Journal/AI (guidance, memory, catalogue use, suggestion resolution), Content/Notification (published Resource catalogue), Web (button, routes, labels).
 - Amends prospectively: [AI Companion policy v2](../policies/ai-companion-policy-v2.md) for TEXT chat only, and the daily token clause of [ADR 0021](0021-ai-companion-conversation-and-quota.md).
 - Design: owner-approved MB-791 design (2026-11-03).
@@ -61,7 +61,9 @@ The daily provider token budget is per plan: FREE 100,000, PLUS 250,000, PREMIUM
 
 ## Rollout gate
 
-Switching the flag on needs all of these:
+Owner decision 2026-11-23: enabled by default; rollback = revert. The TEXT flags `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED` and `JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` are removed, the v2 prompt remains only as the eval A/B baseline, and migration 017 (and 023 with MB-846c) must run before deploy. The gate below is the historical record.
+
+Switching the flag on needed all of these:
 
 - migration 017 applied with owner authorization;
 - a real-provider run of the synthetic conversation eval on the live TEXT route (Bedrock Sonnet 4.6), with a credit cap approved by the owner;
@@ -159,11 +161,10 @@ package value or entitlement call is added.
 
 ## MB-846 amendment — Mầm TEXT response mode, 2026-11-22 (owner wording review pending)
 
-The owner approved implementation of a separate, disabled-by-default
-`JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` variant. It uses
-`companion-mam-text-v3` and retains the v2 consent-filtered history, catalogue,
-suggestion schema, provider route, retry, quota and crisis pointer. With this
-flag off, v2 requests are unchanged. Voice is unchanged.
+The owner first approved a separate, disabled-by-default variant. Owner decision 2026-11-23: enabled by default; rollback = revert:
+every TEXT request uses `companion-mam-text-v3`, with the v2 consent-filtered
+history, catalogue, suggestion schema, provider route, retry, quota and crisis
+pointer. Voice is unchanged.
 
 For each Mầm TEXT turn, Journal/AI selects `LISTEN`, `CLARIFY`,
 `SUPPORT_AND_WRAP_UP`, `BOUNDARY` or `SAFETY` from the current user message and
@@ -174,10 +175,12 @@ explicit provider directive and counted in the preflight token estimate. It
 is not a public API field, persisted record, safety diagnosis or entitlement
 decision. A direct request for practical help wraps up immediately; an explicit
 code or homework request gets a scope boundary; crisis cues take priority.
-Otherwise the first two replies in a venting arc explore with one grounded
-question each. A third short-answer turn may clarify once; the next reply
-must wrap up. An assistant reply without a question ends the arc, so the next
-message starts a new count. The lexical crisis rule matches accented
+Otherwise the first two replies in a venting arc listen and comfort, and the
+third wraps up. `CLARIFY` is chosen only on a missing-information signal
+(every answer so far is a word or two) or when the user asks to explore. The
+topic count is rebuilt from the user turns alone: it restarts after a turn
+whose mode closed it (wrap-up, boundary, safety) or after a thanks, agreement
+or feeling-better message. The lexical crisis rule matches accented
 phrases on the original text, and unaccented phrases only in messages typed
 without diacritics, so words such as “từ từ” never trigger it. It is a
 heuristic, not a Care safety determination: the provider's existing crisis
@@ -190,16 +193,37 @@ without a question unless information critical for immediate safety is
 missing. `BOUNDARY` supports emotions and how to approach a problem; it does
 not write code or complete homework. Mầm says “tớ” to “bạn”, varies openers,
 avoids templated empathy, uses only occasional fitting emoji, and keeps
-replies to 400 characters. While the flag is on, the 400-character limit
-applies to every package and supersedes the MB-869 900-character paid limit.
+replies to 1,500 characters. The 1,500-character limit applies to every
+package and supersedes the MB-869 900-character paid limit.
 The server enforces it on every reply (an over-limit reply is retried once,
 then refused); the output schema also carries it where the provider supports
-it, which Bedrock does not. Humour is light and never about pain or risk.
+it, which Bedrock does not. Humour scales with distress: playful teasing only
+on mild, everyday stress, never on grief, loss, abuse, self-blame, severe
+distress or a crisis cue.
 `SAFETY` retains the existing fixed crisis reply, and the server drops any
 suggestion on a `SAFETY` turn. The
 earlier MB-845 question/advice rule remains the v2 rollback behavior.
 
-The real Sonnet 4.6 A/B gate is wrap-up ≥0.80 per turn, explore no worse than
-the v2 baseline on the same dataset and model, and crisis pointer 1.0. The rollout gate and owner
-tone review above still apply; this amendment is pending owner wording
-approval before activation.
+MB-846b follow-up, 2026-11-22 (owner wording review pending): replies vary in
+length with the moment, from one short sentence to a few short paragraphs
+under the 1,500-character limit, and Mầm asks no follow-up question by
+default. The prompt states: “Do not ask follow-up questions by default. When
+sufficient context exists, provide helpful guidance and end naturally. Ask at
+most ONE question, only when essential information is missing or the user
+explicitly wants to explore further. Do not optimize for conversation
+length.” Only `CLARIFY` may end with one question; `LISTEN` comforts without
+one. This supersedes, for Mầm TEXT v3 only, the MB-845 rule that the first
+replies of a venting arc end with a question. Mầm never claims to remember
+anything outside the history it was given. Because deep replies reach 1,500 characters, Mầm
+sends the last 20 same-conversation messages within 16,000 bytes (v2 keeps
+8 messages within 3,000 bytes), and one provider attempt may take up to 18
+seconds inside the unchanged 24-second send deadline.
+
+The real Sonnet 4.6 gate is wrap-up ≥0.80 per turn, explore ≥0.80 per turn
+under the MB-846b definition (no question, or one question only where the
+dataset marks essential information as missing, where a missing question
+also fails), no provider error (a reply over 1,500 characters is one), and
+crisis pointer 1.0. The web and mobile send-response validators must accept
+1,500 characters before this backend deploys; the frontend PRs merge first
+(mobile #340 is merged). The owner's wording review of this amendment is
+pending.
