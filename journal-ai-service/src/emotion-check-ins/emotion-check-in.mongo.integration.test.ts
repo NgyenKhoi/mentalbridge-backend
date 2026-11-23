@@ -72,7 +72,6 @@ void test("persists owner-isolated daily emotion check-ins with real MongoDB", a
     BENCHMARK_GEMINI_ROUTE: null,
     BENCHMARK_OPENAI_ROUTE: null,
     BENCHMARK_BEDROCK_ROUTE: null,
-    ANALYSIS_ENABLED: false,
     ANALYSIS_POLL_INTERVAL_MS: 250,
     ANALYSIS_LEASE_MS: 35_000,
     CHAT_RETENTION_DAYS: 90,

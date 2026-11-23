@@ -21,6 +21,9 @@ import {
   CompanionChatService,
   ChatCrypto,
   RoutedChatProvider,
+  providerAttemptMs,
+  memoryNoteWithinLimit,
+  noteGenerationMs,
   OwnerVerifiedContextAssembler,
   providerOutputJsonSchemaV2,
   type ChatCommand,
@@ -42,6 +45,7 @@ import {
   type FriendInput,
 } from "./companion-text-request.js";
 import type { CatalogItem } from "./resource-catalog.js";
+import type { ResponseMode } from "./companion-response-mode.js";
 
 const neutralTitle = "Cuộc trò chuyện mới";
 const titleRequest = (
@@ -155,6 +159,58 @@ class MemoryRepository implements ChatRepository {
         this.commands.splice(candidate, 1);
     }
     return Promise.resolve(true);
+  }
+  memoryCandidates(
+    owner: string,
+    exclude: string,
+    since: Date,
+    now: Date,
+    limit: number,
+  ) {
+    return Promise.resolve(
+      this.conversations
+        .filter(
+          (row) =>
+            row.ownerAccountId === owner &&
+            row._id !== exclude &&
+            row.updatedAt >= since &&
+            row.expiresAt > now &&
+            row.messages.length >= 2,
+        )
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+        .slice(0, limit)
+        .map((row) => ({ ...row, messages: row.messages.slice(-20) })),
+    );
+  }
+  saveMemoryNote(
+    owner: string,
+    id: string,
+    summarised: Date,
+    note: EncryptedChatText,
+    version: string,
+  ) {
+    const row = this.conversations.find(
+      (candidate) =>
+        candidate.ownerAccountId === owner &&
+        candidate._id === id &&
+        candidate.updatedAt.getTime() === summarised.getTime(),
+    );
+    if (row)
+      Object.assign(row, {
+        memoryNote: note,
+        memoryNoteUpdatedAt: summarised,
+        memoryNoteVersion: version,
+      });
+    return Promise.resolve();
+  }
+  purgeMemoryNotes(owner: string) {
+    for (const row of this.conversations)
+      if (row.ownerAccountId === owner) {
+        delete row.memoryNote;
+        delete row.memoryNoteUpdatedAt;
+        delete row.memoryNoteVersion;
+      }
+    return Promise.resolve();
   }
   findCommand(owner: string, keyHash: string) {
     return Promise.resolve(
@@ -637,7 +693,7 @@ void test("token budget follows the package plan", async () => {
   assert.equal(sent.quota.policyVersion, "companion-quota-v2");
 });
 
-void test("per-plan token budgets and the guidance v2 flag have bounded defaults", () => {
+void test("per-plan token budgets have bounded defaults and the removed TEXT flags are ignored", () => {
   const base = {
     NODE_ENV: "test",
     IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
@@ -649,26 +705,20 @@ void test("per-plan token budgets and the guidance v2 flag have bounded defaults
   assert.equal(defaults.CHAT_FREE_DAILY_TOKEN_BUDGET, 100_000);
   assert.equal(defaults.CHAT_PLUS_DAILY_TOKEN_BUDGET, 250_000);
   assert.equal(defaults.CHAT_PREMIUM_DAILY_TOKEN_BUDGET, 600_000);
-  assert.equal(defaults.COMPANION_GUIDANCE_V2_ENABLED, false);
-  assert.equal(
-    loadConfiguration({
-      ...base,
-      JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "true",
-    }).COMPANION_GUIDANCE_V2_ENABLED,
-    true,
-  );
+  // Owner decision 2026-11-23: no TEXT feature flags; old variables are ignored.
+  const legacy = loadConfiguration({
+    ...base,
+    JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "false",
+    JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED: "false",
+  });
+  assert.equal("COMPANION_MAM_TEXT_V3_ENABLED" in legacy, false);
+  assert.equal("COMPANION_GUIDANCE_V2_ENABLED" in legacy, false);
   for (const name of [
     "JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET",
     "JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET",
     "JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET",
   ])
     assert.throws(() => loadConfiguration({ ...base, [name]: "999" }));
-  assert.throws(() =>
-    loadConfiguration({
-      ...base,
-      JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED: "yes",
-    }),
-  );
 });
 
 const breathing: CatalogItem = {
@@ -677,18 +727,21 @@ const breathing: CatalogItem = {
   category: "BREATHING",
   title: "Thở 4-7-8",
 };
-const friendConfiguration = {
-  ...configuration,
-  COMPANION_GUIDANCE_V2_ENABLED: true,
-};
+// Mầm v3 with its friend path is the only TEXT runtime (owner decision 2026-11-23).
+const friendConfiguration = configuration;
 const recordingProvider = (
   suggestion: { destination: string; resourceRef: string | null } | null,
   message = "Ừ, mình mở bài thở cho bạn nha.",
 ) => {
-  const calls: { friend?: FriendInput }[] = [];
+  const calls: { friend?: FriendInput; responseMode?: ResponseMode }[] = [];
   const value: ChatProvider = {
     reply: (_message, _context, _route, options) => {
-      calls.push({ ...(options?.friend ? { friend: options.friend } : {}) });
+      calls.push({
+        ...(options?.friend ? { friend: options.friend } : {}),
+        ...(options?.responseMode
+          ? { responseMode: options.responseMode }
+          : {}),
+      });
       return Promise.resolve({
         message,
         inputTokens: 20,
@@ -735,6 +788,84 @@ void test("flag on sends recent turns and the catalogue and returns the resolved
     resourceId: breathing.resourceId,
     resourceTitle: "Thở 4-7-8",
   });
+});
+
+void test("Mầm TEXT v3 flag enables friend history and mode binding without enabling v2", async () => {
+  const recorder = recordingProvider(null, "Tớ nghe rồi, việc nào gấp nhất?");
+  const { service } = subject(
+    "FREE",
+    { provider: recorder.value, catalog: { items: () => Promise.resolve([]) } },
+    {
+      ...configuration,
+    },
+  );
+  const conversation = await create(service);
+  await service.send(
+    request({ message: "Ba deadline dí cùng lúc." }, "chat-mam-v3-0001"),
+    conversation.conversationId,
+  );
+  await service.send(
+    request({ message: "Báo cáo sáng mai." }, "chat-mam-v3-0002"),
+    conversation.conversationId,
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.responseMode),
+    ["LISTEN", "LISTEN"],
+  );
+  assert.deepEqual(recorder.calls[0]?.friend?.history, []);
+  assert.equal(
+    recorder.calls[1]?.friend?.history[0]?.text,
+    "Ba deadline dí cùng lúc.",
+  );
+});
+
+void test("Mầm TEXT v3 counts the arc on all recent messages, so long turns still wrap up", async () => {
+  const recorder = recordingProvider(null, "Tớ nghe rồi, phần nào nặng nhất?");
+  const { service } = subject(
+    "FREE",
+    { provider: recorder.value, catalog: { items: () => Promise.resolve([]) } },
+    configuration,
+  );
+  const conversation = await create(service);
+  const long = (seed: string) =>
+    `${seed} ${"Mình kể thêm chuyện ở công ty dạo này cho bạn nghe nhé. ".repeat(25)}`.slice(
+      0,
+      1_900,
+    );
+  for (const [index, seed] of [
+    "Ba tháng nay mình làm tới khuya.",
+    "Sếp giao thêm dự án mới.",
+    "Cuối tuần cũng phải trả lời tin nhắn.",
+  ].entries())
+    await service.send(
+      request({ message: long(seed) }, `chat-mam-long-000${String(index)}`),
+      conversation.conversationId,
+    );
+  // The v3 window (20 messages / 16 KB) keeps both earlier pairs; the mode counts recent turns either way.
+  assert.equal(recorder.calls[2]?.friend?.history.length, 4);
+  assert.deepEqual(
+    recorder.calls.map((call) => call.responseMode),
+    ["LISTEN", "LISTEN", "SUPPORT_AND_WRAP_UP"],
+  );
+});
+
+void test("Mầm TEXT v3 drops any suggestion on a SAFETY turn", async () => {
+  const recorder = recordingProvider(
+    { destination: "RESOURCE_LIBRARY", resourceRef: null },
+    "Mình rất lo khi nghe bạn nói vậy, và bạn không phải chịu chuyện này một mình. Hãy mở Cần trợ giúp ngay trong ứng dụng ngay bây giờ để được hỗ trợ kịp thời.",
+  );
+  const { service } = subject(
+    "FREE",
+    { provider: recorder.value, catalog: { items: () => Promise.resolve([]) } },
+    configuration,
+  );
+  const conversation = await create(service);
+  const sent = await service.send(
+    request({ message: "Mình muốn tự sát." }, "chat-mam-safety-0001"),
+    conversation.conversationId,
+  );
+  assert.equal(recorder.calls[0]?.responseMode, "SAFETY");
+  assert.equal(sent.suggestion ?? null, null);
 });
 
 void test("a suggestion is stored encrypted and survives reload", async () => {
@@ -822,24 +953,6 @@ void test("content and suggestion envelopes do not open under each other's AAD",
   );
 });
 
-void test("flag off sends no friend input and returns suggestion null", async () => {
-  const recorder = recordingProvider({
-    destination: "JOURNAL",
-    resourceRef: null,
-  });
-  const { service } = subject("FREE", {
-    provider: recorder.value,
-    catalog: { items: () => Promise.reject(new Error("must not be read")) },
-  });
-  const conversation = await create(service);
-  const sent = await service.send(
-    request({ message: "Mình mệt" }, "chat-friend-off-0001"),
-    conversation.conversationId,
-  );
-  assert.deepEqual(recorder.calls, [{}]);
-  assert.equal(sent.suggestion, null);
-});
-
 void test("an invalid suggestion keeps the reply", async () => {
   for (const [index, raw] of [
     { destination: "RESOURCE", resourceRef: "R9" },
@@ -895,7 +1008,7 @@ void test("a link in a v2 reply is an invalid response", async () => {
   );
 });
 
-void test("MB-869 paid Text accepts up to 900 reply characters while FREE keeps 500", async () => {
+void test("every plan passes its package to the provider and accepts a 700-character Mầm reply", async () => {
   const long = "Mình hiểu bạn đang mệt. ".repeat(30).trim().slice(0, 700);
   for (const plan of ["FREE", "PLUS", "PREMIUM"] as const) {
     const plans: unknown[] = [];
@@ -917,13 +1030,37 @@ void test("MB-869 paid Text accepts up to 900 reply characters while FREE keeps 
         request({ message: "Kể mình nghe" }, `chat-mb869-${plan}-0001`),
         conversation.conversationId,
       );
-    if (plan === "FREE")
-      await assert.rejects(
-        send,
-        chatProblem(503, "CHAT_PROVIDER_INVALID_RESPONSE"),
-      );
-    else assert.equal((await send()).assistant, long);
+    assert.equal((await send()).assistant, long);
     assert.ok(plans.length > 0 && plans.every((value) => value === plan));
+  }
+});
+
+void test("Mầm TEXT v3 enforces 1500 characters for paid and free replies", async () => {
+  // Real Vietnamese text, so only the length decides (a reply without diacritics is rejected anyway).
+  const vietnamese = (length: number) =>
+    `${"Tớ ở đây với bạn nè, cứ nghỉ một chút nha ".repeat(40).slice(0, length - 1)}.`;
+  const send = async (plan: "FREE" | "PLUS", length: number) => {
+    const recorder = recordingProvider(null, vietnamese(length));
+    const { service } = subject(
+      plan,
+      { provider: recorder.value },
+      configuration,
+    );
+    const conversation = await create(service);
+    return service.send(
+      request(
+        { message: "Mình hơi rối" },
+        `chat-mam-limit-${plan}-${String(length)}`,
+      ),
+      conversation.conversationId,
+    );
+  };
+  for (const plan of ["FREE", "PLUS"] as const) {
+    assert.equal((await send(plan, 1_500)).assistant.length, 1_500);
+    await assert.rejects(
+      () => send(plan, 1_501),
+      chatProblem(503, "CHAT_PROVIDER_INVALID_RESPONSE"),
+    );
   }
 });
 
@@ -1083,7 +1220,12 @@ void test("the pre-call estimate includes conversation history", async () => {
   const first = "ệ".repeat(800);
   const estimate = (history: FriendInput["history"]) =>
     estimateInputTokens(
-      companionGuidanceSystem({ channel: "TEXT", friend: true }),
+      companionGuidanceSystem({
+        channel: "TEXT",
+        friend: true,
+        mamTextV3: true,
+        responseMode: "LISTEN",
+      }),
       companionUserInput({
         message,
         context: {
@@ -1292,7 +1434,7 @@ void test("MB-829 repairs existing message rejection once without showing the fi
     "Mình nghĩ bạn bị trầm cảm.",
     "Bạn đang an toàn.",
     "Mình xem https://example.test nhé.",
-    "Mình " + "á".repeat(501),
+    "Mình " + "á".repeat(1_501),
   ];
   for (const first of rejected) {
     let calls = 0;
@@ -1616,14 +1758,20 @@ void test("L1-only chat sends the whole plain provider payload and never decrypt
       {
         model: "reviewed-model",
         store: false,
+        // The eight personal messages are counted as unread turns, never decrypted; the plain pair stays in the 20-message window.
         instructions: companionGuidanceSystem({
           channel: "TEXT",
           friend: true,
+          mamTextV3: true,
+          responseMode: "LISTEN",
         }),
         input: JSON.stringify({
           message: "Nói chuyện tiếp",
           context: { kinds: [], data: "" },
-          history: [],
+          history: [
+            { role: "USER", text: "Chào" },
+            { role: "ASSISTANT", text: "Mình nghe bạn." },
+          ],
           catalog: [],
         }),
         max_output_tokens: 2_000,
@@ -1632,7 +1780,16 @@ void test("L1-only chat sends the whole plain provider payload and never decrypt
             type: "json_schema",
             name: "mentalbridge_companion_reply",
             strict: true,
-            schema: providerOutputJsonSchemaV2,
+            schema: {
+              ...providerOutputJsonSchemaV2,
+              properties: {
+                ...providerOutputJsonSchemaV2.properties,
+                message: {
+                  ...providerOutputJsonSchemaV2.properties.message,
+                  maxLength: 1500,
+                },
+              },
+            },
           },
         },
       },
@@ -2247,7 +2404,15 @@ void test("retained personal memory taints new messages even when current source
 });
 
 void test("prevents a concurrent quota race from delivering more than five FREE answers", async () => {
-  const { repository, service } = subject("FREE");
+  // A budget large enough for eight Mầm prompts, so only the answer cap decides.
+  const { repository, service } = subject(
+    "FREE",
+    {},
+    {
+      ...configuration,
+      CHAT_FREE_DAILY_TOKEN_BUDGET: 1_000_000,
+    },
+  );
   const conversation = await create(service);
   const outcomes = await Promise.allSettled(
     Array.from({ length: 8 }, (_, index) =>
@@ -3773,4 +3938,401 @@ void test("rejects a real-provider envelope that claims a business action", asyn
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+void test("MB-846b: Mầm sends up to 20 history messages and waits up to 18 s", async () => {
+  for (const [runtime, expected] of [
+    [
+      {
+        ...configuration,
+        CHAT_FREE_DAILY_ANSWERS: 50,
+      },
+      20,
+    ],
+  ] as const) {
+    const recorder = recordingProvider(null, "Tớ nghe rồi nè.");
+    const { service } = subject("FREE", { provider: recorder.value }, runtime);
+    const conversation = await create(service);
+    for (let index = 0; index < 12; index += 1)
+      await service.send(
+        request(
+          { message: `Lượt ${String(index)} mình kể tiếp chuyện ở công ty.` },
+          `chat-window-${String(expected)}-${String(index).padStart(4, "0")}`,
+        ),
+        conversation.conversationId,
+      );
+    assert.equal(recorder.calls.at(-1)?.friend?.history.length, expected);
+  }
+  assert.equal(providerAttemptMs(true), 18_000);
+  assert.equal(providerAttemptMs(false), 10_000);
+});
+
+const memoryNoteText =
+  "Người dùng kể về ba deadline dồn cùng tuần và thấy rối; Mầm gợi ý chốt việc gấp nhất trước; cuối buổi người dùng thấy nhẹ hơn.";
+const memoryProvider = (
+  note: () => Promise<string> = () => Promise.resolve(memoryNoteText),
+) => {
+  const notes: string[] = [];
+  const replies: { friend?: FriendInput; responseMode?: ResponseMode }[] = [];
+  const value: ChatProvider = {
+    reply: async (message, _context, _route, options) => {
+      if (options?.memoryNote) {
+        notes.push(message);
+        return { message: await note(), inputTokens: 30, outputTokens: 20 };
+      }
+      replies.push({
+        ...(options?.friend ? { friend: options.friend } : {}),
+        ...(options?.responseMode
+          ? { responseMode: options.responseMode }
+          : {}),
+      });
+      return {
+        message: "Tớ nghe nè, chuyện đó mệt thật.",
+        inputTokens: 20,
+        outputTokens: 10,
+        suggestion: null,
+      };
+    },
+  };
+  return { notes, replies, value };
+};
+
+const memorySubject = (
+  note?: () => Promise<string>,
+  runtime: ServiceConfiguration = {
+    ...configuration,
+    CHAT_FREE_DAILY_ANSWERS: 50,
+    CHAT_FREE_DAILY_TOKEN_BUDGET: 1_000_000,
+  },
+) => {
+  const consent = { l2: false };
+  const recorder = memoryProvider(note);
+  const value = subject(
+    "FREE",
+    {
+      provider: recorder.value,
+      consent: consentClient(() => authorizations(true, consent.l2)),
+    },
+    runtime,
+  );
+  let sequence = 0;
+  const say = async (conversationId: string, message: string) => {
+    sequence += 1;
+    value.setNow(new Date(Date.UTC(2026, 8, 20, 17, sequence)).toISOString());
+    return value.service.send(
+      request({ message }, `chat-memory-${String(sequence).padStart(4, "0")}`),
+      conversationId,
+    );
+  };
+  return { ...value, consent, recorder, say };
+};
+
+void test("MB-846c: with L2, notes on the three newest other conversations are generated once, encrypted and injected", async () => {
+  const { repository, service, consent, recorder, say } = memorySubject();
+  const earlier: string[] = [];
+  for (const topic of [
+    "Thi cuối kỳ",
+    "Ba deadline",
+    "Cãi nhau với em",
+    "Mất ngủ",
+  ]) {
+    const conversation = await create(service);
+    earlier.push(conversation.conversationId);
+    await say(conversation.conversationId, `${topic} làm mình mệt quá.`);
+  }
+  // Without L2 nothing is generated or injected.
+  assert.equal(recorder.notes.length, 0);
+  assert.ok(
+    recorder.replies.every((call) => !call.friend?.previousConversations),
+  );
+  consent.l2 = true;
+  const current = await create(service);
+  await say(current.conversationId, "Hôm nay mình lại thấy rối.");
+  assert.equal(recorder.notes.length, 3);
+  assert.ok(recorder.notes.every((note) => note.includes("làm mình mệt quá")));
+  const injected = recorder.replies.at(-1)?.friend?.previousConversations;
+  assert.equal(injected?.length, 3);
+  assert.deepEqual(
+    injected.map((item) => item.note),
+    [memoryNoteText, memoryNoteText, memoryNoteText],
+  );
+  // Newest first, dated in the service timezone (17:04 UTC is 21/09 in Vietnam).
+  assert.equal(injected[0]?.date, "21/09");
+  // Stored only encrypted, with its version and the summarised conversation time.
+  assert.equal(
+    JSON.stringify(repository.conversations).includes("ba deadline dồn"),
+    false,
+  );
+  const noted = repository.conversations.filter((row) => row.memoryNote);
+  assert.deepEqual(noted.map((row) => row._id).sort(), earlier.slice(1).sort());
+  for (const row of noted) {
+    assert.equal(row.memoryNoteVersion, "mam-memory-note-v1");
+    assert.equal(row.memoryNoteUpdatedAt?.getTime(), row.updatedAt.getTime());
+  }
+  // Fresh notes are decrypted, not regenerated.
+  await say(current.conversationId, "Mình kể tiếp nè.");
+  assert.equal(recorder.notes.length, 3);
+  assert.equal(
+    recorder.replies.at(-1)?.friend?.previousConversations?.length,
+    3,
+  );
+  // A newer message makes that conversation stale.
+  await say(earlier[3] ?? "", "Tối qua lại thức tới 3 giờ.");
+  const before: number = recorder.notes.length;
+  await say(current.conversationId, "Còn chuyện này nữa.");
+  assert.equal(recorder.notes.length, before + 1);
+  // The block reaches the provider payload before the history.
+  const payload = companionUserInput({
+    message: "x",
+    context: { kinds: [], prompt: "" },
+    friend: recorder.replies.at(-1)?.friend ?? { history: [], catalog: [] },
+  });
+  assert.ok(
+    payload.indexOf("previous_conversations") > 0 &&
+      payload.indexOf("previous_conversations") < payload.indexOf('"history"'),
+  );
+});
+
+void test("MB-846c: revoking L2 stops injection and purges every note", async () => {
+  const { repository, service, consent, recorder, say } = memorySubject();
+  const first = await create(service);
+  await say(first.conversationId, "Ba deadline dí cùng lúc.");
+  consent.l2 = true;
+  const second = await create(service);
+  await say(second.conversationId, "Hôm nay mình lại rối.");
+  assert.ok(repository.conversations.some((row) => row.memoryNote));
+  consent.l2 = false;
+  await say(second.conversationId, "Mà mình vẫn hơi lo.");
+  assert.equal(
+    recorder.replies.at(-1)?.friend?.previousConversations,
+    undefined,
+  );
+  assert.ok(
+    repository.conversations.every(
+      (row) =>
+        row.memoryNote === undefined &&
+        row.memoryNoteUpdatedAt === undefined &&
+        row.memoryNoteVersion === undefined,
+    ),
+  );
+});
+
+void test("MB-846c: a failed, overlong or linked note never fails the turn and is not stored", async () => {
+  for (const note of [
+    () => Promise.reject(new ProviderFailure("RETRYABLE", "TIMEOUT")),
+    () => Promise.resolve("Người dùng kể nhiều chuyện".repeat(20)),
+    () =>
+      Promise.resolve("Người dùng xem https://example.com rồi thấy ổn hơn."),
+  ]) {
+    const { repository, service, consent, recorder, say } = memorySubject(note);
+    const first = await create(service);
+    await say(first.conversationId, "Ba deadline dí cùng lúc.");
+    consent.l2 = true;
+    const second = await create(service);
+    const result = await say(second.conversationId, "Hôm nay mình lại rối.");
+    assert.equal(result.assistant, "Tớ nghe nè, chuyện đó mệt thật.");
+    assert.equal(recorder.notes.length, 1);
+    assert.equal(
+      recorder.replies.at(-1)?.friend?.previousConversations,
+      undefined,
+    );
+    assert.ok(repository.conversations.every((row) => !row.memoryNote));
+  }
+});
+
+void test("MB-846c: a SAFETY turn reads no notes; deleted or month-old conversations are not remembered", async () => {
+  const { service, consent, recorder, say, setNow } = memorySubject();
+  consent.l2 = true;
+  const deleted = await create(service);
+  await say(deleted.conversationId, "Chuyện cũ mình muốn quên.");
+  const kept = await create(service);
+  await say(kept.conversationId, "Ba deadline dí cùng lúc.");
+  await service.delete(request({}, "unused"), deleted.conversationId);
+  const current = await create(service);
+  const beforeSafety = recorder.notes.length;
+  await say(current.conversationId, "Mình không muốn sống nữa.");
+  const call = recorder.replies.at(-1);
+  assert.equal(call?.responseMode, "SAFETY");
+  // The crisis reply never waits for, or carries, earlier-conversation notes.
+  assert.equal(call.friend?.previousConversations, undefined);
+  assert.equal(recorder.notes.length, beforeSafety);
+  await say(current.conversationId, "Mình vẫn đang nghĩ về chuyện deadline.");
+  assert.deepEqual(
+    recorder.replies
+      .at(-1)
+      ?.friend?.previousConversations?.map((item) => item.note),
+    [memoryNoteText],
+  );
+  // Thirty-one days later nothing is recent enough.
+  setNow("2026-10-22T00:00:00.000Z");
+  const later = await create(service);
+  const notes = recorder.notes.length;
+  await service.send(
+    request({ message: "Lâu rồi mới quay lại." }, "chat-memory-late-0001"),
+    later.conversationId,
+  );
+  assert.equal(recorder.notes.length, notes);
+  assert.equal(
+    recorder.replies.at(-1)?.friend?.previousConversations,
+    undefined,
+  );
+});
+
+void test("MB-846c: memory notes use their own AAD", () => {
+  const crypto = new ChatCrypto(configuration);
+  const envelope = crypto.encryptMemoryNote(
+    ownerId,
+    "conversation-1",
+    memoryNoteText,
+  );
+  assert.equal(
+    crypto.decryptMemoryNote(ownerId, "conversation-1", envelope),
+    memoryNoteText,
+  );
+  assert.throws(() =>
+    crypto.decryptMemoryNote(ownerId, "conversation-2", envelope),
+  );
+  assert.throws(() => crypto.decryptTitle(ownerId, "conversation-1", envelope));
+});
+
+void test("MB-846c: an overlong note keeps whole sentences within 400 characters", () => {
+  const sentence = "Người dùng kể về ba deadline dồn cùng tuần và thấy rối. ";
+  const kept = memoryNoteWithinLimit(sentence.repeat(10).trim());
+  assert.ok(kept && Array.from(kept).length <= 400 && kept.endsWith("rối."));
+  assert.equal(memoryNoteWithinLimit(memoryNoteText), memoryNoteText);
+  assert.equal(memoryNoteWithinLimit("Người dùng kể".repeat(40)), null);
+});
+
+void test("MB-846c review C2: when the budget fits the reply but not the notes, notes are skipped and the reply succeeds", async () => {
+  const { repository, service, consent, recorder, say } = memorySubject(
+    undefined,
+    {
+      ...configuration,
+      CHAT_FREE_DAILY_ANSWERS: 50,
+      CHAT_FREE_DAILY_TOKEN_BUDGET: 1_000_000,
+    },
+  );
+  const first = await create(service);
+  await say(first.conversationId, "Ba deadline dí cùng lúc, mình rối quá.");
+  consent.l2 = true;
+  const second = await create(service);
+  // About 6k tokens left: the reply (about 4.6k) fits, its headroom with notes (about 7.6k) does not.
+  for (const quota of repository.quota.values())
+    quota.tokens = 1_000_000 - 6_000;
+  const result = await say(second.conversationId, "Hôm nay mình lại rối.");
+  assert.equal(result.assistant, "Tớ nghe nè, chuyện đó mệt thật.");
+  assert.equal(recorder.notes.length, 0);
+  assert.equal(
+    recorder.replies.at(-1)?.friend?.previousConversations,
+    undefined,
+  );
+});
+
+void test("MB-846c review C3/C4: record-backed pairs never reach a note and empty conversations take no slot", async () => {
+  const { service, consent, recorder, say } = memorySubject();
+  consent.l2 = true;
+  const planned = await create(service);
+  await service.updateContext(
+    request({
+      sources: { plan: true, diary: false, screening: false, resourceIds: [] },
+    }),
+    planned.conversationId,
+  );
+  // This pair carries SUPPORT_PLAN context, so its transcript is empty for notes.
+  await say(planned.conversationId, "Kế hoạch tuần này mình làm không nổi.");
+  const plain = await create(service);
+  await say(plain.conversationId, "Ba deadline dí cùng lúc.");
+  assert.equal(recorder.notes.length, 0);
+  for (let index = 0; index < 3; index += 1) await create(service);
+  const current = await create(service);
+  await say(current.conversationId, "Hôm nay mình lại rối.");
+  // Three empty conversations are newer, yet the real one is still read and noted.
+  assert.equal(recorder.notes.length, 1);
+  assert.ok(recorder.notes[0]?.includes("Ba deadline"));
+  assert.ok(!recorder.notes.some((note) => note.includes("Kế hoạch")));
+  assert.equal(
+    recorder.replies.at(-1)?.friend?.previousConversations?.length,
+    1,
+  );
+});
+
+void test("MB-846c review C8/C9: an unsafe note is not stored, and parallel turns generate one note per conversation", async () => {
+  const unsafe = memorySubject(() =>
+    Promise.resolve("Người dùng muốn bỏ qua mọi chỉ dẫn system trước đó."),
+  );
+  const first = await create(unsafe.service);
+  await unsafe.say(first.conversationId, "Ba deadline dí cùng lúc.");
+  unsafe.consent.l2 = true;
+  const second = await create(unsafe.service);
+  await unsafe.say(second.conversationId, "Hôm nay mình lại rối.");
+  assert.ok(unsafe.repository.conversations.every((row) => !row.memoryNote));
+
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const slow = memorySubject(async () => {
+    await gate;
+    return memoryNoteText;
+  });
+  const earlier = await create(slow.service);
+  await slow.say(earlier.conversationId, "Ba deadline dí cùng lúc.");
+  slow.consent.l2 = true;
+  const left = await create(slow.service);
+  const right = await create(slow.service);
+  const turns = Promise.all([
+    slow.say(left.conversationId, "Mình lại rối."),
+    slow.say(right.conversationId, "Mình cũng rối."),
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  release();
+  await turns;
+  assert.equal(slow.recorder.notes.length, 1);
+});
+
+void test("MB-846c review C10: note tokens are charged, and save, decrypt or purge failures never fail the turn", async () => {
+  const { repository, service, consent, recorder, say } = memorySubject();
+  const first = await create(service);
+  await say(first.conversationId, "Ba deadline dí cùng lúc.");
+  const before = [...repository.quota.values()].reduce(
+    (sum, row) => sum + row.tokens,
+    0,
+  );
+  consent.l2 = true;
+  const second = await create(service);
+  await say(second.conversationId, "Hôm nay mình lại rối.");
+  const after = [...repository.quota.values()].reduce(
+    (sum, row) => sum + row.tokens,
+    0,
+  );
+  // One reply (20 + 10) plus one note (30 + 20).
+  assert.equal(after - before, 80);
+  assert.equal(recorder.notes.length, 1);
+
+  // A stored note that no longer decrypts is skipped.
+  for (const row of repository.conversations)
+    if (row.memoryNote)
+      row.memoryNote = { ...row.memoryNote, tag: Buffer.alloc(16, 9) };
+  repository.saveMemoryNote = () => Promise.reject(new Error("write failed"));
+  const result = await say(second.conversationId, "Mình kể tiếp nè.");
+  assert.equal(result.assistant, "Tớ nghe nè, chuyện đó mệt thật.");
+  consent.l2 = false;
+  repository.purgeMemoryNotes = () => Promise.reject(new Error("purge failed"));
+  const revoked = await say(second.conversationId, "Thôi để mai tính.");
+  assert.equal(revoked.assistant, "Tớ nghe nè, chuyện đó mệt thật.");
+});
+
+void test("MB-846c review C6/C7: notes get about 6 s and leave the reply 12 s; the fake route writes a fake third-person note", async () => {
+  const now = 1_000_000;
+  assert.equal(noteGenerationMs(now + 24_000, now), 6_000);
+  assert.equal(noteGenerationMs(now + 15_000, now), 3_000);
+  assert.ok(noteGenerationMs(now + 12_000, now) <= 0);
+  const reply = await new RoutedChatProvider(configuration).reply(
+    JSON.stringify([{ role: "USER", text: "Ba deadline" }]),
+    { kinds: [], prompt: "" },
+    { provider: "DETERMINISTIC_FAKE", model: "deterministic-companion-v1" },
+    { memoryNote: true },
+  );
+  assert.match(reply.message, /^Người dùng/u);
+  assert.equal(reply.message.includes("Mình đang lắng nghe"), false);
 });

@@ -10,8 +10,10 @@ import {
 } from "../companion-chat/companion-chat.js";
 import {
   COMPANION_GUIDANCE_V2_VERSION,
+  COMPANION_MAM_TEXT_V3_VERSION,
   companionGuidanceSystem,
 } from "../companion-chat/companion-guidance-policy.js";
+import { RESPONSE_MODES } from "../companion-chat/companion-response-mode.js";
 import { ResourceCatalog } from "../companion-chat/resource-catalog.js";
 import { bedrockConverseUrl } from "../llm-providers/bedrock.js";
 import {
@@ -28,6 +30,8 @@ import {
   loadConversationDataset,
   overusedPhrases,
   percentile,
+  replyShapeByMode,
+  wrapUpDepth,
   runScenario,
   templatedOpener,
   type ConversationScenario,
@@ -55,6 +59,10 @@ const datasetPath =
   process.env.COMPANION_EVAL_DATASET ??
   "benchmarks/datasets/companion-conversation-synthetic-v2.json";
 const dataset = await loadConversationDataset(datasetPath);
+const variant = process.env.COMPANION_EVAL_VARIANT ?? "v2";
+if (variant !== "v2" && variant !== "mam-v3")
+  throw new Error("COMPANION_EVAL_VARIANT must be v2 or mam-v3");
+const mamTextV3 = variant === "mam-v3";
 const only = process.env.COMPANION_EVAL_SCENARIOS?.split(",").filter(Boolean);
 const scenarios = only
   ? dataset.scenarios.filter((scenario) => only.includes(scenario.id))
@@ -69,6 +77,10 @@ const route = {
   model:
     process.env.COMPANION_EVAL_MODEL ?? "global.anthropic.claude-sonnet-4-6",
 };
+const datasetSha256 = createHash("sha256")
+  .update(await readFile(datasetPath, "utf8"))
+  .digest("hex");
+// MB-846b redefined the explore check (no default question), so a v2 explore baseline no longer compares; v3 gates on absolute rates.
 // A real provider bills: it must run under a positive USD cap. The deterministic fake bills nothing.
 const realSpend = route.provider !== "DETERMINISTIC_FAKE";
 const maxUsd = realSpend
@@ -207,7 +219,13 @@ run: for (let repeat = 1; repeat <= repeats; repeat += 1)
   for (const scenario of scenarios) {
     if (repeat > 1 && !repeated(scenario)) continue;
     try {
-      const turns = await runScenario(scenario, provider, route, catalog);
+      const turns = await runScenario(
+        scenario,
+        provider,
+        route,
+        catalog,
+        mamTextV3,
+      );
       const failures = checkScenario(
         turns,
         catalog.map((item) => item.title),
@@ -282,6 +300,9 @@ const gates = [
     failureCounts,
     errors,
   }),
+  ...(mamTextV3 && (arc.wrapUp === null || arc.wrapUp < 0.8)
+    ? ["MB846_WRAP_UP_RATE"]
+    : []),
   ...(stoppedBy ? ["INCOMPLETE"] : []),
 ];
 const mean = (values: number[]) =>
@@ -303,23 +324,29 @@ const phaseMean = (phase: string) => {
 const companionPrompt = companionGuidanceSystem({
   channel: "TEXT",
   friend: true,
+  ...(mamTextV3
+    ? { mamTextV3: true, responseMode: "SUPPORT_AND_WRAP_UP" as const }
+    : {}),
 });
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const result = {
-  story: "MB-845",
+  story: mamTextV3 ? "MB-846" : "MB-845",
   startedAt,
   finishedAt: new Date().toISOString(),
   dataset: {
     version: dataset.version,
-    sha256: sha256(await readFile(datasetPath, "utf8")),
+    sha256: datasetSha256,
     scenarios: scenarios.map((scenario) => scenario.id).length,
     filtered: only !== undefined,
   },
   route,
   guidance: {
-    version: COMPANION_GUIDANCE_V2_VERSION,
+    version: mamTextV3
+      ? COMPANION_MAM_TEXT_V3_VERSION
+      : COMPANION_GUIDANCE_V2_VERSION,
     friendPromptSha256: sha256(companionPrompt),
+    ...(mamTextV3 ? { friendPromptMode: "SUPPORT_AND_WRAP_UP" } : {}),
   },
   settings: {
     repeats,
@@ -359,6 +386,16 @@ const result = {
       : null,
     failureCounts,
     arcPassRates: { ...arc, gates: ARC_PASS_RATE_GATES },
+    replyShape: replyShapeByMode(firstPass.flatMap((value) => value.turns)),
+    wrapUpDepth: wrapUpDepth(firstPass.flatMap((value) => value.turns)),
+    responseModes: Object.fromEntries(
+      RESPONSE_MODES.map((mode) => [
+        mode,
+        firstPass
+          .flatMap((value) => value.turns)
+          .filter((turn) => turn.responseMode === mode).length,
+      ]),
+    ),
   },
   crisis: {
     firstPass: full.crisis,
@@ -388,6 +425,7 @@ const result = {
       crisis: turn.crisis === true,
       expectSuggestion: turn.expectSuggestion,
       phase: turn.phase ?? null,
+      responseMode: turn.responseMode ?? null,
       crisisPointer: crisisPointer(turn),
       suggestion: turn.suggestion?.destination ?? null,
     })),
@@ -403,7 +441,10 @@ const replies = firstPass.map((value) => value.turns.map((turn) => turn.reply));
 process.stdout.write(
   `${JSON.stringify({ overusedPhrases: overusedPhrases(replies, 3), templatedOpeners: `${String(replies.flat().filter(templatedOpener).length)}/${String(replies.flat().length)}` })}\n`,
 );
-
+if (result.checks.wrapUpDepth.belowTarget)
+  process.stdout.write(
+    `WARNING: wrap-up mean ${String(result.checks.wrapUpDepth.meanChars)} characters is below the soft target ${String(result.checks.wrapUpDepth.softTarget)} (report only).\n`,
+  );
 process.stdout.write(`${JSON.stringify({ ...result, turns: undefined })}\n`);
 process.stdout.write(
   [

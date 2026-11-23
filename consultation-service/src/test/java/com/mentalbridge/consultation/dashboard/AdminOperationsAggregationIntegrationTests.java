@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.mentalbridge.consultation.ConsultationTestProperties;
@@ -27,7 +28,9 @@ import com.mentalbridge.consultation.TestcontainersConfiguration;
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 @AutoConfigureMockMvc
-@Transactional
+// Repeatable read: one snapshot for before/after, so schedulers resumed with this cached context cannot
+// commit status changes to other suites' rows between the two reads.
+@Transactional(isolation = Isolation.REPEATABLE_READ)
 class AdminOperationsAggregationIntegrationTests extends ConsultationTestProperties {
 
 	@Autowired

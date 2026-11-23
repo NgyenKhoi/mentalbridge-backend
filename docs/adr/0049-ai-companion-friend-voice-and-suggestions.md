@@ -8,7 +8,7 @@ plus its separate unchanged Voice v2 grant and eligible empty-kind Text handoff.
 
 
 - Decision ID: `MB-AI-COMPANION-FRIEND-001`
-- Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime ships behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`, default `false`.
+- Status: Accepted for MB-791 implementation by Product Owner, 2026-11-03. Runtime first shipped behind `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED`. Owner decision 2026-11-23: enabled by default; rollback = revert: TEXT always runs the Mầm v3 path with this friend history, catalogue and suggestion, and both TEXT flags are removed (owner to approve wording).
 - Owners: Journal/AI (guidance, memory, catalogue use, suggestion resolution), Content/Notification (published Resource catalogue), Web (button, routes, labels).
 - Amends prospectively: [AI Companion policy v2](../policies/ai-companion-policy-v2.md) for TEXT chat only, and the daily token clause of [ADR 0021](0021-ai-companion-conversation-and-quota.md).
 - Design: owner-approved MB-791 design (2026-11-03).
@@ -23,11 +23,11 @@ Text replies reflected and then asked a question every turn, gave no encourageme
 
 `companion-guidance-v2` and `companion-domain-knowledge-v2` apply only to TEXT while the flag is on. The companion talks like a warm long-time friend in Vietnamese, grounded only in what the user said.
 
-It comforts first. While the user is sharing a feeling and has not asked what to do, it only comforts: no tip, exercise or MentalBridge offer. Once the user asks what to do or where to go, it encourages them and gives one small idea, with one MentalBridge action when that fits. Owner review of the real-provider replies set this rule, and comforting research supports it: unsolicited advice tends to read as a judgement that the person cannot cope. (Replaced for TEXT by the [MB-845 amendment](#mb-845-amendment--caring-follow-up-arc-text-2026-11-14).)
+It comforts first. While the user is sharing a feeling and has not asked what to do, it only comforts: no tip, exercise or MentalBridge offer. Once the user asks what to do or where to go, it encourages them and gives one small idea, with one MentalBridge action when that fits. Owner review of the real-provider replies set this rule, and comforting research supports it: unsolicited advice tends to read as a judgement that the person cannot cope. (Replaced for TEXT by the MB-845 and MB-846 amendments below.)
 
 It avoids templated empathy. It does not open every reply by restating the situation and labelling the feeling, and it does not reuse a phrase from its earlier replies in the same conversation. It may use a light wish that takes the user's side for everyday troubles. It uses at most one emoji per reply, only now and then, and only in light moments, never on grief, distress, health or crisis.
 
-It asks a question only when the question moves the conversation, and never ends two replies in a row with one (replaced for TEXT by the MB-845 amendment). It addresses the user as "bạn" and itself as "mình", mirrors tui/cậu/bà/ông lightly, and never uses mày/tao.
+It asks a question only when the question moves the conversation, and never ends two replies in a row with one (replaced for TEXT by the MB-845 and MB-846 amendments below). The v2 voice addresses the user as "bạn" and itself as "mình"; the flagged Mầm v3 uses "tớ" and "bạn".
 
 It never minimises, jokes at the user or about grief, loss, self-worth, health or danger, sells features, or speaks as a clinician. Every v1 boundary stays: no diagnosis, medication, scoring, safety, eligibility or SupportPlan decisions. On a crisis cue it drops playfulness and offers, uses plain serious warmth, and points to Cần trợ giúp ngay. TEXT v2 uses temperature 0.7 on Bedrock and Gemini; OpenAI receives no temperature.
 
@@ -61,7 +61,9 @@ The daily provider token budget is per plan: FREE 100,000, PLUS 250,000, PREMIUM
 
 ## Rollout gate
 
-Switching the flag on needs all of these:
+Owner decision 2026-11-23: enabled by default; rollback = revert. The TEXT flags `JOURNAL_AI_COMPANION_GUIDANCE_V2_ENABLED` and `JOURNAL_AI_COMPANION_MAM_TEXT_V3_ENABLED` are removed, the v2 prompt remains only as the eval A/B baseline, and migration 017 (and 023 with MB-846c) must run before deploy. The gate below is the historical record.
+
+Switching the flag on needed all of these:
 
 - migration 017 applied with owner authorization;
 - a real-provider run of the synthetic conversation eval on the live TEXT route (Bedrock Sonnet 4.6), with a credit cap approved by the owner;
@@ -79,8 +81,8 @@ The signed-off run is the approval evidence for a bumped `PROVIDER_APPROVAL_VERS
 ## F1 amendment — spoken friend persona, 2026-11-03
 
 The owner selected the named Voice follow-up in the implementation session.
-This prospectively adds an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
-default `false`. The original TEXT delivery, approvals and historical Voice
+This prospectively added an independent `JOURNAL_AI_VOICE_FRIEND_ENABLED` flag,
+default `false` (removed by the MB-846d amendment below: the persona is always on). The original TEXT delivery, approvals and historical Voice
 campaigns remain under their original settings.
 
 Voice uses a compact `companion-voice-friend-v1` prompt: natural Vietnamese,
@@ -156,3 +158,133 @@ replaces "length rules are unchanged" above for the cases below.
 
 The package comes from the existing Consultation entitlement decision; no new
 package value or entitlement call is added.
+
+## MB-846 amendment — Mầm TEXT response mode, 2026-11-22 (owner wording review pending)
+
+The owner first approved a separate, disabled-by-default variant. Owner decision 2026-11-23: enabled by default; rollback = revert:
+every TEXT request uses `companion-mam-text-v3`, with the v2 consent-filtered
+history, catalogue, suggestion schema, provider route, retry, quota and crisis
+pointer. Voice is unchanged.
+
+For each Mầm TEXT turn, Journal/AI selects `LISTEN`, `CLARIFY`,
+`SUPPORT_AND_WRAP_UP`, `BOUNDARY` or `SAFETY` from the current user message and
+the roles and text of the last eight messages of the same conversation. The
+count does not depend on the byte-capped history sent to the provider, so long
+messages still reach wrap-up; only the mode leaves the server. The selection is sent as an
+explicit provider directive and counted in the preflight token estimate. It
+is not a public API field, persisted record, safety diagnosis or entitlement
+decision. A direct request for practical help wraps up immediately; an explicit
+code or homework request gets a scope boundary; crisis cues take priority.
+Otherwise the first two replies in a venting arc listen and comfort, and the
+third wraps up. `CLARIFY` is chosen only on a missing-information signal
+(every answer so far is a word or two) or when the user asks to explore. The
+topic count is rebuilt from the user turns alone: it restarts after a turn
+whose mode closed it (wrap-up, boundary, safety) or after a thanks, agreement
+or feeling-better message. The lexical crisis rule matches accented
+phrases on the original text, and unaccented phrases only in messages typed
+without diacritics, so words such as “từ từ” never trigger it. It is a
+heuristic, not a Care safety determination: the provider's existing crisis
+instruction still applies when it misses a cue, and every other mode's
+directive states that this crisis rule overrides it.
+
+`SUPPORT_AND_WRAP_UP` briefly reflects the user's details, comforts, then
+gives one or two concrete practical steps fitted to those details. It ends
+without a question unless information critical for immediate safety is
+missing. `BOUNDARY` supports emotions and how to approach a problem; it does
+not write code or complete homework. Mầm says “tớ” to “bạn”, varies openers,
+avoids templated empathy, uses only occasional fitting emoji, and keeps
+replies to 1,500 characters. The 1,500-character limit applies to every
+package and supersedes the MB-869 900-character paid limit.
+The server enforces it on every reply (an over-limit reply is retried once,
+then refused); the output schema also carries it where the provider supports
+it, which Bedrock does not. Humour scales with distress: playful teasing only
+on mild, everyday stress, never on grief, loss, abuse, self-blame, severe
+distress or a crisis cue.
+`SAFETY` retains the existing fixed crisis reply, and the server drops any
+suggestion on a `SAFETY` turn. The
+earlier MB-845 question/advice rule remains the v2 rollback behavior.
+
+MB-846b follow-up, 2026-11-22 (owner wording review pending): replies vary in
+length with the moment, from one short sentence to a few short paragraphs
+under the 1,500-character limit, and Mầm asks no follow-up question by
+default. The prompt states: “Do not ask follow-up questions by default. When
+sufficient context exists, provide helpful guidance and end naturally. Ask at
+most ONE question, only when essential information is missing or the user
+explicitly wants to explore further. Do not optimize for conversation
+length.” Only `CLARIFY` may end with one question; `LISTEN` comforts without
+one. This supersedes, for Mầm TEXT v3 only, the MB-845 rule that the first
+replies of a venting arc end with a question. Mầm never claims to remember
+anything outside the history it was given. Because deep replies reach 1,500 characters, Mầm
+sends the last 20 same-conversation messages within 16,000 bytes (v2 keeps
+8 messages within 3,000 bytes), and one provider attempt may take up to 18
+seconds inside the unchanged 24-second send deadline.
+
+The real Sonnet 4.6 gate is wrap-up ≥0.80 per turn, explore ≥0.80 per turn
+under the MB-846b definition (no question, or one question only where the
+dataset marks essential information as missing, where a missing question
+also fails), no provider error (a reply over 1,500 characters is one), and
+crisis pointer 1.0. The web and mobile send-response validators must accept
+1,500 characters before this backend deploys; the frontend PRs merge first
+(mobile #340 is merged). The owner's wording review of this amendment is
+pending.
+
+## MB-846d amendment — Mầm Voice always on, about 800 characters, 2026-11-23
+
+Owner decision 2026-11-23: enabled by default; rollback = revert. There are no
+Voice feature flags: `JOURNAL_AI_VOICE_FRIEND_ENABLED`,
+`JOURNAL_AI_VOICE_TEXT_HANDOFF_ENABLED`, `JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED`,
+`JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED` and the Agent's
+`AI_VOICE_SPEECH_UNITS_ENABLED` are removed and old values are ignored. Voice
+always uses the Mầm prompt `companion-voice-friend-v2`, selected Text handoff is
+always available, and speech units stream through ConverseStream whenever the
+approved Voice Bedrock route is configured. `JOURNAL_AI_VOICE_ENABLED` (the live
+credential switch), the pilot and spend caps, the 1,900-token input cap (fail
+closed), entitlement, consent, quota, lease, deadlines, recording and retention
+are unchanged and are not feature flags.
+
+The persona mirrors Mầm TEXT v3: tớ/bạn; the owner's no-default-question rule
+verbatim; comfort first, then one or two concrete steps with a short how or why
+when the user needs help; varied natural endings; humour only on everyday stress
+and never on a crisis cue; no claimed memory beyond the supplied turns; no emoji,
+emoticons, markup, lists or URLs read aloud. Cross-conversation memory notes
+(MB-846c) are not injected into Voice in this change. The crisis line is
+unchanged: serious warmth and a pointer to Cần trợ giúp ngay.
+
+A spoken reply is at most 800 characters (was 500), enforced by the provider
+schema, the server validator for each speech unit and their combined text, the
+speech-unit contract and the Agent. An over-length reply fails the turn; the
+Voice turn is one counted provider call, so there is no retry. A pilot output
+cap now defaults to 600 tokens and a measurement pilot requires 600; a measured
+turn reserves 800 campaign TTS characters. The prompt asks for about 400–650
+characters on help replies (never more than 700) and a first speech unit of at
+most about 400, leaving margin under the hard 800, because a failed Voice turn
+ends the call (Agent outcome `TEXT_OR_PUSH_TO_TALK`) and a later unit can fail
+after the first was already heard.
+
+Consequences of removing the flags:
+- Every Voice Bedrock turn now makes one serial CountTokens call before
+  inference (about one extra HTTPS round trip). A 4xx/5xx from CountTokens fails
+  the turn. Over 1,900 tokens, Journal drops the oldest history pair (selected
+  Text first, then current call) and counts again; it refuses only when no
+  history is left. The system and safety text are never trimmed. CountTokens is
+  not the counted provider call, so the one-call contract holds.
+- Bounded Voice omits Bedrock `outputConfig` so CountTokens counts the exact
+  input; the JSON shape comes from the schema inlined in the prompt. This is an
+  accepted gap: the server schema and validator stay the guard, and an invalid
+  shape fails the turn (`OUTPUT_JSON_INVALID` / `OUTPUT_SCHEMA_INVALID`).
+- **Deploy coupling:** Journal and Agent images must deploy together in one
+  step. Either one alone fails every Voice call: the speech-unit limit changed
+  from 500 to 800 on both sides, and a Journal with the approved route always
+  expects the speech-unit capability.
+- A `JOURNAL_AI_VOICE_PILOT` measurement JSON that still sets
+  `maxOutputTokens: 300` now fails configuration load, and existing measurement
+  config hashes no longer match; open only new windows. The Agent plain-pilot
+  TTS budget (`AI_VOICE_PILOT_TTS_MAX_CHARACTERS`, default 1,200 per session)
+  covers about one 800-character turn; raise it for a pilot.
+- Journal analysis: removing `JOURNAL_AI_ANALYSIS_ENABLED` is the same owner
+  decision. Production, where the old default was off, now starts the
+  exact-revision and longitudinal workers in every instance. Each polls Mongo for
+  due retries and expired leases every 2,000 ms by default (was 250 ms; requests
+  dispatch immediately, so the poll is only recovery), and leases keep multiple
+  instances correct. Provider spend follows consented user analysis requests;
+  there is no extra per-user analysis cap.

@@ -68,21 +68,15 @@ void test("independent speech contract and its configuration gate are reviewable
     assert.equal(route["x-mentalbridge-status"], "implemented");
     assert.equal(route.post["x-mentalbridge-status"], "implemented");
   }
-  assert.equal(loadConfiguration(approved).VOICE_SPEECH_UNITS_ENABLED, false);
-  assert.equal(
+  assert.ok(
     loadConfiguration({
       ...approved,
-      JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
-      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
       JOURNAL_AI_VOICE_PILOT: JSON.stringify(pilotWindow),
-    }).VOICE_SPEECH_UNITS_ENABLED,
-    true,
+    }).VOICE_PILOT,
   );
-  assert.equal(
+  assert.ok(
     loadConfiguration({
       ...approved,
-      JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
-      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
       JOURNAL_AI_VOICE_PILOT: JSON.stringify({
         ...pilotWindow,
         measurement: {
@@ -95,23 +89,8 @@ void test("independent speech contract and its configuration gate are reviewable
           voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
         },
       }),
-    }).VOICE_SPEECH_UNITS_ENABLED,
-    true,
+    }).VOICE_PILOT?.measurement,
   );
-  // MB-891: speech units no longer need a pilot window; entitlement quota bounds ordinary calls.
-  assert.equal(
-    loadConfiguration({
-      ...approved,
-      JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
-      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
-    }).VOICE_SPEECH_UNITS_ENABLED,
-    true,
-  );
-  for (const env of [
-    { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true" },
-    { JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "yes" },
-  ])
-    assert.throws(() => loadConfiguration({ ...approved, ...env }));
   for (const value of [
     {
       ...pilotWindow,
@@ -123,8 +102,6 @@ void test("independent speech contract and its configuration gate are reviewable
     assert.throws(() =>
       loadConfiguration({
         ...approved,
-        JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED: "true",
-        JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
         JOURNAL_AI_VOICE_PILOT: JSON.stringify(value),
       }),
     );
@@ -150,7 +127,7 @@ void test("measurement snapshot reports effective fixed allocations instead of t
   const snapshot = journalVoiceMeasurementSnapshot(config);
   assert.equal(snapshot.pilot?.maxSessionSeconds, 240);
   assert.equal(snapshot.pilot.maxTurnsPerSession, 6);
-  assert.equal(snapshot.outputTokenLimit, 300);
+  assert.equal(snapshot.outputTokenLimit, 600);
 });
 
 void test("Journal measurement snapshots report actual default, Friend and pilot limits without normalizing them", () => {
@@ -162,20 +139,12 @@ void test("Journal measurement snapshots report actual default, Friend and pilot
     capturedAt: now.toISOString(),
     voiceEnabled: false,
     providerEnabled: true,
-    inputGuardEnabled: false,
-    inputTokenLimit: null,
+    inputGuardEnabled: true,
+    inputTokenLimit: 1900,
     outputTokenLimit: 2000,
     pilot: null,
     concurrencyLimit: 2,
   });
-  const friend = loadConfiguration({
-    ...approved,
-    JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
-  });
-  const friendSnapshot = journalVoiceMeasurementSnapshot(friend, now);
-  assert.equal(friendSnapshot.inputGuardEnabled, true);
-  assert.equal(friendSnapshot.inputTokenLimit, 1900);
-  assert.equal(friendSnapshot.outputTokenLimit, 2000);
   const pilot = loadConfiguration({
     ...approved,
     JOURNAL_AI_VOICE_PILOT: JSON.stringify(pilotWindow),
@@ -188,7 +157,7 @@ void test("Journal measurement snapshots report actual default, Friend and pilot
     providerEnabled: true,
     inputGuardEnabled: true,
     inputTokenLimit: 1900,
-    outputTokenLimit: 300,
+    outputTokenLimit: 600,
     pilot: {
       startsAt: pilotWindow.startsAt,
       endsAt: pilotWindow.endsAt,
@@ -209,7 +178,6 @@ void test("effective Bedrock limits preserve Text, pilot overrides and scoped re
   for (const maxOutputTokens of [undefined, 300, 450, 600]) {
     const configuration = loadConfiguration({
       ...approved,
-      JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
       JOURNAL_AI_VOICE_PILOT: JSON.stringify({
         ...pilotWindow,
         maxOutputTokens,
@@ -223,11 +191,11 @@ void test("effective Bedrock limits preserve Text, pilot overrides and scoped re
     assert.deepEqual(effectiveBedrockRequestLimits(configuration, true), {
       inputGuardEnabled: true,
       inputTokenLimit: 1900,
-      outputTokenLimit: maxOutputTokens ?? 300,
+      outputTokenLimit: maxOutputTokens ?? 600,
     });
     assert.equal(
       journalVoiceMeasurementSnapshot(configuration).outputTokenLimit,
-      maxOutputTokens ?? 300,
+      maxOutputTokens ?? 600,
     );
   }
 });
@@ -363,7 +331,7 @@ void test("snapshot command reads valid production configuration without startin
     >;
     assert.equal(snapshot.voiceEnabled, true);
     assert.equal(snapshot.providerEnabled, true);
-    assert.equal(snapshot.inputGuardEnabled, false);
+    assert.equal(snapshot.inputGuardEnabled, true);
     assert.equal(snapshot.outputTokenLimit, 2000);
     assert.equal(snapshot.pilot, null);
     assert.equal(calls, 0);
@@ -401,43 +369,6 @@ void test("standalone snapshot CLI refuses dotenv-based activation without readi
   }
 });
 
-void test("Voice friend tone defaults off and accepts only its explicit boolean flag", () => {
-  assert.equal(loadConfiguration(identity).VOICE_FRIEND_ENABLED, false);
-  const configuration = loadConfiguration({
-    ...identity,
-    JOURNAL_AI_VOICE_FRIEND_ENABLED: "true",
-  });
-  assert.equal(configuration.VOICE_FRIEND_ENABLED, true);
-  assert.equal(configuration.COMPANION_GUIDANCE_V2_ENABLED, false);
-  assert.equal(configuration.VOICE_MEDIA?.enabled, false);
-  assert.throws(() =>
-    loadConfiguration({
-      ...identity,
-      JOURNAL_AI_VOICE_FRIEND_ENABLED: "yes",
-    }),
-  );
-});
-
-void test("Voice ConverseStream defaults off and rejects nonboolean activation", () => {
-  assert.equal(
-    loadConfiguration(identity).VOICE_CONVERSE_STREAM_ENABLED,
-    false,
-  );
-  assert.equal(
-    loadConfiguration({
-      ...identity,
-      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "true",
-    }).VOICE_CONVERSE_STREAM_ENABLED,
-    true,
-  );
-  assert.throws(() =>
-    loadConfiguration({
-      ...identity,
-      JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED: "yes",
-    }),
-  );
-});
-
 void test("Voice pins Sonnet independently of fake/Gemini Text while admission remains disabled", () => {
   const configuration = loadConfiguration(approved);
   assert.equal(configuration.VOICE_MEDIA?.enabled, false);
@@ -452,7 +383,7 @@ void test("Voice pins Sonnet independently of fake/Gemini Text while admission r
       model: "global.anthropic.claude-sonnet-4-6",
       providerApprovalVersion: "mb762-po-20261029-sonnet",
       routingPolicyVersion: "companion-voice-sonnet-v1",
-      promptVersion: "companion-chat-v1",
+      promptVersion: "companion-voice-friend-v2",
     });
   }
 });
@@ -512,12 +443,15 @@ void test("Voice transport targets the actual Singapore Sonnet Converse endpoint
   });
   let calls = 0;
   globalThis.fetch = (url, init) => {
-    calls++;
     const endpoint = url instanceof Request ? new URL(url.url) : new URL(url);
     assert.equal(
       endpoint.origin,
       "https://bedrock-runtime.ap-southeast-1.amazonaws.com",
     );
+    // MB-846d: every Voice request counts its exact input first (1,900-token cap).
+    if (endpoint.pathname.endsWith("/count-tokens"))
+      return Promise.resolve(Response.json({ inputTokens: 900 }));
+    calls++;
     assert.equal(
       decodeURIComponent(endpoint.pathname),
       "/model/global.anthropic.claude-sonnet-4-6/converse",
@@ -632,7 +566,7 @@ void test("pilot counts the exact prompt before Converse, caps output and never 
     invocations++;
     assert.ok(Array.isArray(body.system));
     assert.equal(body.system[0]?.text, countSystem);
-    assert.equal(body.inferenceConfig?.maxTokens, 300);
+    assert.equal(body.inferenceConfig?.maxTokens, 600);
     assert.equal(Object.hasOwn(body, "outputConfig"), false);
     assert.match(countSystem, /Required JSON schema/);
     return Promise.resolve(new Response(null, { status: 503 }));
@@ -711,9 +645,9 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
         assert.ok(system);
         if (voice) {
           assert.equal(system, countedSystem);
-          assert.equal(body.inferenceConfig?.maxTokens, 300);
+          assert.equal(body.inferenceConfig?.maxTokens, 600);
           assert.equal(Object.hasOwn(body, "outputConfig"), false);
-          assert.match(system, /"maxLength":500/);
+          assert.match(system, /"maxLength":800/);
         } else {
           assert.equal(body.inferenceConfig?.maxTokens, 2000);
           assert.ok(Object.hasOwn(body, "outputConfig"));
@@ -723,25 +657,22 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
           );
         }
         if (supportive) {
-          assert.match(system, /2–3 natural Vietnamese sentences/);
-          assert.match(system, /180–280 characters/);
-          assert.match(system, /Reflect what the user actually shared/);
-          assert.match(system, /at most one open question/);
+          assert.match(system, /Length follows the moment/);
+          assert.match(system, /400–650, never more than 700/);
+          assert.match(system, /grounded only in what the user said/);
+          assert.match(system, /Do not ask follow-up questions by default/);
           assert.match(
             system,
-            /Never fabricate feelings, events, causes or personal facts/,
+            /never invent feelings, causes, events, personal facts/,
           );
-          assert.match(system, /prioritize a short clarification over length/);
-          assert.doesNotMatch(
-            system,
-            /one short Vietnamese sentence|brief spoken/,
-          );
+          assert.match(system, /calls for a short clarification/);
+          assert.doesNotMatch(system, /one short natural sentence/);
         } else if (voice) {
           assert.match(
             system,
-            /one short Vietnamese sentence of at most 160 characters/,
+            /one short natural sentence, at most 160 characters/,
           );
-          assert.doesNotMatch(system, /2–3 natural Vietnamese sentences/);
+          assert.doesNotMatch(system, /Length follows the moment/);
         }
         return Promise.resolve(
           Response.json({
@@ -799,7 +730,8 @@ void test("supportive pilot allows short clarification and preserves strict resp
     for (const [message, accepted] of [
       ["Mình chưa nghe rõ, bạn có thể nói lại ý vừa rồi không?", true],
       ["Tôi chẩn đoán bạn đang mắc trầm cảm", false],
-      ["ắ".repeat(501), false],
+      ["ắ".repeat(800), true],
+      ["ắ".repeat(801), false],
     ] as const) {
       let counts = 0;
       let converses = 0;

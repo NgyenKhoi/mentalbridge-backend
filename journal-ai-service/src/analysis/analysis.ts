@@ -48,6 +48,7 @@ import {
 import { createLogger } from "../observability/logger.js";
 import {
   normalizedExactRevisionSchema,
+  normalizeExactRevisionOutput,
   type NormalizedExactRevision,
 } from "../prompts/exact-revision.js";
 import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
@@ -693,7 +694,6 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   onModuleInit(): void {
-    if (!this.configuration.ANALYSIS_ENABLED) return;
     this.timer = setInterval(() => {
       void this.runSafely();
     }, this.configuration.ANALYSIS_POLL_INTERVAL_MS);
@@ -821,8 +821,17 @@ export class AnalysisWorker implements OnModuleInit, OnApplicationShutdown {
       const analysis = await this.withTimeout(
         this.provider.analyze(source.text, route),
       );
-      const parsed = normalizedExactRevisionSchema.safeParse(analysis.output);
+      const parsed = normalizedExactRevisionSchema.safeParse(
+        normalizeExactRevisionOutput(analysis.output),
+      );
       if (!parsed.success) {
+        this.logger.warn({
+          event: "analysis_provider_result_invalid",
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path,
+            code: issue.code,
+          })),
+        });
         await this.finishFailure(activeJob, "INVALID_PROVIDER_RESULT");
         return;
       }
@@ -969,8 +978,6 @@ export class AnalysisService {
     journalIdValue: string,
     revisionValue: string,
   ) {
-    if (!this.configuration.ANALYSIS_ENABLED)
-      throw new ServiceUnavailableException();
     const journalId = uuid.safeParse(journalIdValue);
     const revision = revisionSchema.safeParse(revisionValue);
     const key = idempotencyKeySchema.safeParse(

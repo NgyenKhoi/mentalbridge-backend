@@ -296,6 +296,16 @@ assert.equal(
   titleValidator.$jsonSchema.required.includes("encryptedTitle"),
   false,
 );
+const memoryNoteMigration = require("../migrations/023_companion_memory_note.cjs");
+assert.equal(typeof memoryNoteMigration.up, "function");
+assert.equal(typeof memoryNoteMigration.down, "function");
+const memoryNoteSchema = memoryNoteMigration.conversationValidator.$jsonSchema;
+assert.equal(memoryNoteSchema.required.includes("memoryNote"), false);
+assert.deepEqual(
+  memoryNoteSchema.properties.memoryNote,
+  titleValidator.$jsonSchema.properties.encryptedTitle,
+);
+assert.equal(memoryNoteSchema.properties.memoryNoteUpdatedAt.bsonType, "date");
 assert.equal(
   benchmarkGovernanceMigration.commandCollection,
   "benchmark_admin_commands",

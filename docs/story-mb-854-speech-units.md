@@ -62,6 +62,11 @@ persisted shape/model/dictionary change occurs.
 
 ## Configuration and rollout
 
+Superseded by MB-846d (owner decision 2026-11-23): the speech-unit and
+ConverseStream flags are removed, speech units are always on with the approved
+Voice Bedrock route, and the combined limit is 800 characters. The list below is
+history.
+
 - Journal: `JOURNAL_AI_VOICE_SPEECH_UNITS_ENABLED=false`, requiring
   `JOURNAL_AI_VOICE_CONVERSE_STREAM_ENABLED=true`, APPROVED_BEDROCK and a bound
   measurement pilot or a configured plain pilot with one or two unique owners

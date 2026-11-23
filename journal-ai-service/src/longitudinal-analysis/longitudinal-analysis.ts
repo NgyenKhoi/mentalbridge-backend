@@ -47,6 +47,7 @@ import {
 import { createLogger } from "../observability/logger.js";
 import {
   normalizedLongitudinalSchema,
+  normalizeLongitudinalOutput,
   type LongitudinalPromptCoverage,
   type LongitudinalPromptSource,
   type LongitudinalPromptVersion,
@@ -615,7 +616,6 @@ export class LongitudinalAnalysisWorker
   }
 
   onModuleInit(): void {
-    if (!this.configuration.ANALYSIS_ENABLED) return;
     this.timer = setInterval(() => {
       void this.runSafely();
     }, this.configuration.ANALYSIS_POLL_INTERVAL_MS);
@@ -741,8 +741,17 @@ export class LongitudinalAnalysisWorker
       const analysis = await this.withTimeout(
         this.provider.analyze(source.sources, job.dataCoverage, route),
       );
-      const parsed = normalizedLongitudinalSchema.safeParse(analysis.output);
+      const parsed = normalizedLongitudinalSchema.safeParse(
+        normalizeLongitudinalOutput(analysis.output),
+      );
       if (!parsed.success) {
+        this.logger.warn({
+          event: "longitudinal_provider_result_invalid",
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path,
+            code: issue.code,
+          })),
+        });
         await this.finishFailure(activeJob, "INVALID_PROVIDER_RESULT");
         return;
       }
@@ -904,8 +913,6 @@ export class LongitudinalAnalysisService {
   ) {}
 
   async create(request: LongitudinalRequest) {
-    if (!this.configuration.ANALYSIS_ENABLED)
-      throw new ServiceUnavailableException();
     const parsed = createRequestSchema.safeParse(request.body);
     const key = idempotencyKeySchema.safeParse(
       requestHeader(request, "idempotency-key"),

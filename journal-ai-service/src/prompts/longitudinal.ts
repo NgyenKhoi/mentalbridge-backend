@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeSignal, normalizeSignals } from "./normalize-signals.js";
 
 export const LONGITUDINAL_PROMPT_VERSION = "longitudinal-v2";
 
@@ -119,6 +120,48 @@ export const longitudinalOutputJsonSchema = {
     },
   },
 } as const;
+
+export const normalizeLongitudinalOutput = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return value;
+  const normalized: Record<string, unknown> = { ...value };
+  for (const field of [
+    "contextSignals",
+    "emotionIndicators",
+    "recurringThemes",
+    "preferences",
+    "barriers",
+    "helpfulPatterns",
+  ]) {
+    if (field in normalized)
+      normalized[field] = normalizeSignals(normalized[field]);
+  }
+  const changes = normalized.changesComparedWithPreviousPeriod;
+  if (Array.isArray(changes))
+    normalized.changesComparedWithPreviousPeriod = changes
+      .map((change: unknown) => {
+        if (
+          typeof change !== "object" ||
+          change === null ||
+          Array.isArray(change)
+        )
+          return change;
+        const fields: Record<string, unknown> = { ...change };
+        fields.signal = normalizeSignal(fields.signal);
+        if (typeof fields.direction === "string")
+          fields.direction = fields.direction.trim();
+        return fields;
+      })
+      .filter(
+        (change: unknown) =>
+          typeof change !== "object" ||
+          change === null ||
+          !("signal" in change) ||
+          change.signal !== "",
+      )
+      .slice(0, 24);
+  return normalized;
+};
 
 export interface LongitudinalPrompt {
   readonly version: typeof LONGITUDINAL_PROMPT_VERSION;

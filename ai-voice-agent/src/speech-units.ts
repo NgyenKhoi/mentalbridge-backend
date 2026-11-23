@@ -3,14 +3,16 @@ import { AgentFailure } from "./configuration.js";
 import { replySchema } from "./contract.js";
 
 export const speechUnitCapability = "voice-speech-units-v1";
+// MB-846d: a spoken reply is at most 800 characters across its units.
+export const speechUnitMaxCharacters = 800;
 export const speechEventSchema = z.discriminatedUnion("type", [
   replySchema
     .omit({ policyVersion: true })
     .extend({
       type: z.literal("SPEECH_UNIT"),
       unitSequence: z.number().int().min(1).max(2),
-      spokenText: z.string().trim().min(1).max(500),
-      reservedCharacters: z.literal(500),
+      spokenText: z.string().trim().min(1).max(speechUnitMaxCharacters),
+      reservedCharacters: z.literal(speechUnitMaxCharacters),
       policyVersion: z.literal("companion-voice-speech-unit-v1"),
     })
     .strict(),

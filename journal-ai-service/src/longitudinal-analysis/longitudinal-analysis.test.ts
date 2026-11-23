@@ -263,7 +263,6 @@ const configuration = {
   NODE_ENV: "test",
   LOG_LEVEL: "silent",
   SERVICE_NAME: "journal-ai-service",
-  ANALYSIS_ENABLED: true,
   ANALYSIS_POLL_INTERVAL_MS: 10_000,
   ANALYSIS_LEASE_MS: 35_000,
   JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 4),
@@ -430,6 +429,36 @@ void test("persists sufficient exact-source evidence and exposes a minimized Car
       ),
     NotFoundException,
   );
+});
+
+void test("normalizes longitudinal signal overflow before validation", async () => {
+  const value = subject(
+    new SequenceConsent([granted, granted, granted]),
+    new SequenceProvider([
+      {
+        ...normalized,
+        contextSignals: [
+          "  ",
+          ...Array.from({ length: 14 }, () => `  ${"b".repeat(70)}  `),
+        ],
+        changesComparedWithPreviousPeriod: [
+          { signal: "  ", direction: "SIMILAR" },
+          { signal: `  ${"c".repeat(70)}  `, direction: " MORE_FREQUENT " },
+        ],
+      },
+    ]),
+  );
+  value.repository.selectedSources = sources(3, 3);
+  await value.service.create(request("longitudinal-normalization"));
+  await waitForTerminal(value.repository);
+  assert.equal(value.repository.jobs[0]?.status, "SUCCEEDED");
+  const result = value.repository.results[0]?.result;
+  assert.ok(result);
+  assert.equal(result.contextSignals.length, 12);
+  assert.equal(result.contextSignals[0], "b".repeat(64));
+  assert.deepEqual(result.changesComparedWithPreviousPeriod, [
+    { signal: "c".repeat(64), direction: "MORE_FREQUENT" },
+  ]);
 });
 
 void test("forces sparse and imbalanced comparisons to INSUFFICIENT_DATA", async () => {

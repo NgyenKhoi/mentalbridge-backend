@@ -26,7 +26,7 @@
       "post": {
         "x-mentalbridge-status": "implemented",
         "operationId": "generateVoiceSpeechUnitsV1",
-        "description": "One counted/idempotency-fenced provider turn, no retry. Requires both feature flags, approved Bedrock ConverseStream, a valid plain pilot or bound measurement profile, and matching Agent capability. Response is one incrementally transferred JSON array, not WebSocket/SSE. Each complete SPEECH_UNIT follows schema/safety including cumulative-prefix checks, fresh publication authorization, reply registration and state recheck. Measured mode reserves a durable conservative 500 campaign TTS characters shared by all units of this turn; plain mode has no campaign reservation and retains the 500 combined-character field limit plus Agent pilot TTS budget. Two units/500 combined characters maximum. The server waits for the previous unit's exact playback ACK before authorizing another. COMPLETED requires the outer model END_TURN, complete schema/usage and EOF. Later abnormal completion sends FAILED and cancels future audio; already heard audio cannot be recalled.",
+        "description": "One counted/idempotency-fenced provider turn, no retry. Requires the approved Bedrock ConverseStream route (always on since MB-846d, no feature flags), a valid plain pilot or bound measurement profile, and matching Agent capability. Response is one incrementally transferred JSON array, not WebSocket/SSE. Each complete SPEECH_UNIT follows schema/safety including cumulative-prefix checks, fresh publication authorization, reply registration and state recheck. Measured mode reserves a durable conservative 800 campaign TTS characters shared by all units of this turn; plain mode has no campaign reservation and retains the 800 combined-character field limit plus Agent pilot TTS budget. Two units/800 combined characters maximum. The server waits for the previous unit's exact playback ACK before authorizing another. COMPLETED requires the outer model END_TURN, complete schema/usage and EOF. Later abnormal completion sends FAILED and cancels future audio; already heard audio cannot be recalled.",
         "parameters": [
           {
             "$ref": "#/components/parameters/Capability"
@@ -378,7 +378,7 @@
           "spokenText": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 500
+            "maxLength": 800
           },
           "expression": {
             "type": "string",
@@ -395,8 +395,8 @@
             "const": "companion-voice-speech-unit-v1"
           },
           "reservedCharacters": {
-            "description": "Conservative 500-character turn envelope. It is a durable campaign TTS reservation only when the session has a bound measurement profile; in a plain pilot it is the same wire field and combined-output limit without a campaign reservation.",
-            "const": 500
+            "description": "Conservative 800-character turn envelope. It is a durable campaign TTS reservation only when the session has a bound measurement profile; in a plain pilot it is the same wire field and combined-output limit without a campaign reservation.",
+            "const": 800
           }
         }
       },

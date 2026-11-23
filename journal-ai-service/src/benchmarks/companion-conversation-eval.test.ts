@@ -14,9 +14,13 @@ import {
   flipShare,
   gateFailures,
   loadConversationDataset,
+  modeTurnCodes,
   overusedPhrases,
   parseJudge,
+  mamHistory,
+  wrapUpDepth,
   percentile,
+  replyShapeByMode,
   runScenario,
   templatedOpener,
 } from "./companion-conversation-eval.js";
@@ -301,6 +305,50 @@ void test("every scenario runs through the deterministic fake provider", async (
     assert.equal(turns.length, scenario.turns.length, scenario.id);
     assert.ok(turns.every((value) => value.reply.length > 0));
   }
+});
+
+void test("Mầm response modes match the labelled crisis and venting turns", async () => {
+  const dataset = await loadConversationDataset();
+  const configuration = loadConfiguration({
+    NODE_ENV: "test",
+    IDENTITY_JWT_ISSUER: "https://identity.test.mentalbridge",
+    IDENTITY_JWT_AUDIENCE: "mentalbridge-api",
+    IDENTITY_JWT_KEY_ID: "test-key",
+    IDENTITY_JWT_PUBLIC_KEY: "test-public-key",
+  });
+  const provider = new RoutedChatProvider(configuration);
+  for (const scenario of dataset.scenarios) {
+    const turns = await runScenario(
+      scenario,
+      provider,
+      { provider: "DETERMINISTIC_FAKE", model: "deterministic-fake" },
+      [],
+      true,
+    );
+    // A lexical crisis miss is allowed (reported, not gated); the reply-level crisis pointer gates recall.
+    for (const value of turns)
+      assert.deepEqual(
+        modeTurnCodes(value).filter((code) => code !== "MODE_SAFETY_MISS"),
+        [],
+        `${scenario.id}: ${value.user ?? ""}`,
+      );
+  }
+  assert.deepEqual(
+    modeTurnCodes(
+      turn("Tớ nghe bạn.", { crisis: true, responseMode: "LISTEN" }),
+    ),
+    ["MODE_SAFETY_MISS"],
+  );
+  assert.deepEqual(
+    modeTurnCodes(turn("Tớ nghe bạn.", { responseMode: "SAFETY" })),
+    ["MODE_SAFETY_MISMATCH"],
+  );
+  assert.deepEqual(
+    modeTurnCodes(
+      turn("Tớ nghe bạn.", { phase: "wrapUp", responseMode: "CLARIFY" }),
+    ),
+    ["MODE_PHASE_MISMATCH"],
+  );
 });
 
 void test("dataset v2 carries enough labelled crisis, hard-negative, suggestion and venting turns", async () => {
@@ -805,4 +853,115 @@ void test("a generic question is not rescued by a detail several sentences earli
     ]),
     ["FOLLOW_UP_GENERIC"],
   );
+});
+
+void test("Mầm v3 asks no question by default and stays under 1500 characters (MB-846b)", () => {
+  const explore = (reply: string, infoMissing = false) =>
+    turn(reply, {
+      phase: "explore",
+      responseMode: infoMissing ? "CLARIFY" : "LISTEN",
+      user: "Mình bị đứa bạn thân phản bội.",
+      detailTerms: ["bạn thân"],
+      ...(infoMissing ? { infoMissing: true } : {}),
+    });
+  // Comfort without a question passes; v2 would flag FOLLOW_UP_MISSING.
+  assert.deepEqual(
+    checkScenario([explore("Bị bạn thân phản bội thì đau thật.")]),
+    [],
+  );
+  assert.deepEqual(
+    checkScenario([explore("Bị bạn thân phản bội đau ghê. Nó nói gì vậy?")]),
+    ["UNNEEDED_QUESTION"],
+  );
+  assert.deepEqual(
+    checkScenario([explore("Tớ nghe nè. Bạn thân đã làm gì vậy?", true)]),
+    [],
+  );
+  assert.deepEqual(
+    checkScenario([
+      turn("Ừ, nghỉ ngơi chút nha. Mai tính tiếp?", { responseMode: "LISTEN" }),
+    ]),
+    ["UNNEEDED_QUESTION"],
+  );
+  // A CLARIFY turn that should ask but does not now fails the explore gate.
+  assert.deepEqual(
+    checkScenario([explore("Tớ nghe nè, kể tớ nghe nha.", true)]),
+    ["FOLLOW_UP_MISSING"],
+  );
+  // v3 lengths between 500 and 1500 are allowed.
+  assert.deepEqual(
+    checkScenario([turn(`${"ắ".repeat(1_200)}.`, { responseMode: "LISTEN" })]),
+    [],
+  );
+  // The eval history uses the runtime byte cap: two 9 KB pairs keep only the newest.
+  const big = "ắ".repeat(3_000);
+  const history = [
+    { role: "USER" as const, text: big },
+    { role: "ASSISTANT" as const, text: "a" },
+    { role: "USER" as const, text: big },
+    { role: "ASSISTANT" as const, text: "b" },
+  ];
+  assert.deepEqual(mamHistory(history), history.slice(2));
+  assert.equal(mamHistory(history.slice(0, 2)).length, 2);
+  assert.deepEqual(
+    replyShapeByMode([
+      turn("Ừ.", { responseMode: "LISTEN" }),
+      turn("Tớ nghe nè, sao vậy?", { responseMode: "CLARIFY" }),
+      turn("Ừ, nghỉ đi nha.", { responseMode: "LISTEN" }),
+      turn("Cố lên nhé.", { responseMode: "SUPPORT_AND_WRAP_UP" }),
+    ]),
+    {
+      byMode: {
+        LISTEN: {
+          turns: 2,
+          meanChars: 9,
+          minChars: 2,
+          maxChars: 15,
+          questionRate: 0,
+        },
+        CLARIFY: {
+          turns: 1,
+          meanChars: 20,
+          minChars: 20,
+          maxChars: 20,
+          questionRate: 1,
+        },
+        SUPPORT_AND_WRAP_UP: {
+          turns: 1,
+          meanChars: 11,
+          minChars: 11,
+          maxChars: 11,
+          questionRate: 0,
+        },
+      },
+      stockClosers: 1,
+    },
+  );
+});
+
+void test("wrap-up depth reports the dataset wrap-up lengths against a soft 1000-character target", () => {
+  const wrap = (length: number) =>
+    turn(`${"ắ".repeat(length - 1)}.`, {
+      phase: "wrapUp",
+      responseMode: "SUPPORT_AND_WRAP_UP",
+    });
+  const report = wrapUpDepth([
+    wrap(800),
+    wrap(1_200),
+    turn("Ừ.", { responseMode: "LISTEN" }),
+  ]);
+  assert.deepEqual(
+    { ...report, lengths: undefined },
+    {
+      turns: 2,
+      meanChars: 1_000,
+      minChars: 800,
+      maxChars: 1_200,
+      lengths: undefined,
+      softTarget: 1_000,
+      belowTarget: false,
+    },
+  );
+  assert.equal(wrapUpDepth([wrap(700)]).belowTarget, true);
+  assert.equal(wrapUpDepth([]).meanChars, null);
 });

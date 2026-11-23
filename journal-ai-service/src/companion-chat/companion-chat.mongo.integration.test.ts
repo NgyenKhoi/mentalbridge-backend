@@ -91,7 +91,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     BENCHMARK_GEMINI_ROUTE: null,
     BENCHMARK_OPENAI_ROUTE: null,
     BENCHMARK_BEDROCK_ROUTE: null,
-    ANALYSIS_ENABLED: false,
     ANALYSIS_POLL_INTERVAL_MS: 250,
     ANALYSIS_LEASE_MS: 35_000,
     CHAT_RETENTION_DAYS: 90,
@@ -480,9 +479,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     assert.equal(premiumLedger?.usedTokens, premiumUsed + 40_040);
     assert.deepEqual(premiumLedger.reservations, []);
 
-    (
-      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
-    ).COMPANION_GUIDANCE_V2_ENABLED = true;
     configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET = 600_000;
     replyOutputTokens = 10;
     const friendSend = () =>
@@ -531,9 +527,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     );
     assert.ok(storedMessage?.suggestion?.ciphertext);
     assert.deepEqual((await friendSend().expect(201)).body, friendBody);
-    (
-      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
-    ).COMPANION_GUIDANCE_V2_ENABLED = false;
 
     await request(server)
       .delete(`/api/v1/ai-companion/conversations/${conversationId}`)
@@ -553,9 +546,6 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
     );
 
     configuration.CHAT_RATE_LIMIT_PER_MINUTE = 20;
-    (
-      configuration as { COMPANION_GUIDANCE_V2_ENABLED?: boolean }
-    ).COMPANION_GUIDANCE_V2_ENABLED = true;
     plan = "FREE";
     now = new Date("2026-10-01T00:00:00Z");
     const crypto = new ChatCrypto(configuration);
@@ -1591,6 +1581,140 @@ void test("migration 018 changes only the validator, preserves legacy bytes and 
       conversation("88888888-8888-4888-8888-888888888888") as never,
     );
   } finally {
+    await client.close();
+    await mongo.stop();
+  }
+});
+
+void test("MB-846c: migration 023 stores encrypted memory notes; the repository lists, saves and purges them", async () => {
+  const memoryMigration =
+    require("../../migrations/023_companion_memory_note.cjs") as {
+      up(database: unknown): Promise<void>;
+      down(database: unknown): Promise<void>;
+    };
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  const client = new MongoClient(mongo.getUri());
+  const databaseName = "companion_memory_note_integration";
+  const database = client.db(databaseName);
+  const repository = new MongoChatRepository({
+    MONGODB_URI: mongo.getUri(),
+    MONGODB_DATABASE: databaseName,
+    MONGODB_CONNECTION_TIMEOUT_MS: 2_000,
+  } as ServiceConfiguration);
+  try {
+    for (const migration of migrations) await migration.up(database);
+    await memoryMigration.up(database);
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const envelope = () => ({
+      ciphertext: Buffer.from("sealed"),
+      iv: Buffer.alloc(12, 1),
+      tag: Buffer.alloc(16, 2),
+      algorithm: "AES-256-GCM",
+      keyId: "single-key",
+    });
+    const base = new Date("2026-09-20T00:00:00.000Z");
+    const at = (minutes: number) => new Date(base.getTime() + minutes * 60_000);
+    const conversation = (id: string, minutes: number, messages = 24) => ({
+      _id: id,
+      ownerAccountId: owner,
+      title: "Cuộc trò chuyện mới",
+      context: {
+        sources: {
+          plan: false,
+          diary: false,
+          screening: false,
+          resourceIds: [],
+        },
+        updatedAt: at(minutes),
+      },
+      messages: Array.from({ length: messages }, (_, index) => ({
+        messageId: `${id.slice(0, 30)}${String(index).padStart(6, "0")}`,
+        role: index % 2 === 0 ? "USER" : "ASSISTANT",
+        content: envelope(),
+        createdAt: at(minutes),
+        route: null,
+        contextKinds: [],
+      })),
+      createdAt: at(minutes),
+      updatedAt: at(minutes),
+      expiresAt: at(minutes + 90 * 24 * 60),
+    });
+    const ids = [
+      "a1111111-1111-4111-8111-111111111111",
+      "a2222222-2222-4222-8222-222222222222",
+      "a3333333-3333-4333-8333-333333333333",
+      "a4444444-4444-4444-8444-444444444444",
+      "a5555555-5555-4555-8555-555555555555",
+    ];
+    const conversations = database.collection("ai_companion_conversations");
+    for (const [index, id] of ids.entries())
+      await conversations.insertOne(conversation(id, index) as never);
+    // A newer conversation with no reply yet takes no candidate slot.
+    await conversations.insertOne(
+      conversation("a6666666-6666-4666-8666-666666666666", 8, 0) as never,
+    );
+    const candidates = await repository.memoryCandidates(
+      owner,
+      ids[4] ?? "",
+      at(-1),
+      at(10),
+      3,
+    );
+    assert.deepEqual(
+      candidates.map((row) => row._id),
+      [ids[3], ids[2], ids[1]],
+    );
+    assert.ok(candidates.every((row) => row.messages.length === 20));
+    // Only the summarised state is noted; a newer conversation keeps no note.
+    await repository.saveMemoryNote(
+      owner,
+      ids[3] ?? "",
+      at(3),
+      envelope() as never,
+      "mam-memory-note-v1",
+    );
+    await repository.saveMemoryNote(
+      owner,
+      ids[2] ?? "",
+      at(99),
+      envelope() as never,
+      "mam-memory-note-v1",
+    );
+    const noted = (await conversations.findOne({
+      _id: ids[3],
+    } as never)) as Conversation | null;
+    assert.equal(noted?.memoryNoteVersion, "mam-memory-note-v1");
+    assert.equal(noted.memoryNoteUpdatedAt?.getTime(), at(3).getTime());
+    assert.equal(noted.updatedAt.getTime(), at(3).getTime());
+    assert.equal(
+      (await conversations.findOne({ _id: ids[2] } as never))?.memoryNote,
+      undefined,
+    );
+    // Summaries never expose the note.
+    const listed = await repository.listConversations(owner);
+    assert.ok(listed.every((row) => !("memoryNote" in row)));
+    for (const memoryNote of ["plaintext note", { ...envelope(), note: "x" }])
+      await assert.rejects(
+        conversations.updateOne({ _id: ids[1] } as never, {
+          $set: { memoryNote },
+        }),
+        /validation/u,
+      );
+    await assert.rejects(memoryMigration.down(database), /Cannot remove/u);
+    await repository.purgeMemoryNotes(owner);
+    assert.equal(
+      await conversations.countDocuments({
+        $or: [
+          { memoryNote: { $exists: true } },
+          { memoryNoteUpdatedAt: { $exists: true } },
+          { memoryNoteVersion: { $exists: true } },
+        ],
+      }),
+      0,
+    );
+    await memoryMigration.down(database);
+  } finally {
+    await repository.onApplicationShutdown();
     await client.close();
     await mongo.stop();
   }

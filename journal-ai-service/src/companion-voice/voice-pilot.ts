@@ -25,7 +25,7 @@ export const voicePilotSchema = z
     (value) =>
       !value.measurement ||
       (value.endsAt.getTime() - value.startsAt.getTime() <= 1_800_000 &&
-        (value.maxOutputTokens ?? 300) === 300 &&
+        (value.maxOutputTokens ?? 600) === 600 &&
         value.ownerIds.length <= value.measurement.maxSessions),
     "Measurement configuration must retain approved bounded limits",
   );

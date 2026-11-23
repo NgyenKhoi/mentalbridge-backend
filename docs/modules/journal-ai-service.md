@@ -238,6 +238,21 @@ Source/fixture checks do not establish real-model tone quality; activation needs
 an approved live listening/evaluation window. Details are in
 [ADR 0049](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
 
+MB-846d (owner decision 2026-11-23: enabled by default; rollback = revert)
+removes the Voice flags: Voice always uses the Mầm prompt
+`companion-voice-friend-v2` (tớ/bạn, comfort then one or two concrete steps,
+no default question), selected Text handoff is always available, and speech
+units stream whenever the approved Voice Bedrock route is configured. A spoken
+reply is at most 800 characters; a pilot output cap defaults to 600 tokens.
+Journal exact-revision and longitudinal analysis always run; the
+`JOURNAL_AI_ANALYSIS_ENABLED` toggle is removed (poll interval and lease stay
+configurable). Production now runs both workers in every instance; each polls
+Mongo every 2,000 ms by default for retries and expired leases (requests
+dispatch immediately), and provider spend follows consented user requests with
+no extra analysis cap. Voice counts input tokens before every turn and drops the
+oldest history pair before refusing; Journal and Agent deploy together. See the
+[ADR 0049 MB-846d amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md).
+
 ## Companion conversation eval (MB-845)
 
 The TEXT companion eval replays synthetic CC0 dataset v2 (core, crisis,
@@ -249,9 +264,31 @@ precision, recall and F1: the crisis pointer (reply sends the user to Cần tr�
 giúp ngay and sets no suggestion) and resource suggestion, with destination
 accuracy. Deterministic follow-up-arc checks gate the caring-question arc; a
 same-model LLM judge scores it but never gates. The metric measures reply
-behaviour only; no runtime crisis classifier is added and AI still decides
-nothing about safety. Method, thresholds and before/after results:
+behaviour only; MB-845 adds no runtime crisis classifier and AI still decides
+nothing about safety (MB-846 below adds a lexical crisis-cue heuristic that only
+selects the fixed crisis wording). Method, thresholds and before/after results:
 [MB-845 evidence](../story-mb-845-companion-eval.md).
+
+## Mầm TEXT response mode (MB-846)
+
+Owner decision 2026-11-23: enabled by default; rollback = revert: Mầm TEXT v3 selects a server directive for every TEXT
+turn from the current message and consent-filtered recent conversation history:
+LISTEN, CLARIFY, SUPPORT_AND_WRAP_UP, BOUNDARY or SAFETY. This is a bounded
+conversation-structure heuristic, not a Care safety determination. The
+existing provider crisis instruction and fixed crisis example remain in place
+for cues the heuristic misses; the real-provider crisis pointer gate checks
+the replies. The mode is neither persisted nor exposed in the public API.
+Since MB-846b, Mầm asks no follow-up question by default (only `CLARIFY`
+asks one), reply length varies under a 1,500-character limit for every
+package, and the send response `assistant` field allows up to 1,500
+characters.
+With effective L2, MB-846c adds up to three encrypted memory notes on the
+owner's other recent Mầm conversations to the provider request; without L2 it
+sends none and purges stored notes. See the ADR 0021 and ADR 0050 MB-846c
+amendments.
+Voice, the suggestion schema and consent boundaries remain
+unchanged. See the [ADR 0049 MB-846 amendment](../adr/0049-ai-companion-friend-voice-and-suggestions.md)
+and [MB-846 evaluation](../story-mb-846-companion-eval.md).
 
 ## Story 6201 authoring decision
 
