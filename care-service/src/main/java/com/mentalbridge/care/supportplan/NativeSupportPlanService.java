@@ -209,7 +209,8 @@ public class NativeSupportPlanService {
 		if (plan.version() != expectedVersion) return;
 		var cycle = SupportPlanCycle.view(plan, clock.instant());
 		if (cycle != null && "REVIEW_DUE".equals(cycle.state()) && !SupportPlanCycle.reassessmentCompleted(cycle,
-				episodes.latestCompleted(userId, "REASSESSMENT").map(ScreeningEpisodeService.EpisodeView::completedAt).orElse(null))) {
+				episodes.journeyContext(userId, "REASSESSMENT").latestCompleted()
+						.map(ScreeningEpisodeService.EpisodeView::completedAt).orElse(null))) {
 			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_REASSESSMENT_REQUIRED",
 					"Complete a reassessment for this cycle before choosing the next plan rhythm");
 		}

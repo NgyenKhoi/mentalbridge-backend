@@ -186,7 +186,8 @@ public class AdaptiveSupportPlanReviewService {
 		var candidates = new ArrayList<Candidate>();
 		boolean due = plan.cycle() != null && "REVIEW_DUE".equals(plan.cycle().state());
 		boolean reassessed = !due || SupportPlanCycle.reassessmentCompleted(plan.cycle(),
-				episodes.latestCompleted(userId, "REASSESSMENT").map(ScreeningEpisodeService.EpisodeView::completedAt).orElse(null));
+				episodes.journeyContext(userId, "REASSESSMENT").latestCompleted()
+						.map(ScreeningEpisodeService.EpisodeView::completedAt).orElse(null));
 		if ("ADMISSIBLE".equals(admission) && reassessed && (!due || "ALLOWED".equals(access))) {
 			var refs = patterns.stream().filter(item -> "REPEATED_HELPFUL".equals(item.kind()))
 					.map(AdaptiveSupportPlanReviewPolicy::ref).limit(10).toList();
