@@ -83,10 +83,11 @@ paths:
         or AI. Only when no Guide exists does Care materialize one from that exact evaluation.
         Retry, reload, multiple tabs and concurrent calls return the same Guide. The client
         supplies no assessment identifiers, so a historical or independently newest pair
-        can never be substituted. Only the owner's latest COMPLETED INITIAL_CHECK episode
-        may prepare a Guide: an open episode returns 409 SCREENING_EPISODE_INCOMPLETE and an
-        older initial check or a reassessment returns 409 SCREENING_EPISODE_NOT_CURRENT; a
-        foreign or unknown episode returns 404 SCREENING_EPISODE_NOT_FOUND.
+        can never be substituted. Only the owner's latest COMPLETED screening episode of
+        either purpose (INITIAL_CHECK or REASSESSMENT, by completedAt then episodeId) may
+        prepare a Guide: an open episode returns 409 SCREENING_EPISODE_INCOMPLETE and any
+        older completed episode returns 409 SCREENING_EPISODE_NOT_CURRENT; a foreign or
+        unknown episode returns 404 SCREENING_EPISODE_NOT_FOUND.
       security: [{ BearerAuth: [] }]
       parameters:
         - name: episodeId

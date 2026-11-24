@@ -180,23 +180,30 @@ class GuidedJourneyIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
-	void historicalAndReassessmentEpisodesNeverPrepareAGuide() throws Exception {
+	void onlyTheLatestCompletedScreeningOfEitherPurposePreparesAGuide() throws Exception {
 		var userId = insertProfile();
 		when(entitlements.current(any(), anyString(), any())).thenReturn(entitlement(userId, ServicePackage.FREE));
 		var older = completeEpisode(userId, false, "INITIAL_CHECK");
-		var current = completeEpisode(userId, false, "INITIAL_CHECK");
+		var initial = completeEpisode(userId, false, "INITIAL_CHECK");
 		var reassessment = completeEpisode(userId, false, "REASSESSMENT");
 
 		ensure(userId, older.episodeId()).andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("SCREENING_EPISODE_NOT_CURRENT"));
-		ensure(userId, reassessment.episodeId()).andExpect(status().isConflict())
+		ensure(userId, initial.episodeId()).andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("SCREENING_EPISODE_NOT_CURRENT"));
 		assertThat(guideCount(userId)).isZero();
 		mvc.perform(get("/api/v1/guided-journey/current").with(user(userId)))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.episodeId").value(current.episodeId().toString()));
-		ensure(userId, current.episodeId()).andExpect(status().isOk());
+				.andExpect(jsonPath("$.stage").value("GUIDE_REQUIRED"))
+				.andExpect(jsonPath("$.episodeId").value(initial.episodeId().toString()));
+		var guide = guideId(ensure(userId, reassessment.episodeId()).andExpect(status().isOk()).andReturn());
 		assertThat(guideCount(userId)).isEqualTo(1);
+		mvc.perform(get("/api/v1/guided-journey/current").with(user(userId)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.stage").value("GUIDE_READY"))
+				.andExpect(jsonPath("$.episodeId").value(initial.episodeId().toString()))
+				.andExpect(jsonPath("$.supportGuideId").value(guide.toString()))
+				.andExpect(jsonPath("$.latestScreening.episodeId").value(reassessment.episodeId().toString()));
 	}
 
 	@Test
