@@ -65,6 +65,7 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	@Autowired ObjectMapper mapper;
 	@Autowired SupportPlanRepository plans;
 	@Autowired SupportPlanActivityOccurrenceService activities;
+	@Autowired SupportPlanReminderEligibilityService reminderEligibility;
 	@MockitoBean Clock clock;
 	@MockitoBean EntitlementClient entitlements;
 	@MockitoBean ResourceEligibilityClient eligibility;
@@ -160,6 +161,7 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
 		var activated = activate(user, plan);
 		at("2026-10-14T04:00:00Z");
+		reassessment(user);
 		assertThat(periodStartedAt(user)).isEqualTo(Instant.parse(activated.path("activatedAt").asText()));
 		var continued = continuation(user, plan, 1, "cycle-continuation-command-0001");
 		assertThat(periodStartedAt(user)).isEqualTo(java.time.LocalDate.parse("2026-10-14")
@@ -180,11 +182,118 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void reviewDayCancelsScheduledActivitiesWithoutChangingPlanAndRepeatedReadsStayIdempotent() throws Exception {
+		UUID user = profile();
+		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
+		activate(user, plan);
+		jdbc.sql("""
+				update support_plan_activity_occurrence set local_date = date '2026-10-14',
+				    scheduled_at = timestamptz '2026-10-14 08:00:00+00'
+				where id = (select id from support_plan_activity_occurrence
+				    where support_plan_id = :id and source_action_type = 'RESOURCE'
+				    order by local_date limit 1)
+				""").param("id", plan).update();
+		jdbc.sql("update support_plan_activity_schedule set reminder_enabled=true where support_plan_id=:id")
+				.param("id", plan).update();
+		at("2026-10-13T17:01:00Z");
+		for (int attempt = 0; attempt < 2; attempt++) {
+			mvc.perform(get("/api/v2/support-plan-occurrences").with(user(user))
+					.param("from", "2026-10-14").param("through", "2026-10-17"))
+					.andExpect(status().isOk());
+		}
+		assertThat(reminderEligibility.eligible(user, now)).isFalse();
+		assertThat(jdbc.sql("""
+				select state || ':' || state_reason || ':' || version from support_plan_activity_occurrence
+				where support_plan_id=:id and source_action_type='RESOURCE' and local_date='2026-10-14'
+				""").param("id", plan).query(String.class).single()).isEqualTo("CANCELLED:REVIEW_DUE:1");
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence where support_plan_id=:id
+				and source_action_type <> 'REASSESSMENT_SCREENING' and local_date >= '2026-10-14'
+				and state='SCHEDULED'
+				""").param("id", plan).query(Long.class).single()).isZero();
+		assertThat(detail(user, plan).path("status").asText()).isEqualTo("ACTIVE");
+		assertThat(detail(user, plan).path("cycle").path("state").asText()).isEqualTo("REVIEW_DUE");
+		assertThat(detail(user, plan).path("version").asLong()).isEqualTo(1);
+	}
+
+	@Test
+	void continuationRequiresReassessmentCompletedForThisCycle() throws Exception {
+		UUID user = profile();
+		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
+		activate(user, plan);
+		at("2026-10-13T04:00:00Z");
+		reassessment(user);
+		at("2026-10-14T04:00:00Z");
+		mvc.perform(post("/api/v2/support-plans/{id}/cycle-continuation", plan).with(user(user))
+				.header("If-Match", "\"1\"").header("Idempotency-Key", "cycle-reassess-required-0001"))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUPPORT_PLAN_REASSESSMENT_REQUIRED"));
+		assertThat(detail(user, plan).path("cycle").path("cycleNumber").asInt()).isEqualTo(1);
+		reassessment(user);
+		assertThat(continuation(user, plan, 1, "cycle-reassessed-0001").path("cycle").path("cycleNumber").asInt()).isEqualTo(2);
+	}
+
+	@Test
+	void delayedContinuationDoesNotBackfillReviewGapAsMissedWork() throws Exception {
+		UUID user = profile();
+		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
+		activate(user, plan);
+		at("2026-10-16T04:00:00Z");
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(user))
+				.param("from", "2026-10-14").param("through", "2026-10-16"))
+				.andExpect(status().isOk());
+		reassessment(user);
+		continuation(user, plan, 1, "cycle-delayed-continue-0001");
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(user))
+				.param("from", "2026-10-14").param("through", "2026-10-17"))
+				.andExpect(status().isOk());
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence where support_plan_id=:id
+				and source_action_type <> 'REASSESSMENT_SCREENING'
+				and local_date >= '2026-10-14' and local_date < '2026-10-16'
+				""").param("id", plan).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("""
+				select count(*) from support_plan_activity_occurrence where support_plan_id=:id
+				and source_action_type <> 'REASSESSMENT_SCREENING'
+				and local_date >= '2026-10-16' and state='SCHEDULED'
+				""").param("id", plan).query(Long.class).single()).isPositive();
+	}
+
+	@Test
+	void continuationDoesNotRestoreReviewCancellationsFromAnEndedSchedule() throws Exception {
+		UUID user = profile();
+		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
+		activate(user, plan);
+		jdbc.sql("""
+				update support_plan_activity_occurrence set local_date = date '2026-10-14',
+				    scheduled_at = timestamptz '2026-10-14 08:00:00+00'
+				where id = (select id from support_plan_activity_occurrence
+				    where support_plan_id = :id and source_action_type = 'RESOURCE'
+				    order by local_date limit 1)
+				""").param("id", plan).update();
+		at("2026-10-14T04:00:00Z");
+		mvc.perform(get("/api/v2/support-plan-occurrences").with(user(user))
+				.param("from", "2026-10-14").param("through", "2026-10-14"))
+				.andExpect(status().isOk());
+		jdbc.sql("""
+				update support_plan_activity_schedule set status='ENDED', effective_until='2026-10-13'
+				where id = (select activity_schedule_id from support_plan_activity_occurrence
+				    where support_plan_id=:id and source_action_type='RESOURCE' and local_date='2026-10-14')
+				""").param("id", plan).update();
+		reassessment(user);
+		continuation(user, plan, 1, "cycle-ended-schedule-0001");
+		assertThat(jdbc.sql("""
+				select state || ':' || state_reason from support_plan_activity_occurrence
+				where support_plan_id=:id and source_action_type='RESOURCE' and local_date='2026-10-14'
+				""").param("id", plan).query(String.class).single()).isEqualTo("CANCELLED:REVIEW_DUE");
+	}
+
+	@Test
 	void concurrentContinuationsCommitOnlyOneCycleAndReviewOccurrence() throws Exception {
 		UUID user = profile();
 		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
 		activate(user, plan);
 		at("2026-10-14T04:00:00Z");
+		reassessment(user);
 		var start = new CountDownLatch(1);
 		try (var executor = Executors.newFixedThreadPool(2)) {
 			var first = executor.submit(() -> continueAfter(start, user, plan, "cycle-concurrent-continuation-0001"));
@@ -222,6 +331,7 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		UUID plan = UUID.fromString(propose(user).path("supportPlanId").asText());
 		activate(user, plan);
 		at("2026-10-14T04:00:00Z");
+		reassessment(user);
 		doAnswer(call -> new CurrentEntitlementResponse(call.getArgument(0), ServicePackage.FREE,
 				EntitlementSource.DEFAULT_FREE, "cycle-free", now.minusSeconds(86400), now.plusSeconds(86400),
 				"service-entitlement-v1", 2, now)).when(entitlements).current(any(), anyString(), any());
@@ -425,7 +535,10 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		return id;
 	}
 
-	private UUID evaluation(UUID user) throws Exception {
+	private UUID evaluation(UUID user) throws Exception { return evaluation(user, "INITIAL_CHECK"); }
+	private UUID reassessment(UUID user) throws Exception { return evaluation(user, "REASSESSMENT"); }
+
+	private UUID evaluation(UUID user, String purpose) throws Exception {
 		UUID phq = assessment(user, "10000000-0000-0000-0000-000000000004", false);
 		UUID gad = assessment(user, "10000000-0000-0000-0000-000000000003", true);
 		var evaluation = read(mvc.perform(post("/api/v2/support-evaluations").with(user(user))
@@ -435,9 +548,9 @@ class SupportPlanProposalCycleIntegrationTests extends CareTestProperties {
 		UUID id = UUID.fromString(evaluation.path("supportEvaluationId").asText());
 		jdbc.sql("""
 				insert into screening_episode(id,user_id,purpose,status,phq9_assessment_id,gad7_assessment_id,support_evaluation_id,created_at,updated_at,completed_at,version)
-				values(:id,:user,'INITIAL_CHECK','COMPLETED',:phq,:gad,:evaluation,:now,:now,:now,0)
+				values(:id,:user,:purpose,'COMPLETED',:phq,:gad,:evaluation,:now,:now,:now,0)
 				""").param("id", UUID.randomUUID()).param("user", user).param("phq", phq).param("gad", gad)
-				.param("evaluation", id).param("now", Timestamp.from(now)).update();
+				.param("evaluation", id).param("purpose", purpose).param("now", Timestamp.from(now)).update();
 		return id;
 	}
 

@@ -274,8 +274,12 @@ Historical MB-386 v1 snapshots remain a compatibility baseline. MB-559 implement
 accepted 2026-10-21 for MB-645, governs early/partial and due review, separate
 sourced evidence, repeat thresholds, bounded practical options and explicit
 confirmation. The existing 14-local-day/pause cycle and adjacent 14-day UTC
-comparison periods remain distinct; review never expires or changes a plan
-automatically. Its runtime and consumer delivery remain subject to MB-645 gates.
+comparison periods remain distinct. The 2026-11-24 owner amendment pauses
+ordinary plan activities and reminders at `REVIEW_DUE` until a reassessment
+episode for that cycle completes; the plan remains `ACTIVE`, and only a later
+explicit keep/adjust/replace decision starts the next rhythm. Review never
+expires or completes, renews, or replaces a plan automatically. Its runtime and
+consumer delivery remain subject to MB-645 gates.
 
 ## 6. Specialist and consultation boundary
 

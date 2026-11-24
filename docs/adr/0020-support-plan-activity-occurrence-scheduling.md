@@ -46,3 +46,13 @@ completion authority.
   activity state.
 - The Care migration, OpenAPI, data dictionary, UI, and tests must evolve
   together for any recurrence or lifecycle change.
+
+## Owner amendment — 2026-11-24
+
+Proposal-policy plans stop ordinary occurrence generation on the 14th local
+day while their cycle is `REVIEW_DUE`. Existing scheduled occurrences from that
+date are cancelled with `REVIEW_DUE` and cannot become missed or trigger
+activity reminders. The one-time reassessment occurrence remains. Care leaves
+the plan `ACTIVE`; the `PAUSED` lifecycle state remains reserved for a user
+pause. A completed current-cycle reassessment enables an explicit next-rhythm
+decision, and continuation restores only dates in the newly confirmed cycle.

@@ -185,6 +185,7 @@ public class NativeSupportPlanService {
 		String hash = hash("NATIVE_CYCLE_CONTINUE\n" + planId + "\n" + version);
 		var replay = writer.replay(userId, key, hash, "CYCLE_CONTINUE");
 		if (replay != null) return views.get(userId, replay);
+		requireCycleReassessment(userId, planId, version);
 		// A new 14-day commitment needs a current Plus/Premium decision, like activation (policy v2).
 		var entitlement = paid(userId, bearer, correlationId);
 		UUID continued = writer.continueCycle(userId, planId, version, key, hash, entitlement, clock.instant());
@@ -195,10 +196,23 @@ public class NativeSupportPlanService {
 			String bearer, String key, String requestHash, UUID correlationId, Runnable guard) {
 		var replay = writer.reviewedReplay(userId, key, requestHash);
 		if (replay != null) return views.get(userId, replay.planId());
+		requireCycleReassessment(userId, planId, version);
 		var entitlement = paid(userId, bearer, correlationId);
 		var evidence = revalidateCurrent(userId, planId, bearer, correlationId, entitlement);
 		UUID continued = writer.continueReviewed(userId, planId, version, key, requestHash, evidence, clock.instant(), guard);
 		return views.get(userId, continued);
+	}
+
+	private void requireCycleReassessment(UUID userId, UUID planId, long expectedVersion) {
+		var plan = plans.findByIdAndUserId(planId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		if (plan.version() != expectedVersion) return;
+		var cycle = SupportPlanCycle.view(plan, clock.instant());
+		if (cycle != null && "REVIEW_DUE".equals(cycle.state()) && !SupportPlanCycle.reassessmentCompleted(cycle,
+				episodes.latestCompleted(userId, "REASSESSMENT").map(ScreeningEpisodeService.EpisodeView::completedAt).orElse(null))) {
+			throw new ApiException(HttpStatus.CONFLICT, "SUPPORT_PLAN_REASSESSMENT_REQUIRED",
+					"Complete a reassessment for this cycle before choosing the next plan rhythm");
+		}
 	}
 
 	SupportPlanV3Service.SupportPlanV3View keepReviewed(UUID userId, UUID planId, long version,
