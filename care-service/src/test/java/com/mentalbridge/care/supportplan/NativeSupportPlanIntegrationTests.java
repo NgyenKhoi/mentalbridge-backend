@@ -570,6 +570,7 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		var plan = activeAdaptivePlan(user);
 		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
 		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
+		completeCurrentCycleReassessment(user);
 		var review = adaptiveReview(user, plan);
 		assertThat(review.path("reviewState").asText()).isEqualTo("REVIEW_DUE");
 		var kept = confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-due-keep-0001");
@@ -608,6 +609,7 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		UUID actionId = UUID.fromString(action(plan, "RESOURCE").path("actionId").asText());
 		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
 		var sources = adaptiveFeedback(user, id, actionId, "LOW_ENERGY", true);
+		completeCurrentCycleReassessment(user);
 		var review = adaptiveReview(user, plan);
 		assertThat(review.path("patterns").get(0).path("count").asInt()).isEqualTo(2);
 		assertThat(review.path("patterns").get(0).path("occurrenceIds").findValuesAsText("ignored")).isEmpty();
@@ -1071,6 +1073,7 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		UUID id = UUID.fromString(plan.path("supportPlanId").asText());
 		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
 		adaptiveFeedback(user, id, UUID.fromString(action(plan, "RESOURCE").path("actionId").asText()), "LOW_ENERGY", true);
+		completeCurrentCycleReassessment(user);
 		var review = adaptiveReview(user, plan);
 		var start = new CountDownLatch(1);
 		try (var executor = Executors.newFixedThreadPool(2)) {
@@ -1095,6 +1098,7 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 		evaluation(user, false);
 		assertThat(adaptiveReview(user, plan).path("currentAdmission").asText()).isEqualTo("ADMISSIBLE");
 		jdbc.sql("update support_plan set cycle_started_on=current_date-13 where id=:id").param("id", id).update();
+		completeCurrentCycleReassessment(user);
 		var review = adaptiveReview(user, plan);
 		confirmAdaptive(user, plan, review, "KEEP_CURRENT", "adaptive-key-reused-0001");
 		var body = mapper.createObjectNode().put("reviewFingerprint", "f".repeat(64))
@@ -1178,6 +1182,11 @@ class NativeSupportPlanIntegrationTests extends CareTestProperties {
 	private void adaptiveContext(UUID user, UUID plan) throws Exception {
 		jdbc.sql("update screening_episode set purpose='REASSESSMENT' where user_id=:user").param("user", user).update();
 		summary(user, plan);
+	}
+	private void completeCurrentCycleReassessment(UUID user) throws Exception {
+		UUID result = evaluation(user, false);
+		jdbc.sql("update screening_episode set purpose='REASSESSMENT' where user_id=:user and support_evaluation_id=:result")
+				.param("user", user).param("result", result).update();
 	}
 	private List<UUID> adaptiveFeedback(UUID user, UUID plan, UUID action, String barrier, boolean approved) {
 		var ids = List.of(UUID.randomUUID(), UUID.randomUUID());

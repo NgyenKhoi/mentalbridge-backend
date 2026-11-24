@@ -51,6 +51,7 @@ public class AdaptiveSupportPlanReviewService {
 	private final ResourceEligibilityClient eligibility;
 	private final EntitlementClient entitlements;
 	private final SupportPlanActivityOccurrenceRepository occurrences;
+	private final SupportPlanActivityOccurrenceService activities;
 	private final Clock clock;
 
 	public AdaptiveSupportPlanReviewService(SupportPlanV3Service views, SupportPlanRepository plans,
@@ -58,7 +59,8 @@ public class AdaptiveSupportPlanReviewService {
 			AdaptiveReviewEvidenceService evidence, AdaptiveSupportPlanReviewPolicy policy, SupportPlanPolicy planPolicy,
 			SupportEvaluationV2Service evaluations, ScreeningEpisodeService episodes,
 			SupportPlanPersonalizationService preferences, ResourceEligibilityClient eligibility,
-			EntitlementClient entitlements, SupportPlanActivityOccurrenceRepository occurrences, Clock clock) {
+			EntitlementClient entitlements, SupportPlanActivityOccurrenceRepository occurrences,
+			SupportPlanActivityOccurrenceService activities, Clock clock) {
 		this.views = views;
 		this.plans = plans;
 		this.nativePlans = nativePlans;
@@ -73,6 +75,7 @@ public class AdaptiveSupportPlanReviewService {
 		this.eligibility = eligibility;
 		this.entitlements = entitlements;
 		this.occurrences = occurrences;
+		this.activities = activities;
 		this.clock = clock;
 	}
 
@@ -159,6 +162,7 @@ public class AdaptiveSupportPlanReviewService {
 		if (!List.of("ACTIVE", "PAUSED").contains(plan.status())) {
 			throw conflict("SUPPORT_PLAN_NOT_REVIEWABLE", "Only the current active or paused plan can be reviewed");
 		}
+		activities.synchronizeReviewDue(userId, planId);
 		var context = evidence.read(userId, summaryId, bearer, correlation);
 		var personalization = preferences.currentSnapshot(userId).orElse(null);
 		String admission = "ADMISSIBLE";
@@ -181,13 +185,16 @@ public class AdaptiveSupportPlanReviewService {
 		var conflicts = contradictions.stream().flatMap(item -> item.evidenceRefs().stream()).distinct().limit(10).toList();
 		var candidates = new ArrayList<Candidate>();
 		boolean due = plan.cycle() != null && "REVIEW_DUE".equals(plan.cycle().state());
-		if ("ADMISSIBLE".equals(admission) && (!due || "ALLOWED".equals(access))) {
+		boolean reassessed = !due || SupportPlanCycle.reassessmentCompleted(plan.cycle(),
+				episodes.journeyContext(userId, "REASSESSMENT").latestCompleted()
+						.map(ScreeningEpisodeService.EpisodeView::completedAt).orElse(null));
+		if ("ADMISSIBLE".equals(admission) && reassessed && (!due || "ALLOWED".equals(access))) {
 			var refs = patterns.stream().filter(item -> "REPEATED_HELPFUL".equals(item.kind()))
 					.map(AdaptiveSupportPlanReviewPolicy::ref).limit(10).toList();
 			candidates.add(new Candidate(policy.option("KEEP_CURRENT", due ? "CONTINUE_CYCLE" : "NO_CHANGE", null, null,
 					List.of("CURRENT_PLAN_ADMISSIBLE"), refs, conflicts, List.of()), null, null, null));
 		}
-		if ("ADMISSIBLE".equals(admission) && "ACTIVE".equals(plan.status()) && "ALLOWED".equals(access)) {
+		if ("ADMISSIBLE".equals(admission) && reassessed && "ACTIVE".equals(plan.status()) && "ALLOWED".equals(access)) {
 			add(candidates, policy.lowerWorkload(plan, patterns, personalization, conflicts, clock.instant()));
 			add(candidates, policy.differentTime(plan, personalization, conflicts, clock.instant()));
 		}
@@ -220,7 +227,7 @@ public class AdaptiveSupportPlanReviewService {
 		var unavailable = new ArrayList<UnavailableOption>();
 		for (String kind : AdaptiveSupportPlanReviewPolicy.KINDS) {
 			if (candidates.stream().noneMatch(item -> kind.equals(item.option().kind()))) {
-				String reason = unavailableReason(kind, admission, access, plan, context, personalization, patterns);
+				String reason = unavailableReason(kind, admission, access, plan, context, personalization, patterns, reassessed);
 				if (candidateAdmissionUnavailable && List.of("ALTERNATIVE_ACTION", "DIFFERENT_FOCUS").contains(kind)) reason = "ADMISSION_UNAVAILABLE";
 				unavailable.add(new UnavailableOption(kind, reason));
 			}
@@ -429,9 +436,10 @@ public class AdaptiveSupportPlanReviewService {
 	}
 
 	private String unavailableReason(String kind, String admission, String access, SupportPlanV3View plan,
-			Context context, PersonalizationSnapshot personalization, List<Pattern> patterns) {
+			Context context, PersonalizationSnapshot personalization, List<Pattern> patterns, boolean reassessed) {
 		if ("UNAVAILABLE".equals(admission) || "UNAVAILABLE".equals(access)) return "ADMISSION_UNAVAILABLE";
 		if ("FREE".equals(access)) return "ENTITLEMENT_REQUIRED";
+		if (!reassessed && List.of("KEEP_CURRENT", "LOWER_WORKLOAD", "DIFFERENT_TIME").contains(kind)) return "REASSESSMENT_REQUIRED";
 		if ("KEEP_CURRENT".equals(kind) && "INADMISSIBLE".equals(admission)) return "CURRENT_PLAN_NOT_ADMISSIBLE";
 		if (List.of("LOWER_WORKLOAD", "DIFFERENT_TIME").contains(kind) && "PAUSED".equals(plan.status())) return "PLAN_PAUSED";
 		if (List.of("ALTERNATIVE_ACTION", "DIFFERENT_FOCUS").contains(kind) && !"AVAILABLE".equals(context.state())) return "REASSESSMENT_REQUIRED";

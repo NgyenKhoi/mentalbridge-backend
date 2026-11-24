@@ -1,5 +1,26 @@
 # Adaptive SupportPlan review policy v1
 
+## Review-day activity pause amendment — owner decision 2026-11-24
+
+For a proposal-policy plan, the 14th local day is the review checkpoint. From
+`REVIEW_DUE` until a `REASSESSMENT` screening episode is `COMPLETED` for that
+cycle, Care schedules no ordinary plan activity occurrences. Previously
+scheduled occurrences on or after `reviewDueOn` are cancelled with
+`REVIEW_DUE`, so they are neither due reminders nor missed activity. The
+one-time reassessment occurrence remains available. Completion means an owned
+episode completed no earlier than the start of the cycle's review date in its
+timezone; an earlier reassessment cannot unlock this cycle. A canonical
+ReassessmentSummary may then present its adjacent 14-day UTC comparison periods.
+
+`REVIEW_DUE` expresses this automatic activity pause while the plan remains
+`ACTIVE`. `PAUSED` continues to mean an explicit user pause and retains its
+existing review-date arithmetic. Completion of reassessment does not resume
+activity, renew the cycle, complete the plan or change its status. The user
+explicitly chooses keep for another cycle, an admitted adjustment, or a new
+plan from the new result. A confirmed continuation restores only eligible
+occurrences in the next cycle and preserves the review-gap history. Activity
+reminders are ineligible during `REVIEW_DUE`.
+
 ## MB-808 approved checklist supplement — 2026-11-06
 
 The owner-approved [policy v2 amendment](support-plan-policy-v2.md#mb-808-reassessment-checklist-amendment--2026-11-06)
@@ -55,10 +76,10 @@ participation period and a canonical comparison period are distinct facts.
 | Situation | Required behavior |
 | --- | --- |
 | Early or shortened participation | Allow a factual manual review with actual dates, timezone, elapsed and paused days, and available scheduled/completed/skipped/open counts. Do not claim that a full cycle or comparison elapsed. |
-| Active and review due | Invite review and optional eligible paired screening/self-report. Keep the plan active until an explicit user decision. There is no hard review-expiry deadline, automatic completion, renewal, replacement or plan termination. |
+| Active and review due | Stop ordinary activity occurrences and reminders, invite the paired reassessment, then offer explicit next-rhythm decisions after its completed episode. Keep the plan `ACTIVE` with cycle `REVIEW_DUE` until an explicit user decision. There is no hard review-expiry deadline, automatic completion, renewal, replacement or plan termination. |
 | Paused | Show the pause and shifted checkpoint. Keep may leave the plan paused; schedule changes and continuation require a separate explicit resume. Admitted explicit replacement remains possible. |
 | Missed or delayed check-ins | Preserve actual coverage and missing outcomes. Missed work neither moves the checkpoint nor means failure, non-adherence or poorer wellbeing. |
-| Screening missing, incomplete or not ready | Explain the actual missing source or readiness state without inventing an eligibility date. Allow available factual review and freshly admitted nonreplacement choices; replacement requires the latest canonical matching v2 summary. Never fabricate or compose a summary during review. |
+| Screening missing, incomplete or not ready | Explain the actual missing source or readiness state without inventing an eligibility date. Allow available factual review and freshly admitted nonreplacement choices before the cycle is due. At `REVIEW_DUE`, keep and schedule-adjustment choices wait for a completed current-cycle reassessment; replacement requires the latest canonical matching v2 summary. Never fabricate or compose a summary during review. |
 | Screening refused or review dismissed | Allow return to Today without submission or mutation. Refusal preserves history. Dismissal is not keep, continuation or acceptance and sends no command. |
 | No current native plan | Preserve existing draft, history, Guide, free screening and safety paths. A sample or draft is not a personalized adaptive review, and reading a review never creates a draft. |
 
@@ -66,7 +87,8 @@ Read authorization is separate from paid mutation authorization. An owner may
 read their current plan and review on `FREE` or expired access; mutation options
 are withheld with the applicable entitlement reason. Required entitlement
 uncertainty blocks an affected mutation rather than hiding owned history.
-This review adds no blanket paid-read or schedule lock to existing APIs.
+This review adds no blanket paid-read to existing APIs. The review-day activity
+pause above governs proposal-policy occurrence generation and reminders.
 
 ## Separate evidence and provenance
 

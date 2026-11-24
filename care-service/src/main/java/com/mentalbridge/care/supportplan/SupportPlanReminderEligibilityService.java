@@ -39,6 +39,8 @@ public class SupportPlanReminderEligibilityService {
 		LocalDate day = asOf.atZone(ZoneOffset.UTC).toLocalDate();
 		var window = activities.loadV3Window(userId, day.minusDays(1), day.plusDays(1));
 		if (!"ACTIVE".equals(window.plan().status())) return false;
+		var cycle = SupportPlanCycle.view(window.plan(), asOf);
+		if (cycle != null && "REVIEW_DUE".equals(cycle.state())) return false;
 		return window.occurrences().stream().anyMatch(occurrence -> "SCHEDULED".equals(occurrence.state())
 				&& occurrence.localDate().equals(asOf.atZone(ZoneId.of(occurrence.timezone())).toLocalDate())
 				&& schedules.findById(occurrence.activityScheduleId())

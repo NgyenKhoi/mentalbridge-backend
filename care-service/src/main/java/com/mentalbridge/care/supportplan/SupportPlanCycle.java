@@ -19,6 +19,11 @@ public final class SupportPlanCycle {
 		return now.atZone(ZoneId.of(timezone)).toLocalDate();
 	}
 
+	static boolean reassessmentCompleted(View cycle, Instant completedAt) {
+		return cycle != null && "REVIEW_DUE".equals(cycle.state()) && completedAt != null
+				&& !completedAt.isBefore(cycle.reviewDueOn().atStartOfDay(ZoneId.of(cycle.timezone())).toInstant());
+	}
+
 	static int pausedDays(SupportPlanEntity plan, LocalDate today) {
 		int completed = plan.cyclePausedDays() == null ? 0 : plan.cyclePausedDays();
 		LocalDate pausedOn = plan.cyclePausedOn();

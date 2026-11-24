@@ -130,6 +130,31 @@ interface SupportPlanActivityOccurrenceRepository
 	@Modifying(flushAutomatically = true)
 	@Query(value = """
 			update support_plan_activity_occurrence
+			set state = 'CANCELLED', state_reason = 'REVIEW_DUE', cancelled_at = :now,
+			    updated_at = :now, version = version + 1
+			where support_plan_id = :planId and state = 'SCHEDULED' and local_date >= :reviewDueOn
+			  and source_action_type is distinct from 'REASSESSMENT_SCREENING'
+			""", nativeQuery = true)
+	int cancelForReviewDue(@Param("planId") UUID planId, @Param("reviewDueOn") LocalDate reviewDueOn,
+			@Param("now") Instant now);
+
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			update support_plan_activity_occurrence occurrence
+			set state = 'SCHEDULED', state_reason = null, cancelled_at = null,
+			    updated_at = :now, version = version + 1
+			where support_plan_id = :planId and state = 'CANCELLED' and state_reason = 'REVIEW_DUE'
+			  and local_date >= :startedOn and local_date < :reviewDueOn
+			  and exists (select 1 from support_plan_activity_schedule schedule
+			      where schedule.id = occurrence.activity_schedule_id and schedule.status = 'ACTIVE')
+			""", nativeQuery = true)
+	int restoreForNewCycle(@Param("planId") UUID planId, @Param("startedOn") LocalDate startedOn,
+			@Param("reviewDueOn") LocalDate reviewDueOn,
+			@Param("now") Instant now);
+
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			update support_plan_activity_occurrence
 			set state = 'CANCELLED', state_reason = :reason, cancelled_at = :now,
 			    updated_at = :now, version = version + 1
 			where support_plan_id = :planId and scheduled_at >= :now

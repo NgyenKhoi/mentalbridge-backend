@@ -2331,7 +2331,8 @@ paths:
       summary: Explicitly keep a review-due proposal plan for another 14-day cycle
       description: |
         Owner-only command for an ACTIVE support-plan-proposal-v1 plan whose
-        cycle is REVIEW_DUE. Requires the strong plan If-Match and a durable
+        cycle is REVIEW_DUE and a reassessment episode completed on or after
+        this cycle's review date. Requires the strong plan If-Match and a durable
         Idempotency-Key. Starts cycleNumber + 1 on today's local date in the
         cycle timezone, resets pausedDays and schedules a new one-time
         reassessment occurrence on day 14. Preserves prior occurrence history,
@@ -6301,8 +6302,10 @@ components:
         date, in the cycle timezone; an ongoing pause uses today's local date
         as the exclusive end. These days do not advance the cycle. A pause
         beginning on or after the review date does not move it or add paused days.
-        reviewDueOn is startedOn + 13 days + pausedDays. REVIEW_DUE changes no
-        lifecycle state and remains until an explicit owner keep/change command.
+        reviewDueOn is startedOn + 13 days + pausedDays. REVIEW_DUE pauses
+        ordinary activity occurrences and reminders but keeps the plan ACTIVE.
+        It remains until a current-cycle reassessment is completed and the user
+        explicitly chooses the next rhythm; it never changes lifecycle state.
         NOT_STARTED is a DRAFT; CLOSED is COMPLETED, SUPERSEDED or DISCARDED.
       required: [policyVersion, lengthDays, timezone, cycleNumber, startedOn, reviewDueOn, currentDay, pausedDays, state]
       properties:
@@ -7092,7 +7095,7 @@ components:
         displayState: { type: string, enum: [SCHEDULED, OVERDUE, COMPLETED, SKIPPED, CANCELLED] }
         stateReason:
           type: [string, 'null']
-          enum: [PLAN_PAUSED, PLAN_COMPLETED, PLAN_REPLACED, ACTION_ENDED, SCHEDULE_CHANGED, null]
+          enum: [PLAN_PAUSED, PLAN_COMPLETED, PLAN_REPLACED, ACTION_ENDED, SCHEDULE_CHANGED, REVIEW_DUE, null]
         completionEvidence:
           description: Null unless completion is backed by a bounded Care or owner-domain fact.
           oneOf:
@@ -7718,7 +7721,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     SupportPlanCycleConflictProblem:
-      description: The plan has no proposal cycle, is not ACTIVE and REVIEW_DUE, or reuses a key differently (SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED, SUPPORT_PLAN_CYCLE_NOT_REVIEW_DUE, or IDEMPOTENCY_KEY_REUSED); no cycle was started
+      description: The plan has no proposal cycle, is not ACTIVE and REVIEW_DUE, lacks a completed current-cycle reassessment, or reuses a key differently (SUPPORT_PLAN_MODEL_VERSION_UNSUPPORTED, SUPPORT_PLAN_CYCLE_NOT_REVIEW_DUE, SUPPORT_PLAN_REASSESSMENT_REQUIRED, or IDEMPOTENCY_KEY_REUSED); no cycle was started
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
