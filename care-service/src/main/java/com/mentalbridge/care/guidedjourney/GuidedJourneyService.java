@@ -52,7 +52,7 @@ public class GuidedJourneyService {
 			return new JourneyView(JOURNEY_POLICY_VERSION, Stage.ASSESSMENT_REQUIRED, assessmentInProgress, null,
 					null, null, null, safety, null, EntitlementStatus.NOT_REQUIRED, latestScreening);
 		}
-		UUID guideId = guides.guideIdForEvaluation(userId, episode.supportEvaluationId()).orElse(null);
+		UUID guideId = guides.guideIdForEvaluation(userId, latest.supportEvaluationId()).orElse(null);
 		var plan = plans.currentOrDraftStatus(userId).orElse(null);
 		var decision = nextAction(userId, bearerToken, correlationId,
 				evaluations.get(userId, latest.supportEvaluationId()), plan);
@@ -64,10 +64,10 @@ public class GuidedJourneyService {
 
 	public SupportGuideView ensureGuide(UUID userId, String bearerToken, UUID correlationId, UUID episodeId) {
 		var episode = episodes.requiredCompletedEpisode(userId, episodeId);
-		var current = episodes.latestCompleted(userId, PURPOSE).orElse(null);
+		var current = episodes.journeyContext(userId, PURPOSE).latestCompletedAnyPurpose().orElse(null);
 		if (current == null || !current.episodeId().equals(episode.episodeId())) {
 			throw new ApiException(HttpStatus.CONFLICT, "SCREENING_EPISODE_NOT_CURRENT",
-					"Only the current completed initial check can prepare a Support Guide");
+					"Only the latest completed screening can prepare a Support Guide");
 		}
 		return guides.ensureForEpisode(userId, bearerToken, correlationId, episode.episodeId(),
 				episode.supportEvaluationId());
