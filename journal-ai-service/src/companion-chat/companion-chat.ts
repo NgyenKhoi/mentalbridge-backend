@@ -1181,8 +1181,8 @@ export class MongoChatRepository
   ) {
     await this.connect();
     const rateId = `${ownerAccountId}:${minuteBucket}`;
-    try {
-      const rate = await this.rates.findOneAndUpdate(
+    const take = () =>
+      this.rates.findOneAndUpdate(
         { _id: rateId, count: { $lt: rateLimit } },
         {
           $setOnInsert: { ownerAccountId, minuteBucket, expiresAt },
@@ -1190,6 +1190,14 @@ export class MongoChatRepository
         },
         { upsert: true, returnDocument: "after" },
       );
+    try {
+      // A concurrent first request may insert the bucket first; retry once against it.
+      // A full bucket fails the filter again, so the retry still ends in a duplicate key.
+      const rate = await take().catch((error: unknown) => {
+        if (error instanceof MongoServerError && error.code === 11_000)
+          return take();
+        throw error;
+      });
       if (!rate) throw new Error("rate-limit");
     } catch {
       throw new ChatProblem(429, "CHAT_RATE_LIMITED", "Too many chat requests");
