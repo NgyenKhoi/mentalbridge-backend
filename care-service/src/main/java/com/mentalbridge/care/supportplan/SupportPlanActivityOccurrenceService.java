@@ -138,7 +138,7 @@ public class SupportPlanActivityOccurrenceService {
 			}
 		}
 		schedules.flush();
-		generate(plan.id(), start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+		generate(plan, start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
 	}
 
 	@Transactional
@@ -358,7 +358,7 @@ public class SupportPlanActivityOccurrenceService {
 			if (schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
 				activate(plan, now);
 			}
-			generate(plan.id(), from, through, now);
+			generate(plan, from, through, now);
 		}
 		var values = occurrences
 				.findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(plan.id(), userId,
@@ -383,11 +383,12 @@ public class SupportPlanActivityOccurrenceService {
 						"Current SupportPlan was not found"));
 		validateWindow(userId, from, through);
 		Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+		reconcileReviewDue(plan, now);
 		if ("ACTIVE".equals(plan.status())) {
 			if (plan.modelVersion() == 2 && schedules.findBySupportPlanIdOrderByOrdinal(plan.id()).isEmpty()) {
 				activate(plan, now);
 			}
-			generate(plan.id(), from, through, now);
+			generate(plan, from, through, now);
 		}
 		var values = occurrences
 				.findBySupportPlanIdAndUserIdAndLocalDateBetweenOrderByScheduledAtAscIdAsc(plan.id(), userId,
@@ -596,12 +597,16 @@ public class SupportPlanActivityOccurrenceService {
 		}
 		if (SupportPlanCycle.applies(plan)) rescheduleCycleReview(plan, now, false);
 		occurrences.restoreFuturePaused(plan.id(), now);
+		reconcileReviewDue(plan, now);
 		generateRollingHorizon(plan.id(), now);
 	}
 
 	@Transactional
 	void continueCycle(SupportPlanEntity plan, Instant now) {
+		var cycle = SupportPlanCycle.view(plan, now);
+		occurrences.restoreForNewCycle(plan.id(), cycle.startedOn(), cycle.reviewDueOn(), now);
 		rescheduleCycleReview(plan, now, true);
+		generateRollingHorizon(plan.id(), now);
 	}
 
 	@Transactional
@@ -643,7 +648,7 @@ public class SupportPlanActivityOccurrenceService {
 				previous == null ? null : previous.preferredDaypart(), 5,
 				previous == null ? LocalTime.of(18, 0) : previous.localTime(), plan.cycleTimezone(), due, due,
 				previous != null && previous.reminderEnabled(), "ACTIVE", now));
-		generateOne(schedule, due, due, now);
+		generateOne(schedule, due, due, null, null, now);
 	}
 
 	@Transactional
@@ -672,11 +677,30 @@ public class SupportPlanActivityOccurrenceService {
 
 	@Transactional
 	void generateRollingHorizon(UUID planId, Instant now) {
+		var plan = plans.findById(planId).orElseThrow();
+		reconcileReviewDue(plan, now);
+		var cycle = SupportPlanCycle.view(plan, now);
 		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
 			LocalDate start = now.atZone(zone(schedule.timezone())).toLocalDate();
 			if (!generatesOccurrences(schedule, start)) continue;
-			generateOne(schedule, start, start.plusDays(INITIAL_HORIZON_DAYS - 1), now);
+			generateOne(schedule, start, start.plusDays(INITIAL_HORIZON_DAYS - 1),
+					cycle == null ? null : cycle.startedOn(), cycle == null ? null : cycle.reviewDueOn(), now);
 		}
+	}
+
+	private void reconcileReviewDue(SupportPlanEntity plan, Instant now) {
+		var cycle = SupportPlanCycle.view(plan, now);
+		if (cycle != null && cycle.reviewDueOn() != null
+				&& !SupportPlanCycle.localDate(now, cycle.timezone()).isBefore(cycle.reviewDueOn())) {
+			occurrences.cancelForReviewDue(plan.id(), cycle.reviewDueOn(), now);
+		}
+	}
+
+	@Transactional
+	void synchronizeReviewDue(UUID userId, UUID planId) {
+		var plan = plans.findByIdAndUserIdForUpdate(planId, userId).orElseThrow(() ->
+				new ApiException(HttpStatus.NOT_FOUND, "SUPPORT_PLAN_NOT_FOUND", "SupportPlan was not found"));
+		reconcileReviewDue(plan, clock.instant().truncatedTo(ChronoUnit.MICROS));
 	}
 
 	private void validateWindow(UUID userId, LocalDate from, LocalDate through) {
@@ -694,12 +718,14 @@ public class SupportPlanActivityOccurrenceService {
 		}
 	}
 
-	private void generate(UUID planId, LocalDate from, LocalDate through, Instant now) {
-		for (var schedule : schedules.findBySupportPlanIdForUpdate(planId)) {
+	private void generate(SupportPlanEntity plan, LocalDate from, LocalDate through, Instant now) {
+		var cycle = SupportPlanCycle.view(plan, now);
+		for (var schedule : schedules.findBySupportPlanIdForUpdate(plan.id())) {
 			if (!generatesOccurrences(schedule, from)) {
 				continue;
 			}
-			generateOne(schedule, from, through, now);
+			generateOne(schedule, from, through, cycle == null ? null : cycle.startedOn(),
+					cycle == null ? null : cycle.reviewDueOn(), now);
 		}
 	}
 
@@ -711,10 +737,14 @@ public class SupportPlanActivityOccurrenceService {
 	}
 
 	private void generateOne(SupportPlanActivityScheduleEntity schedule,
-			LocalDate from, LocalDate through, Instant now) {
+			LocalDate from, LocalDate through, LocalDate cycleStartedOn, LocalDate reviewDueOn, Instant now) {
 		LocalDate start = from.isBefore(schedule.effectiveFrom()) ? schedule.effectiveFrom() : from;
+		if (cycleStartedOn != null && !"REASSESSMENT_SCREENING".equals(schedule.sourceActionType())
+				&& start.isBefore(cycleStartedOn)) start = cycleStartedOn;
 		LocalDate generationEnd = generationEnd(schedule);
 		LocalDate end = generationEnd == null || through.isBefore(generationEnd) ? through : generationEnd;
+		if (reviewDueOn != null && !"REASSESSMENT_SCREENING".equals(schedule.sourceActionType())
+				&& !end.isBefore(reviewDueOn)) end = reviewDueOn.minusDays(1);
 		for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
 			if (!occurs(schedule, date)) continue;
 			String key = schedule.id() + ":" + schedule.scheduleVersion() + ":" + date;

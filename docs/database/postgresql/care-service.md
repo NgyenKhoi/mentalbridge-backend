@@ -694,7 +694,7 @@ generation idempotent.
 | `schedule_version` / `local_date` | Logical uniqueness key with the parent schedule. |
 | `local_time` / `timezone` / `scheduled_at` | Wall-clock intent, IANA zone snapshot, and resolved UTC instant. |
 | `state` | Persisted `SCHEDULED`, `COMPLETED`, `SKIPPED`, or `CANCELLED`; `MISSED` is computed only in reads. |
-| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, `PLAN_REPLACED`, `ACTION_ENDED`, or `SCHEDULE_CHANGED` on cancelled rows. |
+| `state_reason` | Null except `PLAN_PAUSED`, `PLAN_COMPLETED`, `PLAN_REPLACED`, `ACTION_ENDED`, `SCHEDULE_CHANGED`, or `REVIEW_DUE` on cancelled rows. `REVIEW_DUE` marks activity occurrences held from the review date until an explicit next-cycle decision; it is not a user pause. |
 | `source_plan_version` | Exact Care plan revision provenance. |
 | `source_slot_key` / `source_resource_id` / `source_content_version` | Required exact v2 slot and Content-version snapshot; all are null for a native v3 occurrence. |
 | `source_action_id` / `source_action_version` / `source_action_type` | Required exact native v3 action snapshot; all are null for v2. One foreign key blocks cross-plan, cross-owner, or type substitution, and a second binds the entire plan/action/version snapshot to the originating schedule; the snapshotted revision remains stable if the current action lifecycle version advances. |

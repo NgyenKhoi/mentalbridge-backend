@@ -371,7 +371,11 @@ export class VoiceAccessService {
     consent: VoiceOwnerDecision["consent"];
     entitlement: VoiceOwnerDecision["entitlement"];
   }> {
-    const session = await this.ledger.findOwned(ownerId, voiceSessionId);
+    const session = await this.ledger.findOwned(
+      ownerId,
+      voiceSessionId,
+      this.clock(),
+    );
     if (!session) throw new VoiceAccessError("SESSION_NOT_FOUND");
     if (isTerminal(session) || session.state === "ENDING")
       throw new VoiceAccessError("SESSION_EXPIRED");

@@ -54,7 +54,8 @@ class CareLiquibaseChangelogTests {
 					"care-034-ai-consent-levels",
 					"care-035-reassessment-symptom-checklist",
 					"care-036-owner-cycle-review-evidence",
-					"care-037-reassessment-summary-without-journal");
+					"care-037-reassessment-summary-without-journal",
+					"care-038-review-due-occurrence-pause");
 		}
 	}
 

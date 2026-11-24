@@ -99,8 +99,11 @@ Other native occurrences and adapter occurrences retain their original response 
   date and `REVIEW_DUE` from that date. A paused plan exposes `PAUSED`.
 - Completed, superseded and discarded plans expose `CLOSED`.
 
-Reaching `REVIEW_DUE` changes no lifecycle state, completion evidence or schedule
-automatically. The plan stays active until an explicit user command. A completed
+Under the [2026-11-24 review-day amendment](support-plan-review-v1.md#review-day-activity-pause-amendment--owner-decision-2026-11-24),
+`REVIEW_DUE` pauses ordinary activity occurrence generation and reminders from
+the review date. Already scheduled occurrences in that gap are cancelled with
+`REVIEW_DUE`, not counted as missed. The plan stays `ACTIVE`; no lifecycle state,
+completion evidence or action intent changes automatically. A completed
 reassessment alone does not clear review due. There is no automatic renewal.
 
 In this version, the `REASSESSMENT_SCREENING` reminder is fulfilled only by the
@@ -112,7 +115,8 @@ is a follow-up.
 
 `POST /api/v2/support-plans/{supportPlanId}/cycle-continuation` requires the
 strong `If-Match` plan validator and an owner-scoped `Idempotency-Key`. Care
-accepts it only for an active proposal-policy plan whose cycle is `REVIEW_DUE`.
+accepts it only for an active proposal-policy plan whose cycle is `REVIEW_DUE`
+and whose current-cycle reassessment screening episode is `COMPLETED`.
 
 The confirmed command increments `cycleNumber`, sets `startedOn` to today's
 local date, resets `pausedDays` to zero and schedules a new reassessment

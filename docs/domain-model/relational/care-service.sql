@@ -760,7 +760,7 @@ CREATE TABLE care.support_plan_activity_occurrence (
     timezone varchar(64) NOT NULL,
     scheduled_at timestamptz NOT NULL,
     state varchar(16) NOT NULL,
-    state_reason varchar(32), -- cancellation reason includes SCHEDULE_CHANGED
+    state_reason varchar(32), -- cancellation reasons include SCHEDULE_CHANGED and REVIEW_DUE
     source_plan_version bigint NOT NULL,
     source_slot_key varchar(64),
     source_resource_id uuid, -- external -> content.resource.id; v2 branch only

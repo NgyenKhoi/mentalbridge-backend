@@ -130,13 +130,6 @@ public class ScreeningEpisodeService {
 		return episode;
 	}
 
-	@Transactional(readOnly = true)
-	public Optional<EpisodeView> latestCompleted(UUID userId, String purpose) {
-		validatePurpose(purpose);
-		return episodes.findFirstByUserIdAndPurposeAndStatusOrderByCreatedAtDescIdDesc(userId, purpose, "COMPLETED")
-				.map(this::view);
-	}
-
 	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 	public JourneyContext journeyContext(UUID userId, String purpose) {
 		validatePurpose(purpose);

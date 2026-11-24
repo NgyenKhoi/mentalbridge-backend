@@ -412,6 +412,10 @@ does not add fields; adapter and earlier occurrence reads retain their wire shap
 MB-669 new native drafts use `support-plan-proposal-v1` through the existing
 `POST /api/v2/support-plans` command. The plan read model exposes a 14-day local
 cycle; paused days defer its review date. `REVIEW_DUE` keeps the plan active.
+The 2026-11-24 owner amendment stops ordinary occurrences and activity reminders
+from that date, cancels any previously scheduled gap rows with `REVIEW_DUE`, and
+requires a completed current-cycle reassessment before continuation. The
+one-time reassessment occurrence remains; no lifecycle state changes automatically.
 Only the explicit
 `POST /api/v2/support-plans/{supportPlanId}/cycle-continuation` command starts
 the next cycle, with `If-Match` and `Idempotency-Key`. Composition, cycle and

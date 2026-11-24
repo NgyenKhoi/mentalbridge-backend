@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
@@ -1713,6 +1714,54 @@ void test("MB-846c: migration 023 stores encrypted memory notes; the repository 
       0,
     );
     await memoryMigration.down(database);
+  } finally {
+    await repository.onApplicationShutdown();
+    await client.close();
+    await mongo.stop();
+  }
+});
+
+void test("concurrent first requests in a fresh minute share the rate bucket instead of a false CHAT_RATE_LIMITED", async () => {
+  const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  const client = new MongoClient(mongo.getUri());
+  const databaseName = "companion_rate_bucket_race";
+  const database = client.db(databaseName);
+  const repository = new MongoChatRepository({
+    MONGODB_URI: mongo.getUri(),
+    MONGODB_DATABASE: databaseName,
+    MONGODB_CONNECTION_TIMEOUT_MS: 2_000,
+  } as ServiceConfiguration);
+  try {
+    for (const migration of migrations) await migration.up(database);
+    const owner = "22222222-2222-4222-8222-222222222222";
+    const expiresAt = new Date(Date.now() + 86_400_000);
+    const reserve = (minute: number, rateLimit: number) =>
+      repository
+        .reserve(
+          owner,
+          randomUUID(),
+          "2026-09-20",
+          `2026-09-20T17:${String(minute).padStart(2, "0")}`,
+          "PREMIUM",
+          1_000,
+          rateLimit,
+          1_000_000,
+          expiresAt,
+        )
+        .then(
+          () => "OK",
+          (error: unknown) => (error as { code: string }).code,
+        );
+    // The quota ledger holds at most 60 open reservations per owner/day.
+    for (let minute = 0; minute < 15; minute++)
+      assert.deepEqual(
+        await Promise.all([0, 1, 2].map(() => reserve(minute, 20))),
+        ["OK", "OK", "OK"],
+      );
+    assert.deepEqual(
+      (await Promise.all([0, 1].map(() => reserve(30, 1)))).sort(),
+      ["CHAT_RATE_LIMITED", "OK"],
+    );
   } finally {
     await repository.onApplicationShutdown();
     await client.close();
