@@ -738,8 +738,8 @@ paths:
       description: |
         Read-only, owner-scoped pointer derived from persisted Care facts: the latest
         COMPLETED INITIAL_CHECK screening episode with its exact PHQ-9/GAD-7 pair, the
-        persisted Support Guide for that episode's exact SupportEvaluation, and the
-        current ACTIVE/PAUSED or DRAFT SupportPlan. It never pairs independently newest
+        persisted Support Guide for the latestScreening episode's exact SupportEvaluation,
+        and the current ACTIVE/PAUSED or DRAFT SupportPlan. It never pairs independently newest
         assessments, creates a Guide or plan, or reads historical episodes.
         nextAction is Care's ordered decision for the step after the Guide: positive
         PHQ-9 item-9 safety evidence first, then a stored professional-support pathway,
@@ -747,9 +747,9 @@ paths:
         episode evaluation is still current-policy compatible, otherwise the Guide's
         reviewed resources. latestScreening is the newest COMPLETED screening episode of
         either purpose (INITIAL_CHECK or REASSESSMENT, by completedAt then episodeId);
-        nextAction is decided from that episode's SupportEvaluation, while stage,
-        episodeId, episodeCompletedAt, presentationEvaluationId and supportGuideId keep
-        the initial-check meaning. Open episodes never become latestScreening.
+        nextAction, stage and supportGuideId follow that episode's SupportEvaluation,
+        while episodeId, episodeCompletedAt and presentationEvaluationId keep the
+        initial-check meaning. Open episodes never become latestScreening.
         Entitlement is checked only when needed; when it
         cannot be verified the response fails closed to the always-available resource step
         with entitlementStatus UNAVAILABLE. A missing published support policy is not
@@ -770,7 +770,7 @@ paths:
               schema: { $ref: "#/components/schemas/GuidedJourney" }
               examples:
                 reassessmentNewerThanInitialCheck:
-                  summary: A newer safety-negative reassessment decides nextAction; the Guide stays on the initial check
+                  summary: A newer safety-negative reassessment decides nextAction and the Guide; episode fields stay on the initial check
                   value: {"journeyPolicyVersion":"mb-guided-journey-v1","stage":"GUIDE_READY","assessmentInProgress":false,"episodeId":"00000000-0000-4000-8000-000000000101","episodeCompletedAt":"2026-10-08T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000102","supportGuideId":"00000000-0000-4000-8000-000000000103","nextAction":"OPEN_CURRENT_PLAN","currentSupportPlanId":"00000000-0000-4000-8000-000000000104","entitlementStatus":"NOT_REQUIRED","latestScreening":{"episodeId":"00000000-0000-4000-8000-000000000111","purpose":"REASSESSMENT","completedAt":"2026-10-22T09:00:00Z","presentationEvaluationId":"00000000-0000-4000-8000-000000000112","supportEvaluationId":"00000000-0000-4000-8000-000000000113"}}
         "400": { $ref: "#/components/responses/ValidationProblem" }
         "401": { $ref: "#/components/responses/UnauthorizedProblem" }
@@ -5251,7 +5251,7 @@ components:
         journeyPolicyVersion: { type: string, const: mb-guided-journey-v1 }
         stage:
           type: string
-          description: ASSESSMENT_REQUIRED has no completed initial check; GUIDE_REQUIRED has a completed episode whose Guide is not yet persisted; GUIDE_READY has the persisted Guide.
+          description: ASSESSMENT_REQUIRED has no completed initial check; GUIDE_REQUIRED means the latestScreening episode's Guide is not yet persisted; GUIDE_READY has that persisted Guide.
           enum: [ASSESSMENT_REQUIRED, GUIDE_REQUIRED, GUIDE_READY]
         assessmentInProgress:
           type: boolean

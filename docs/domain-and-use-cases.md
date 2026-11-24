@@ -356,8 +356,8 @@ resources, and governed notification/follow-up triggers.
 **Main flow:** Care evaluates versioned local scoring, domain and safety rules
 and produces a persisted immutable Support Guide for every package. The Guide
 remains owner history but has no lifecycle, schedules, activity occurrences, or
-engagement tracking. After a guided initial check completes, Care ensures that
-Guide for the episode's exact evaluation and exposes a read-only resume pointer
+engagement tracking. After a guided initial check or reassessment completes, Care
+ensures that Guide for the latest completed episode's exact evaluation and exposes a read-only resume pointer
 whose ordered next action is safety support, professional support, the existing
 plan or draft, paid plan proposal, then reviewed resources (MB-668). For an entitled `PLUS`/`PREMIUM` user, Care applies the
 current SupportPlan selection policy, composes the bounded proposal, and owns
