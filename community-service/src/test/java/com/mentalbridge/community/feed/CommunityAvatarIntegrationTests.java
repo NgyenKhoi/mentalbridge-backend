@@ -184,6 +184,12 @@ class CommunityAvatarIntegrationTests extends CommunityTestProperties {
 		}
 	}
 
+	@Test
+	void avatarLookupFollowsTheMembersFeatureGate() throws Exception {
+		mvc.perform(get("/api/v1/community/avatars").param("accountIds", subject.toString()).with(user(subject)))
+				.andExpect(status().isServiceUnavailable());
+	}
+
 	private ResultActions select(UUID mediaId, String etag) throws Exception {
 		var request = put("/api/v1/community/profile/avatar").with(user(subject)).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"mediaId\":" + (mediaId == null ? "null" : "\"" + mediaId + "\"") + "}");

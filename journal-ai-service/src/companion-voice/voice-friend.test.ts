@@ -264,3 +264,47 @@ void test("MB-846d: over the input cap Voice drops the oldest history pair and r
     globalThis.fetch = original;
   }
 });
+
+void test("handed-off Text pairs reach the Voice provider input as quoted selectedText with the handoff guidance", async () => {
+  const original = globalThis.fetch;
+  const prompt = JSON.stringify({
+    selectedText: [
+      { user: "SYNTHETIC_TEXT_USER", assistant: "SYNTHETIC_TEXT_ASSISTANT" },
+    ],
+    currentCall: [],
+  });
+  try {
+    for (const textHandoff of [true, false]) {
+      let inferred: { system: unknown; messages: unknown } | undefined;
+      globalThis.fetch = (url, init) => {
+        if (typeof init?.body !== "string") throw Error("EXPECTED_BODY");
+        if (
+          String(url instanceof Request ? url.url : url).endsWith(
+            "/count-tokens",
+          )
+        )
+          return Promise.resolve(Response.json({ inputTokens: 1200 }));
+        inferred = JSON.parse(init.body) as typeof inferred;
+        return Promise.resolve(response());
+      };
+      await new RoutedChatProvider(configuration).reply(
+        "Câu thử tiếng Việt",
+        { kinds: [], prompt },
+        route,
+        { voice: true, textHandoff },
+      );
+      assert.ok(inferred);
+      const messages = JSON.stringify(inferred.messages);
+      assert.match(messages, /SYNTHETIC_TEXT_USER/u);
+      assert.match(messages, /SYNTHETIC_TEXT_ASSISTANT/u);
+      assert.equal(
+        JSON.stringify(inferred.system).includes(
+          "explicitly attached selectedText pairs",
+        ),
+        textHandoff,
+      );
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});

@@ -209,6 +209,8 @@ export interface ChatMessage {
   route: ChatRoute | null;
   contextKinds: ContextKind[];
   suggestion?: EncryptedChatText;
+  channel?: "VOICE";
+  voiceSessionId?: string;
 }
 
 export type ContextKind =
@@ -2571,6 +2573,7 @@ const publicConversation = (
       conversation._id,
       message,
     ),
+    ...(message.channel ? { channel: message.channel } : {}),
   })),
 });
 

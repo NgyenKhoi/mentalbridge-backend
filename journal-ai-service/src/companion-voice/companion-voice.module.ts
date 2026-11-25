@@ -109,14 +109,31 @@ export const registerCompanionVoiceModule = (
     configuration.VOICE_PILOT,
   );
   const ledger = dependencies.ledger ?? coreLedger;
+  const conversations = client
+    .db(configuration.MONGODB_DATABASE)
+    .collection<Conversation>("ai_companion_conversations");
   const handoffs = new VoiceContextHandoffs(
     configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
     {
       findConversation: (ownerAccountId, _id) =>
-        client
-          .db(configuration.MONGODB_DATABASE)
-          .collection<Conversation>("ai_companion_conversations")
-          .findOne({ _id, ownerAccountId }),
+        conversations.findOne({ _id, ownerAccountId }),
+      appendVoiceMessages: (
+        ownerAccountId,
+        _id,
+        voiceSessionId,
+        messages,
+        updatedAt,
+      ) =>
+        conversations.updateOne(
+          {
+            _id,
+            ownerAccountId,
+            expiresAt: { $gt: updatedAt },
+            "messages.voiceSessionId": { $ne: voiceSessionId },
+            $expr: { $lte: [{ $size: "$messages" }, 400 - messages.length] },
+          },
+          { $push: { messages: { $each: messages } }, $set: { updatedAt } },
+        ),
     },
     new ChatCrypto(configuration),
     dependencies.clock,

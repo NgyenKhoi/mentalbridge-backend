@@ -327,6 +327,8 @@ paths:
         START rechecks owner, current authority and exact unexpired snapshot. A ticket is bound once to one
         session through the admission transaction. Wrong/missing/deleted/expired conversation returns404;
         no eligible pair returns422. Errors never contain Text, ticket or owner identifiers. No automatic fallback.
+        When the bound Voice session ends, the pairs spoken in it (not the handed-off pairs) are appended once,
+        in order, to this conversation as messages with channel VOICE, within the 400-message bound.
       security:
         - bearerAuth: []
       requestBody:
@@ -3640,6 +3642,12 @@ components:
           uniqueItems: true
           items: { $ref: "#/components/schemas/AiContextKind" }
         suggestion: { $ref: "#/components/schemas/AiCompanionSuggestion" }
+        channel:
+          type: string
+          enum: [VOICE]
+          description: >-
+            Present only on a message spoken in a Voice call that continued this conversation through a Text
+            handoff and was written back when the call ended. Absent means a Text message.
     AiConversation:
       type: object
       additionalProperties: false

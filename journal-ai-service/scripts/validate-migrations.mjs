@@ -306,6 +306,22 @@ assert.deepEqual(
   titleValidator.$jsonSchema.properties.encryptedTitle,
 );
 assert.equal(memoryNoteSchema.properties.memoryNoteUpdatedAt.bsonType, "date");
+const voiceChannelMigration = require("../migrations/024_companion_voice_message_channel.cjs");
+assert.equal(typeof voiceChannelMigration.up, "function");
+assert.equal(typeof voiceChannelMigration.down, "function");
+const voiceChannelMessage =
+  voiceChannelMigration.conversationValidator.$jsonSchema.properties.messages
+    .items;
+assert.equal(voiceChannelMessage.additionalProperties, false);
+assert.equal(voiceChannelMessage.required.includes("channel"), false);
+assert.deepEqual(voiceChannelMessage.properties.channel.enum, ["VOICE"]);
+assert.deepEqual(
+  voiceChannelMessage.properties.voiceSessionId,
+  voiceChannelMessage.properties.messageId,
+);
+assert.ok(
+  voiceChannelMigration.conversationValidator.$jsonSchema.properties.memoryNote,
+);
 assert.equal(
   benchmarkGovernanceMigration.commandCollection,
   "benchmark_admin_commands",
