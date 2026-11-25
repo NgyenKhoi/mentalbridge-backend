@@ -169,13 +169,18 @@ class CommunityAvatarIntegrationTests extends CommunityTestProperties {
 	}
 
 	@Test
-	void requiresUserAuthorizationVersionAndAnExactMediaIdOnlyBody() throws Exception {
+	void requiresUserOrSpecialistAuthorizationVersionAndAnExactMediaIdOnlyBody() throws Exception {
 		mvc.perform(put("/api/v1/community/profile/avatar").contentType(MediaType.APPLICATION_JSON).content("{\"mediaId\":null}"))
 				.andExpect(status().isUnauthorized());
 		mvc.perform(put("/api/v1/community/profile/avatar").with(jwt().jwt(token -> token.subject(subject.toString()))
-				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST")))
+				.authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
 				.contentType(MediaType.APPLICATION_JSON).content("{\"mediaId\":null}"))
 				.andExpect(status().isForbidden());
+		// A specialist sets the same account avatar: authorized, so only the missing version stops it.
+		mvc.perform(put("/api/v1/community/profile/avatar").with(jwt().jwt(token -> token.subject(subject.toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST")))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"mediaId\":null}"))
+				.andExpect(status().isPreconditionFailed());
 		select(null, null).andExpect(status().isPreconditionFailed());
 		for (var body : java.util.List.of("{}", "[]", "{\"mediaId\":42}", "{\"mediaId\":\"\"}",
 				"{\"mediaId\":\"1-1-1-1-1\"}", "{\"mediaId\":null,\"url\":\"https://example.test\"}")) {
