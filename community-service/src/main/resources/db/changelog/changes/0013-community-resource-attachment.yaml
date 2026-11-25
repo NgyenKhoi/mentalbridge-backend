@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0013-community-resource-attachment
+      author: mentalbridge
+      comment: Persist one optional stable Content-owned Resource reference per Community post for MB-614.
+      changes:
+        - addColumn:
+            tableName: community_post
+            columns:
+              - column:
+                  name: resource_id
+                  type: uuid

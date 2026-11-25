@@ -30,6 +30,19 @@ public class SecurityProblemSupport implements AuthenticationEntryPoint, AccessD
 		write(response, request, 401, "UNAUTHENTICATED", "Authentication is required");
 	}
 
+	public void invalidToken(HttpServletRequest request, HttpServletResponse response) throws IOException {
+		response.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+		response.setHeader("Cache-Control", "no-store");
+		write(response, request, 401, "invalid_token", "The access token is no longer valid");
+	}
+
+	public void authenticationDependencyUnavailable(HttpServletRequest request, HttpServletResponse response)
+			throws IOException {
+		response.setHeader("Cache-Control", "no-store");
+		write(response, request, 503, "authentication_dependency_unavailable",
+				"Authentication dependency is unavailable");
+	}
+
 	@Override
 	public void handle(HttpServletRequest request, HttpServletResponse response,
 			org.springframework.security.access.AccessDeniedException accessDeniedException) throws IOException {

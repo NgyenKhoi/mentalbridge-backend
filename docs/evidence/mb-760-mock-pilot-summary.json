@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "task": "MB-760",
+  "sourceSha": "386b42ff71bddd96738fd5252c4e5d575cff2507",
+  "generatedAt": "2026-10-28T07:51:08.689Z",
+  "mode": "MOCK_ONLY",
+  "providerCalls": 0,
+  "actualSpendMicroUsd": 0,
+  "actualDevicesTested": [],
+  "consentingHumanSpeakers": 0,
+  "regionsTested": 0,
+  "readiness": {
+    "status": "BLOCKED_ALLOWANCE",
+    "blockers": [
+      "BLOCKED_ALLOWANCE",
+      "BLOCKED_RECORDING",
+      "BLOCKED_EGRESS",
+      "BLOCKED_EXTERNALCONTENTEXPORT"
+    ],
+    "providerExecutionAvailable": false,
+    "basis": "operator-reported public status; not independently authenticated by this tool",
+    "snapshot": {
+      "checkedOn": "2026-10-28",
+      "plan": "BUILD_FREE",
+      "nextInvoiceMicroUsd": 0,
+      "remainingInferenceMicroUsd": null,
+      "observability": "VERIFIED_OFF",
+      "recording": "NOT_VERIFIED",
+      "egress": "NOT_VERIFIED",
+      "externalContentExport": "NOT_VERIFIED"
+    },
+    "campaign": "MB-760-first-benchmark",
+    "limits": {
+      "creditMicroUsd": 500000,
+      "sttMs": 600000,
+      "ttsCharacters": 3000
+    },
+    "sttCandidates": ["deepgram/nova-3", "deepgram/nova-2"],
+    "ttsCandidate": "cartesia/sonic-3-2026-01-12",
+    "voiceId": null
+  },
+  "simulatedTrials": 26,
+  "simulatedReservations": {
+    "campaign": "MB-760-first-benchmark",
+    "creditMicroUsd": 78671,
+    "sttMs": 260000,
+    "ttsCharacters": 1114
+  },
+  "missingHumanBaselineCells": 48,
+  "missingHumanScripts": 13,
+  "realSpeechMetrics": {
+    "prematureEnd": null,
+    "ttsFirstFrameLatency": null,
+    "bargeInSuccess": null,
+    "deviceFirstAudibleLatency": null,
+    "wer": null,
+    "sttFinalLatency": null,
+    "cer": null,
+    "falseActivations": null
+  },
+  "indicativePriceSnapshot": {
+    "checkedOn": "2026-10-28",
+    "source": "https://livekit.com/pricing/inference",
+    "sttMicroUsdPerMinute": {
+      "deepgram/nova-3": 4800,
+      "deepgram/nova-2": 5800
+    },
+    "ttsMicroUsdPerCharacter": 50
+  },
+  "productionEnabled": false
+}

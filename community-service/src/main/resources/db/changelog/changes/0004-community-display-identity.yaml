@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0004-community-display-identity
+      author: mentalbridge
+      comment: Add the governed optional avatar preset for MB-581 Community display identities.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_profile
+                  ADD COLUMN avatar_preset varchar(24);
+
+              ALTER TABLE community_profile
+                  ADD CONSTRAINT ck_community_profile_avatar_preset
+                  CHECK (avatar_preset IS NULL OR avatar_preset IN ('LEAF', 'SUNRISE', 'WAVE', 'LOTUS', 'CLOUD', 'SPROUT'));

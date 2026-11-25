@@ -1,0 +1,584 @@
+import { createHash } from "node:crypto";
+import { TransformStream } from "node:stream/web";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  AutoSubscribe,
+  initializeLogger,
+  stt,
+  voice,
+  inference,
+  type JobContext,
+} from "@livekit/agents";
+import { VAD } from "@livekit/agents-plugin-silero";
+import { RoomServiceClient } from "livekit-server-sdk";
+import {
+  ParticipantKind,
+  RoomEvent,
+  TrackKind,
+  TrackSource,
+  type RemoteParticipant,
+  type RemoteTrackPublication,
+  type AudioFrame,
+} from "@livekit/rtc-node";
+import { AgentFailure, type AgentConfiguration } from "./configuration.js";
+import { PilotSpeechBudget } from "./pilot-speech-budget.js";
+import type { Dispatch, Reply } from "./contract.js";
+import type { AgentState, MediaCallbacks, MediaPort } from "./voice-worker.js";
+import { AgentStatePublisher, isAdmittedAgent } from "./agent-state.js";
+import type { AgentDiagnostic } from "./diagnostics.js";
+import { mediaFailure } from "./diagnostics.js";
+
+export function speechUsage(metrics: {
+  type: string;
+  audioDurationMs?: number;
+  charactersCount?: number;
+  cancelled?: boolean;
+  ttfbMs?: number;
+  durationMs?: number;
+}): AgentDiagnostic | null {
+  if (
+    !["stt_metrics", "tts_metrics"].includes(metrics.type) ||
+    typeof metrics.audioDurationMs !== "number" ||
+    !Number.isFinite(metrics.audioDurationMs) ||
+    metrics.audioDurationMs < 0
+  )
+    return null;
+  if (metrics.type === "stt_metrics")
+    return {
+      phase: "speech_usage",
+      component: "STT",
+      audioDurationMs: metrics.audioDurationMs,
+    };
+  if (
+    typeof metrics.charactersCount !== "number" ||
+    !Number.isSafeInteger(metrics.charactersCount) ||
+    metrics.charactersCount < 0 ||
+    typeof metrics.cancelled !== "boolean"
+  )
+    return null;
+  return {
+    phase: "speech_usage",
+    component: "TTS",
+    audioDurationMs: metrics.audioDurationMs,
+    charactersCount: metrics.charactersCount,
+    cancelled: metrics.cancelled,
+    ...(typeof metrics.ttfbMs === "number" &&
+    Number.isFinite(metrics.ttfbMs) &&
+    metrics.ttfbMs >= 0
+      ? { ttsFirstByteMs: metrics.ttfbMs }
+      : {}),
+    ...(typeof metrics.durationMs === "number" &&
+    Number.isFinite(metrics.durationMs) &&
+    metrics.durationMs >= 0
+      ? { synthesisDurationMs: metrics.durationMs }
+      : {}),
+  };
+}
+
+export const sessionOptions = {
+  turnHandling: {
+    turnDetection: "manual" as const,
+    interruption: { enabled: false, resumeFalseInterruption: false },
+    preemptiveGeneration: { enabled: false, preemptiveTts: false },
+  },
+  userAwayTimeout: null,
+  transcriptionTimeout: null,
+  ttsFrameTimeout: 3000,
+  connOptions: {
+    sttConnOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
+    ttsConnOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
+    maxUnrecoverableErrors: 1,
+  },
+};
+export const startOptions = {
+  record: false,
+  inputOptions: {
+    audioEnabled: true,
+    textEnabled: false,
+    videoEnabled: false,
+    closeOnDisconnect: false,
+    deleteRoomOnClose: false,
+  },
+  outputOptions: {
+    audioEnabled: true,
+    transcriptionEnabled: false,
+    syncTranscription: false,
+  },
+};
+export const sttModelOptions = {
+  endpointing: 500,
+  interim_results: true,
+  punctuate: true,
+};
+export const ttsModelOptions = { speed: 0.9 };
+export const sentencePauseMs = 200;
+export function sentenceChunks(text: string): string[] {
+  return text
+    .split(
+      /(?<=[.!?…]["'”’)\]]*)(?<!(?:^|[\s(])(?:[A-Z]{1,3}|ThS|v\.v)\.)(?<!(?:^|[.!?…\n])\s*\d+\.)\s+/u,
+    )
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+}
+export function silence(ms: number, signal: AbortSignal): Promise<void> {
+  return delay(ms, undefined, { signal }).catch(() => undefined);
+}
+export function microphoneSubscriptions(
+  publications: Iterable<
+    Pick<RemoteTrackPublication, "kind" | "source" | "setSubscribed">
+  >,
+  enabled: boolean,
+) {
+  for (const publication of publications)
+    publication.setSubscribed(
+      enabled &&
+        publication.kind === TrackKind.KIND_AUDIO &&
+        publication.source === TrackSource.SOURCE_MICROPHONE,
+    );
+}
+export function recognitionLanguage(language: string): string {
+  try {
+    return new Intl.Locale(language).language === "vi" ? "vi" : language;
+  } catch {
+    return language;
+  }
+}
+export async function* inputAudioLevel(
+  audio: AsyncIterable<AudioFrame>,
+  receive: (value: AgentDiagnostic) => void,
+) {
+  let samples = 0;
+  let power = 0;
+  let peakAmplitude = 0;
+  let audioDurationMs = 0;
+  const emit = () => {
+    if (!samples) return;
+    receive({
+      phase: "input_audio_level",
+      component: "STT",
+      rms:
+        Math.round(Math.min(1, Math.sqrt(power / samples)) * 1000000) / 1000000,
+      peakAmplitude: Math.round(peakAmplitude * 1000000) / 1000000,
+      audioDurationMs: Math.round(audioDurationMs),
+    });
+    samples = power = peakAmplitude = audioDurationMs = 0;
+  };
+  try {
+    for await (const frame of audio) {
+      if (
+        Number.isSafeInteger(frame.sampleRate) &&
+        frame.sampleRate > 0 &&
+        frame.sampleRate <= 384000 &&
+        Number.isSafeInteger(frame.channels) &&
+        frame.channels > 0 &&
+        frame.channels <= 32
+      ) {
+        const sampleDurationMs = 1000 / (frame.sampleRate * frame.channels);
+        for (const pcm of frame.data) {
+          const amplitude = pcm / 32768;
+          samples++;
+          power += amplitude * amplitude;
+          peakAmplitude = Math.max(peakAmplitude, Math.abs(amplitude));
+          audioDurationMs += sampleDurationMs;
+          if (audioDurationMs >= 1000) emit();
+        }
+      }
+      yield frame;
+    }
+  } finally {
+    emit();
+  }
+}
+export function transcriptFilter(receive: MediaCallbacks["transcript"]) {
+  return new TransformStream<
+    stt.SpeechEvent | string,
+    stt.SpeechEvent | string
+  >({
+    transform(event, controller) {
+      if (typeof event === "string") return;
+      if (
+        event.type === stt.SpeechEventType.FINAL_TRANSCRIPT ||
+        event.type === stt.SpeechEventType.INTERIM_TRANSCRIPT
+      ) {
+        const first = event.alternatives?.[0];
+        if (first)
+          receive({
+            text: first.text,
+            final: event.type === stt.SpeechEventType.FINAL_TRANSCRIPT,
+            language: recognitionLanguage(first.language),
+            confidence: first.confidence,
+            segmentId: createHash("sha256")
+              .update(
+                `${String(first.startTime)}:${String(first.endTime)}:${first.text}`,
+              )
+              .digest("hex"),
+            durationMs: Math.max(0, (first.endTime - first.startTime) * 1000),
+          });
+        return;
+      }
+      const safeEvent = { ...event };
+      delete safeEvent.alternatives;
+      controller.enqueue(safeEvent);
+    },
+  });
+}
+export async function approvedPlayback(
+  output: {
+    once(
+      event: typeof voice.AudioOutput.EVENT_PLAYBACK_STARTED,
+      listener: () => void,
+    ): unknown;
+    off(
+      event: typeof voice.AudioOutput.EVENT_PLAYBACK_STARTED,
+      listener: () => void,
+    ): unknown;
+  },
+  text: string,
+  say: (
+    chunk: string,
+  ) => Pick<voice.SpeechHandle, "waitForPlayout" | "exception">,
+  started: () => Promise<void>,
+  signal: AbortSignal,
+  interrupt: () => void,
+  failed: () => void,
+  pause: (ms: number, signal: AbortSignal) => Promise<void> = silence,
+) {
+  if (signal.aborted) throw new AgentFailure("AUTHORITY_EXPIRED");
+  let publication: Promise<void> | undefined;
+  const onStart = () => {
+    publication ??= started();
+    void publication.catch(() => {
+      interrupt();
+      failed();
+    });
+  };
+  output.once(voice.AudioOutput.EVENT_PLAYBACK_STARTED, onStart);
+  signal.addEventListener("abort", interrupt, { once: true });
+  try {
+    const chunks = sentenceChunks(text);
+    const stopped = () => signal.aborted;
+    for (const [index, chunk] of (chunks.length ? chunks : [text]).entries()) {
+      if (index) await pause(sentencePauseMs, signal);
+      if (stopped()) break;
+      const speech = say(chunk);
+      await speech.waitForPlayout();
+      if (!index) await verifyPublication({ publication }, signal);
+      if (speech.exception()) throw new AgentFailure("PROVIDER_FAILED");
+    }
+  } finally {
+    output.off(voice.AudioOutput.EVENT_PLAYBACK_STARTED, onStart);
+    signal.removeEventListener("abort", interrupt);
+  }
+}
+async function verifyPublication(
+  value: { publication: Promise<void> | undefined },
+  signal: AbortSignal,
+) {
+  if (value.publication) await value.publication;
+  else if (!signal.aborted) throw new AgentFailure("PROVIDER_FAILED");
+}
+export class LiveKitMedia implements MediaPort {
+  private readonly pilotSpeechBudget: PilotSpeechBudget;
+  private session: voice.AgentSession | undefined;
+  private agent: voice.Agent | undefined;
+  private speech: voice.SpeechHandle | undefined;
+  private readonly pause = silence;
+  private playedOutAt = Number.NEGATIVE_INFINITY;
+  private callbacks: MediaCallbacks | undefined;
+  private owner: string | undefined;
+  private closed = false;
+  private inputEnabled = false;
+  private display: AgentStatePublisher | undefined;
+  private readonly cleanup: (() => void)[] = [];
+  constructor(
+    private readonly context: JobContext,
+    private readonly dispatch: Dispatch,
+    private readonly configuration: AgentConfiguration,
+    private readonly diagnostic: (value: AgentDiagnostic) => void = () =>
+      undefined,
+  ) {
+    this.pilotSpeechBudget = new PilotSpeechBudget(
+      configuration.pilotTtsMaxCharacters ?? 1200,
+    );
+  }
+  async start(callbacks: MediaCallbacks) {
+    initializeLogger({ pretty: false, level: "silent" });
+    this.callbacks = callbacks;
+    const context = this.context;
+    const guard = () => {
+      if (
+        context.room.isRecording ||
+        context.room.metadata !== this.dispatch.dispatchId
+      ) {
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
+        return;
+      }
+      const people = [...context.room.remoteParticipants.values()];
+      if (
+        people.length > 1 ||
+        people.some(
+          (p) =>
+            p.kind !== ParticipantKind.STANDARD ||
+            !/^vu-[0-9a-f-]{36}$/u.test(p.identity) ||
+            [...p.trackPublications.values()].some(
+              (t) =>
+                t.kind !== TrackKind.KIND_AUDIO ||
+                t.source !== TrackSource.SOURCE_MICROPHONE,
+            ),
+        )
+      ) {
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
+        return;
+      }
+      const person = people[0];
+      if (person && this.owner && person.identity !== this.owner) {
+        callbacks.failed(mediaFailure("PARTICIPANT_GUARD"));
+        return;
+      }
+      if (person) this.owner = person.identity;
+      this.input(this.inputEnabled);
+    };
+    context.room.on(RoomEvent.ParticipantConnected, guard);
+    context.room.on(RoomEvent.TrackPublished, guard);
+    context.room.on(RoomEvent.RoomMetadataChanged, guard);
+    context.room.on(RoomEvent.RoomUpdated, guard);
+    this.cleanup.push(() => {
+      context.room.off(RoomEvent.ParticipantConnected, guard);
+      context.room.off(RoomEvent.TrackPublished, guard);
+      context.room.off(RoomEvent.RoomMetadataChanged, guard);
+      context.room.off(RoomEvent.RoomUpdated, guard);
+    });
+    await context.connect(undefined, AutoSubscribe.SUBSCRIBE_NONE);
+    if (context.agent?.identity !== `va-${this.dispatch.attemptId}`)
+      throw new AgentFailure("DISPATCH_INVALID");
+    const {
+      livekitUrl,
+      apiKey: stateKey,
+      apiSecret: stateSecret,
+    } = this.configuration;
+    if (!livekitUrl || !stateKey || !stateSecret)
+      throw new AgentFailure("CONFIGURATION_INVALID");
+    const rooms = new RoomServiceClient(livekitUrl, stateKey, stateSecret, {
+      requestTimeout: 2,
+      failover: false,
+    });
+    const roomName = context.room.name;
+    if (!roomName) throw new AgentFailure("DISPATCH_INVALID");
+    const identity = `va-${this.dispatch.attemptId}`;
+    this.display = new AgentStatePublisher(
+      () =>
+        isAdmittedAgent(this.dispatch, roomName, {
+          connected: context.room.isConnected,
+          room: context.room.name,
+          metadata: context.room.metadata,
+          identity: context.room.localParticipant?.identity,
+          agent: context.room.localParticipant?.kind === ParticipantKind.AGENT,
+        }),
+      (attributes) =>
+        rooms.updateParticipant(roomName, identity, { attributes }),
+    );
+    this.display.state("CONNECTING");
+    guard();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const person = await Promise.race([
+      context.waitForParticipant(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new AgentFailure("PROVIDER_FAILED"));
+        }, 5000);
+        timer.unref();
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+    guard();
+    if (this.closed || this.owner !== person.identity)
+      throw new AgentFailure("DISPATCH_INVALID");
+    const vad = await VAD.load({
+      minSpeechDuration: 0.2,
+      minSilenceDuration: 1.5,
+      maxBufferedSpeech: 15,
+      forceCPU: true,
+    });
+    if (this.isClosed()) throw new AgentFailure("AUTHORITY_EXPIRED");
+    const { apiKey, apiSecret, voiceId } = this.configuration;
+    if (!apiKey || !apiSecret || !voiceId)
+      throw new AgentFailure("CONFIGURATION_INVALID");
+    const sttModel = new inference.STT({
+      model: this.configuration.sttModel,
+      language: "vi",
+      apiKey,
+      apiSecret,
+      modelOptions: sttModelOptions,
+      connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
+    });
+    const ttsModel = new inference.TTS({
+      model: this.configuration.ttsModel,
+      language: "vi",
+      voice: voiceId,
+      apiKey,
+      apiSecret,
+      modelOptions: ttsModelOptions,
+      connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
+    });
+    this.session = new voice.AgentSession({
+      ...sessionOptions,
+      vad,
+      stt: sttModel,
+      tts: ttsModel,
+    });
+    this.session.on(
+      voice.AgentSessionEventTypes.MetricsCollected,
+      ({ metrics }) => {
+        const filtered = speechUsage(metrics);
+        if (filtered) this.diagnostic(filtered);
+      },
+    );
+    this.session.input.setAudioEnabled(false);
+    const diagnostic = this.diagnostic;
+    this.agent = voice.Agent.create({
+      instructions: "",
+      llm: null,
+      async *sttNode(ctx, audio, settings) {
+        const events = await voice.Agent.default.sttNode(
+          ctx.agent,
+          inputAudioLevel(audio, diagnostic),
+          settings,
+        );
+        if (!events) return;
+        const filtered = events.pipeThrough(
+          transcriptFilter(callbacks.transcript),
+        );
+        for await (const event of filtered) yield event;
+      },
+      llmNode: () => null,
+    });
+    this.session.on(voice.AgentSessionEventTypes.Error, (event) => {
+      callbacks.failed(mediaFailure("SDK_ERROR", event));
+    });
+    this.session.on(voice.AgentSessionEventTypes.Close, (event) => {
+      if (!this.closed) callbacks.failed(mediaFailure("SDK_CLOSE", event));
+    });
+    const disconnected = (p: RemoteParticipant) => {
+      if (p.identity === this.owner) callbacks.connected(false);
+    };
+    const connected = (p: RemoteParticipant) => {
+      guard();
+      if (p.identity === this.owner) callbacks.connected(true);
+    };
+    const reconnecting = () => {
+      callbacks.failed(mediaFailure("ROOM_RECONNECTING"));
+    };
+    const disconnectedRoom = () => {
+      callbacks.failed(mediaFailure("ROOM_DISCONNECTED"));
+    };
+    const muted = (_track: unknown, p: { identity: string }) => {
+      if (p.identity === this.owner) callbacks.muted(true);
+    };
+    const unmuted = (_track: unknown, p: { identity: string }) => {
+      if (p.identity === this.owner) callbacks.muted(false);
+    };
+    context.room.on(RoomEvent.ParticipantDisconnected, disconnected);
+    context.room.on(RoomEvent.ParticipantConnected, connected);
+    context.room.on(RoomEvent.Reconnecting, reconnecting);
+    context.room.on(RoomEvent.Disconnected, disconnectedRoom);
+    context.room.on(RoomEvent.TrackMuted, muted);
+    context.room.on(RoomEvent.TrackUnmuted, unmuted);
+    this.cleanup.push(() => {
+      context.room.off(RoomEvent.ParticipantDisconnected, disconnected);
+      context.room.off(RoomEvent.ParticipantConnected, connected);
+      context.room.off(RoomEvent.Reconnecting, reconnecting);
+      context.room.off(RoomEvent.Disconnected, disconnectedRoom);
+      context.room.off(RoomEvent.TrackMuted, muted);
+      context.room.off(RoomEvent.TrackUnmuted, unmuted);
+    });
+    await this.session.start({
+      ...startOptions,
+      agent: this.agent,
+      room: context.room,
+      inputOptions: {
+        ...startOptions.inputOptions,
+        participantIdentity: person.identity,
+        participantKinds: [ParticipantKind.STANDARD],
+      },
+    });
+    if (this.isClosed()) {
+      await this.session.close();
+      throw new AgentFailure("AUTHORITY_EXPIRED");
+    }
+    callbacks.muted(
+      [...person.trackPublications.values()].some((t) => t.muted),
+    );
+  }
+  input(enabled: boolean) {
+    this.inputEnabled = enabled && !this.closed;
+    this.session?.input.setAudioEnabled(this.inputEnabled);
+    const participant = this.owner
+      ? this.context.room.remoteParticipants.get(this.owner)
+      : undefined;
+    microphoneSubscriptions(
+      participant?.trackPublications.values() ?? [],
+      this.inputEnabled,
+    );
+  }
+  state(state: AgentState, expression?: Reply["expression"]) {
+    this.display?.state(state, expression);
+  }
+  private isClosed() {
+    return this.closed;
+  }
+  async speak(text: string, started: () => Promise<void>, signal: AbortSignal) {
+    const session = this.session;
+    if (!session || this.closed || signal.aborted)
+      throw new AgentFailure("AUTHORITY_EXPIRED");
+    if (this.configuration.pilot) this.pilotSpeechBudget.reserve(text);
+    const output = session.output.audio;
+    if (!output) throw new AgentFailure("PROVIDER_FAILED");
+    const gap = this.playedOutAt + sentencePauseMs - performance.now();
+    if (gap > 0) await this.pause(gap, signal);
+    try {
+      await approvedPlayback(
+        output,
+        text,
+        (chunk) => {
+          this.speech = session.say(chunk, {
+            allowInterruptions: true,
+            addToChatCtx: false,
+          });
+          return this.speech;
+        },
+        started,
+        signal,
+        () => {
+          this.interrupt();
+        },
+        () => {
+          this.callbacks?.failed(mediaFailure("PLAYBACK_PUBLICATION"));
+        },
+        this.pause,
+      );
+    } finally {
+      this.speech = undefined;
+      this.playedOutAt = performance.now();
+    }
+  }
+  interrupt() {
+    this.speech?.interrupt(true);
+  }
+  async close() {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      this.input(false);
+      this.interrupt();
+      for (const callback of this.cleanup.splice(0)) callback();
+      await this.display?.close();
+      await this.session?.close();
+    } finally {
+      this.session = undefined;
+      this.agent = undefined;
+      this.callbacks = undefined;
+      await this.context.room.disconnect();
+    }
+  }
+}

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import type { ConversationEligibility } from './conversations/conversation-eligibility.js';
+import type { ConversationEvidence } from './conversations/conversation-evidence.js';
 import type { ServiceConfiguration } from './configuration/configuration.js';
 import { MongoDatabaseService } from './database/mongo-database.service.js';
 import { RedisService } from './database/redis.service.js';
@@ -13,11 +14,13 @@ import { RequestLoggingMiddleware } from './observability/request-logging.middle
 import { OperationsModule } from './operations/operations.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { WebsocketModule } from './websocket/websocket.module.js';
+import { SpecialistNotificationsModule } from './notifications/specialist-notifications.module.js';
 
 export interface ApplicationDependencies {
   readonly mongo?: MongoDatabaseService;
   readonly redis?: RedisService;
   readonly eligibility?: ConversationEligibility;
+  readonly evidence?: ConversationEvidence;
 }
 
 @Module({})
@@ -30,8 +33,9 @@ export class AppModule implements NestModule {
       module: AppModule,
       imports: [
         PlatformModule.register(configuration, dependencies),
-        OperationsModule,
-        WebsocketModule.register(dependencies.eligibility),
+        OperationsModule.register(),
+        ...(configuration.SPECIALIST_LIVE.enabled ? [SpecialistNotificationsModule] : []),
+        WebsocketModule.register(dependencies.eligibility, dependencies.evidence),
       ],
     };
   }

@@ -1,4 +1,9 @@
 spring:
+  datasource:
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   application:
     name: care-service
   cloud:
@@ -8,6 +13,18 @@ spring:
     enabled: true
   jpa:
     open-in-view: false
+    hibernate:
+      # Same as main: entity mappings must match the Liquibase schema.
+      ddl-auto: validate
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+management:
+  health:
+    redis:
+      enabled: false
 
 eureka:
   client:
@@ -15,3 +32,14 @@ eureka:
 
 springdotenv:
   enabled: false
+
+mentalbridge:
+  care:
+    user-notification-relay:
+      enabled: false
+      topic: mentalbridge.care.user-notification.v1
+      batch-size: 100
+      interval: PT5S
+      send-timeout: PT5S
+      retry-base: PT5S
+      retry-maximum: PT5M

@@ -1,5 +1,20 @@
 # Identity Service
 
+MB-779 adds a non-cacheable internal ACTIVE-account authorization read for Care,
+Community, and Consultation. Each caller uses its own 32–512 character service
+credential (`IDENTITY_ACCOUNT_STATUS_*_SERVICE_TOKEN`). Identity checks its local
+account repository; protected Identity requests never call Identity over HTTP.
+
+MB-685 adds `POST /internal/v1/community-chat/account-authorizations`, a read-only
+Community-only account eligibility query. Set `IDENTITY_COMMUNITY_CHAT_SERVICE_TOKEN`
+to a dedicated 32–512 character service credential in Identity and Community;
+an empty key disables authorization. Never reuse Notification/reminder tokens.
+The bounded request accepts at most 100 exact private account IDs and returns
+only the subset that are currently active, verified USER accounts. No address,
+name, role or status is returned. Results use `Cache-Control: no-store`; Community
+must fail closed on dependency failure and may not cache positive grants. This
+adds no persisted model and does not change existing token validation or routes.
+
 Owns accounts, credentials, roles, sessions, account lifecycle, deletion coordination, and a minimized security/audit projection. It owns PostgreSQL identity data and may use Redis only for expiring hashed OTP challenges and bounded security state.
 
 PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the owning feature. Concrete persistence coordinators are used only where locking or multi-repository work is non-trivial. Liquibase remains the schema source of truth and Hibernate runs with schema validation only.
@@ -7,8 +22,19 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 ## Integration
 
 - Inbound REST: [`identity-service-v1.yaml`](../contracts/openapi/identity-service-v1.yaml) defines public authentication and bounded account-administration APIs.
+- Administration audit: ADMIN-only browse and CSV export use the same bounded filters over Identity-owned, privacy-minimized audit facts. Queries are limited to a 90-day window inside a 365-day read-retention boundary; export is capped at 5,000 rows and 5 MiB. Cross-service audit events from Consultation, Content, and Community are ingested via versioned Kafka event facts (`mentalbridge.admin.audit-event.v1`) into the minimized projection with deduplication and privacy filtering.
 - Outbound REST: none in the initial architecture, so this service does not include OpenFeign.
-- Async: account lifecycle, deletion, and safe audit events will use Kafka with a transactional outbox.
+- Async: account lifecycle events use Kafka with a transactional outbox; cross-service administrative audit events consume from `mentalbridge.admin.audit-event.v1` with strict privacy allowlisting and deduplication.
+
+MB-787 extends the existing Consultation/SPECIALIST_REVIEW audit allowlist with
+`consultation.payout-destination.inspected`,
+`consultation.payout-destination.confirmed`, `consultation.payout.retried` and
+`consultation.payout.closed`.
+Their bound actions are `PAYOUT_DESTINATION_INSPECTED`,
+`PAYOUT_DESTINATION_CONFIRMED`, `PAYOUT_RETRIED` and `PAYOUT_CLOSED`; the failed
+payout closure records the safe reason `DESTINATION_UNUSABLE`. Account/tombstone targets
+and the content-free schema are unchanged. Bank/account/holder/provider data
+is never part of the projection.
 - Discovery: registers as `identity-service` in Eureka. Eureka supplies location metadata only.
 
 ## Configuration
@@ -17,6 +43,15 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | --- | --- | --- | --- |
 | `EUREKA_DEFAULT_ZONE` | Production | Eureka registry endpoint shared by Spring services | `http://localhost:8761/eureka/` |
 | `EUREKA_CLIENT_ENABLED` | No | Enables Eureka registration; disable it when running Identity by itself locally | `false` |
+| `KAFKA_BOOTSTRAP_SERVERS` | When relay/consumer enabled | Comma-separated Kafka brokers used by the outbox relay and audit consumer | `localhost:9092` |
+| `IDENTITY_AUDIT_INGESTION_ENABLED` | No | Enables Kafka consumer for cross-service administration audit facts | `true` |
+| `IDENTITY_AUDIT_INGESTION_TOPIC` | No | Kafka topic consumed for cross-service administration audit facts | `mentalbridge.admin.audit-event.v1` |
+| `IDENTITY_OUTBOX_RELAY_ENABLED` | No | Publishes due Identity outbox lifecycle events; keep disabled unless versioned topics exist | `false` |
+| `IDENTITY_OUTBOX_RELAY_BATCH_SIZE` | No | Maximum rows claimed per relay run | `100` |
+| `IDENTITY_OUTBOX_RELAY_INTERVAL` | No | Delay between bounded relay runs | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_SEND_TIMEOUT` | No | Maximum Kafka acknowledgement wait per event | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_RETRY_BASE` | No | Initial retry delay after a failed publish | `PT5S` |
+| `IDENTITY_OUTBOX_RELAY_RETRY_MAXIMUM` | No | Maximum retry delay for a still-unpublished row | `PT5M` |
 | `IDENTITY_DB_URL` | Yes | PostgreSQL JDBC URL; use `sslmode=require` for an RDS connection | `jdbc:postgresql://localhost:5432/mentalbridge_identity` |
 | `IDENTITY_DB_USERNAME` | Yes | Identity-owned PostgreSQL login | `mentalbridge_identity` |
 | `IDENTITY_DB_PASSWORD` | Yes | Identity PostgreSQL password injected outside source control | `replace-with-a-local-secret` |
@@ -37,8 +72,9 @@ PostgreSQL persistence uses Hibernate and Spring Data JPA types inside the ownin
 | `IDENTITY_E2E_USER_A_EMAIL` | When seeded | User A address; must end in `@synthetic.invalid` | `e2e-user-a@synthetic.invalid` |
 | `IDENTITY_E2E_USER_B_EMAIL` | When seeded | User B address; must end in `@synthetic.invalid` | `e2e-user-b@synthetic.invalid` |
 | `IDENTITY_E2E_PASSWORD` | When seeded | Shared local-only password for the two synthetic accounts | injected secret |
+| `APPOINTMENT_REMINDER_SERVICE_TOKEN` | When reminder flow enabled | Shared credential for the narrow verified-delivery-address read | injected secret |
 
-Production must override the local Eureka URL. Kafka and Redis variables will be documented when those runtime adapters are introduced.
+Production must override the local Eureka URL. The outbox relay is disabled by default and is enabled only when the version-controlled lifecycle topic has been provisioned. Redis variables will be documented when that runtime adapter is introduced.
 Registration persists the account with exactly one immutable `USER` or `SPECIALIST` role, hashed challenge, idempotent outcome, and outbox event in one transaction. The configured delivery adapter runs only after that transaction commits and never logs the recipient or challenge. Automated tests keep delivery isolated and never use live Brevo credentials.
 
 To prepare a new local checkout from the repository root, copy the committed template and generate development-only signing and encryption material:
@@ -73,7 +109,9 @@ cd identity-service
 
 The Brevo adapter is the only runtime email delivery path. It sends verification and password-recovery URLs only for eligible accounts after the owning transaction commits. Provider failure is logged with safe identifiers only and does not change the endpoint's generic response. Automated tests replace the delivery port with a mock and never call Brevo. Do not commit or share the `.env`, and use a development provider key rather than a production credential.
 
-The initial deployment provisions one dedicated `ADMIN` account through an operator-controlled bootstrap with externally supplied credentials. Public registration and account-administration APIs never create or promote an administrator. Liquibase enforces at most one `ADMIN` account but deliberately does not contain administrator credentials; deployment readiness must verify that secure provisioning has completed.
+The capstone dev/staging database provisions the sole `ADMIN` through changeset `identity-011-staging-admin-seed` (context `seed`) when no `ADMIN` exists, as accepted in the [ADR 0008 amendment](../docs/adr/0008-single-role-accounts-and-admin-bootstrap.md#amendment-2026-11-04-capstone-devstaging-admin-seed). Only the BCrypt cost-12 hash is committed. The migration job has no context filter and applies the seed; tests select context `test` to retain their own ADMIN fixtures. Production must select a context that excludes `seed` and use an operator bootstrap with externally supplied credentials. Public registration and account-administration APIs never create or promote an administrator; the database enforces at most one. The seed has no automatic rollback because an existing administrator must never be deleted when insertion was skipped.
+
+Audit responses expose only stable action/result codes, timestamps, correlation IDs, source metadata, safe actor IDs, and account/tombstone target identifiers. They never join another service database or expose email, profile data, raw journal or chat content, assessment answers, provider payloads, credentials, tokens, or secrets. Cross-service sources require a separate versioned event/API projection before they can appear in this view.
 
 Create the service-owned `mentalbridge_identity` database before running this module. Liquibase connects directly to that database and creates extensions, tables, indexes, constraints, reference data, and its tracking tables in the default `public` schema. Application startup deliberately does not run migrations.
 
@@ -89,6 +127,10 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 
 `updateSQL` is the review step and does not mutate the database. `update` applies pending owner changesets and records them in `mentalbridge_identity.public.databasechangelog`. Do not point `IDENTITY_DB_URL` at the administrative `postgres` database, and do not place real credentials in Maven arguments, repository files, or shell history.
 
+## MB-596 aggregate product journey
+
+`GET /api/v1/admin/product-journey-metrics` composes bounded USER, Care, and Consultation aggregates for an explicit half-open window of at most 366 days. USER activation rates use only accounts registered in the window and verified before its end; consultation confirmation/completion rates use only appointments requested in the window and reaching those milestones before its end. SPECIALIST and ADMIN accounts are excluded. It returns source/projection versions and as-of times, keeps missing dependencies and the unsupported Support Guide open fact explicitly unavailable, and exposes no user-level or clinical data. Rates describe product-journey cohort progress only, never clinical effectiveness, recovery, or causation.
+
 ## Run and test
 
 ```powershell
@@ -99,6 +141,43 @@ $env:IDENTITY_DB_PASSWORD='<identity-password>'
 The generated context test uses PostgreSQL, Kafka, and Redis Testcontainers and disables live Eureka registration.
 
 ## Runtime contract status
+
+### Recurring aggregate reports (MB-586)
+
+Identity owns ADMIN-only `/api/v1/admin/platform-report-schedules` management
+and the existing versioned ACCOUNT_ACTIVITY job engine. At most 50 nondeleted
+schedules may be created. DAILY, WEEKLY (Monday), and MONTHLY (day 1) schedules
+use an IANA timezone and minute-resolution wall time. Java timezone rules move
+DST gap times forward and select the earlier offset during an overlap.
+
+Each occurrence requests the preceding 1–366 completed UTC days, ending before
+the occurrence's UTC calendar date. A schedule row lock, unique job occurrence
+key, and one local transaction commit the queued job and next run together.
+One due schedule is handled per existing reporting poll; overdue schedules run
+once and advance to the next future occurrence, without replaying an unbounded
+backlog. Update/resume also select the next future occurrence.
+
+The approved recipient group is ADMIN and the only delivery target is
+ADMIN_REPORT_HISTORY. Delivery means publishing the aggregate artifact into the
+existing authenticated report history/download flow; no email, arbitrary URL,
+health content, second report engine, broker, or notification adapter is added.
+Current creator account access is checked before generation; revoked access
+pauses the schedule with ADMIN_ACCESS_UNAVAILABLE. Generation failures retain
+the existing immutable FAILED/STALE job evidence and idempotent retry API.
+Soft deletion stops future occurrences while retaining prior jobs/artifacts.
+Update, pause/resume and delete require the current `expectedVersion`; a stale
+write returns HTTP 412. Existing report artifact retention remains 30 days.
+
+Apply append-only migration `004-report-schedules.sql` before deploying. Old
+applications tolerate the additive table and nullable occurrence columns. Stop
+the schedule-aware runtime before rollback; do not drop audit-linked schedules.
+No new configuration is required; existing platform-reporting polling/enable
+settings control both scheduled enqueue and the shared processor.
+
+The implemented internal endpoint
+`GET /internal/v1/accounts/{accountId}/verified-email` returns an address only
+for an active account with a verified email and requires the dedicated service
+token. It is not a general account/profile read.
 
 Only OpenAPI paths marked `x-mentalbridge-status: implemented` have runtime handlers. They currently cover registration, email verification/resend, login, refresh, logout/logout-all, password recovery/reset/change, and current-account retrieval. Contract and provider tests compare this exact set with the Spring request mappings so an unavailable operation cannot silently become a frontend-facing 404.
 

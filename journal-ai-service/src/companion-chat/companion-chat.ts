@@ -1,0 +1,3770 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpException,
+  Inject,
+  Injectable,
+  Logger,
+  Module,
+  NotFoundException,
+  Param,
+  Post,
+  Put,
+  Req,
+  Res,
+  type DynamicModule,
+  type OnApplicationShutdown,
+} from "@nestjs/common";
+import {
+  Binary,
+  MongoClient,
+  MongoServerError,
+  type Collection,
+} from "mongodb";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
+import { z } from "zod";
+import { ProviderFailure } from "../llm-providers/llm-providers.js";
+import {
+  VoiceProviderFailure,
+  providerUsage,
+  voiceStopReason,
+  type VoiceObserver,
+} from "../llm-providers/voice-diagnostics.js";
+import { authorizeVoiceInput } from "../llm-providers/bedrock-voice-token-budget.js";
+import { VoiceJsonObjectArray } from "../llm-providers/voice-json-array.js";
+import {
+  bedrockConverseStreamUrl,
+  readBedrockConverseStream,
+} from "../llm-providers/bedrock-converse-stream.js";
+import {
+  companionMaxOutputTokens,
+  effectiveBedrockRequestLimits,
+} from "../llm-providers/bedrock-request-limits.js";
+import {
+  companionGuidanceSystem,
+  companionReplyMaxCharacters,
+  MAM_MEMORY_NOTE_MAX_CHARACTERS,
+  MAM_MEMORY_NOTE_VERSION,
+  MAM_TEXT_V3_MAX_CHARACTERS,
+  mamMemoryNoteSystem,
+} from "./companion-guidance-policy.js";
+import { VOICE_REPLY_MAX_CHARACTERS } from "./companion-voice-guidance.js";
+import {
+  SUGGESTION_DESTINATIONS,
+  resolveSuggestion,
+  type CompanionSuggestion,
+  type ProviderSuggestion,
+} from "./companion-suggestion.js";
+import {
+  companionUserInput,
+  estimateInputTokens,
+  type FriendInput,
+  type PreviousConversation,
+} from "./companion-text-request.js";
+import {
+  conversationMemory,
+  readableTurns,
+  MAM_HISTORY_LIMITS,
+  MAM_NOTE_TRANSCRIPT_LIMITS,
+} from "./conversation-history.js";
+import {
+  selectResponseMode,
+  type ResponseMode,
+} from "./companion-response-mode.js";
+import { ResourceCatalog } from "./resource-catalog.js";
+
+import {
+  CareConsentClient,
+  ConsentUnavailableError,
+  assertAiContextProcessingConsent,
+  type ConsentClient,
+} from "../analysis/analysis.js";
+import type { ServiceConfiguration } from "../configuration/configuration.js";
+import type { Entry, Revision } from "../journals/journal.js";
+import {
+  ConsultationEntitlementClient,
+  type AiProviderId,
+  type EntitlementClient,
+  type EntitlementDecision,
+  type ServicePlan,
+} from "../model-routing/model-routing.js";
+import type { AuthenticatedRequest } from "../security/authenticated-principal.js";
+import {
+  bedrockConverseRequest,
+  bedrockConverseUrl,
+  parseBedrockConverseResponse,
+} from "../llm-providers/bedrock.js";
+
+const REPOSITORY = "COMPANION_CHAT_REPOSITORY";
+const CONSENT = "COMPANION_CHAT_CONSENT";
+const ENTITLEMENT = "COMPANION_CHAT_ENTITLEMENT";
+const CONTEXT = "COMPANION_CHAT_CONTEXT";
+const PROVIDER = "COMPANION_CHAT_PROVIDER";
+const CLOCK = "COMPANION_CHAT_CLOCK";
+
+const uuid = z.uuid();
+const idempotencyKey = z.string().min(16).max(128);
+const defaultConversationTitle = "Cuộc trò chuyện mới";
+const conversationTitleSchema = z
+  .string()
+  .trim()
+  .refine((title) => {
+    const length = Array.from(title).length;
+    return length >= 1 && length <= 80;
+  });
+const createConversationSchema = z
+  .object({ title: conversationTitleSchema.optional() })
+  .strict();
+const renameTitleSchema = z.object({ title: conversationTitleSchema }).strict();
+const titleVersionSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
+const renameTitleResultSchema = z
+  .object({
+    conversationId: uuid,
+    title: conversationTitleSchema,
+    titleVersion: titleVersionSchema,
+  })
+  .strict();
+
+export const providerTitleInstruction =
+  "For this first TEXT reply only, include an optional title in the same JSON object: a short Vietnamese topic title, at most six words and 80 Unicode characters. Do not use crisis or diagnosis labels. This is display wording only, never a safety decision. Use null if no suitable title is available.";
+
+const normalizedProviderTitle = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const title = value.trim().replace(/\s+/gu, " ");
+  return conversationTitleSchema.safeParse(title).success &&
+    title.split(" ").length <= 6
+    ? title
+    : undefined;
+};
+
+const canInitializeTitle = (conversation: Conversation): boolean =>
+  conversation.messages.length === 0 &&
+  !Object.hasOwn(conversation, "encryptedTitle") &&
+  conversation.title === defaultConversationTitle;
+const sendMessageSchema = z
+  .object({
+    message: z.string().trim().min(1).max(2_000),
+    // Accepted temporarily for old clients, but deliberately ignored. The
+    // persisted owner-scoped conversation context is authoritative.
+    context: z.unknown().optional(),
+  })
+  .strict();
+const conversationContextSchema = z
+  .object({
+    sources: z
+      .object({
+        plan: z.boolean(),
+        diary: z.boolean(),
+        screening: z.boolean(),
+        resourceIds: z
+          .array(uuid)
+          .max(20)
+          .refine((ids) => new Set(ids).size === ids.length),
+      })
+      .strict(),
+  })
+  .strict();
+
+interface ChatRequest extends AuthenticatedRequest {
+  readonly id?: string;
+  readonly body: unknown;
+}
+
+export interface EncryptedChatText {
+  ciphertext: Buffer | Binary;
+  iv: Buffer | Binary;
+  tag: Buffer | Binary;
+  algorithm: "AES-256-GCM";
+  keyId: string;
+}
+
+export interface ChatRoute {
+  workload: "COMPANION_CHAT";
+  servicePlan: ServicePlan;
+  entitlementSource: EntitlementDecision["source"];
+  entitlementPolicyVersion: string;
+  entitlementVersion: number;
+  routingPolicyVersion: string;
+  providerApprovalVersion: string;
+  provider: AiProviderId;
+  model: string;
+  promptVersion: "companion-chat-v1";
+}
+
+export interface ChatMessage {
+  messageId: string;
+  role: "USER" | "ASSISTANT";
+  content: EncryptedChatText;
+  createdAt: Date;
+  route: ChatRoute | null;
+  contextKinds: ContextKind[];
+  suggestion?: EncryptedChatText;
+}
+
+export type ContextKind =
+  "JOURNAL" | "SUPPORT_PLAN" | "REASSESSMENT" | "RESOURCE";
+
+export interface ConversationContextSources {
+  plan: boolean;
+  diary: boolean;
+  screening: boolean;
+  resourceIds: string[];
+}
+
+const emptySources = (): ConversationContextSources => ({
+  plan: false,
+  diary: false,
+  screening: false,
+  resourceIds: [],
+});
+
+const hasPersonalSelection = (sources: ConversationContextSources) =>
+  sources.plan ||
+  sources.diary ||
+  sources.screening ||
+  sources.resourceIds.length > 0;
+
+export interface ConversationContext {
+  sources: ConversationContextSources;
+  updatedAt: Date;
+}
+
+export interface Conversation {
+  _id: string;
+  ownerAccountId: string;
+  title: string;
+  encryptedTitle?: EncryptedChatText;
+  context: ConversationContext;
+  messages: ChatMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date;
+  /** MB-846c: encrypted third-person note on this conversation, read by later Mầm conversations only with effective L2. */
+  memoryNote?: EncryptedChatText;
+  /** The conversation updatedAt the note summarises; a later updatedAt makes it stale. */
+  memoryNoteUpdatedAt?: Date;
+  memoryNoteVersion?: string;
+}
+
+export type ConversationSummary = Omit<Conversation, "messages">;
+
+export interface QuotaSnapshot {
+  plan: ServicePlan;
+  policyVersion: "companion-quota-v2";
+  remaining: number | null;
+  resetAt: string;
+  limitDisplayed: boolean;
+}
+
+export interface SendResult {
+  conversationId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  assistant: string;
+  createdAt: string;
+  contextKinds: ContextKind[];
+  quota: QuotaSnapshot;
+  suggestion: CompanionSuggestion | null;
+  title?: string;
+  titleVersion?: string;
+}
+
+export interface RenameTitleResult {
+  conversationId: string;
+  title: string;
+  titleVersion: string;
+}
+
+export interface RenameTitleOutcome {
+  operation: "RENAME_TITLE";
+  encryptedResult: EncryptedChatText;
+}
+
+export interface ChatCommand {
+  _id: string;
+  ownerAccountId: string;
+  conversationId: string;
+  keyHash: string;
+  fingerprint: string;
+  state: "RUNNING" | "SUCCEEDED" | "FAILED";
+  response: SendResult | RenameTitleOutcome | null;
+  failureCode: string | null;
+  failureStatus: number | null;
+  failureTitle: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date;
+}
+
+export interface ContextSelection {
+  plan: boolean;
+  diary: boolean;
+  screening: boolean;
+  resourceIds: string[];
+}
+
+export interface MinimizedContext {
+  kinds: ContextKind[];
+  prompt: string;
+}
+
+export interface ProviderReply {
+  message: string;
+  expression?: "neutral" | "comfort";
+  inputTokens: number;
+  outputTokens: number;
+  usageSource?: "PROVIDER" | "ESTIMATED";
+  suggestion?: ProviderSuggestion | null;
+  title?: string;
+}
+
+export { companionMaxOutputTokens };
+
+export const providerOutputJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "message",
+    "language",
+    "authority",
+    "clinicalAssessment",
+    "safetyDecision",
+    "eligibilityDecision",
+    "businessAction",
+    "thirdPartyAction",
+  ],
+  properties: {
+    message: { type: "string", minLength: 1, maxLength: 500 },
+    language: { type: "string", enum: ["vi"] },
+    authority: { type: "string", enum: ["SUPPORT_ONLY"] },
+    clinicalAssessment: { type: "string", enum: ["NONE"] },
+    safetyDecision: { type: "string", enum: ["NONE"] },
+    eligibilityDecision: { type: "string", enum: ["NONE"] },
+    businessAction: { type: "string", enum: ["NONE"] },
+    thirdPartyAction: { type: "string", enum: ["NONE"] },
+  },
+} as const;
+
+export const voiceProviderOutputJsonSchema = {
+  ...providerOutputJsonSchema,
+  properties: {
+    ...providerOutputJsonSchema.properties,
+    message: {
+      type: "string",
+      minLength: 1,
+      maxLength: VOICE_REPLY_MAX_CHARACTERS,
+    },
+    expression: {
+      anyOf: [
+        { type: "string", enum: ["neutral", "comfort"] },
+        { type: "null" },
+      ],
+    },
+  },
+} as const;
+
+const voiceExpressionSchema = z.enum(["neutral", "comfort"]);
+
+const providerOutputSchema = z
+  .object({
+    message: z.string().trim().min(1).max(500),
+    language: z.literal("vi"),
+    authority: z.literal("SUPPORT_ONLY"),
+    clinicalAssessment: z.literal("NONE"),
+    safetyDecision: z.literal("NONE"),
+    eligibilityDecision: z.literal("NONE"),
+    businessAction: z.literal("NONE"),
+    thirdPartyAction: z.literal("NONE"),
+  })
+  .strict();
+
+/** TEXT guidance v2 output: v1 plus a nullable closed-enum suggestion. No pattern keyword; the server validates refs. */
+export const providerOutputJsonSchemaV2 = {
+  ...providerOutputJsonSchema,
+  required: [...providerOutputJsonSchema.required, "suggestion"],
+  properties: {
+    ...providerOutputJsonSchema.properties,
+    suggestion: {
+      anyOf: [
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["destination", "resourceRef"],
+          properties: {
+            destination: { type: "string", enum: SUGGESTION_DESTINATIONS },
+            resourceRef: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+        },
+        { type: "null" },
+      ],
+    },
+  },
+} as const;
+
+export const providerOutputSchemaV2 = providerOutputSchema.extend({
+  suggestion: z
+    .object({
+      destination: z.string(),
+      resourceRef: z.string().nullable(),
+    })
+    .strict()
+    .nullable(),
+});
+
+const paidMessageJsonSchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: 900,
+} as const;
+
+const paidProviderOutputJsonSchema = {
+  ...providerOutputJsonSchema,
+  properties: {
+    ...providerOutputJsonSchema.properties,
+    message: paidMessageJsonSchema,
+  },
+} as const;
+
+const paidProviderOutputJsonSchemaV2 = {
+  ...providerOutputJsonSchemaV2,
+  properties: {
+    ...providerOutputJsonSchemaV2.properties,
+    message: paidMessageJsonSchema,
+  },
+} as const;
+
+const paidProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(900),
+});
+
+const mamProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(MAM_TEXT_V3_MAX_CHARACTERS),
+});
+
+const voiceProviderOutputSchema = providerOutputSchema.extend({
+  message: z.string().trim().min(1).max(VOICE_REPLY_MAX_CHARACTERS),
+});
+
+const unsafeAssistantPatterns = [
+  /(?:ignore|disregard) (?:all )?(?:previous|system|developer) (?:instructions?|messages?)/iu,
+  /(?:bỏ qua|phớt lờ).{0,40}(?:chỉ dẫn|hướng dẫn|system|developer)/iu,
+  /(?:system prompt|developer message|hidden reasoning|chain[- ]of[- ]thought)/iu,
+  /(?:tôi|mình|hệ thống|we|i).{0,24}(?:đã|vừa|have|has).{0,24}(?:cập nhật|thay đổi|xóa|kích hoạt|tạm dừng|updated|changed|deleted|activated|paused).{0,48}(?:kế hoạch hỗ trợ|support\s*plan)/iu,
+  /(?:tôi|mình|hệ thống|we|i).{0,24}(?:đã|vừa|have|has).{0,24}(?:lên lịch|scheduled).{0,48}(?:nhắc nhở|reminder)/iu,
+  /(?:tôi|mình|hệ thống|we|i).{0,24}(?:đã|vừa|have|has).{0,24}(?:liên hệ|contacted).{0,48}(?:bác sĩ|chuyên gia|gia đình|doctor|specialist|family|third part)/iu,
+  /(?:chẩn đoán của (?:tôi|mình)|tôi chẩn đoán|mình chẩn đoán|i diagnose|my diagnosis is)/iu,
+  /(?:bạn|you).{0,24}(?:bị|mắc|đang mắc|have|suffer from).{0,24}(?:trầm cảm|lo âu|rối loạn|depression|anxiety|disorder)/iu,
+  /(?:phq-?9|gad-?7).{0,24}(?:điểm|score|là|is).{0,8}\d/iu,
+  /(?:bạn đang an toàn|bạn không có nguy cơ|you are safe|you are not at risk)/iu,
+  /(?:bạn|you).{0,16}(?:đủ|không đủ|are eligible|are not eligible).{0,32}(?:điều kiện|gói|kế hoạch|plan|support)/iu,
+];
+
+// The server and web own every link; same block as support-plan-companion.ts.
+const linkOrMarkup = /https?:\/\/|www\.|<[^>]+>|\[[^\]]+\]\([^)]+\)/iu;
+
+// A deep Mầm v3 reply (up to 1500 characters) needs longer generation than a 10 s attempt allows.
+export const providerAttemptMs = (mamTextV3: boolean): number =>
+  mamTextV3 ? 18_000 : 10_000;
+
+// Room kept for up to three notes in the reply request (3 × 400 characters of Vietnamese, bytes/4).
+const MEMORY_BLOCK_TOKENS = 1_000;
+
+/** About 6 s for note generation, leaving the reply about 12 s of the 24 s send deadline; 0 or less skips notes. */
+export const noteGenerationMs = (sendDeadline: number, now: number): number =>
+  Math.min(6_000, sendDeadline - now - 12_000);
+
+/** A long note keeps its whole sentences up to the limit (the real model overshot 350 once in 9 runs); none fit means no note. */
+export const memoryNoteWithinLimit = (note: string): string | null => {
+  const characters = Array.from(note);
+  if (characters.length <= MAM_MEMORY_NOTE_MAX_CHARACTERS) return note;
+  const head = characters.slice(0, MAM_MEMORY_NOTE_MAX_CHARACTERS).join("");
+  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "));
+  return end > 0 ? head.slice(0, end + 1) : null;
+};
+
+const withoutCutOffTail = (message: string): string =>
+  /[.!?…”»)\p{Extended_Pictographic}]️?$/u.test(message)
+    ? message
+    : (/^([\s\S]*(?:[.!?…]|\p{Extended_Pictographic}️?))\s+\S[\s\S]*$/u.exec(
+        message,
+      )?.[1] ?? message);
+
+/** Voice history minus its oldest pair (selected Text first, then current call); null when nothing is left. */
+export const withoutOldestVoicePair = (prompt: string): string | null => {
+  let value: unknown;
+  try {
+    value = JSON.parse(prompt);
+  } catch {
+    return null;
+  }
+  if (Array.isArray(value))
+    return value.length ? JSON.stringify(value.slice(1)) : null;
+  if (value && typeof value === "object") {
+    const { selectedText, currentCall } = value as Record<string, unknown>;
+    if (Array.isArray(selectedText) && selectedText.length)
+      return JSON.stringify({ ...value, selectedText: selectedText.slice(1) });
+    if (Array.isArray(currentCall) && currentCall.length)
+      return JSON.stringify({ ...value, currentCall: currentCall.slice(1) });
+  }
+  return null;
+};
+
+export const validatedAssistantMessage = (
+  value: string,
+  options?: { rejectLinks?: boolean; maxLength?: number },
+): string => {
+  const message = value.trim();
+  if (
+    message.length === 0 ||
+    message.length > (options?.maxLength ?? 500) ||
+    !/[\u00c0-\u1ef9]/u.test(message) ||
+    unsafeAssistantPatterns.some((pattern) => pattern.test(message)) ||
+    (options?.rejectLinks === true && linkOrMarkup.test(message))
+  )
+    throw new ChatProblem(
+      503,
+      "CHAT_PROVIDER_INVALID_RESPONSE",
+      "AI response is invalid",
+    );
+  return message;
+};
+
+export interface ProviderSpeechUnit {
+  message: string;
+  expression: "neutral" | "comfort";
+}
+export interface ChatProvider {
+  reply(
+    userMessage: string,
+    context: MinimizedContext,
+    route: Pick<ChatRoute, "provider" | "model">,
+    options?: {
+      signal?: AbortSignal;
+      voice?: boolean;
+      textHandoff?: boolean;
+      voiceObserver?: VoiceObserver;
+      onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
+      friend?: FriendInput;
+      responseMode?: ResponseMode;
+      plan?: ServicePlan;
+      requestTitle?: boolean;
+      /** MB-846c: userMessage is an earlier conversation; return its memory note as message. */
+      memoryNote?: boolean;
+      onUsage?: (inputTokens: number, outputTokens: number) => void;
+    },
+  ): Promise<ProviderReply>;
+}
+
+export const selectCompanionProviderRoute = (
+  configuration: ServiceConfiguration,
+  plan: ServicePlan,
+): Pick<
+  ChatRoute,
+  | "provider"
+  | "model"
+  | "providerApprovalVersion"
+  | "routingPolicyVersion"
+  | "promptVersion"
+> => {
+  if (configuration.PROVIDER_MODE === "DETERMINISTIC_FAKE")
+    return {
+      provider: "DETERMINISTIC_FAKE",
+      model: "deterministic-companion-v1",
+      providerApprovalVersion: "local-deterministic-v1",
+      routingPolicyVersion: configuration.CHAT_ROUTING_POLICY_VERSION,
+      promptVersion: "companion-chat-v1",
+    };
+  const configured =
+    plan === "PREMIUM"
+      ? configuration.PREMIUM_ROUTE
+      : configuration.FREE_PLUS_ROUTE;
+  if (!configured || !configuration.PROVIDER_APPROVAL_VERSION)
+    throw new ChatProblem(
+      503,
+      "CHAT_ROUTE_UNAVAILABLE",
+      "Approved AI route is unavailable",
+    );
+  return {
+    provider: configured.provider,
+    model: configured.model,
+    providerApprovalVersion: configuration.PROVIDER_APPROVAL_VERSION,
+    routingPolicyVersion: configuration.CHAT_ROUTING_POLICY_VERSION,
+    promptVersion: "companion-chat-v1",
+  };
+};
+
+export interface ChatContextAssembler {
+  assemble(
+    ownerAccountId: string,
+    bearer: string,
+    correlationId: string,
+    selection: ContextSelection,
+  ): Promise<MinimizedContext>;
+}
+
+export interface CompanionClock {
+  now(): Date;
+}
+
+export interface ChatRepository {
+  createConversation(conversation: Conversation): Promise<Conversation>;
+  listConversations(ownerAccountId: string): Promise<ConversationSummary[]>;
+  findConversation(
+    ownerAccountId: string,
+    conversationId: string,
+  ): Promise<Conversation | null>;
+  updateConversationContext(
+    ownerAccountId: string,
+    conversationId: string,
+    context: ConversationContext,
+  ): Promise<Conversation | null>;
+  deleteConversation(
+    ownerAccountId: string,
+    conversationId: string,
+  ): Promise<boolean>;
+  /** Up to limit other unexpired conversations updated since, newest first, with their last 20 messages. */
+  memoryCandidates(
+    ownerAccountId: string,
+    excludeConversationId: string,
+    since: Date,
+    now: Date,
+    limit: number,
+  ): Promise<Conversation[]>;
+  /** Stores a note for the conversation state it summarised; a newer conversation keeps its old note. */
+  saveMemoryNote(
+    ownerAccountId: string,
+    conversationId: string,
+    summarisedUpdatedAt: Date,
+    note: EncryptedChatText,
+    version: string,
+  ): Promise<void>;
+  purgeMemoryNotes(ownerAccountId: string): Promise<void>;
+  findCommand(
+    ownerAccountId: string,
+    keyHash: string,
+  ): Promise<ChatCommand | null>;
+  beginCommand(command: ChatCommand): Promise<void>;
+  reserve(
+    ownerAccountId: string,
+    reservationId: string,
+    localDate: string,
+    minuteBucket: string,
+    plan: ServicePlan,
+    answerLimit: number,
+    rateLimit: number,
+    tokenBudget: number,
+    expiresAt: Date,
+  ): Promise<{ successfulAnswers: number; usedTokens: number }>;
+  reserveAttempt(
+    command: ChatCommand,
+    estimate: number,
+    budget: number,
+  ): Promise<void>;
+  settleAttempt(command: ChatCommand, difference: number): Promise<number>;
+  complete(
+    command: ChatCommand,
+    userMessage: ChatMessage,
+    assistantMessage: ChatMessage,
+    result: SendResult,
+    deadline: number,
+    encryptedTitle?: EncryptedChatText,
+  ): Promise<void>;
+  renameTitle(
+    command: ChatCommand,
+    expected: Conversation,
+    encryptedTitle: EncryptedChatText,
+  ): Promise<void>;
+  fail(
+    command: ChatCommand,
+    code: string,
+    status: number,
+    title: string,
+  ): Promise<void>;
+}
+
+export interface CompanionChatDependencies {
+  repository?: ChatRepository;
+  consentClient?: ConsentClient;
+  entitlementClient?: EntitlementClient;
+  contextAssembler?: ChatContextAssembler;
+  provider?: ChatProvider;
+  clock?: CompanionClock;
+  catalog?: Pick<ResourceCatalog, "items">;
+}
+
+class ChatProblem extends HttpException {
+  constructor(
+    status: number,
+    readonly code: string,
+    readonly safeTitle: string,
+  ) {
+    super({ statusCode: status, status, code, title: safeTitle }, status);
+  }
+}
+
+const buffer = (value: Buffer | Binary): Buffer =>
+  Buffer.isBuffer(value) ? value : Buffer.from(value.buffer);
+
+const requestOwner = (request: ChatRequest): string => {
+  const value = request.principal?.accountId;
+  if (!value || !uuid.safeParse(value).success)
+    throw new ChatProblem(
+      401,
+      "AUTHENTICATION_REQUIRED",
+      "Authentication is required",
+    );
+  return value;
+};
+
+const header = (request: ChatRequest, name: string): string | undefined => {
+  const value = request.headers[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const bearer = (request: ChatRequest): string => {
+  const value = header(request, "authorization");
+  if (!value?.startsWith("Bearer "))
+    throw new ChatProblem(
+      401,
+      "AUTHENTICATION_REQUIRED",
+      "Authentication is required",
+    );
+  return value.slice(7);
+};
+
+const digest = (key: Buffer, value: string): string =>
+  createHmac("sha256", key).update(value).digest("base64url");
+
+const localDate = (instant: Date, timezone: string): string => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const pick = (type: string) =>
+    parts.find((part) => part.type === type)?.value;
+  const year = pick("year");
+  const month = pick("month");
+  const day = pick("day");
+  if (!year || !month || !day) throw new Error("Unable to resolve local date");
+  return `${year}-${month}-${day}`;
+};
+
+const nextLocalDay = (instant: Date, timezone: string): Date => {
+  const today = localDate(instant, timezone);
+  let low = instant.getTime();
+  let high = low + 30 * 60 * 60 * 1_000;
+  while (high - low > 1_000) {
+    const middle = Math.floor((low + high) / 2);
+    if (localDate(new Date(middle), timezone) === today) low = middle;
+    else high = middle;
+  }
+  return new Date(high);
+};
+
+@Injectable()
+export class ChatCrypto {
+  private readonly logger = new Logger(ChatCrypto.name);
+
+  constructor(private readonly configuration: ServiceConfiguration) {}
+
+  encryptTitle(owner: string, conversationId: string, title: string) {
+    return this.seal(`${owner}:${conversationId}:title`, title);
+  }
+
+  decryptTitle(
+    owner: string,
+    conversationId: string,
+    envelope: EncryptedChatText | undefined,
+  ) {
+    if (!envelope) throw new Error("Title encryption metadata is unavailable");
+    z.object({
+      algorithm: z.literal("AES-256-GCM"),
+      keyId: z.literal(this.configuration.JOURNAL_ENCRYPTION_KEY_ID),
+    }).parse(envelope);
+    const title = this.open(`${owner}:${conversationId}:title`, envelope);
+    if (Array.from(title).length > 80)
+      throw new Error("Title bounds are invalid");
+    conversationTitleSchema.parse(title);
+    return title;
+  }
+
+  titleVersion(conversation: ConversationSummary): string {
+    const bytes = (value: unknown): unknown =>
+      Buffer.isBuffer(value) || value instanceof Binary
+        ? buffer(value).toString("base64")
+        : value;
+    const envelope = conversation.encryptedTitle;
+    const state = Object.hasOwn(conversation, "encryptedTitle")
+      ? [
+          "encrypted",
+          envelope
+            ? [
+                envelope.algorithm,
+                envelope.keyId,
+                bytes(envelope.iv),
+                bytes(envelope.tag),
+                bytes(envelope.ciphertext),
+              ]
+            : envelope,
+        ]
+      : ["legacy", conversation.title];
+    return digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify([conversation.ownerAccountId, conversation._id, state]),
+    );
+  }
+
+  title(
+    conversation: ConversationSummary,
+  ): Pick<RenameTitleResult, "title" | "titleVersion"> {
+    let title = conversation.title;
+    if (Object.hasOwn(conversation, "encryptedTitle")) {
+      try {
+        title = this.decryptTitle(
+          conversation.ownerAccountId,
+          conversation._id,
+          conversation.encryptedTitle,
+        );
+      } catch {
+        this.logger.warn("CHAT_TITLE_DECRYPT_FAILED");
+        title = defaultConversationTitle;
+      }
+    }
+    return { title, titleVersion: this.titleVersion(conversation) };
+  }
+
+  encryptRenameResult(
+    owner: string,
+    conversationId: string,
+    commandId: string,
+    result: RenameTitleResult,
+  ) {
+    return this.seal(
+      `${owner}:${conversationId}:${commandId}:rename-title-result`,
+      JSON.stringify(result),
+    );
+  }
+
+  decryptRenameResult(
+    owner: string,
+    conversationId: string,
+    commandId: string,
+    envelope: EncryptedChatText,
+  ): RenameTitleResult {
+    return renameTitleResultSchema.parse(
+      JSON.parse(
+        this.open(
+          `${owner}:${conversationId}:${commandId}:rename-title-result`,
+          envelope,
+        ),
+      ),
+    );
+  }
+
+  // A distinct AAD keeps a memory note from passing as a title or message.
+  encryptMemoryNote(owner: string, conversationId: string, note: string) {
+    return this.seal(`${owner}:${conversationId}:memory-note`, note);
+  }
+
+  decryptMemoryNote(
+    owner: string,
+    conversationId: string,
+    envelope: EncryptedChatText,
+  ): string {
+    return this.open(`${owner}:${conversationId}:memory-note`, envelope);
+  }
+
+  encrypt(
+    owner: string,
+    conversationId: string,
+    messageId: string,
+    text: string,
+  ) {
+    return this.seal(`${owner}:${conversationId}:${messageId}`, text);
+  }
+
+  decrypt(owner: string, conversationId: string, message: ChatMessage): string {
+    return this.open(
+      `${owner}:${conversationId}:${message.messageId}`,
+      message.content,
+    );
+  }
+
+  // A distinct AAD keeps a suggestion envelope from passing as message content.
+  encryptSuggestion(
+    owner: string,
+    conversationId: string,
+    messageId: string,
+    suggestion: CompanionSuggestion,
+  ) {
+    return this.seal(
+      `${owner}:${conversationId}:${messageId}:suggestion`,
+      JSON.stringify(suggestion),
+    );
+  }
+
+  decryptSuggestion(
+    owner: string,
+    conversationId: string,
+    message: ChatMessage,
+  ): CompanionSuggestion | null {
+    if (!message.suggestion) return null;
+    // Optional: an unreadable suggestion drops the button, never the conversation.
+    try {
+      const text = this.open(
+        `${owner}:${conversationId}:${message.messageId}:suggestion`,
+        message.suggestion,
+      );
+      return storedSuggestionSchema.safeParse(JSON.parse(text)).data ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private seal(aad: string, text: string): EncryptedChatText {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      this.configuration.JOURNAL_ENCRYPTION_KEY,
+      iv,
+    );
+    cipher.setAAD(Buffer.from(aad));
+    const ciphertext = Buffer.concat([
+      cipher.update(text, "utf8"),
+      cipher.final(),
+    ]);
+    return {
+      ciphertext,
+      iv,
+      tag: cipher.getAuthTag(),
+      algorithm: "AES-256-GCM" as const,
+      keyId: this.configuration.JOURNAL_ENCRYPTION_KEY_ID,
+    };
+  }
+
+  private open(aad: string, envelope: EncryptedChatText): string {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      this.configuration.JOURNAL_ENCRYPTION_KEY,
+      buffer(envelope.iv),
+    );
+    decipher.setAAD(Buffer.from(aad));
+    decipher.setAuthTag(buffer(envelope.tag));
+    return Buffer.concat([
+      decipher.update(buffer(envelope.ciphertext)),
+      decipher.final(),
+    ]).toString("utf8");
+  }
+}
+
+const storedSuggestionSchema = z
+  .object({
+    destination: z.enum(SUGGESTION_DESTINATIONS),
+    resourceId: uuid.nullable(),
+    resourceTitle: z.string().min(1).max(200).nullable(),
+  })
+  .strict();
+
+interface QuotaLedger {
+  _id: string;
+  ownerAccountId: string;
+  localDate: string;
+  plan: ServicePlan;
+  successfulAnswers: number;
+  usedTokens: number;
+  reservations: string[];
+  expiresAt: Date;
+}
+
+interface RateLedger {
+  _id: string;
+  ownerAccountId: string;
+  minuteBucket: string;
+  count: number;
+  expiresAt: Date;
+}
+
+@Injectable()
+export class MongoChatRepository
+  implements ChatRepository, OnApplicationShutdown
+{
+  private readonly client: MongoClient;
+  private readonly conversations: Collection<Conversation>;
+  private readonly commands: Collection<ChatCommand>;
+  private readonly quotas: Collection<QuotaLedger>;
+  private readonly rates: Collection<RateLedger>;
+
+  constructor(private readonly configuration: ServiceConfiguration) {
+    this.client = new MongoClient(configuration.MONGODB_URI, {
+      connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+      serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+    });
+    const db = this.client.db(configuration.MONGODB_DATABASE);
+    this.conversations = db.collection("ai_companion_conversations");
+    this.commands = db.collection("ai_companion_commands");
+    this.quotas = db.collection("ai_companion_quota_ledgers");
+    this.rates = db.collection("ai_companion_rate_ledgers");
+  }
+
+  private connect() {
+    return this.client.connect().then(() => undefined);
+  }
+
+  async onApplicationShutdown() {
+    await this.client.close();
+  }
+
+  async createConversation(value: Conversation) {
+    await this.connect();
+    await this.conversations.insertOne(value);
+    return value;
+  }
+
+  async listConversations(ownerAccountId: string) {
+    await this.connect();
+    return this.conversations
+      .aggregate<ConversationSummary>([
+        { $match: { ownerAccountId } },
+        { $sort: { updatedAt: -1, _id: -1 } },
+        { $limit: 50 },
+        {
+          $project: {
+            _id: 1,
+            ownerAccountId: 1,
+            title: 1,
+            encryptedTitle: 1,
+            context: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            expiresAt: 1,
+          },
+        },
+      ])
+      .toArray();
+  }
+
+  async findConversation(ownerAccountId: string, conversationId: string) {
+    await this.connect();
+    return this.conversations.findOne({ _id: conversationId, ownerAccountId });
+  }
+
+  async updateConversationContext(
+    ownerAccountId: string,
+    conversationId: string,
+    context: ConversationContext,
+  ) {
+    await this.connect();
+    return this.conversations.findOneAndUpdate(
+      { _id: conversationId, ownerAccountId },
+      { $set: { context, updatedAt: context.updatedAt } },
+      { returnDocument: "after" },
+    );
+  }
+
+  async deleteConversation(ownerAccountId: string, conversationId: string) {
+    await this.connect();
+    const session = this.client.startSession();
+    try {
+      let deleted = false;
+      await session.withTransaction(async () => {
+        const result = await this.conversations.deleteOne(
+          { _id: conversationId, ownerAccountId },
+          { session },
+        );
+        deleted = result.deletedCount === 1;
+        if (deleted)
+          await this.commands.deleteMany(
+            { ownerAccountId, conversationId },
+            { session },
+          );
+      });
+      return deleted;
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async memoryCandidates(
+    ownerAccountId: string,
+    excludeConversationId: string,
+    since: Date,
+    now: Date,
+    limit: number,
+  ) {
+    await this.connect();
+    return this.conversations
+      .find(
+        {
+          ownerAccountId,
+          _id: { $ne: excludeConversationId },
+          "messages.1": { $exists: true },
+          updatedAt: { $gte: since },
+          expiresAt: { $gt: now },
+        },
+        { projection: { messages: { $slice: -20 } } },
+      )
+      .sort({ updatedAt: -1, _id: -1 })
+      .limit(limit)
+      .toArray();
+  }
+
+  async saveMemoryNote(
+    ownerAccountId: string,
+    conversationId: string,
+    summarisedUpdatedAt: Date,
+    note: EncryptedChatText,
+    version: string,
+  ) {
+    await this.connect();
+    await this.conversations.updateOne(
+      { _id: conversationId, ownerAccountId, updatedAt: summarisedUpdatedAt },
+      {
+        $set: {
+          memoryNote: note,
+          memoryNoteUpdatedAt: summarisedUpdatedAt,
+          memoryNoteVersion: version,
+        },
+      },
+    );
+  }
+
+  async purgeMemoryNotes(ownerAccountId: string) {
+    await this.connect();
+    await this.conversations.updateMany(
+      { ownerAccountId, memoryNote: { $exists: true } },
+      {
+        $unset: {
+          memoryNote: "",
+          memoryNoteUpdatedAt: "",
+          memoryNoteVersion: "",
+        },
+      },
+    );
+  }
+
+  async findCommand(ownerAccountId: string, keyHash: string) {
+    await this.connect();
+    return this.commands.findOne({ ownerAccountId, keyHash });
+  }
+
+  async beginCommand(command: ChatCommand) {
+    await this.connect();
+    try {
+      await this.commands.insertOne(command);
+    } catch (error) {
+      throw new ConflictException({ cause: error });
+    }
+  }
+
+  async reserve(
+    ownerAccountId: string,
+    reservationId: string,
+    day: string,
+    minuteBucket: string,
+    plan: ServicePlan,
+    answerLimit: number,
+    rateLimit: number,
+    tokenBudget: number,
+    expiresAt: Date,
+  ) {
+    await this.connect();
+    const rateId = `${ownerAccountId}:${minuteBucket}`;
+    const take = () =>
+      this.rates.findOneAndUpdate(
+        { _id: rateId, count: { $lt: rateLimit } },
+        {
+          $setOnInsert: { ownerAccountId, minuteBucket, expiresAt },
+          $inc: { count: 1 },
+        },
+        { upsert: true, returnDocument: "after" },
+      );
+    try {
+      // A concurrent first request may insert the bucket first; retry once against it.
+      // A full bucket fails the filter again, so the retry still ends in a duplicate key.
+      const rate = await take().catch((error: unknown) => {
+        if (error instanceof MongoServerError && error.code === 11_000)
+          return take();
+        throw error;
+      });
+      if (!rate) throw new Error("rate-limit");
+    } catch {
+      throw new ChatProblem(429, "CHAT_RATE_LIMITED", "Too many chat requests");
+    }
+
+    const quotaId = `${ownerAccountId}:${day}`;
+    try {
+      try {
+        const initial: QuotaLedger = {
+          _id: quotaId,
+          ownerAccountId,
+          localDate: day,
+          plan,
+          successfulAnswers: 0,
+          usedTokens: 0,
+          reservations: [reservationId],
+          expiresAt,
+        };
+        await this.quotas.insertOne(initial);
+        return { successfulAnswers: 0, usedTokens: 0 };
+      } catch (error) {
+        // The owner/day ledger already exists; continue with the atomic limit guard.
+        if (!(error instanceof MongoServerError) || error.code !== 11_000)
+          throw error;
+      }
+      const quota = await this.quotas.findOneAndUpdate(
+        {
+          _id: quotaId,
+          usedTokens: { $lt: tokenBudget },
+          $expr: {
+            $lt: [
+              { $add: ["$successfulAnswers", { $size: "$reservations" }] },
+              answerLimit,
+            ],
+          },
+          reservations: { $ne: reservationId },
+        },
+        {
+          $setOnInsert: {
+            ownerAccountId,
+            localDate: day,
+            successfulAnswers: 0,
+            usedTokens: 0,
+            expiresAt,
+          },
+          $set: { plan },
+          $addToSet: { reservations: reservationId },
+        },
+        { returnDocument: "after" },
+      );
+      if (!quota) {
+        const current = await this.quotas.findOne(
+          { _id: quotaId },
+          { projection: { usedTokens: 1 } },
+        );
+        if (current && current.usedTokens >= tokenBudget)
+          throw new ChatProblem(
+            429,
+            "CHAT_TOKEN_BUDGET_EXHAUSTED",
+            "AI token budget is exhausted",
+          );
+        throw new ChatProblem(
+          429,
+          "CHAT_QUOTA_EXHAUSTED",
+          "The AI Companion quota is exhausted",
+        );
+      }
+      return {
+        successfulAnswers: quota.successfulAnswers,
+        usedTokens: quota.usedTokens,
+      };
+    } catch (error) {
+      await this.rates.updateOne({ _id: rateId }, { $inc: { count: -1 } });
+      if (error instanceof ChatProblem) throw error;
+      throw new ChatProblem(
+        429,
+        "CHAT_QUOTA_EXHAUSTED",
+        "The AI Companion quota is exhausted",
+      );
+    }
+  }
+
+  async complete(
+    command: ChatCommand,
+    userMessage: ChatMessage,
+    assistantMessage: ChatMessage,
+    result: SendResult,
+    deadline: number,
+    encryptedTitle?: EncryptedChatText,
+  ) {
+    await this.connect();
+    const session = this.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        if (Date.now() >= deadline)
+          throw new ChatProblem(
+            503,
+            "CHAT_PROVIDER_UNAVAILABLE",
+            "AI provider is unavailable",
+          );
+        if (encryptedTitle)
+          await this.conversations.updateOne(
+            {
+              _id: command.conversationId,
+              ownerAccountId: command.ownerAccountId,
+              messages: { $size: 0 },
+              encryptedTitle: { $exists: false },
+              title: defaultConversationTitle,
+            },
+            { $set: { encryptedTitle, title: defaultConversationTitle } },
+            { session },
+          );
+        const conversation = await this.conversations.updateOne(
+          {
+            _id: command.conversationId,
+            ownerAccountId: command.ownerAccountId,
+            "messages.messageId": { $ne: assistantMessage.messageId },
+            $expr: { $lte: [{ $size: "$messages" }, 398] },
+          },
+          {
+            $push: { messages: { $each: [userMessage, assistantMessage] } },
+            $set: { updatedAt: new Date(result.createdAt) },
+          },
+          { session },
+        );
+        if (conversation.modifiedCount !== 1)
+          throw new ChatProblem(
+            409,
+            "CHAT_CONVERSATION_LIMIT_REACHED",
+            "Start a new conversation to continue",
+          );
+        const quota = await this.quotas.updateOne(
+          {
+            ownerAccountId: command.ownerAccountId,
+            reservations: command._id,
+          },
+          {
+            $pull: { reservations: command._id },
+            $inc: { successfulAnswers: 1 },
+          },
+          { session },
+        );
+        if (quota.modifiedCount !== 1)
+          throw new ChatProblem(
+            429,
+            "CHAT_TOKEN_BUDGET_EXHAUSTED",
+            "AI token budget is exhausted",
+          );
+        const completed = await this.commands.updateOne(
+          { _id: command._id, state: "RUNNING" },
+          {
+            $set: {
+              state: "SUCCEEDED",
+              response: result,
+              updatedAt: new Date(result.createdAt),
+            },
+          },
+          { session },
+        );
+        if (completed.modifiedCount !== 1)
+          throw new Error("Atomic chat completion precondition failed");
+        if (Date.now() >= deadline)
+          throw new ChatProblem(
+            503,
+            "CHAT_PROVIDER_UNAVAILABLE",
+            "AI provider is unavailable",
+          );
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async reserveAttempt(command: ChatCommand, estimate: number, budget: number) {
+    await this.connect();
+    const charged = await this.quotas.updateOne(
+      {
+        ownerAccountId: command.ownerAccountId,
+        reservations: command._id,
+        usedTokens: { $lte: budget - estimate },
+      },
+      { $inc: { usedTokens: estimate } },
+    );
+    if (charged.modifiedCount !== 1)
+      throw new ChatProblem(
+        429,
+        "CHAT_TOKEN_BUDGET_EXHAUSTED",
+        "AI token budget is exhausted",
+      );
+  }
+
+  async settleAttempt(command: ChatCommand, difference: number) {
+    if (difference === 0) return 0;
+    await this.connect();
+    const charged = await this.quotas.findOneAndUpdate(
+      { ownerAccountId: command.ownerAccountId, reservations: command._id },
+      { $inc: { usedTokens: difference } },
+      { returnDocument: "after" },
+    );
+    if (!charged) throw new Error("Chat attempt settlement failed");
+    return charged.usedTokens;
+  }
+
+  async renameTitle(
+    command: ChatCommand,
+    expected: Conversation,
+    encryptedTitle: EncryptedChatText,
+  ) {
+    await this.connect();
+    const expectedTitle = expected.encryptedTitle;
+    const session = this.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const updated = await this.conversations.updateOne(
+          {
+            _id: command.conversationId,
+            ownerAccountId: command.ownerAccountId,
+            expiresAt: { $gt: command.updatedAt },
+            ...(Object.hasOwn(expected, "encryptedTitle") &&
+            expectedTitle !== undefined
+              ? {
+                  encryptedTitle: {
+                    $exists: true,
+                    $eq: expectedTitle,
+                  },
+                }
+              : { encryptedTitle: { $exists: false }, title: expected.title }),
+          },
+          {
+            $set: {
+              encryptedTitle,
+              title: defaultConversationTitle,
+              updatedAt: command.updatedAt,
+            },
+          },
+          { session },
+        );
+        if (updated.matchedCount !== 1) {
+          const live = await this.conversations.findOne(
+            {
+              _id: command.conversationId,
+              ownerAccountId: command.ownerAccountId,
+              expiresAt: { $gt: command.updatedAt },
+            },
+            { session, projection: { _id: 1 } },
+          );
+          if (!live) throw new NotFoundException();
+          throw new ChatProblem(
+            412,
+            "CHAT_TITLE_VERSION_CONFLICT",
+            "Conversation title has changed",
+          );
+        }
+        await this.commands.insertOne(command, { session });
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async fail(
+    command: ChatCommand,
+    code: string,
+    status: number,
+    title: string,
+  ) {
+    await this.connect();
+    await this.quotas.updateOne(
+      { ownerAccountId: command.ownerAccountId, reservations: command._id },
+      { $pull: { reservations: command._id } },
+    );
+    await this.commands.updateOne(
+      { _id: command._id },
+      {
+        $set: {
+          state: "FAILED",
+          failureCode: code,
+          failureStatus: status,
+          failureTitle: title,
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+}
+
+const supportPlanSchema = z.looseObject({
+  supportPlanId: uuid,
+  modelVersion: z.literal(3),
+  representationMode: z.enum(["NATIVE_V3", "V2_RESOURCE_ADAPTER"]),
+  status: z.enum(["ACTIVE", "PAUSED"]),
+  version: z.number().int().min(0),
+  focuses: z
+    .array(
+      z.looseObject({
+        title: z.string().trim().min(1).max(255),
+        rationale: z.string().trim().min(1).max(2_048).nullable(),
+        ordinal: z.number().int().min(1).max(20),
+        actions: z
+          .array(
+            z.looseObject({
+              actionType: z.enum([
+                "RESOURCE",
+                "JOURNAL",
+                "EMOTION_CHECK_IN",
+                "ROUTINE_SELF_MANAGEMENT",
+                "PROFESSIONAL_SUPPORT",
+                "REASSESSMENT_SCREENING",
+                "SELF_REPORT_REVIEW",
+              ]),
+              status: z.enum(["DRAFT", "ACTIVE", "ENDED"]),
+              ordinal: z.number().int().min(1).max(20),
+              presentation: z.looseObject({
+                title: z.string().trim().min(1).max(255),
+                summary: z.string().trim().min(1).max(4_096).nullable(),
+              }),
+            }),
+          )
+          .min(1)
+          .max(20),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
+const assessmentHistorySchema = z.looseObject({
+  items: z
+    .array(
+      z.looseObject({
+        assessmentId: uuid,
+        instrument: z.enum(["PHQ9", "GAD7"]),
+        submittedAt: z.string(),
+        result: z.looseObject({
+          totalScore: z.number().int().min(0).max(27),
+          screeningLevel: z.string().min(1).max(32),
+          disclaimerCode: z.string().min(1).max(64),
+        }),
+      }),
+    )
+    .max(50),
+});
+
+const resourceProgressSchema = z.looseObject({
+  items: z.array(z.looseObject({ resourceId: uuid })).max(500),
+});
+
+const resourceDetailSchema = z.looseObject({
+  id: uuid,
+  title: z.string().min(1).max(255),
+  summary: z.string().max(4_096),
+  contentBody: z.string().max(20_000).nullable().optional(),
+});
+
+const dateOnly = (value: Date) => value.toISOString().slice(0, 10);
+
+@Injectable()
+export class OwnerVerifiedContextAssembler
+  implements ChatContextAssembler, OnApplicationShutdown
+{
+  private readonly client: MongoClient;
+  private readonly journals: Collection<Entry>;
+
+  constructor(
+    private readonly configuration: ServiceConfiguration,
+    private readonly consent: ConsentClient,
+  ) {
+    this.client = new MongoClient(configuration.MONGODB_URI, {
+      connectTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+      serverSelectionTimeoutMS: configuration.MONGODB_CONNECTION_TIMEOUT_MS,
+    });
+    const db = this.client.db(configuration.MONGODB_DATABASE);
+    this.journals = db.collection("journal_entries");
+  }
+
+  async onApplicationShutdown() {
+    await this.client.close();
+  }
+
+  async assemble(
+    ownerAccountId: string,
+    authorization: string,
+    correlationId: string,
+    selection: ContextSelection,
+  ): Promise<MinimizedContext> {
+    const sections: string[] = [];
+    const kinds = new Set<MinimizedContext["kinds"][number]>();
+
+    if (selection.diary) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      await this.client.connect();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      const rows = await this.journals
+        .find({
+          ownerAccountId,
+          deleted: false,
+        })
+        .sort({ occurredAt: -1, createdAt: -1, _id: -1 })
+        .limit(3)
+        .toArray();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      for (const row of rows) {
+        const revision = row.revisions.find(
+          (candidate: Revision) => candidate.revision === row.currentRevision,
+        );
+        if (!revision)
+          throw new ChatProblem(
+            404,
+            "CHAT_CONTEXT_NOT_FOUND",
+            "Selected context was not found",
+          );
+        const decipher = createDecipheriv(
+          "aes-256-gcm",
+          this.configuration.JOURNAL_ENCRYPTION_KEY,
+          buffer(revision.content.iv),
+        );
+        decipher.setAAD(
+          Buffer.from(
+            `${ownerAccountId}:${row._id}:${String(row.currentRevision)}`,
+          ),
+        );
+        decipher.setAuthTag(buffer(revision.content.tag));
+        const text = Buffer.concat([
+          decipher.update(buffer(revision.content.ciphertext)),
+          decipher.final(),
+        ]).toString("utf8");
+        sections.push(`Journal reflection: ${text.slice(0, 1_500)}`);
+      }
+      if (rows.length > 0) kinds.add("JOURNAL");
+    }
+
+    if (selection.screening) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      let response: Response;
+      try {
+        response = await fetch(
+          new URL(
+            "/api/v1/assessments?limit=3",
+            this.configuration.CARE_BASE_URL,
+          ),
+          {
+            headers: {
+              authorization: `Bearer ${authorization}`,
+              "x-correlation-id": correlationId,
+            },
+            signal: AbortSignal.timeout(this.configuration.CARE_TIMEOUT_MS),
+          },
+        );
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is unavailable",
+        );
+      }
+      if (!response.ok)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is unavailable",
+        );
+      const parsed = assessmentHistorySchema.safeParse(await response.json());
+      if (!parsed.success)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is invalid",
+        );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      if (parsed.data.items.length > 0) {
+        sections.push(
+          `Recent screening summaries (not diagnoses): ${JSON.stringify(
+            parsed.data.items.slice(0, 3).map((item) => ({
+              instrument: item.instrument,
+              submittedAt: item.submittedAt,
+              totalScore: item.result.totalScore,
+              screeningLevel: item.result.screeningLevel,
+              disclaimerCode: item.result.disclaimerCode,
+            })),
+          )}`,
+        );
+        kinds.add("REASSESSMENT");
+      }
+    }
+
+    if (selection.plan) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      let response: Response;
+      try {
+        response = await fetch(
+          new URL(
+            "/api/v2/support-plans/current",
+            this.configuration.CARE_BASE_URL,
+          ),
+          {
+            headers: {
+              authorization: `Bearer ${authorization}`,
+              "x-correlation-id": correlationId,
+            },
+            signal: AbortSignal.timeout(this.configuration.CARE_TIMEOUT_MS),
+          },
+        );
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Care context is unavailable",
+        );
+      }
+      if (response.status !== 404) {
+        if (!response.ok)
+          throw new ChatProblem(
+            503,
+            "CHAT_CONTEXT_UNAVAILABLE",
+            "Care context is unavailable",
+          );
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          throw new ChatProblem(
+            503,
+            "CHAT_CONTEXT_UNAVAILABLE",
+            "Care context is invalid",
+          );
+        }
+        const parsed = supportPlanSchema.safeParse(body);
+        if (!parsed.success)
+          throw new ChatProblem(
+            503,
+            "CHAT_CONTEXT_UNAVAILABLE",
+            "Care context is invalid",
+          );
+        await assertAiContextProcessingConsent(
+          this.consent,
+          authorization,
+          correlationId,
+        );
+        let remaining = 5;
+        const focuses = parsed.data.focuses
+          .toSorted((left, right) => left.ordinal - right.ordinal)
+          .flatMap((focus) => {
+            if (remaining === 0) return [];
+            const actions = focus.actions
+              .toSorted((left, right) => left.ordinal - right.ordinal)
+              .filter((action) => action.status === "ACTIVE")
+              .slice(0, remaining)
+              .map((action) => ({
+                type: action.actionType,
+                title: action.presentation.title,
+                summary: action.presentation.summary,
+              }));
+            remaining -= actions.length;
+            return actions.length === 0
+              ? []
+              : [
+                  {
+                    title: focus.title,
+                    rationale: focus.rationale,
+                    actions,
+                  },
+                ];
+          });
+        sections.push(
+          `Current SupportPlan: ${JSON.stringify({
+            status: parsed.data.status,
+            version: parsed.data.version,
+            focuses,
+          })}`,
+        );
+        kinds.add("SUPPORT_PLAN");
+      }
+    }
+
+    if (selection.resourceIds.length > 0) {
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      const now = new Date();
+      const from = new Date(now.getTime() - 31 * 86_400_000);
+      const progressUrl = new URL(
+        "/api/v1/resource-progress",
+        this.configuration.CONTENT_BASE_URL,
+      );
+      progressUrl.searchParams.set("from", dateOnly(from));
+      progressUrl.searchParams.set("to", dateOnly(now));
+      let progressResponse: Response;
+      try {
+        progressResponse = await fetch(progressUrl, {
+          headers: {
+            authorization: `Bearer ${authorization}`,
+            "x-correlation-id": correlationId,
+          },
+          signal: AbortSignal.timeout(this.configuration.CONTENT_TIMEOUT_MS),
+        });
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Resource context is unavailable",
+        );
+      }
+      if (!progressResponse.ok)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Resource context is unavailable",
+        );
+      const progress = resourceProgressSchema.safeParse(
+        await progressResponse.json(),
+      );
+      if (!progress.success)
+        throw new ChatProblem(
+          503,
+          "CHAT_CONTEXT_UNAVAILABLE",
+          "Resource context is invalid",
+        );
+      const owned = new Set(progress.data.items.map((item) => item.resourceId));
+      if (selection.resourceIds.some((resourceId) => !owned.has(resourceId)))
+        throw new ChatProblem(
+          404,
+          "CHAT_CONTEXT_NOT_FOUND",
+          "Selected resource context was not found",
+        );
+      const resources = await Promise.all(
+        selection.resourceIds.map(async (resourceId) => {
+          await assertAiContextProcessingConsent(
+            this.consent,
+            authorization,
+            correlationId,
+          );
+          let response: Response;
+          try {
+            response = await fetch(
+              new URL(
+                `/api/v1/resources/${encodeURIComponent(resourceId)}?locale=vi-VN`,
+                this.configuration.CONTENT_BASE_URL,
+              ),
+              {
+                headers: { "x-correlation-id": correlationId },
+                signal: AbortSignal.timeout(
+                  this.configuration.CONTENT_TIMEOUT_MS,
+                ),
+              },
+            );
+          } catch {
+            throw new ChatProblem(
+              503,
+              "CHAT_CONTEXT_UNAVAILABLE",
+              "Resource context is unavailable",
+            );
+          }
+          if (!response.ok)
+            throw new ChatProblem(
+              404,
+              "CHAT_CONTEXT_NOT_FOUND",
+              "Selected resource context was not found",
+            );
+          const parsed = resourceDetailSchema.safeParse(await response.json());
+          if (!parsed.success)
+            throw new ChatProblem(
+              503,
+              "CHAT_CONTEXT_UNAVAILABLE",
+              "Resource context is invalid",
+            );
+          return parsed.data;
+        }),
+      );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        authorization,
+        correlationId,
+      );
+      sections.push(
+        `Resources the user viewed: ${JSON.stringify(
+          resources.map((resource) => ({
+            title: resource.title,
+            summary: resource.summary,
+            content: resource.contentBody?.slice(0, 1_200) ?? null,
+          })),
+        )}`,
+      );
+      kinds.add("RESOURCE");
+    }
+
+    return { kinds: [...kinds], prompt: sections.join("\n").slice(0, 8_000) };
+  }
+}
+
+@Injectable()
+export class RoutedChatProvider implements ChatProvider {
+  constructor(private readonly configuration: ServiceConfiguration) {}
+
+  async reply(
+    userMessage: string,
+    context: MinimizedContext,
+    route: Pick<ChatRoute, "provider" | "model">,
+    options?: {
+      signal?: AbortSignal;
+      voice?: boolean;
+      textHandoff?: boolean;
+      voiceObserver?: VoiceObserver;
+      onSpeechUnit?: (unit: ProviderSpeechUnit) => void;
+      friend?: FriendInput;
+      responseMode?: ResponseMode;
+      plan?: ServicePlan;
+      requestTitle?: boolean;
+      memoryNote?: boolean;
+      onUsage?: (inputTokens: number, outputTokens: number) => void;
+    },
+  ): Promise<ProviderReply> {
+    options?.signal?.throwIfAborted();
+    const speechUnits = options?.onSpeechUnit;
+    if (speechUnits && (!options.voice || route.provider !== "BEDROCK"))
+      throw new VoiceProviderFailure("AUTHORITY_OR_STATE");
+    const friend = options?.voice ? undefined : options?.friend;
+    // The caller selects the mode once, so the preflight estimate and this request share it.
+    const responseMode = friend ? options?.responseMode : undefined;
+    const mamTextV3 = responseMode !== undefined;
+    const plan = options?.voice ? undefined : options?.plan;
+    const maxLength = mamTextV3
+      ? MAM_TEXT_V3_MAX_CHARACTERS
+      : options?.voice
+        ? VOICE_REPLY_MAX_CHARACTERS
+        : companionReplyMaxCharacters(plan);
+    if (options?.voice && context.kinds.length !== 0)
+      throw new VoiceProviderFailure("INVALID_RESPONSE");
+    if (route.provider === "DETERMINISTIC_FAKE") {
+      return {
+        message: options?.memoryNote
+          ? "Người dùng đã trò chuyện với Mầm ở cuộc trò chuyện này (ghi chú giả lập cục bộ)."
+          : context.kinds.length === 0
+            ? "Mình đang lắng nghe. Bạn muốn bắt đầu từ điều gì đang khiến bạn bận tâm nhất lúc này?"
+            : "Mình đã xem phần bối cảnh bạn cho phép. Ta có thể chọn một bước nhỏ, phù hợp với kế hoạch hiện tại và điều bạn vừa chia sẻ.",
+        inputTokens: Math.ceil(
+          (userMessage.length + context.prompt.length) / 4,
+        ),
+        outputTokens: 32,
+      };
+    }
+    let system = options?.memoryNote
+      ? mamMemoryNoteSystem
+      : companionGuidanceSystem({
+          channel: options?.voice ? "VOICE" : "TEXT",
+          ...(options?.voice && options.textHandoff
+            ? { textHandoff: true }
+            : {}),
+          ...(options?.voice
+            ? {
+                replyStyle:
+                  this.configuration.VOICE_PILOT?.replyStyle ?? "SUPPORTIVE",
+              }
+            : {}),
+          ...(friend ? { friend: true } : {}),
+          ...(responseMode ? { mamTextV3: true, responseMode } : {}),
+          ...(plan ? { plan } : {}),
+        });
+    const requestTitle = options?.requestTitle === true && !options.voice;
+    if (speechUnits)
+      system += `\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. Keep the first object at most about 400 characters so a long reply never stops halfway. All messages combined must fit ${String(VOICE_REPLY_MAX_CHARACTERS)} characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.`;
+    if (requestTitle) system += `\n${providerTitleInstruction}`;
+    let input = companionUserInput({
+      message: userMessage,
+      context,
+      ...(friend ? { friend } : {}),
+    });
+    const coreOutputJsonSchema = options?.voice
+      ? voiceProviderOutputJsonSchema
+      : friend
+        ? maxLength > 500
+          ? paidProviderOutputJsonSchemaV2
+          : providerOutputJsonSchemaV2
+        : maxLength > 500
+          ? paidProviderOutputJsonSchema
+          : providerOutputJsonSchema;
+    const boundedOutputJsonSchema = mamTextV3
+      ? {
+          ...coreOutputJsonSchema,
+          properties: {
+            ...coreOutputJsonSchema.properties,
+            message: {
+              ...coreOutputJsonSchema.properties.message,
+              maxLength: MAM_TEXT_V3_MAX_CHARACTERS,
+            },
+          },
+        }
+      : coreOutputJsonSchema;
+    const outputJsonSchema = requestTitle
+      ? {
+          ...boundedOutputJsonSchema,
+          required:
+            route.provider === "OPENAI"
+              ? [...boundedOutputJsonSchema.required, "title"]
+              : boundedOutputJsonSchema.required,
+          properties: {
+            ...boundedOutputJsonSchema.properties,
+            title: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+        }
+      : options?.voice && route.provider === "OPENAI"
+        ? {
+            ...coreOutputJsonSchema,
+            required: [...coreOutputJsonSchema.required, "expression"],
+          }
+        : boundedOutputJsonSchema;
+    const temperature = friend ? 0.7 : 0.2;
+    const wireOutputJsonSchema = speechUnits
+      ? { type: "array", minItems: 1, maxItems: 2, items: outputJsonSchema }
+      : outputJsonSchema;
+    const providerId: string = route.provider;
+    if (
+      !options?.voice &&
+      !["GEMINI", "OPENAI", "BEDROCK"].includes(providerId)
+    )
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
+    if (
+      !options?.voice &&
+      providerId === "BEDROCK" &&
+      !this.configuration.BEDROCK_API_KEY
+    )
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
+    let response: Response;
+    let streamSignal: AbortSignal | undefined;
+    try {
+      if (providerId === "GEMINI") {
+        response = await fetch(
+          new URL(
+            `/v1beta/models/${encodeURIComponent(route.model.replace(/^models\//, ""))}:generateContent`,
+            this.configuration.GEMINI_BASE_URL,
+          ),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-goog-api-key": this.configuration.GEMINI_API_KEY ?? "",
+            },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: system }] },
+              contents: [{ role: "user", parts: [{ text: input }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                responseJsonSchema: outputJsonSchema,
+                temperature,
+                maxOutputTokens: companionMaxOutputTokens,
+              },
+            }),
+            signal: options?.signal
+              ? AbortSignal.any([
+                  options.signal,
+                  AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
+                ])
+              : AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
+          },
+        );
+      } else if (providerId === "OPENAI") {
+        response = await fetch(
+          new URL("/v1/responses", this.configuration.OPENAI_BASE_URL),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${this.configuration.OPENAI_API_KEY ?? ""}`,
+            },
+            body: JSON.stringify({
+              model: route.model,
+              store: false,
+              instructions: system,
+              input,
+              max_output_tokens: companionMaxOutputTokens,
+              text: {
+                format: {
+                  type: "json_schema",
+                  name: "mentalbridge_companion_reply",
+                  strict: true,
+                  schema: outputJsonSchema,
+                },
+              },
+            }),
+            signal: options?.signal
+              ? AbortSignal.any([
+                  options.signal,
+                  AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
+                ])
+              : AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
+          },
+        );
+      } else if (providerId === "BEDROCK") {
+        if (!this.configuration.BEDROCK_API_KEY)
+          throw new Error("Bedrock credentials are unavailable");
+        const limits = effectiveBedrockRequestLimits(
+          this.configuration,
+          options?.voice === true,
+        );
+        const boundedVoice = limits.inputGuardEnabled;
+        const requestSignal = options?.signal
+          ? AbortSignal.any([
+              options.signal,
+              AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS),
+            ])
+          : AbortSignal.timeout(this.configuration.PROVIDER_TIMEOUT_MS);
+        if (boundedVoice) {
+          if (route.model !== "global.anthropic.claude-sonnet-4-6")
+            throw new Error("Voice pilot route unavailable");
+          system += `\nReturn the JSON ${speechUnits ? "array" : "object"} directly, without Markdown code fences or surrounding prose.\nRequired JSON schema:\n${JSON.stringify(wireOutputJsonSchema)}`;
+          options?.voiceObserver?.({ phase: "provider_prompt_prepared" });
+          let voicePrompt = context.prompt;
+          for (;;) {
+            try {
+              await authorizeVoiceInput(
+                this.configuration.BEDROCK_API_KEY,
+                system,
+                input,
+                requestSignal,
+                options?.voiceObserver,
+              );
+              break;
+            } catch (error) {
+              // Over the cap: drop the oldest history pair and count again; system and safety text never shrink.
+              const trimmed =
+                error instanceof VoiceProviderFailure &&
+                error.code === "INPUT_BUDGET_EXCEEDED"
+                  ? withoutOldestVoicePair(voicePrompt)
+                  : null;
+              if (trimmed === null) throw error;
+              voicePrompt = trimmed;
+              input = companionUserInput({
+                message: userMessage,
+                context: { ...context, prompt: voicePrompt },
+              });
+            }
+          }
+        }
+        const request = bedrockConverseRequest(
+          system,
+          input,
+          wireOutputJsonSchema,
+          "mentalbridge_companion_reply",
+          limits.outputTokenLimit,
+          temperature,
+        );
+        const { outputConfig, ...plainRequest } = request;
+        const requestBody = JSON.stringify(
+          boundedVoice ? plainRequest : { ...plainRequest, outputConfig },
+        );
+        options?.voiceObserver?.({ phase: "bedrock_request_body_prepared" });
+        options?.voiceObserver?.({ phase: "bedrock_requested" });
+        if (speechUnits) streamSignal = requestSignal;
+        response = await fetch(
+          streamSignal
+            ? bedrockConverseStreamUrl(
+                this.configuration.BEDROCK_REGION,
+                route.model,
+              )
+            : bedrockConverseUrl(
+                this.configuration.BEDROCK_REGION,
+                route.model,
+              ),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${this.configuration.BEDROCK_API_KEY}`,
+            },
+            body: requestBody,
+            signal: requestSignal,
+            ...(streamSignal ? { redirect: "error" as const } : {}),
+          },
+        );
+      } else {
+        throw new Error("Unsupported AI provider");
+      }
+    } catch (error) {
+      if (options?.voice)
+        throw error instanceof VoiceProviderFailure
+          ? error
+          : new VoiceProviderFailure(
+              options.signal?.aborted
+                ? "ABORTED"
+                : error instanceof Error && error.name === "TimeoutError"
+                  ? "TIMEOUT"
+                  : "TRANSPORT",
+            );
+      throw new ProviderFailure(
+        "RETRYABLE",
+        error instanceof Error &&
+          (error.name === "TimeoutError" || error.name === "AbortError")
+          ? "TIMEOUT"
+          : "UNAVAILABLE",
+        {},
+        { cause: error },
+      );
+    }
+    if (!response.ok && options?.voice)
+      throw new VoiceProviderFailure(
+        response.status >= 500 ? "HTTP_5XX" : "HTTP_4XX",
+      );
+    if (!response.ok)
+      throw new ProviderFailure(
+        response.status === 429 || response.status >= 500
+          ? "RETRYABLE"
+          : "PERMANENT",
+        "UNAVAILABLE",
+        { httpStatus: response.status },
+      );
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({ phase: "bedrock_response_received" });
+    let body: unknown;
+    const spokenUnits: ProviderSpeechUnit[] = [];
+    const unitCollector = speechUnits
+      ? new VoiceJsonObjectArray((value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value))
+            throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
+          const { expression: rawExpression, ...rest } = value as Record<
+            string,
+            unknown
+          >;
+          const parsed = voiceProviderOutputSchema.safeParse(rest);
+          if (!parsed.success)
+            throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
+          let message: string;
+          try {
+            message = validatedAssistantMessage(parsed.data.message, {
+              rejectLinks: true,
+              maxLength: VOICE_REPLY_MAX_CHARACTERS,
+            });
+            if (
+              Buffer.from(message, "utf8").toString("utf8") !== message ||
+              !/[.!?…]$/u.test(message)
+            )
+              throw new Error();
+            validatedAssistantMessage(
+              [...spokenUnits.map((unit) => unit.message), message].join(" "),
+              { rejectLinks: true, maxLength: VOICE_REPLY_MAX_CHARACTERS },
+            );
+          } catch {
+            throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+          }
+          const unit: ProviderSpeechUnit = {
+            message,
+            expression:
+              voiceExpressionSchema.safeParse(rawExpression).data ?? "neutral",
+          };
+          spokenUnits.push(unit);
+          speechUnits(unit);
+        })
+      : undefined;
+    try {
+      body = streamSignal
+        ? await readBedrockConverseStream(
+            response,
+            streamSignal,
+            options?.voiceObserver,
+            // streamSignal is set only for speech units, so the collector always exists here.
+            (text) => {
+              unitCollector?.accept(text);
+            },
+          )
+        : await response.json();
+    } catch (error) {
+      if (error instanceof VoiceProviderFailure) throw error;
+      if (options?.voice && route.provider === "BEDROCK")
+        throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_INVALID_RESPONSE",
+        "AI response is invalid",
+      );
+    }
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({ phase: "bedrock_response_body_received" });
+    if (
+      !options?.voice &&
+      options?.onUsage &&
+      body &&
+      typeof body === "object"
+    ) {
+      const raw = body as Record<string, unknown>;
+      const usage =
+        raw[route.provider === "GEMINI" ? "usageMetadata" : "usage"];
+      const reported =
+        usage && typeof usage === "object"
+          ? (usage as Record<string, unknown>)
+          : {};
+      const reportedInput =
+        reported[
+          route.provider === "GEMINI"
+            ? "promptTokenCount"
+            : route.provider === "OPENAI"
+              ? "input_tokens"
+              : "inputTokens"
+        ];
+      const reportedOutput =
+        reported[
+          route.provider === "GEMINI"
+            ? "candidatesTokenCount"
+            : route.provider === "OPENAI"
+              ? "output_tokens"
+              : "outputTokens"
+        ];
+      if (
+        typeof reportedInput === "number" &&
+        Number.isSafeInteger(reportedInput) &&
+        reportedInput >= 0 &&
+        typeof reportedOutput === "number" &&
+        Number.isSafeInteger(reportedOutput) &&
+        reportedOutput >= 0
+      )
+        options.onUsage(reportedInput, reportedOutput);
+      else
+        options.onUsage(
+          Math.ceil((system.length + input.length) / 4),
+          Math.ceil(JSON.stringify(body).length / 4),
+        );
+    }
+    if (options?.voice && route.provider === "BEDROCK") {
+      if (!streamSignal)
+        options.voiceObserver?.({
+          phase: "provider_usage",
+          ...providerUsage(body),
+        });
+      const stopReason = voiceStopReason(body);
+      options.voiceObserver?.({
+        phase: "bedrock_output_validation",
+        stopReason,
+      });
+      if (stopReason === "MAX_TOKENS")
+        throw new VoiceProviderFailure("OUTPUT_TOKEN_LIMIT");
+      if (stopReason !== "END_TURN")
+        throw new VoiceProviderFailure("UNEXPECTED_STOP_REASON");
+    }
+    let message: string | undefined;
+    let inputTokens: number | null = null;
+    let outputTokens: number | null = null;
+    const responseProvider: string = route.provider;
+    if (responseProvider === "GEMINI") {
+      const parsed = z
+        .object({
+          candidates: z
+            .array(
+              z.object({
+                content: z.object({
+                  parts: z.array(z.object({ text: z.string() })),
+                }),
+              }),
+            )
+            .min(1),
+        })
+        .safeParse(body);
+      if (parsed.success)
+        message = parsed.data.candidates[0]?.content.parts
+          .map((part) => part.text)
+          .join("");
+    } else if (responseProvider === "OPENAI") {
+      const parsed = z
+        .object({
+          output: z.array(
+            z.object({
+              content: z
+                .array(
+                  z.object({
+                    type: z.string(),
+                    text: z.string().optional(),
+                  }),
+                )
+                .optional(),
+            }),
+          ),
+        })
+        .safeParse(body);
+      if (parsed.success)
+        message = parsed.data.output
+          .flatMap((item) => item.content ?? [])
+          .find((item) => item.type === "output_text")?.text;
+    } else if (responseProvider === "BEDROCK") {
+      const parsed = parseBedrockConverseResponse(body);
+      if (!parsed && options?.voice)
+        throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
+      message = parsed?.text;
+      inputTokens = parsed?.inputTokens ?? null;
+      outputTokens = parsed?.outputTokens ?? null;
+    } else {
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI provider is unavailable",
+      );
+    }
+    let output: unknown;
+    if (unitCollector) {
+      unitCollector.finish();
+      if (inputTokens === null || outputTokens === null)
+        throw new VoiceProviderFailure("RESPONSE_ENVELOPE_INVALID");
+      const joined = spokenUnits.map((unit) => unit.message).join(" ");
+      options?.voiceObserver?.({ phase: "bedrock_response_validated" });
+      return {
+        message: joined,
+        expression: spokenUnits[0]?.expression ?? "neutral",
+        inputTokens,
+        outputTokens,
+        usageSource: "PROVIDER" as const,
+      };
+    }
+    try {
+      if (options?.voice && responseProvider === "BEDROCK" && message) {
+        const fenced = /^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/iu.exec(
+          message.trim(),
+        );
+        if (fenced) message = fenced[1];
+      }
+      output = message ? JSON.parse(message) : undefined;
+    } catch {
+      if (options?.voice && responseProvider === "BEDROCK")
+        throw new VoiceProviderFailure("OUTPUT_JSON_INVALID");
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_INVALID_RESPONSE",
+        "AI response is invalid",
+      );
+    }
+    let expression: ProviderReply["expression"];
+    if (
+      options?.voice &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { expression: rawExpression, ...rest } = output as Record<
+        string,
+        unknown
+      >;
+      expression =
+        voiceExpressionSchema.safeParse(rawExpression).data ?? "neutral";
+      output = rest;
+    }
+    let title: string | undefined;
+    if (
+      !options?.voice &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { title: rawTitle, ...rest } = output as Record<string, unknown>;
+      title = normalizedProviderTitle(rawTitle);
+      output = rest;
+    }
+    let suggestion: ProviderSuggestion | null = null;
+    if (
+      friend &&
+      output &&
+      typeof output === "object" &&
+      !Array.isArray(output)
+    ) {
+      const { suggestion: rawSuggestion, ...rest } = output as Record<
+        string,
+        unknown
+      >;
+      suggestion =
+        providerOutputSchemaV2.shape.suggestion.safeParse(rawSuggestion).data ??
+        null;
+      output = rest;
+    }
+    const parsedOutput = (
+      mamTextV3
+        ? mamProviderOutputSchema
+        : options?.voice
+          ? voiceProviderOutputSchema
+          : maxLength > 500
+            ? paidProviderOutputSchema
+            : providerOutputSchema
+    ).safeParse(output);
+    if (!parsedOutput.success) {
+      if (options?.voice && responseProvider === "BEDROCK")
+        throw new VoiceProviderFailure("OUTPUT_SCHEMA_INVALID");
+      throw new ChatProblem(
+        503,
+        "CHAT_PROVIDER_INVALID_RESPONSE",
+        "AI response is invalid",
+      );
+    }
+    let normalized: string;
+    try {
+      normalized = validatedAssistantMessage(parsedOutput.data.message, {
+        maxLength,
+        rejectLinks: friend !== undefined || options?.voice === true,
+      });
+    } catch (error) {
+      if (options?.voice && responseProvider === "BEDROCK")
+        throw new VoiceProviderFailure("OUTPUT_SAFETY_REJECTED");
+      throw error;
+    }
+    if (options?.voice && route.provider === "BEDROCK")
+      options.voiceObserver?.({ phase: "bedrock_response_validated" });
+    return {
+      message: friend ? withoutCutOffTail(normalized) : normalized,
+      ...(options?.voice ? { expression: expression ?? "neutral" } : {}),
+      inputTokens: inputTokens ?? Math.ceil((system.length + input.length) / 4),
+      outputTokens: outputTokens ?? Math.ceil(normalized.length / 4),
+      ...(options?.voice
+        ? {
+            usageSource:
+              inputTokens !== null && outputTokens !== null
+                ? ("PROVIDER" as const)
+                : ("ESTIMATED" as const),
+          }
+        : {}),
+      ...(friend ? { suggestion } : {}),
+      ...(title === undefined ? {} : { title }),
+    };
+  }
+}
+
+const publicConversation = (
+  crypto: ChatCrypto,
+  conversation: Conversation,
+) => ({
+  conversationId: conversation._id,
+  ...crypto.title(conversation),
+  context: {
+    sources: conversation.context.sources,
+    updatedAt: conversation.context.updatedAt.toISOString(),
+  },
+  createdAt: conversation.createdAt.toISOString(),
+  updatedAt: conversation.updatedAt.toISOString(),
+  expiresAt: conversation.expiresAt.toISOString(),
+  messages: conversation.messages.map((message) => ({
+    messageId: message.messageId,
+    role: message.role,
+    content: crypto.decrypt(
+      conversation.ownerAccountId,
+      conversation._id,
+      message,
+    ),
+    createdAt: message.createdAt.toISOString(),
+    contextKinds: message.contextKinds,
+    suggestion: crypto.decryptSuggestion(
+      conversation.ownerAccountId,
+      conversation._id,
+      message,
+    ),
+  })),
+});
+
+const publicConversationSummary = (
+  crypto: ChatCrypto,
+  conversation: ConversationSummary,
+) => ({
+  conversationId: conversation._id,
+  ...crypto.title(conversation),
+  createdAt: conversation.createdAt.toISOString(),
+  updatedAt: conversation.updatedAt.toISOString(),
+  expiresAt: conversation.expiresAt.toISOString(),
+});
+
+@Injectable()
+export class CompanionChatService {
+  private readonly crypto: ChatCrypto;
+  private readonly logger = new Logger(CompanionChatService.name);
+
+  constructor(
+    @Inject(REPOSITORY) private readonly repository: ChatRepository,
+    @Inject(CONSENT) private readonly consent: ConsentClient,
+    @Inject(ENTITLEMENT) private readonly entitlement: EntitlementClient,
+    @Inject(CONTEXT) private readonly context: ChatContextAssembler,
+    @Inject(PROVIDER) private readonly provider: ChatProvider,
+    @Inject(CLOCK) private readonly clock: CompanionClock,
+    private readonly configuration: ServiceConfiguration,
+    private readonly catalog: Pick<
+      ResourceCatalog,
+      "items"
+    > = new ResourceCatalog(configuration),
+  ) {
+    this.crypto = new ChatCrypto(configuration);
+  }
+
+  async create(request: ChatRequest) {
+    const owner = requestOwner(request);
+    const body = createConversationSchema.safeParse(request.body ?? {});
+    if (!body.success) throw new BadRequestException();
+    const now = this.clock.now();
+    const conversation: Conversation = {
+      _id: randomUUID(),
+      ownerAccountId: owner,
+      title: defaultConversationTitle,
+      context: {
+        sources: emptySources(),
+        updatedAt: now,
+      },
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(
+        now.getTime() + this.configuration.CHAT_RETENTION_DAYS * 86_400_000,
+      ),
+    };
+    if (body.data.title !== undefined)
+      conversation.encryptedTitle = this.crypto.encryptTitle(
+        owner,
+        conversation._id,
+        body.data.title,
+      );
+    await this.repository.createConversation(conversation);
+    return publicConversation(this.crypto, conversation);
+  }
+
+  async list(request: ChatRequest) {
+    const owner = requestOwner(request);
+    const rows = await this.repository.listConversations(owner);
+    return {
+      items: rows.map((row) => publicConversationSummary(this.crypto, row)),
+    };
+  }
+
+  async get(request: ChatRequest, conversationId: string) {
+    const owner = requestOwner(request);
+    if (!uuid.safeParse(conversationId).success)
+      throw new BadRequestException();
+    const row = await this.repository.findConversation(owner, conversationId);
+    if (!row) throw new NotFoundException();
+    return publicConversation(this.crypto, row);
+  }
+
+  async delete(request: ChatRequest, conversationId: string) {
+    const owner = requestOwner(request);
+    if (!uuid.safeParse(conversationId).success)
+      throw new BadRequestException();
+    if (!(await this.repository.deleteConversation(owner, conversationId)))
+      throw new NotFoundException();
+  }
+
+  async updateContext(request: ChatRequest, conversationId: string) {
+    const owner = requestOwner(request);
+    if (!uuid.safeParse(conversationId).success)
+      throw new BadRequestException();
+    const parsed = conversationContextSchema.safeParse(request.body);
+    if (!parsed.success) throw new BadRequestException();
+    if (!(await this.repository.findConversation(owner, conversationId)))
+      throw new NotFoundException();
+    if (hasPersonalSelection(parsed.data.sources)) {
+      const correlationId = request.id ?? randomUUID();
+      await assertAiContextProcessingConsent(
+        this.consent,
+        bearer(request),
+        correlationId,
+      );
+      await this.context.assemble(
+        owner,
+        bearer(request),
+        correlationId,
+        parsed.data.sources,
+      );
+      await assertAiContextProcessingConsent(
+        this.consent,
+        bearer(request),
+        correlationId,
+      );
+    }
+    const context: ConversationContext = {
+      sources: parsed.data.sources,
+      updatedAt: this.clock.now(),
+    };
+    const conversation = await this.repository.updateConversationContext(
+      owner,
+      conversationId,
+      context,
+    );
+    if (!conversation) throw new NotFoundException();
+    return publicConversation(this.crypto, conversation);
+  }
+
+  async send(
+    request: ChatRequest,
+    conversationId: string,
+  ): Promise<SendResult> {
+    const owner = requestOwner(request);
+    if (!uuid.safeParse(conversationId).success)
+      throw new BadRequestException();
+    const parsed = sendMessageSchema.safeParse(request.body);
+    const rawKey = idempotencyKey.safeParse(header(request, "idempotency-key"));
+    if (!parsed.success || !rawKey.success) throw new BadRequestException();
+    const conversation = await this.repository.findConversation(
+      owner,
+      conversationId,
+    );
+    if (!conversation) throw new NotFoundException();
+    if (conversation.messages.length >= 400)
+      throw new ChatProblem(
+        409,
+        "CHAT_CONVERSATION_LIMIT_REACHED",
+        "Start a new conversation to continue",
+      );
+    const keyHash = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      rawKey.data,
+    );
+    const fingerprint = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify({ conversationId, body: parsed.data }),
+    );
+    const replay = await this.repository.findCommand(owner, keyHash);
+    if (replay) return this.replay(replay, fingerprint);
+
+    const now = this.clock.now();
+    const sendDeadline = Date.now() + 24_000;
+    const command: ChatCommand = {
+      _id: randomUUID(),
+      ownerAccountId: owner,
+      conversationId,
+      keyHash,
+      fingerprint,
+      state: "RUNNING",
+      response: null,
+      failureCode: null,
+      failureStatus: null,
+      failureTitle: null,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: conversation.expiresAt,
+    };
+    try {
+      await this.repository.beginCommand(command);
+    } catch (error) {
+      const concurrent = await this.repository.findCommand(owner, keyHash);
+      if (concurrent) return this.replay(concurrent, fingerprint);
+      throw error;
+    }
+
+    let decision: EntitlementDecision;
+    try {
+      const consent = await this.consent.snapshot(
+        bearer(request),
+        request.id ?? randomUUID(),
+      );
+      if (!consent.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      decision = await this.entitlement.current(
+        bearer(request),
+        request.id ?? randomUUID(),
+      );
+    } catch (error) {
+      const failure = this.failure(
+        error,
+        "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+        "Authorization is unavailable",
+      );
+      await this.repository.fail(
+        command,
+        failure.code,
+        failure.status,
+        failure.title,
+      );
+      if (error instanceof HttpException) throw error;
+      if (error instanceof ConsentUnavailableError)
+        throw new ChatProblem(
+          503,
+          "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+          "Consent is unavailable",
+        );
+      throw new ChatProblem(
+        503,
+        "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+        "Authorization is unavailable",
+      );
+    }
+
+    const day = localDate(now, this.configuration.CHAT_DEFAULT_TIMEZONE);
+    const resetAt = nextLocalDay(now, this.configuration.CHAT_DEFAULT_TIMEZONE);
+    const answerLimit =
+      decision.packageCode === "FREE"
+        ? this.configuration.CHAT_FREE_DAILY_ANSWERS
+        : decision.packageCode === "PLUS"
+          ? this.configuration.CHAT_PLUS_DAILY_ANSWERS
+          : this.configuration.CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS;
+    const tokenBudget =
+      decision.packageCode === "FREE"
+        ? this.configuration.CHAT_FREE_DAILY_TOKEN_BUDGET
+        : decision.packageCode === "PLUS"
+          ? this.configuration.CHAT_PLUS_DAILY_TOKEN_BUDGET
+          : this.configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET;
+    let reserved: { successfulAnswers: number; usedTokens: number };
+    try {
+      reserved = await this.repository.reserve(
+        owner,
+        command._id,
+        day,
+        now.toISOString().slice(0, 16),
+        decision.packageCode,
+        answerLimit,
+        this.configuration.CHAT_RATE_LIMIT_PER_MINUTE,
+        tokenBudget,
+        new Date(resetAt.getTime() + 7 * 86_400_000),
+      );
+    } catch (error) {
+      const failure = this.failure(
+        error,
+        "CHAT_LIMIT_UNAVAILABLE",
+        "Chat limit is unavailable",
+      );
+      await this.repository.fail(
+        command,
+        failure.code,
+        failure.status,
+        failure.title,
+      );
+      throw error;
+    }
+
+    let delivered: SendResult;
+    try {
+      const correlationId = request.id ?? randomUUID();
+      let authorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!authorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      let minimized: MinimizedContext = { kinds: [], prompt: "" };
+      if (
+        authorization.context.authorized &&
+        hasPersonalSelection(conversation.context.sources)
+      ) {
+        try {
+          minimized = await this.context.assemble(
+            owner,
+            bearer(request),
+            correlationId,
+            conversation.context.sources,
+          );
+        } catch (error) {
+          authorization = await this.consent.snapshot(
+            bearer(request),
+            correlationId,
+          );
+          if (!authorization.chat.authorized)
+            throw new ChatProblem(
+              403,
+              "AI_CONSENT_REQUIRED",
+              "AI processing consent is required",
+            );
+          if (authorization.context.authorized) throw error;
+        }
+      }
+      authorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!authorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      if (!authorization.context.authorized)
+        minimized = { kinds: [], prompt: "" };
+      const route = this.route(decision);
+      const sources = authorization.context.authorized
+        ? conversation.context.sources
+        : emptySources();
+      // Owner decision 2026-11-23: TEXT always runs Mầm v3 with its friend history, catalogue and suggestion.
+      const memory = conversationMemory(
+        conversation.messages,
+        sources,
+        (message) => this.crypto.decrypt(owner, conversationId, message),
+        MAM_HISTORY_LIMITS,
+      );
+      let friend: FriendInput = {
+        history: memory.history,
+        catalog: await this.catalog.items(),
+      };
+      minimized = {
+        ...minimized,
+        kinds: [...new Set([...minimized.kinds, ...memory.kinds])],
+      };
+      const finalAuthorization = await this.consent.snapshot(
+        bearer(request),
+        correlationId,
+      );
+      if (!finalAuthorization.chat.authorized)
+        throw new ChatProblem(
+          403,
+          "AI_CONSENT_REQUIRED",
+          "AI processing consent is required",
+        );
+      if (!finalAuthorization.context.authorized) {
+        minimized = { kinds: [], prompt: "" };
+        friend = {
+          ...friend,
+          history: conversationMemory(
+            conversation.messages,
+            emptySources(),
+            (message) => this.crypto.decrypt(owner, conversationId, message),
+            MAM_HISTORY_LIMITS,
+          ).history,
+        };
+      }
+      const requestTitle = canInitializeTitle(conversation);
+      // Count the arc on every recent message, not the byte-capped provider history; only the mode leaves the server.
+      // A message that used personal context the owner no longer allows is counted but never decrypted (ADR 0050).
+      const modeSources = finalAuthorization.context.authorized
+        ? sources
+        : emptySources();
+      const responseMode = selectResponseMode(
+        parsed.data.message,
+        readableTurns(conversation.messages.slice(-8), modeSources, (message) =>
+          this.crypto.decrypt(owner, conversationId, message),
+        ),
+      );
+      const replyEstimate = () =>
+        estimateInputTokens(
+          companionGuidanceSystem({
+            channel: "TEXT",
+            friend: true,
+            mamTextV3: true,
+            responseMode,
+            plan: decision.packageCode,
+          }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
+          companionUserInput({
+            message: parsed.data.message,
+            context: minimized,
+            friend,
+          }),
+        );
+      // MB-846c: notes need effective L2 at the final check (without it they are purged) and never delay a SAFETY turn.
+      if (!finalAuthorization.context.authorized)
+        await this.repository.purgeMemoryNotes(owner).catch(() => {
+          this.logger.warn("CHAT_MEMORY_PURGE_FAILED");
+        });
+      else if (responseMode !== "SAFETY") {
+        // Notes reserve below what the reply itself may need, so they are skipped before the reply can hit 429.
+        const replyHeadroom =
+          replyEstimate() + companionMaxOutputTokens + MEMORY_BLOCK_TOKENS;
+        const previousConversations = await this.previousConversations(
+          owner,
+          conversationId,
+          command,
+          tokenBudget - replyHeadroom,
+          sendDeadline,
+        );
+        if (previousConversations.length > 0)
+          friend = { ...friend, previousConversations };
+      }
+      const estimate = replyEstimate();
+      const deadlineFailure = () =>
+        new ChatProblem(
+          503,
+          "CHAT_PROVIDER_UNAVAILABLE",
+          "AI provider is unavailable",
+        );
+      let reply: ProviderReply | undefined;
+      let assistant: string | undefined;
+      let firstFailure: ChatProblem | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const remainingMs = sendDeadline - Date.now();
+        if (attempt === 1 && remainingMs < 3_000)
+          throw firstFailure ?? deadlineFailure();
+        if (remainingMs <= 0) throw deadlineFailure();
+        await this.repository.reserveAttempt(command, estimate, tokenBudget);
+        const signal = AbortSignal.timeout(
+          Math.min(providerAttemptMs(true), remainingMs),
+        );
+        let usage: { input: number; output: number } | undefined;
+        let attemptedReply: ProviderReply | undefined;
+        let attemptError: unknown;
+        try {
+          attemptedReply = await Promise.race([
+            this.provider.reply(parsed.data.message, minimized, route, {
+              friend,
+              responseMode,
+              ...(requestTitle ? { requestTitle: true } : {}),
+              plan: decision.packageCode,
+              signal,
+              onUsage: (input, output) => {
+                usage = { input, output };
+              },
+            }),
+            new Promise<never>((_resolve, reject) => {
+              const timeout = () => {
+                reject(new ProviderFailure("RETRYABLE", "TIMEOUT"));
+              };
+              if (signal.aborted) timeout();
+              else signal.addEventListener("abort", timeout, { once: true });
+            }),
+          ]);
+          assistant = validatedAssistantMessage(attemptedReply.message, {
+            rejectLinks: true,
+            maxLength: MAM_TEXT_V3_MAX_CHARACTERS,
+          });
+        } catch (error) {
+          attemptError = error;
+        }
+        const actual = usage
+          ? usage.input + usage.output
+          : attemptedReply
+            ? attemptedReply.inputTokens + attemptedReply.outputTokens
+            : estimate;
+        const usedTokens = await this.repository.settleAttempt(
+          command,
+          actual - estimate,
+        );
+        if (usedTokens > tokenBudget)
+          throw new ChatProblem(
+            429,
+            "CHAT_TOKEN_BUDGET_EXHAUSTED",
+            "AI token budget is exhausted",
+          );
+        if (Date.now() >= sendDeadline) throw deadlineFailure();
+        if (!attemptError && attemptedReply && assistant) {
+          reply = attemptedReply;
+          break;
+        }
+        const retryable =
+          attemptError instanceof ProviderFailure
+            ? attemptError.kind === "RETRYABLE"
+            : attemptError instanceof ChatProblem
+              ? attemptError.code === "CHAT_PROVIDER_INVALID_RESPONSE"
+              : true;
+        const terminalFailure =
+          attemptError instanceof ChatProblem
+            ? attemptError
+            : new ChatProblem(
+                503,
+                "CHAT_PROVIDER_UNAVAILABLE",
+                "AI provider is unavailable",
+              );
+        if (attempt === 1 || !retryable) throw terminalFailure;
+        firstFailure = terminalFailure;
+      }
+      if (!reply || !assistant) throw deadlineFailure();
+      // A SAFETY turn never shows a suggestion button, whatever the model returned.
+      const suggestion =
+        responseMode !== "SAFETY"
+          ? resolveSuggestion(reply.suggestion, friend.catalog)
+          : null;
+      const createdAt = this.clock.now();
+      const userMessageId = randomUUID();
+      const assistantMessageId = randomUUID();
+      const userMessage: ChatMessage = {
+        messageId: userMessageId,
+        role: "USER",
+        content: this.crypto.encrypt(
+          owner,
+          conversationId,
+          userMessageId,
+          parsed.data.message,
+        ),
+        createdAt,
+        route: null,
+        contextKinds: minimized.kinds,
+      };
+      const assistantMessage: ChatMessage = {
+        messageId: assistantMessageId,
+        role: "ASSISTANT",
+        content: this.crypto.encrypt(
+          owner,
+          conversationId,
+          assistantMessageId,
+          assistant,
+        ),
+        createdAt,
+        route,
+        contextKinds: minimized.kinds,
+        ...(suggestion
+          ? {
+              suggestion: this.crypto.encryptSuggestion(
+                owner,
+                conversationId,
+                assistantMessageId,
+                suggestion,
+              ),
+            }
+          : {}),
+      };
+      const remaining = Math.max(
+        0,
+        answerLimit - reserved.successfulAnswers - 1,
+      );
+      const result: SendResult = {
+        conversationId,
+        userMessageId,
+        assistantMessageId,
+        assistant,
+        createdAt: createdAt.toISOString(),
+        contextKinds: minimized.kinds,
+        quota: {
+          plan: decision.packageCode,
+          policyVersion: "companion-quota-v2",
+          remaining: decision.packageCode === "PREMIUM" ? null : remaining,
+          resetAt: resetAt.toISOString(),
+          limitDisplayed: decision.packageCode !== "PREMIUM",
+        },
+        suggestion,
+      };
+      // The replay snapshot is plaintext; the suggestion lives only on the encrypted message.
+      if (Date.now() >= sendDeadline) throw deadlineFailure();
+      await this.repository.complete(
+        command,
+        userMessage,
+        assistantMessage,
+        { ...result, suggestion: null },
+        sendDeadline,
+        requestTitle
+          ? this.crypto.encryptTitle(
+              owner,
+              conversationId,
+              normalizedProviderTitle(reply.title) ??
+                Array.from(parsed.data.message).slice(0, 40).join(""),
+            )
+          : undefined,
+      );
+      delivered = result;
+    } catch (error) {
+      const failure = this.failure(
+        error,
+        "CHAT_PROVIDER_UNAVAILABLE",
+        "AI Companion is temporarily unavailable",
+      );
+      await this.repository.fail(
+        command,
+        failure.code,
+        failure.status,
+        failure.title,
+      );
+      if (error instanceof HttpException) throw error;
+      if (error instanceof ConsentUnavailableError)
+        throw new ChatProblem(
+          503,
+          "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+          "Consent is unavailable",
+        );
+      throw new ChatProblem(503, failure.code, failure.title);
+    }
+    const titleRemainingMs = sendDeadline - Date.now();
+    if (titleRemainingMs <= 0) return delivered;
+    let titleTimeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.withTitle(owner, delivered),
+        new Promise<SendResult>((resolve) => {
+          titleTimeout = setTimeout(() => {
+            resolve(delivered);
+          }, titleRemainingMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(titleTimeout);
+    }
+  }
+
+  async rename(
+    request: ChatRequest,
+    conversationId: string,
+  ): Promise<RenameTitleResult> {
+    const owner = requestOwner(request);
+    const parsed = renameTitleSchema.safeParse(request.body);
+    const rawKey = idempotencyKey.safeParse(request.headers["idempotency-key"]);
+    const ifMatch = request.headers["if-match"];
+    if (
+      !uuid.safeParse(conversationId).success ||
+      !parsed.success ||
+      !rawKey.success ||
+      typeof ifMatch !== "string" ||
+      !/^"[A-Za-z0-9_-]{43}"$/u.test(ifMatch)
+    )
+      throw new BadRequestException();
+    const now = this.clock.now();
+    const keyHash = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      `rename-title:${rawKey.data}`,
+    );
+    const fingerprint = digest(
+      this.configuration.JOURNAL_IDEMPOTENCY_HMAC_KEY,
+      JSON.stringify({
+        operation: "RENAME_TITLE",
+        conversationId,
+        title: parsed.data.title,
+        ifMatch,
+      }),
+    );
+    try {
+      const conversation = await this.repository.findConversation(
+        owner,
+        conversationId,
+      );
+      if (!conversation || conversation.expiresAt <= now)
+        throw new NotFoundException();
+      const previous = await this.repository.findCommand(owner, keyHash);
+      if (previous) return this.replayRename(previous, fingerprint);
+      if (`"${this.crypto.titleVersion(conversation)}"` !== ifMatch)
+        throw new ChatProblem(
+          412,
+          "CHAT_TITLE_VERSION_CONFLICT",
+          "Conversation title has changed",
+        );
+      const encryptedTitle = this.crypto.encryptTitle(
+        owner,
+        conversationId,
+        parsed.data.title,
+      );
+      const result: RenameTitleResult = {
+        conversationId,
+        title: parsed.data.title,
+        titleVersion: this.crypto.titleVersion({
+          ...conversation,
+          title: defaultConversationTitle,
+          encryptedTitle,
+        }),
+      };
+      const command: ChatCommand = {
+        _id: randomUUID(),
+        ownerAccountId: owner,
+        conversationId,
+        keyHash,
+        fingerprint,
+        state: "SUCCEEDED",
+        response: null,
+        failureCode: null,
+        failureStatus: null,
+        failureTitle: null,
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: conversation.expiresAt,
+      };
+      command.response = {
+        operation: "RENAME_TITLE",
+        encryptedResult: this.crypto.encryptRenameResult(
+          owner,
+          conversationId,
+          command._id,
+          result,
+        ),
+      };
+      await this.repository.renameTitle(command, conversation, encryptedTitle);
+      return result;
+    } catch (error) {
+      let completed: ChatCommand | null;
+      try {
+        completed = await this.repository.findCommand(owner, keyHash);
+        if (completed) {
+          const conversation = await this.repository.findConversation(
+            owner,
+            conversationId,
+          );
+          if (!conversation || conversation.expiresAt <= this.clock.now())
+            throw new NotFoundException();
+        }
+      } catch (recoveryError) {
+        if (recoveryError instanceof NotFoundException) throw recoveryError;
+        throw new ChatProblem(
+          503,
+          "CHAT_TITLE_UNAVAILABLE",
+          "Conversation title is unavailable",
+        );
+      }
+      if (completed) return this.replayRename(completed, fingerprint);
+      if (
+        error instanceof HttpException &&
+        [404, 409, 412].includes(error.getStatus())
+      )
+        throw error;
+      throw new ChatProblem(
+        503,
+        "CHAT_TITLE_UNAVAILABLE",
+        "Conversation title is unavailable",
+      );
+    }
+  }
+
+  private replayRename(
+    command: ChatCommand,
+    fingerprint: string,
+  ): RenameTitleResult {
+    if (command.fingerprint !== fingerprint)
+      throw new ChatProblem(
+        409,
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key was reused",
+      );
+    if (
+      command.state === "SUCCEEDED" &&
+      command.response &&
+      "operation" in command.response
+    ) {
+      try {
+        return this.crypto.decryptRenameResult(
+          command.ownerAccountId,
+          command.conversationId,
+          command._id,
+          command.response.encryptedResult,
+        );
+      } catch {
+        throw new ChatProblem(
+          503,
+          "CHAT_TITLE_UNAVAILABLE",
+          "Conversation title is unavailable",
+        );
+      }
+    }
+    throw new ChatProblem(
+      503,
+      "CHAT_TITLE_UNAVAILABLE",
+      "Conversation title is unavailable",
+    );
+  }
+
+  /** Notes on the owner's other recent Mầm conversations, newest first; any failure leaves a note out and never fails the turn. */
+  private async previousConversations(
+    owner: string,
+    conversationId: string,
+    command: ChatCommand,
+    tokenBudget: number,
+    sendDeadline: number,
+  ): Promise<PreviousConversation[]> {
+    const now = this.clock.now();
+    let candidates: Conversation[];
+    try {
+      candidates = await this.repository.memoryCandidates(
+        owner,
+        conversationId,
+        new Date(now.getTime() - 30 * 86_400_000),
+        now,
+        3,
+      );
+    } catch {
+      this.logger.warn("CHAT_MEMORY_UNAVAILABLE");
+      return [];
+    }
+    // Leave the reply at least 12 s of the send deadline.
+    const generationMs = noteGenerationMs(sendDeadline, Date.now());
+    const day = new Intl.DateTimeFormat("en-GB", {
+      timeZone: this.configuration.CHAT_DEFAULT_TIMEZONE,
+      day: "2-digit",
+      month: "2-digit",
+    });
+    const notes = await Promise.all(
+      candidates.map(async (conversation) => {
+        try {
+          const fresh =
+            conversation.memoryNote !== undefined &&
+            conversation.memoryNoteVersion === MAM_MEMORY_NOTE_VERSION &&
+            conversation.memoryNoteUpdatedAt !== undefined &&
+            conversation.memoryNoteUpdatedAt >= conversation.updatedAt;
+          const note =
+            fresh && conversation.memoryNote
+              ? this.crypto.decryptMemoryNote(
+                  owner,
+                  conversation._id,
+                  conversation.memoryNote,
+                )
+              : generationMs > 0
+                ? await this.singleFlightNote(
+                    owner,
+                    conversation,
+                    command,
+                    tokenBudget,
+                    generationMs,
+                  )
+                : null;
+          return note
+            ? {
+                date: day.format(conversation.updatedAt),
+                title: this.crypto.title(conversation).title,
+                note,
+              }
+            : null;
+        } catch {
+          this.logger.warn("CHAT_MEMORY_NOTE_FAILED");
+          return null;
+        }
+      }),
+    );
+    return notes.filter((note) => note !== null);
+  }
+
+  // shortcut: in-process only; two service instances can still both generate the same note (last write wins), fine at demo scale.
+  private readonly notesInFlight = new Map<string, Promise<string | null>>();
+
+  private singleFlightNote(
+    owner: string,
+    conversation: Conversation,
+    command: ChatCommand,
+    tokenBudget: number,
+    timeoutMs: number,
+  ): Promise<string | null> {
+    const key = `${owner}:${conversation._id}:${conversation.updatedAt.toISOString()}`;
+    const running = this.notesInFlight.get(key);
+    if (running) return running;
+    const note = this.writeMemoryNote(
+      owner,
+      conversation,
+      command,
+      tokenBudget,
+      timeoutMs,
+    ).finally(() => this.notesInFlight.delete(key));
+    this.notesInFlight.set(key, note);
+    return note;
+  }
+
+  /** One provider call on the cheaper FREE/PLUS route, charged to the owner's daily token budget. */
+  private async writeMemoryNote(
+    owner: string,
+    conversation: Conversation,
+    command: ChatCommand,
+    tokenBudget: number,
+    timeoutMs: number,
+  ): Promise<string | null> {
+    const transcript = conversationMemory(
+      conversation.messages,
+      emptySources(),
+      (message) => this.crypto.decrypt(owner, conversation._id, message),
+      MAM_NOTE_TRANSCRIPT_LIMITS,
+    ).history;
+    if (transcript.length === 0) return null;
+    const message = JSON.stringify(transcript);
+    const empty: MinimizedContext = { kinds: [], prompt: "" };
+    const estimate = estimateInputTokens(
+      mamMemoryNoteSystem,
+      companionUserInput({ message, context: empty }),
+    );
+    await this.repository.reserveAttempt(command, estimate, tokenBudget);
+    let usage: { input: number; output: number } | undefined;
+    let reply: ProviderReply | undefined;
+    const signal = AbortSignal.timeout(timeoutMs);
+    try {
+      reply = await Promise.race([
+        this.provider.reply(
+          message,
+          empty,
+          selectCompanionProviderRoute(this.configuration, "FREE"),
+          {
+            memoryNote: true,
+            signal,
+            onUsage: (input, output) => {
+              usage = { input, output };
+            },
+          },
+        ),
+        new Promise<never>((_resolve, reject) => {
+          const timeout = () => {
+            reject(new ProviderFailure("RETRYABLE", "TIMEOUT"));
+          };
+          if (signal.aborted) timeout();
+          else signal.addEventListener("abort", timeout, { once: true });
+        }),
+      ]);
+    } finally {
+      const actual = usage
+        ? usage.input + usage.output
+        : reply
+          ? reply.inputTokens + reply.outputTokens
+          : estimate;
+      await this.repository.settleAttempt(command, actual - estimate);
+    }
+    const note = memoryNoteWithinLimit(reply.message.trim());
+    if (
+      !note ||
+      linkOrMarkup.test(note) ||
+      unsafeAssistantPatterns.some((pattern) => pattern.test(note))
+    )
+      return null;
+    await this.repository.saveMemoryNote(
+      owner,
+      conversation._id,
+      conversation.updatedAt,
+      this.crypto.encryptMemoryNote(owner, conversation._id, note),
+      MAM_MEMORY_NOTE_VERSION,
+    );
+    return note;
+  }
+
+  private async withTitle(
+    owner: string,
+    result: SendResult,
+  ): Promise<SendResult> {
+    try {
+      const conversation = await this.repository.findConversation(
+        owner,
+        result.conversationId,
+      );
+      return conversation
+        ? { ...result, ...this.crypto.title(conversation) }
+        : result;
+    } catch {
+      return result;
+    }
+  }
+
+  private route(decision: EntitlementDecision): ChatRoute {
+    return {
+      workload: "COMPANION_CHAT",
+      servicePlan: decision.packageCode,
+      entitlementSource: decision.source,
+      entitlementPolicyVersion: decision.policyVersion,
+      entitlementVersion: decision.version,
+      ...selectCompanionProviderRoute(this.configuration, decision.packageCode),
+    };
+  }
+
+  private async replay(
+    command: ChatCommand,
+    fingerprint: string,
+  ): Promise<SendResult> {
+    if (command.fingerprint !== fingerprint)
+      throw new ChatProblem(
+        409,
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key was reused",
+      );
+    if (
+      command.state === "SUCCEEDED" &&
+      command.response &&
+      !("operation" in command.response)
+    ) {
+      // The snapshot never holds the suggestion; restore it from the encrypted assistant message.
+      const { assistantMessageId } = command.response;
+      let conversation: Conversation | null;
+      try {
+        conversation = await this.repository.findConversation(
+          command.ownerAccountId,
+          command.conversationId,
+        );
+      } catch {
+        return { ...command.response, suggestion: null };
+      }
+      const message = conversation?.messages.find(
+        (value) => value.messageId === assistantMessageId,
+      );
+      let title: Partial<Pick<RenameTitleResult, "title" | "titleVersion">> =
+        {};
+      try {
+        if (conversation) title = this.crypto.title(conversation);
+      } catch {
+        title = {};
+      }
+      return {
+        ...command.response,
+        suggestion: message
+          ? this.crypto.decryptSuggestion(
+              command.ownerAccountId,
+              command.conversationId,
+              message,
+            )
+          : null,
+        ...title,
+      };
+    }
+    if (command.state === "FAILED")
+      throw new ChatProblem(
+        command.failureStatus ?? 503,
+        command.failureCode ?? "CHAT_REQUEST_FAILED",
+        command.failureTitle ?? "Chat request failed",
+      );
+    throw new ChatProblem(
+      409,
+      "CHAT_REQUEST_IN_PROGRESS",
+      "Chat request is in progress",
+    );
+  }
+
+  private failure(error: unknown, code: string, title: string) {
+    if (error instanceof ChatProblem)
+      return {
+        code: error.code,
+        status: error.getStatus(),
+        title: error.safeTitle,
+      };
+    if (error instanceof ConsentUnavailableError)
+      return {
+        code: "CONSENT_OR_ENTITLEMENT_UNAVAILABLE",
+        status: 503,
+        title: "Consent is unavailable",
+      };
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      return {
+        code:
+          typeof response === "object" &&
+          "code" in response &&
+          typeof response.code === "string"
+            ? response.code
+            : code,
+        status: error.getStatus(),
+        title:
+          typeof response === "object" &&
+          "title" in response &&
+          typeof response.title === "string"
+            ? response.title
+            : title,
+      };
+    }
+    return { code, status: 503, title };
+  }
+}
+
+@Controller("api/v1/ai-companion/conversations")
+export class CompanionChatController {
+  constructor(private readonly service: CompanionChatService) {}
+
+  @Post()
+  create(@Req() request: ChatRequest) {
+    return this.service.create(request);
+  }
+
+  @Get()
+  list(@Req() request: ChatRequest) {
+    return this.service.list(request);
+  }
+
+  @Get(":conversationId")
+  get(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+  ) {
+    return this.service.get(request, conversationId);
+  }
+
+  @Post(":conversationId/messages")
+  send(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+  ) {
+    return this.service.send(request, conversationId);
+  }
+
+  @Put(":conversationId/context")
+  updateContext(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    return this.service.updateContext(request, conversationId);
+  }
+
+  @Put(":conversationId/title")
+  async rename(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+    @Res({ passthrough: true })
+    response: { setHeader(name: string, value: string): void },
+  ) {
+    response.setHeader("Cache-Control", "no-store");
+    const result = await this.service.rename(request, conversationId);
+    response.setHeader("ETag", `"${result.titleVersion}"`);
+    return result;
+  }
+
+  @Delete(":conversationId")
+  @HttpCode(204)
+  delete(
+    @Req() request: ChatRequest,
+    @Param("conversationId") conversationId: string,
+  ) {
+    return this.service.delete(request, conversationId);
+  }
+}
+
+export const registerCompanionChatModule = (
+  configuration: ServiceConfiguration,
+  dependencies: CompanionChatDependencies = {},
+): DynamicModule => ({
+  module: CompanionChatModule,
+  controllers: [CompanionChatController],
+  providers: [
+    dependencies.repository
+      ? { provide: REPOSITORY, useValue: dependencies.repository }
+      : {
+          provide: REPOSITORY,
+          useFactory: () => new MongoChatRepository(configuration),
+        },
+    dependencies.consentClient
+      ? { provide: CONSENT, useValue: dependencies.consentClient }
+      : {
+          provide: CONSENT,
+          useFactory: () => new CareConsentClient(configuration),
+        },
+    dependencies.entitlementClient
+      ? { provide: ENTITLEMENT, useValue: dependencies.entitlementClient }
+      : {
+          provide: ENTITLEMENT,
+          useFactory: () => new ConsultationEntitlementClient(configuration),
+        },
+    dependencies.contextAssembler
+      ? { provide: CONTEXT, useValue: dependencies.contextAssembler }
+      : {
+          provide: CONTEXT,
+          useFactory: (consent: ConsentClient) =>
+            new OwnerVerifiedContextAssembler(configuration, consent),
+          inject: [CONSENT],
+        },
+    dependencies.provider
+      ? { provide: PROVIDER, useValue: dependencies.provider }
+      : {
+          provide: PROVIDER,
+          useFactory: () => new RoutedChatProvider(configuration),
+        },
+    {
+      provide: CLOCK,
+      useValue: dependencies.clock ?? { now: () => new Date() },
+    },
+    {
+      provide: CompanionChatService,
+      useFactory: (
+        repository: ChatRepository,
+        consent: ConsentClient,
+        entitlement: EntitlementClient,
+        context: ChatContextAssembler,
+        provider: ChatProvider,
+        clock: CompanionClock,
+      ) =>
+        new CompanionChatService(
+          repository,
+          consent,
+          entitlement,
+          context,
+          provider,
+          clock,
+          configuration,
+          dependencies.catalog,
+        ),
+      inject: [REPOSITORY, CONSENT, ENTITLEMENT, CONTEXT, PROVIDER, CLOCK],
+    },
+  ],
+});
+
+@Module({})
+export class CompanionChatModule {
+  readonly moduleName = "companion-chat";
+}

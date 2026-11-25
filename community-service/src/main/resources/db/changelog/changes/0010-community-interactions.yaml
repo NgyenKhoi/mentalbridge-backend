@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0010-community-interactions
+      author: mentalbridge
+      comment: Persist owner-private supportive reactions and bookmarks for MB-579.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_post_reaction (
+                  post_id uuid NOT NULL REFERENCES community_post(id),
+                  profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  reaction varchar(16) NOT NULL,
+                  created_at timestamptz NOT NULL,
+                  updated_at timestamptz NOT NULL,
+                  PRIMARY KEY (post_id, profile_id),
+                  CONSTRAINT ck_community_post_reaction CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU'))
+              );
+
+              CREATE TABLE community_post_bookmark (
+                  post_id uuid NOT NULL REFERENCES community_post(id),
+                  profile_id uuid NOT NULL REFERENCES community_profile(id),
+                  created_at timestamptz NOT NULL,
+                  PRIMARY KEY (post_id, profile_id)
+              );
+
+              CREATE INDEX ix_community_post_reaction_owner
+                  ON community_post_reaction (profile_id, post_id);
+              CREATE INDEX ix_community_post_bookmark_owner
+                  ON community_post_bookmark (profile_id, post_id);

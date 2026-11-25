@@ -27,6 +27,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mentalbridge.care.configuration.AssessmentProperties;
 import com.mentalbridge.care.consent.ConsentService;
 import com.mentalbridge.care.consent.PrivacyDisclosureService;
+import com.mentalbridge.care.notification.UserNotificationOutbox;
+import com.mentalbridge.care.notification.UserNotificationOutbox.FactType;
 import com.mentalbridge.care.profile.UserProfileRepository;
 import com.mentalbridge.care.shared.ApiException;
 import com.mentalbridge.care.shared.ApiException.FieldViolation;
@@ -50,13 +52,15 @@ public class AssessmentService {
 	private final SecureRandom secureRandom = new SecureRandom();
 	private final ConsentService consents;
 	private final PrivacyDisclosureService disclosures;
+	private final UserNotificationOutbox userNotifications;
 
 	public AssessmentService(UserProfileRepository profiles, AnonymousAssessmentSessionRepository sessions,
 			QuestionnaireDefinitionRepository definitions, QuestionnaireQuestionRepository questions,
 			QuestionnaireScoreBandRepository scoreBands, AssessmentSubmissionRepository submissions,
 			AssessmentAnswerRepository answers, AssessmentResultRepository results, OutboxEventRepository outbox,
 			AssessmentScoringPolicy scoring, AssessmentProperties properties, ObjectMapper objectMapper, Clock clock,
-			ConsentService consents, PrivacyDisclosureService disclosures) {
+			ConsentService consents, PrivacyDisclosureService disclosures,
+			UserNotificationOutbox userNotifications) {
 		this.profiles = profiles;
 		this.sessions = sessions;
 		this.definitions = definitions;
@@ -72,6 +76,7 @@ public class AssessmentService {
 		this.clock = clock;
 		this.consents = consents;
 		this.disclosures = disclosures;
+		this.userNotifications = userNotifications;
 	}
 
 	@Transactional
@@ -188,6 +193,10 @@ public class AssessmentService {
 		}
 		payload.put("completedAt", submittedAt.toString());
 		outbox.save(new OutboxEventEntity(submissionId, correlationId, payload, submittedAt));
+		if (userId != null) {
+			userNotifications.append(userId, FactType.ASSESSMENT_RESULT_AVAILABLE, submissionId, 0,
+					correlationId, submittedAt);
+		}
 		return view(submission, definition, result, userId == null);
 	}
 

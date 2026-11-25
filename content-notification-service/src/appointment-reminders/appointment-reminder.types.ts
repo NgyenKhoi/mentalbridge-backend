@@ -1,0 +1,102 @@
+export type AppointmentStatus =
+  | 'REQUESTED'
+  | 'CONFIRMED'
+  | 'REJECTED'
+  | 'EXPIRED'
+  | 'CANCELLED'
+  | 'IN_PROGRESS'
+  | 'SESSION_ENDED'
+  | 'COMPLETED'
+  | 'USER_NO_SHOW'
+  | 'SPECIALIST_NO_SHOW'
+  | 'DISPUTED';
+
+export type AppointmentModality = 'IN_APP_CHAT' | 'IN_APP_VIDEO';
+
+interface AppointmentStatusChangedEventBase {
+  readonly messageId: string;
+  readonly messageType: 'consultation.appointment.status-changed';
+  readonly occurredAt: string;
+  readonly producer: 'consultation-service';
+  readonly correlationId: string;
+  readonly aggregateId: string;
+  readonly aggregateVersion: number;
+  readonly payload: {
+    readonly appointmentId: string;
+    readonly ownerAccountId: string;
+    readonly status: AppointmentStatus;
+    readonly scheduledStartAt: string;
+    readonly modality: AppointmentModality;
+    readonly replacesAppointmentId: string | null;
+  };
+}
+
+export interface AppointmentStatusChangedEventV1 extends AppointmentStatusChangedEventBase {
+  readonly schemaVersion: '1.0';
+}
+
+export interface AppointmentStatusChangedEventV2 extends AppointmentStatusChangedEventBase {
+  readonly schemaVersion: '2.0';
+  readonly payload: AppointmentStatusChangedEventBase['payload'] & {
+    readonly specialistAccountId: string;
+    readonly cancellationActorRole?: 'SPECIALIST' | null;
+  };
+}
+
+export type AppointmentStatusChangedEvent =
+  AppointmentStatusChangedEventV1 | AppointmentStatusChangedEventV2;
+
+export interface AppointmentReminderRow {
+  readonly id: string;
+  readonly recipient_id: string;
+  readonly appointment_id: string;
+  readonly appointment_version: string | number;
+  readonly appointment_status: AppointmentStatus;
+  readonly modality: AppointmentModality;
+  readonly scheduled_start_at: Date | string;
+  readonly target_at: Date | string;
+  readonly due_at: Date | string;
+  readonly attempt_count: number;
+  readonly first_attempt_at: Date | string | null;
+  readonly provider_idempotency_key: string;
+}
+
+export interface ClaimedAppointmentReminder {
+  readonly id: string;
+  readonly recipientId: string;
+  readonly appointmentId: string;
+  readonly appointmentVersion: number;
+  readonly modality: AppointmentModality;
+  readonly scheduledStartAt: Date;
+  readonly targetAt: Date;
+  readonly dueAt: Date;
+  readonly attemptCount: number;
+  readonly firstAttemptAt: Date;
+  readonly providerIdempotencyKey: string;
+}
+
+export interface AppointmentPushReminderRow {
+  readonly id: string;
+  readonly recipient_id: string;
+  readonly appointment_id: string;
+  readonly appointment_version: string | number;
+  readonly modality: AppointmentModality;
+  readonly scheduled_start_at: Date | string;
+  readonly target_at: Date | string;
+  readonly due_at: Date | string;
+  readonly attempt_count: number;
+  readonly first_attempt_at: Date | string | null;
+}
+
+export interface ClaimedAppointmentPushReminder {
+  readonly id: string;
+  readonly recipientId: string;
+  readonly appointmentId: string;
+  readonly appointmentVersion: number;
+  readonly modality: AppointmentModality;
+  readonly scheduledStartAt: Date;
+  readonly targetAt: Date;
+  readonly dueAt: Date;
+  readonly attemptCount: number;
+  readonly firstAttemptAt: Date;
+}

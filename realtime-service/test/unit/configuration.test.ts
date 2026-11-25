@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadConfiguration } from '../../src/configuration/configuration.js';
+import { CommunityModule } from '../../src/community/community.module.js';
+import { OperationsModule } from '../../src/operations/operations.module.js';
+import { communityTestEnvironment } from '../fixtures/test-configuration.js';
 
 const validEnvironment = {
+  ...communityTestEnvironment,
   NODE_ENV: 'test',
   REALTIME_MESSAGE_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
   REALTIME_MESSAGE_ENCRYPTION_KEY_VERSION: 'test-v1',
+  CONSULTATION_EVIDENCE_SERVICE_TOKEN: 'test-consultation-evidence-token-32-characters',
   IDENTITY_JWT_ISSUER: 'https://identity.test.mentalbridge',
   IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
   IDENTITY_JWT_KEY_ID: 'test-key',
@@ -13,12 +18,38 @@ const validEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('Realtime configuration', () => {
+  it('always registers Community delivery routes and namespace', () => {
+    expect(OperationsModule.register().imports).toContain(CommunityModule);
+  });
   it('loads safe test defaults and typed values', () => {
     const configuration = loadConfiguration(validEnvironment);
     expect(configuration.PORT).toBe(3004);
     expect(configuration.MONGODB_DATABASE).toBe('mentalbridge_realtime');
     expect(configuration.MESSAGE_ENCRYPTION_KEY).toHaveLength(32);
     expect(configuration.MESSAGE_DECRYPTION_KEYS['test-v1']).toHaveLength(32);
+    expect(configuration.SPECIALIST_LIVE).toEqual({
+      enabled: false,
+      baseUrl: '',
+      timeoutMs: 2000,
+      brokers: ['localhost:9092'],
+    });
+  });
+
+  it('enables specialist delivery independently of Community and parses its owner deadline', () => {
+    const configuration = loadConfiguration({
+      ...validEnvironment,
+      REALTIME_SPECIALIST_LIVE_ENABLED: 'true',
+      CONTENT_NOTIFICATION_SERVICE_URL: 'https://content.internal',
+      CONTENT_NOTIFICATION_TIMEOUT_MS: '750',
+      KAFKA_BOOTSTRAP_SERVERS: 'broker-a:9092, broker-b:9092',
+    });
+    expect(configuration.COMMUNITY.baseUrl).toBe('http://localhost:8084');
+    expect(configuration.SPECIALIST_LIVE).toEqual({
+      enabled: true,
+      baseUrl: 'https://content.internal',
+      timeoutMs: 750,
+      brokers: ['broker-a:9092', 'broker-b:9092'],
+    });
   });
 
   it('uses explicit environment values instead of local defaults', () => {
@@ -65,6 +96,15 @@ describe('Realtime configuration', () => {
       loadConfiguration({
         ...validEnvironment,
         REALTIME_MESSAGE_ENCRYPTION_KEY: Buffer.alloc(16).toString('base64'),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a short Consultation evidence service token', () => {
+    expect(() =>
+      loadConfiguration({
+        ...validEnvironment,
+        CONSULTATION_EVIDENCE_SERVICE_TOKEN: 'too-short',
       }),
     ).toThrow();
   });

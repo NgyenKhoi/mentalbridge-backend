@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.dev/contracts/proposals/community-chat-handshake-v1.schema.json",
+  "title": "Community namespace handshake candidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "credential"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "credential": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 512
+    }
+  }
+}

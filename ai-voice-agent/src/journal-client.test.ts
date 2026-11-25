@@ -1,0 +1,842 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import test from "node:test";
+import { AgentFailure, loadConfiguration } from "./configuration.js";
+import {
+  parseDispatch,
+  agentName,
+  policyVersion,
+  type Signal,
+} from "./contract.js";
+import { JournalClient } from "./journal-client.js";
+import { speechUnitCapability } from "./speech-units.js";
+
+void test("real loopback Journal JSON stream delivers a bound speech unit before response completion", async () => {
+  const turn = {
+    attemptId: dispatch.attemptId,
+    leaseId: randomUUID(),
+    turnId: randomUUID(),
+    sequence: 1,
+    language: "vi-VN" as const,
+    isFinal: true as const,
+    finalTranscript: "Câu thử tổng hợp.",
+  };
+  const unit = {
+    type: "SPEECH_UNIT",
+    voiceSessionId: dispatch.voiceSessionId,
+    turnId: turn.turnId,
+    replyId: randomUUID(),
+    unitSequence: 1,
+    language: "vi-VN",
+    spokenText: "Mình đang lắng nghe bạn.",
+    expiresAt: new Date(Date.now() + 9000).toISOString(),
+    reservedCharacters: 800,
+    policyVersion: "companion-voice-speech-unit-v1",
+  };
+  let finish: (() => void) | undefined;
+  let calls = 0,
+    completed = false;
+  const server = createServer((req, res) => {
+    calls++;
+    assert.equal(
+      req.headers["x-mentalbridge-voice-capabilities"],
+      speechUnitCapability,
+    );
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "X-MentalBridge-Voice-Protocol": speechUnitCapability,
+    });
+    const text = `[${JSON.stringify(unit)}`;
+    for (const byte of Buffer.from(text)) res.write(Buffer.from([byte]));
+    finish = () => {
+      res.end(',{"type":"COMPLETED","stopReason":"END_TURN"}]');
+    };
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const units: string[] = [];
+  try {
+    const client = new JournalClient({
+      ...configuration(),
+      journalUrl: `http://127.0.0.1:${String(address.port)}`,
+    });
+    const work = client
+      .turnSpeechUnits(
+        dispatch,
+        turn,
+        randomUUID(),
+        AbortSignal.timeout(2000),
+        (value) => {
+          units.push(value.spokenText);
+        },
+      )
+      .then(() => {
+        completed = true;
+      });
+    const until = Date.now() + 1500;
+    while (units.length === 0 && Date.now() < until)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(units, [unit.spokenText]);
+    assert.equal(completed, false);
+    assert(finish);
+    finish();
+    await work;
+    assert.equal(calls, 1);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve();
+      }),
+    );
+  }
+});
+
+void test("speech stream denies mismatched, truncated, replayed, invalid UTF8 and failed envelopes without retry", async () => {
+  const turn = {
+    attemptId: dispatch.attemptId,
+    leaseId: randomUUID(),
+    turnId: randomUUID(),
+    sequence: 1,
+    language: "vi-VN" as const,
+    isFinal: true as const,
+    finalTranscript: "Câu thử tổng hợp.",
+  };
+  const first = {
+    type: "SPEECH_UNIT",
+    voiceSessionId: dispatch.voiceSessionId,
+    turnId: turn.turnId,
+    replyId: randomUUID(),
+    unitSequence: 1,
+    language: "vi-VN",
+    spokenText: "Mình đang lắng nghe bạn.",
+    expiresAt: new Date(Date.now() + 9000).toISOString(),
+    reservedCharacters: 800,
+    policyVersion: "companion-voice-speech-unit-v1",
+  };
+  for (const text of [
+    JSON.stringify([
+      { ...first, voiceSessionId: randomUUID() },
+      { type: "COMPLETED", stopReason: "END_TURN" },
+    ]),
+    JSON.stringify([{ ...first, unitSequence: 2 }]),
+    JSON.stringify([first, first]),
+    JSON.stringify([first, { type: "COMPLETED", stopReason: "MAX_TOKENS" }]),
+    JSON.stringify([first, { type: "FAILED", code: "TURN_FAILED" }]),
+    `[${JSON.stringify(first)}`,
+    JSON.stringify([first, { type: "COMPLETED", stopReason: "END_TURN" }]) +
+      "PRIVATE",
+  ]) {
+    let calls = 0;
+    const client = new JournalClient(configuration(), () => {
+      calls++;
+      return Promise.resolve(
+        new Response(text, {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "x-mentalbridge-voice-protocol": speechUnitCapability,
+          },
+        }),
+      );
+    });
+    await assert.rejects(
+      client.turnSpeechUnits(
+        dispatch,
+        turn,
+        randomUUID(),
+        AbortSignal.timeout(500),
+        () => undefined,
+      ),
+      (error: unknown) =>
+        error instanceof AgentFailure && !/PRIVATE|lắng/u.test(error.message),
+    );
+    assert.equal(calls, 1);
+  }
+  let cancelled = 0;
+  const controller = new AbortController();
+  const client = new JournalClient(configuration(), () =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled++;
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "x-mentalbridge-voice-protocol": speechUnitCapability,
+          },
+        },
+      ),
+    ),
+  );
+  const work = client.turnSpeechUnits(
+    dispatch,
+    turn,
+    randomUUID(),
+    controller.signal,
+    () => undefined,
+  );
+  setTimeout(() => {
+    controller.abort();
+  }, 10);
+  await assert.rejects(
+    work,
+    (error: unknown) =>
+      error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  assert.equal(cancelled, 1);
+});
+
+const dispatch = {
+  voiceSessionId: randomUUID(),
+  attemptId: randomUUID(),
+  dispatchId: randomUUID(),
+};
+const configuration = () =>
+  loadConfiguration({
+    AI_VOICE_JOURNAL_SERVICE_TOKEN:
+      "synthetic-worker-service-credential-32-chars",
+  });
+void test("Agent speech units are always on; a pilot needs no measurement hash and the old flag is ignored", () => {
+  assert.equal(
+    loadConfiguration({
+      AI_VOICE_PILOT: "true",
+      AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+    }).measurementPolicyHash,
+    null,
+  );
+  assert.equal(
+    Object.hasOwn(
+      loadConfiguration({ AI_VOICE_SPEECH_UNITS_ENABLED: "invalid" }),
+      "speechUnitsEnabled",
+    ),
+    false,
+  );
+});
+void test("plain pilot claim omits measurement hash and rejects an unexpected campaign", async () => {
+  const config = loadConfiguration({
+    AI_VOICE_JOURNAL_SERVICE_TOKEN:
+      "synthetic-worker-service-credential-32-chars",
+    AI_VOICE_PILOT: "true",
+    AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  });
+  for (const unexpected of [false, true]) {
+    const client = new JournalClient(config, (_url, init) => {
+      const request = JSON.parse(init?.body as string) as {
+        measurementHash?: string;
+      };
+      assert.equal(request.measurementHash, undefined);
+      return Promise.resolve(
+        Response.json(
+          {
+            voiceSessionId: dispatch.voiceSessionId,
+            attemptId: dispatch.attemptId,
+            leaseId: randomUUID(),
+            validUntil: new Date(Date.now() + 9000).toISOString(),
+            hardStopAt: new Date(Date.now() + 90000).toISOString(),
+            policyVersion,
+            ...(unexpected
+              ? {
+                  measurement: {
+                    configHash: "h".repeat(43),
+                    ttsCharacters: 500,
+                    voiceId: config.voiceId,
+                  },
+                }
+              : {}),
+          },
+          { headers: { "cache-control": "no-store" } },
+        ),
+      );
+    });
+    if (unexpected) await assert.rejects(client.claim(dispatch), AgentFailure);
+    else assert.equal((await client.claim(dispatch)).measurement, undefined);
+  }
+});
+void test("measurement claim binds Agent policy and effective TTS reservation before media with one request", async () => {
+  const configHash = "h".repeat(43);
+  const config = {
+    ...configuration(),
+    pilot: true,
+    pilotTtsMaxCharacters: 2000,
+    measurementPolicyHash: configHash,
+    voiceId: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  };
+  for (const mode of [
+    "MATCH",
+    "MISSING",
+    "HASH",
+    "CAP",
+    "VOICE",
+    "UNEXPECTED",
+  ] as const) {
+    let calls = 0;
+    const client = new JournalClient(
+      mode === "UNEXPECTED" ? configuration() : config,
+      (_url, init) => {
+        calls++;
+        assert.equal(typeof init?.body, "string");
+        const body = JSON.parse(init?.body as string) as {
+          measurementHash?: string;
+        };
+        assert.equal(
+          body.measurementHash,
+          mode === "UNEXPECTED" ? undefined : configHash,
+        );
+        return Promise.resolve(
+          Response.json(
+            {
+              voiceSessionId: dispatch.voiceSessionId,
+              attemptId: dispatch.attemptId,
+              leaseId: randomUUID(),
+              validUntil: new Date(Date.now() + 9000).toISOString(),
+              hardStopAt: new Date(Date.now() + 240000).toISOString(),
+              policyVersion,
+              ...(mode === "MISSING"
+                ? {}
+                : {
+                    measurement: {
+                      configHash: mode === "HASH" ? "x".repeat(43) : configHash,
+                      ttsCharacters: mode === "CAP" ? 4000 : 2000,
+                      voiceId: mode === "VOICE" ? randomUUID() : config.voiceId,
+                    },
+                  }),
+            },
+            { headers: { "cache-control": "no-store" } },
+          ),
+        );
+      },
+    );
+    if (mode === "MATCH")
+      assert.equal(
+        (await client.claim(dispatch)).measurement?.ttsCharacters,
+        2000,
+      );
+    else await assert.rejects(client.claim(dispatch), AgentFailure);
+    assert.equal(calls, 1);
+  }
+  assert.throws(
+    () => loadConfiguration({ AI_VOICE_MEASUREMENT_POLICY_HASH: configHash }),
+    AgentFailure,
+  );
+});
+void test("Journal HTTP timeout/refusal/malformed responses fail closed without retry", async () => {
+  let calls = 0;
+  let mode = "timeout";
+  const server = createServer((_req, response) => {
+    calls++;
+    if (mode === "timeout") return;
+    response.setHeader("content-type", "application/json");
+    response.setHeader("cache-control", "no-store");
+    response.end(
+      mode === "oversize" ? "x".repeat(17000) : "{broken-private-payload",
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient({
+    ...configuration(),
+    journalUrl: `http://127.0.0.1:${String(address.port)}`,
+  });
+  try {
+    for (const next of ["timeout", "malformed", "oversize"]) {
+      mode = next;
+      await assert.rejects(
+        client.claim(dispatch),
+        (error) =>
+          error instanceof AgentFailure &&
+          error.message === "JOURNAL_UNAVAILABLE" &&
+          error.failure ===
+            (next === "timeout" ? "TIMEOUT" : "INVALID_RESPONSE"),
+      );
+    }
+    assert.equal(calls, 3);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
+  await assert.rejects(client.claim(dispatch), AgentFailure);
+  assert.equal(calls, 3);
+});
+
+void test("a 2.1-second HTTP control acknowledgement succeeds within the command and live lease without retry", async () => {
+  let calls = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const leaseId = randomUUID();
+  const hardStopAt = new Date(Date.now() + 300000).toISOString();
+  const server = createServer((req, response) => {
+    calls++;
+    req.resume();
+    timer = setTimeout(() => {
+      const now = Date.now();
+      const validUntil = new Date(now + 10000).toISOString();
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-store");
+      response.end(
+        JSON.stringify({
+          action: "CONTINUE",
+          control: {
+            schemaVersion: 1,
+            kind: "LEASE_RENEWED",
+            commandId: randomUUID(),
+            voiceSessionId: dispatch.voiceSessionId,
+            attemptId: dispatch.attemptId,
+            sequence: 1,
+            issuedAt: new Date(now).toISOString(),
+            expiresAt: validUntil,
+            payload: { leaseId, validUntil, hardStopAt, admittedSeconds: 300 },
+          },
+        }),
+      );
+    }, 2100);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient({
+    ...configuration(),
+    journalUrl: `http://127.0.0.1:${String(address.port)}`,
+  });
+  const now = Date.now();
+  const oldLeaseUntil = now + 10000;
+  const signal: Signal = {
+    schemaVersion: 1,
+    kind: "HEARTBEAT",
+    commandId: randomUUID(),
+    voiceSessionId: dispatch.voiceSessionId,
+    attemptId: dispatch.attemptId,
+    sequence: 1,
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 4000).toISOString(),
+    payload: { leaseId, observedState: "ACTIVE" },
+  };
+  try {
+    assert.equal((await client.control(dispatch, signal)).action, "CONTINUE");
+    assert.equal(calls, 1);
+    assert.ok(Date.now() - now >= 2100);
+    assert.ok(oldLeaseUntil - Date.now() >= 5000);
+  } finally {
+    clearTimeout(timer);
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
+});
+
+void test("control deadlines reject before transport and after a late acknowledgement, and cancellation cannot renew authority", async () => {
+  let now = Date.now();
+  const initial = now;
+  const leaseId = randomUUID();
+  const signal: Signal = {
+    schemaVersion: 1,
+    kind: "HEARTBEAT",
+    commandId: randomUUID(),
+    voiceSessionId: dispatch.voiceSessionId,
+    attemptId: dispatch.attemptId,
+    sequence: 1,
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 4000).toISOString(),
+    payload: { leaseId, observedState: "ACTIVE" },
+  };
+  let calls = 0;
+  let mode = "late";
+  const abort = new AbortController();
+  const client = new JournalClient(
+    configuration(),
+    () => {
+      calls++;
+      if (mode === "late") now += 4001;
+      else abort.abort();
+      const validUntil = new Date(now + 10000).toISOString();
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            action: "CONTINUE",
+            control: {
+              schemaVersion: 1,
+              kind: "LEASE_RENEWED",
+              commandId: randomUUID(),
+              voiceSessionId: dispatch.voiceSessionId,
+              attemptId: dispatch.attemptId,
+              sequence: 1,
+              issuedAt: new Date(now).toISOString(),
+              expiresAt: validUntil,
+              payload: {
+                leaseId,
+                validUntil,
+                hardStopAt: new Date(now + 300000).toISOString(),
+                admittedSeconds: 300,
+              },
+            },
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+            },
+          },
+        ),
+      );
+    },
+    () => now,
+  );
+  await assert.rejects(
+    client.control(dispatch, { ...signal, expiresAt: signal.issuedAt }),
+    (error) =>
+      error instanceof AgentFailure && error.code === "AUTHORITY_EXPIRED",
+  );
+  assert.equal(calls, 0);
+  await assert.rejects(
+    client.control(dispatch, signal),
+    (error) =>
+      error instanceof AgentFailure && error.code === "AUTHORITY_EXPIRED",
+  );
+  assert.equal(calls, 1);
+  now = initial;
+  mode = "cancelled";
+  await assert.rejects(
+    client.control(dispatch, signal, abort.signal),
+    (error) => error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  assert.equal(calls, 2);
+  await assert.rejects(
+    client.control(dispatch, signal, abort.signal),
+    (error) => error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  assert.equal(calls, 2);
+});
+
+void test("control transport timeout is bounded by the command deadline without retry", async () => {
+  let calls = 0;
+  const server = createServer((req) => {
+    calls++;
+    req.resume();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient({
+    ...configuration(),
+    journalUrl: `http://127.0.0.1:${String(address.port)}`,
+  });
+  const now = Date.now();
+  try {
+    await assert.rejects(
+      client.control(dispatch, {
+        schemaVersion: 1,
+        kind: "HEARTBEAT",
+        commandId: randomUUID(),
+        voiceSessionId: dispatch.voiceSessionId,
+        attemptId: dispatch.attemptId,
+        sequence: 1,
+        issuedAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 200).toISOString(),
+        payload: { leaseId: randomUUID(), observedState: "ACTIVE" },
+      }),
+      (error) => error instanceof AgentFailure && error.failure === "TIMEOUT",
+    );
+    assert.equal(calls, 1);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
+});
+void test("configuration is disabled by default and never leaks unsafe setup values", () => {
+  assert.equal(configuration().enabled, false);
+  for (const environment of [
+    { AI_VOICE_AGENT_ENABLED: "true" },
+    { AI_VOICE_JOURNAL_BASE_URL: "http://remote.example" },
+    { LIVEKIT_URL: "wss://user:private@project.livekit.cloud" },
+    { AI_VOICE_TTS_VOICE_ID: "private" },
+    {
+      LIVEKIT_API_SECRET: "same-secret-32-characters-synthetic",
+      AI_VOICE_JOURNAL_SERVICE_TOKEN: "same-secret-32-characters-synthetic",
+    },
+  ])
+    assert.throws(
+      () => loadConfiguration(environment),
+      (error) =>
+        error instanceof AgentFailure && !error.message.includes("private"),
+    );
+  const accepted = {
+    AI_VOICE_AGENT_ENABLED: "true",
+    AI_VOICE_AGENT_APPROVAL_VERSION: "reviewed-qa-v1",
+    LIVEKIT_URL: "wss://synthetic.livekit.cloud",
+    LIVEKIT_API_KEY: "synthetic-key",
+    LIVEKIT_API_SECRET: "synthetic-livekit-secret-32-characters",
+    AI_VOICE_JOURNAL_SERVICE_TOKEN: "synthetic-worker-service-token-32-chars",
+    AI_VOICE_TTS_VOICE_ID: randomUUID(),
+  };
+  assert.equal(loadConfiguration(accepted).enabled, true);
+  for (const additional of [
+    { CI: "true" },
+    { NODE_ENV: "test" },
+    { AWS_BEARER_TOKEN_BEDROCK: "private" },
+    { CARTESIA_API_KEY: "private" },
+    { OTEL_EXPORTER_OTLP_ENDPOINT: "https://private" },
+  ])
+    assert.throws(() => loadConfiguration({ ...accepted, ...additional }));
+});
+
+void test("Journal diagnostic failures distinguish HTTP class, invalid body, cancellation and transport without raw payload", async () => {
+  for (const [response, expected] of [
+    [new Response("PRIVATE", { status: 403 }), "HTTP_4XX"],
+    [new Response("PRIVATE", { status: 503 }), "HTTP_5XX"],
+    [
+      new Response("PRIVATE", {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+      }),
+      "INVALID_RESPONSE",
+    ],
+  ] as const) {
+    const client = new JournalClient(configuration(), () =>
+      Promise.resolve(response),
+    );
+    await assert.rejects(
+      client.claim(dispatch),
+      (error) =>
+        error instanceof AgentFailure &&
+        error.failure === expected &&
+        !JSON.stringify(error).includes("PRIVATE"),
+    );
+  }
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const client = new JournalClient(configuration(), () =>
+    Promise.reject(new Error("PRIVATE")),
+  );
+  await assert.rejects(
+    client.claim(dispatch, cancelled.signal),
+    (error) => error instanceof AgentFailure && error.failure === "ABORTED",
+  );
+  await assert.rejects(
+    client.claim(dispatch),
+    (error) => error instanceof AgentFailure && error.failure === "TRANSPORT",
+  );
+});
+void test("only exact opaque Journal AI dispatches are accepted", () => {
+  const value = {
+    agentName,
+    metadata: JSON.stringify(dispatch),
+    roomName: `ai-voice-${randomUUID()}`,
+    roomMetadata: dispatch.dispatchId,
+    recording: false,
+  };
+  assert.deepEqual(parseDispatch(value), dispatch);
+  for (const bad of [
+    { ...value, agentName: "" },
+    { ...value, roomName: `consultation-${randomUUID()}` },
+    { ...value, roomMetadata: randomUUID() },
+    { ...value, recording: true },
+    {
+      ...value,
+      metadata: JSON.stringify({ ...dispatch, ownerId: randomUUID() }),
+    },
+  ])
+    assert.throws(() => parseDispatch(bad), AgentFailure);
+});
+void test("Journal consumer authenticates purpose, validates bindings/expiry and does not retry unknown turns", async () => {
+  const now = Date.now();
+  const leaseId = randomUUID();
+  const hardStopAt = new Date(now + 300000).toISOString();
+  const validUntil = new Date(now + 10000).toISOString();
+  let calls = 0;
+  let failure = false;
+  let invalid = false;
+  let noStore = true;
+  let replyExpression: string | undefined;
+  const server = createServer((req, res) => {
+    void (async () => {
+      calls++;
+      assert.equal(req.headers.authorization, undefined);
+      assert.equal(
+        req.headers["x-mentalbridge-voice-capabilities"],
+        speechUnitCapability,
+      );
+      assert.equal(
+        req.headers["x-mentalbridge-voice-worker-token"],
+        configuration().journalToken,
+      );
+      let raw = "";
+      for await (const chunk of req) raw += String(chunk);
+      const body = JSON.parse(raw) as Record<string, unknown>;
+      res.setHeader("content-type", "application/json");
+      if (noStore) res.setHeader("cache-control", "no-store");
+      if (failure) {
+        res.statusCode = 503;
+        res.end('{"private":"never expose"}');
+        return;
+      }
+      if (req.url?.endsWith("agent-claim")) {
+        assert.equal(body.dispatchId, dispatch.dispatchId);
+        res.end(
+          JSON.stringify({
+            voiceSessionId: invalid ? randomUUID() : dispatch.voiceSessionId,
+            attemptId: dispatch.attemptId,
+            leaseId,
+            validUntil,
+            hardStopAt,
+            policyVersion,
+          }),
+        );
+        return;
+      }
+      if (req.url?.endsWith("agent-control")) {
+        res.end(
+          JSON.stringify({
+            action: "CONTINUE",
+            control: {
+              schemaVersion: 1,
+              kind: "LEASE_RENEWED",
+              commandId: randomUUID(),
+              voiceSessionId: dispatch.voiceSessionId,
+              attemptId: dispatch.attemptId,
+              sequence: 1,
+              issuedAt: new Date(now).toISOString(),
+              expiresAt: validUntil,
+              payload: {
+                leaseId,
+                validUntil,
+                hardStopAt,
+                admittedSeconds: 300,
+              },
+            },
+          }),
+        );
+        return;
+      }
+      assert.ok(req.headers["idempotency-key"]);
+      assert.equal(body.isFinal, true);
+      assert.equal(body.language, "vi-VN");
+      res.end(
+        JSON.stringify({
+          voiceSessionId: dispatch.voiceSessionId,
+          turnId: body.turnId,
+          replyId: randomUUID(),
+          language: "vi-VN",
+          spokenText: "Mình đang lắng nghe.",
+          ...(replyExpression ? { expression: replyExpression } : {}),
+          expiresAt: validUntil,
+          policyVersion,
+        }),
+      );
+    })().catch(() => {
+      res.statusCode = 500;
+      res.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const client = new JournalClient(
+    {
+      ...configuration(),
+      journalUrl: `http://127.0.0.1:${String(address.port)}`,
+    },
+    fetch,
+    () => now,
+  );
+  try {
+    assert.equal((await client.claim(dispatch)).leaseId, leaseId);
+    const signal: Signal = {
+      schemaVersion: 1,
+      kind: "MEDIA_READY",
+      commandId: randomUUID(),
+      voiceSessionId: dispatch.voiceSessionId,
+      attemptId: dispatch.attemptId,
+      sequence: 1,
+      issuedAt: new Date(now).toISOString(),
+      expiresAt: validUntil,
+      payload: { leaseId },
+    };
+    assert.equal((await client.control(dispatch, signal)).action, "CONTINUE");
+    const input = {
+      attemptId: dispatch.attemptId,
+      leaseId,
+      turnId: randomUUID(),
+      sequence: 1,
+      language: "vi-VN" as const,
+      isFinal: true as const,
+      finalTranscript: "Hôm nay tôi muốn chia sẻ",
+    };
+    assert.equal(
+      (
+        await client.turn(
+          dispatch,
+          input,
+          randomUUID(),
+          new AbortController().signal,
+        )
+      ).language,
+      "vi-VN",
+    );
+    replyExpression = "comfort";
+    assert.equal(
+      (
+        await client.turn(
+          dispatch,
+          input,
+          randomUUID(),
+          new AbortController().signal,
+        )
+      ).expression,
+      "comfort",
+    );
+    replyExpression = "warm";
+    await assert.rejects(
+      client.turn(dispatch, input, randomUUID(), new AbortController().signal),
+      AgentFailure,
+    );
+    replyExpression = undefined;
+    invalid = true;
+    await assert.rejects(client.claim(dispatch), AgentFailure);
+    invalid = false;
+    noStore = false;
+    await assert.rejects(client.claim(dispatch), AgentFailure);
+    noStore = true;
+    const before = calls;
+    failure = true;
+    await assert.rejects(
+      client.turn(dispatch, input, randomUUID(), new AbortController().signal),
+      (error) =>
+        error instanceof AgentFailure && !error.message.includes("private"),
+    );
+    assert.equal(calls, before + 1);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    await assert.rejects(
+      client.claim(dispatch, cancelled.signal),
+      AgentFailure,
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      }),
+    );
+  }
+});

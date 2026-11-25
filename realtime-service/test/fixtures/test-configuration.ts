@@ -1,12 +1,31 @@
+import { generateKeyPairSync } from 'node:crypto';
 import type { ServiceConfiguration } from '../../src/configuration/configuration.js';
+import { communityConfiguration } from '../../src/community/community-configuration.js';
+import { specialistLiveConfiguration } from '../../src/notifications/specialist-live.configuration.js';
 
 export const encryptionKey = Buffer.alloc(32, 7);
+
+const communityKeys = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+});
+
+export const communityTestEnvironment = {
+  REALTIME_COMMUNITY_DELEGATION_PRIVATE_KEY: communityKeys.privateKey,
+  REALTIME_COMMUNITY_DELEGATION_KEY_ID: 'test-delegation',
+  REALTIME_COMMUNITY_BFF_PUBLIC_KEY: communityKeys.publicKey,
+  REALTIME_COMMUNITY_BFF_KEY_ID: 'test-bff',
+  KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092',
+};
 
 export const testConfiguration = (
   publicKey: string,
   overrides: Partial<ServiceConfiguration> = {},
 ): ServiceConfiguration => ({
   NODE_ENV: 'test',
+  COMMUNITY: communityConfiguration(communityTestEnvironment),
+  SPECIALIST_LIVE: specialistLiveConfiguration(),
   PORT: 3004,
   LOG_LEVEL: 'silent',
   SERVICE_NAME: 'realtime-service',
@@ -26,6 +45,9 @@ export const testConfiguration = (
   MESSAGE_ENCRYPTION_KEY: encryptionKey,
   MESSAGE_ENCRYPTION_KEY_VERSION: 'test-v1',
   MESSAGE_DECRYPTION_KEYS: { 'test-v1': encryptionKey },
+  CONSULTATION_BASE_URL: 'http://consultation.test',
+  CONSULTATION_TIMEOUT_MS: 2000,
+  CONSULTATION_EVIDENCE_SERVICE_TOKEN: 'test-consultation-evidence-token-32-characters',
   IDENTITY_JWT_ISSUER: 'https://identity.test.mentalbridge',
   IDENTITY_JWT_AUDIENCE: 'mentalbridge-api',
   IDENTITY_JWT_KEY_ID: 'test-key',

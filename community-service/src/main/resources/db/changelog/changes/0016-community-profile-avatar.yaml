@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0016-community-profile-avatar
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE community_media
+                  ADD CONSTRAINT uq_community_media_id_owner UNIQUE (id, owner_profile_id);
+              ALTER TABLE community_profile
+                  ADD COLUMN avatar_media_id uuid,
+                  ADD CONSTRAINT fk_community_profile_avatar_owner
+                    FOREIGN KEY (avatar_media_id, id)
+                    REFERENCES community_media (id, owner_profile_id);
+              CREATE INDEX ix_community_profile_avatar
+                  ON community_profile (avatar_media_id) WHERE avatar_media_id IS NOT NULL;

@@ -1,0 +1,444 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MentalBridge Internal Voice Speech Units",
+    "version": "1.0.0",
+    "description": "Prospective independently publishable speech-unit policy for MB-854 and MB-871 review. Default OFF. Requires either a bound measurement profile or a configured bounded plain pilot. This changes the all-or-nothing END_TURN publication guarantee only when separately reviewed and enabled. Raw model tokens are never publishable. Existing public Voice/Text contracts remain unchanged. The in-repository ai-voice-agent is the sole consumer."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "security": [
+    {
+      "VoiceWorkerToken": []
+    }
+  ],
+  "paths": {
+    "/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns/speech-units": {
+      "x-mentalbridge-status": "implemented",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SessionId"
+        }
+      ],
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "generateVoiceSpeechUnitsV1",
+        "description": "One counted/idempotency-fenced provider turn, no retry. Requires the approved Bedrock ConverseStream route (always on since MB-846d, no feature flags), a valid plain pilot or bound measurement profile, and matching Agent capability. Response is one incrementally transferred JSON array, not WebSocket/SSE. Each complete SPEECH_UNIT follows schema/safety including cumulative-prefix checks, fresh publication authorization, reply registration and state recheck. Measured mode reserves a durable conservative 800 campaign TTS characters shared by all units of this turn; plain mode has no campaign reservation and retains the 800 combined-character field limit plus Agent pilot TTS budget. Two units/800 combined characters maximum. The server waits for the previous unit's exact playback ACK before authorizing another. COMPLETED requires the outer model END_TURN, complete schema/usage and EOF. Later abnormal completion sends FAILED and cancels future audio; already heard audio cannot be recalled.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Capability"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./journal-ai-service-v1.yaml#/components/schemas/VoiceTurn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded JSON array; no-store, no proxy buffering.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "X-MentalBridge-Voice-Protocol": {
+                "schema": {
+                  "const": "voice-speech-units-v1"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 3,
+                  "items": {
+                    "$ref": "#/components/schemas/SpeechEvent"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid worker token."
+          },
+          "403": {
+            "description": "Feature/capability/consent denied."
+          },
+          "409": {
+            "description": "Duplicate/stale turn or conflicting state."
+          },
+          "410": {
+            "description": "Expired authority or lease."
+          },
+          "422": {
+            "description": "Invalid body/key."
+          },
+          "429": {
+            "description": "Product or campaign allowance exhausted."
+          },
+          "503": {
+            "description": "Unavailable authority/provider before streaming begins."
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns/{turnId}/speech-unit-ack": {
+      "x-mentalbridge-status": "implemented",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SessionId"
+        },
+        {
+          "$ref": "#/components/parameters/TurnId"
+        }
+      ],
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "acknowledgeVoiceSpeechUnitV1",
+        "description": "Sent only after successful complete playback of a unit. Checks current bound attempt/lease/state and exact expected sequence/reply. Duplicate same acknowledgement while the job exists is idempotent. Does not refund allowance, authorize another unit itself or count as a new turn.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Capability"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "attemptId",
+                  "leaseId",
+                  "unitSequence",
+                  "replyId"
+                ],
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "unitSequence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2
+                  },
+                  "replyId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact unit acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "voiceSessionId",
+                    "turnId",
+                    "unitSequence",
+                    "status"
+                  ],
+                  "properties": {
+                    "voiceSessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "turnId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "unitSequence": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2
+                    },
+                    "status": {
+                      "const": "ACKNOWLEDGED"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated worker."
+          },
+          "409": {
+            "description": "Stale or mismatched acknowledgement."
+          },
+          "410": {
+            "description": "Expired authority."
+          },
+          "422": {
+            "description": "Invalid request/capability."
+          }
+        }
+      }
+    },
+    "/internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns/{turnId}/cancel": {
+      "x-mentalbridge-status": "implemented",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SessionId"
+        },
+        {
+          "$ref": "#/components/parameters/TurnId"
+        }
+      ],
+      "post": {
+        "x-mentalbridge-status": "implemented",
+        "operationId": "cancelVoiceSpeechTurnV1",
+        "description": "Cancels the currently bound provider/queued speech on barge-in. Current session authority and all identifiers must match. Waits for job cleanup. Keeps the session and spent turn/TTS reservations; no replacement call, retry, refund or replay is implied. Unknown cancellation fails closed.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Capability"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "attemptId",
+                  "leaseId"
+                ],
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "leaseId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bound turn cancelled or already completed on this process.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "voiceSessionId",
+                    "turnId",
+                    "status"
+                  ],
+                  "properties": {
+                    "voiceSessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "turnId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "const": "CANCELLED"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated worker."
+          },
+          "409": {
+            "description": "Stale/foreign turn or wrong process; no fallback."
+          },
+          "410": {
+            "description": "Expired authority."
+          },
+          "422": {
+            "description": "Invalid request or disabled mode."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "VoiceWorkerToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-MentalBridge-Voice-Worker-Token"
+      }
+    },
+    "parameters": {
+      "SessionId": {
+        "name": "voiceSessionId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "TurnId": {
+        "name": "turnId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Capability": {
+        "name": "X-MentalBridge-Voice-Capabilities",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "const": "voice-speech-units-v1"
+        }
+      }
+    },
+    "schemas": {
+      "SpeechUnit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "voiceSessionId",
+          "turnId",
+          "replyId",
+          "unitSequence",
+          "language",
+          "spokenText",
+          "expiresAt",
+          "policyVersion",
+          "reservedCharacters"
+        ],
+        "properties": {
+          "type": {
+            "const": "SPEECH_UNIT"
+          },
+          "voiceSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "replyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitSequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "language": {
+            "const": "vi-VN"
+          },
+          "spokenText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 800
+          },
+          "expression": {
+            "type": "string",
+            "enum": [
+              "neutral",
+              "comfort"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "const": "companion-voice-speech-unit-v1"
+          },
+          "reservedCharacters": {
+            "description": "Conservative 800-character turn envelope. It is a durable campaign TTS reservation only when the session has a bound measurement profile; in a plain pilot it is the same wire field and combined-output limit without a campaign reservation.",
+            "const": 800
+          }
+        }
+      },
+      "SpeechEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SpeechUnit"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "stopReason"
+            ],
+            "properties": {
+              "type": {
+                "const": "COMPLETED"
+              },
+              "stopReason": {
+                "const": "END_TURN"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "code"
+            ],
+            "properties": {
+              "type": {
+                "const": "FAILED"
+              },
+              "code": {
+                "const": "TURN_FAILED"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

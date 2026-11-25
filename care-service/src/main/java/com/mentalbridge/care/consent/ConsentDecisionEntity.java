@@ -37,10 +37,10 @@ class ConsentDecisionEntity {
 	protected ConsentDecisionEntity() {
 	}
 
-	ConsentDecisionEntity(UUID userId, String policyVersion, boolean granted, String idempotencyKey,
+	ConsentDecisionEntity(UUID userId, String consentType, String policyVersion, boolean granted, String idempotencyKey,
 			String requestHash, Instant now) {
 		this.userId = userId;
-		this.consentType = PrivacyDisclosureService.CONSENT_TYPE;
+		this.consentType = consentType;
 		this.policyVersion = policyVersion;
 		this.granted = granted;
 		this.evidence = Map.of("channel", "CARE_UI");

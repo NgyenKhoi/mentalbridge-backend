@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0021-community-comment-reactions
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_comment_reaction (
+                  comment_id uuid NOT NULL REFERENCES community_comment(id) ON DELETE CASCADE,
+                  profile_id uuid NOT NULL REFERENCES community_profile(id) ON DELETE CASCADE,
+                  reaction varchar(16) NOT NULL CHECK (reaction IN ('SUPPORT', 'RELATE', 'THANK_YOU')),
+                  created_at timestamptz NOT NULL,
+                  updated_at timestamptz NOT NULL,
+                  PRIMARY KEY (comment_id, profile_id)
+              );

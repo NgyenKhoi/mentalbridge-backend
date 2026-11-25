@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
-import { type Collection, type Document, MongoClient } from 'mongodb';
+import { type ClientSession, type Collection, type Document, MongoClient } from 'mongodb';
 
 import type { ServiceConfiguration } from '../configuration/configuration.js';
 import { CONFIGURATION_TOKEN } from '../shared/tokens.js';
@@ -23,6 +23,15 @@ export class MongoDatabaseService implements OnApplicationShutdown {
 
   async ping(): Promise<void> {
     await this.client.db(this.databaseName).command({ ping: 1 });
+  }
+
+  async withTransaction<T>(work: (session: ClientSession) => Promise<T>): Promise<T> {
+    const session = this.client.startSession();
+    try {
+      return await session.withTransaction(() => work(session));
+    } finally {
+      await session.endSession();
+    }
   }
 
   async onApplicationShutdown(): Promise<void> {

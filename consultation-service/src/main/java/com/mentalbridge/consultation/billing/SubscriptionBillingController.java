@@ -1,0 +1,66 @@
+package com.mentalbridge.consultation.billing;
+
+import java.net.URI;
+import java.util.UUID;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.mentalbridge.consultation.shared.RequestIdentity;
+
+import jakarta.validation.Valid;
+
+@RestController
+public class SubscriptionBillingController {
+
+	private final SubscriptionBillingService billing;
+	private final SubscriptionCancellationService cancellations;
+
+	public SubscriptionBillingController(SubscriptionBillingService billing,
+			SubscriptionCancellationService cancellations) {
+		this.billing = billing;
+		this.cancellations = cancellations;
+	}
+
+	@GetMapping("/api/v1/service-plans")
+	PlanCatalogueResponse catalogue() {
+		return billing.catalogue();
+	}
+
+	@PostMapping("/api/v1/subscriptions/checkout")
+	ResponseEntity<PaymentResponse> checkout(@AuthenticationPrincipal Jwt jwt,
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+			@Valid @RequestBody CheckoutRequest request) {
+		var result = billing.checkout(RequestIdentity.subject(jwt), request.planVersionId(), idempotencyKey);
+		return ResponseEntity.created(URI.create("/api/v1/payments/" + result.paymentId())).body(result);
+	}
+
+	@GetMapping("/api/v1/subscriptions/current")
+	OwnSubscriptionResponse currentSubscription(@AuthenticationPrincipal Jwt jwt) {
+		return cancellations.current(RequestIdentity.subject(jwt));
+	}
+
+	@PostMapping("/api/v1/subscriptions/{subscriptionId}/cancellation")
+	SubscriptionCancellationResponse cancelSubscription(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID subscriptionId,
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+		return cancellations.cancel(RequestIdentity.subject(jwt), subscriptionId, idempotencyKey);
+	}
+
+	@GetMapping("/api/v1/payments/{paymentId}")
+	PaymentResponse payment(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID paymentId) {
+		return billing.payment(RequestIdentity.subject(jwt), paymentId);
+	}
+
+	@GetMapping("/api/v1/payments")
+	PaymentResponse.History history(@AuthenticationPrincipal Jwt jwt) {
+		return billing.history(RequestIdentity.subject(jwt));
+	}
+}

@@ -1,5 +1,14 @@
 # Contract source of truth
 
+MB-854 adds the default-OFF internal
+[Voice speech-unit contract](openapi/journal-ai-voice-speech-units-v1.json).
+Its handlers are implemented behind matching Journal/Agent measurement opt-ins;
+the independent-unit publication policy still requires explicit source/policy
+review and a separate live window. Agent is the sole consumer. No main Journal
+public API, memberPR299 migration or frontend sync is changed. See
+[the policy difference](../docs/policies/companion-voice-speech-unit-v1.md),
+especially irreversible early audio and conservative TTS reservations.
+
 All language-neutral integration contracts live under this directory. Service-local contract copies are not allowed because they drift from consumers and review tooling.
 
 | Contract | Canonical location |
@@ -11,7 +20,141 @@ All language-neutral integration contracts live under this directory. Service-lo
 
 ## OpenAPI lifecycle
 
-Every OpenAPI path item declares `x-mentalbridge-status`:
+MB-800 extends Content OpenAPI to `1.12.0` with implemented
+`GET /internal/v1/notifications/{notificationId}/live-eligibility`. Realtime
+forwards the existing verified socket Identity bearer; Content admits only exact
+SPECIALIST ownership and current eligible inbox/preferences. The strict success
+body is only `{notificationId}`; absent, foreign and suppressed rows share
+`404 NOTIFICATION_NOT_FOUND`. All owner responses are private and not cached.
+Realtime OpenAPI `1.1.0` adds the optional `specialistNotifications` readiness
+property when that feature is enabled; it reports the independent Kafka
+consumer and Redis subscription as `connected` or `degraded` without changing
+MongoDB's durable readiness requirement.
+
+The closed `events/content/notification-created-v1.schema.json` creation fact
+(`schemaVersion: "1.0"`) follows Content's inbox commit through its transactional
+outbox onto `mentalbridge.content.notification-created.v1`, keyed by
+notificationId. Message/outbox id, source correlation/causation, occurrence,
+notification id and inserted aggregate version remain stable on retry; subsequent
+read/delete versions never rewrite creation identity. `payload` includes only
+notificationId, recipientAccountId, exact SPECIALIST recipientRole and expiresAt.
+The independent Realtime group is `realtime-specialist-notifications-v1`; its
+ephemeral Redis fan-out channel is
+`mentalbridge:realtime:specialist-notifications:v1`. Kafka ACK and Redis handoff
+never mean browser receipt; Content's `DELIVERED` remains inbox availability.
+
+Realtime owns `mentalbridge.realtime.specialist-notification-retry.v1` and
+`mentalbridge.realtime.specialist-notification-dead-letter.v1`. Retry body and key
+retain the validated creation event unchanged. UTF-8 `mb-retry-attempt` is decimal
+`1` through `3`; absence on main means `0`. UTF-8 `mb-not-before` is a UTC ISO
+date-time. Attempts 1/2/3 follow 1s/5s/30s delays, with partition pause/heartbeats;
+expiry suppresses instead. Source offset advances only after Redis publication
+or acknowledged retry/DLQ handoff. The closed
+`events/realtime/specialist-notification-dead-letter-v1.schema.json` (`1.0`)
+contains only schemaVersion, failedAt, sourceTopic/Partition/Offset, SHA-256 digest,
+attempt and safe errorCode. It forbids raw records, content and credentials.
+
+`websocket/realtime/notification-server-event-v1.schema.json` separately versions
+the numeric `schemaVersion: 1` event on the existing authenticated `/realtime`
+namespace under Socket.IO event **`notification.created`**. Its exact envelope is
+schemaVersion, eventId, eventType, correlationId, occurredAt and
+`payload: {notificationId}`. It adds no client command or room subscription and
+leaves the closed existing `realtime.event` chat/ready union unchanged. The stable
+eventId equals the outbox messageId. No recipient, role, copy, appointment
+reference, unread count, ACK or replay cursor crosses the socket boundary.
+
+On first `connection.ready` and every reconnect, MB-801 obtains fresh one-use
+credentials as needed and refetches inbox/list plus absolute unreadCount through
+the existing BFF/REST. Signals coalesce REST invalidation; clients deduplicate by
+eventId/notificationId, reset stale pagination and reconcile current read/delete
+state. They never increment counts or resurrect data directly from a signal.
+There is no replay guarantee. ngocquyen owns the MB-801 web consumer, account-switch
+cleanup and consumer tests; after provider merge, run `npm run contracts:sync`
+and `npm run contracts:check` from merged backend contracts before implementing.
+The accepted transport/outbox boundaries remain
+[ADR 0001](../docs/adr/0001-service-stacks-and-integration.md) and
+[ADR 0016](../docs/adr/0016-feature-scoped-kafka-and-opentelemetry.md); no new ADR
+or appointment v1/v2 change is introduced. The 40 legacy payloads without a
+specialist recipient are neither inferred, backfilled nor replayed.
+
+MB-808 extends Care OpenAPI to `1.12.0` with a local USER reassessment symptom
+catalog, optional coded checklist/candidate provenance and optional exact
+`symptomMapping` on native review options/plans. Named examples cover legacy,
+selected/empty, no-resource, validation and admitted-option states. Existing
+source/summary/adaptive schema versions remain readable. ngocquyen owns MB-809
+and synchronizes the consumer contract from the backend story/merged provider
+before its BFF/client validation; no Content contract changes are required.
+
+MB-812 extends Consultation OpenAPI to `1.22.0`: earnings settings carry the
+configured minimum and whole-day hold plus optional exact `settlementHoldSeconds`.
+Only the explicit staging demo gate permits smaller funded PayOS earnings and
+payouts. Production remains at least 100,000 VND / P7D. Before MB-788 screen QA,
+the web consumer must run `npm run contracts:sync`, remove its 7/100000 validator
+constants, accept `staging-demo-paid-v1`, and display the exact short hold.
+No mobile earnings consumer is currently implemented. See the MB-812 amendment
+in [ADR 0047](../docs/adr/0047-payos-active-gateway-momo-dormant.md).
+
+MB-787 extends Consultation OpenAPI to `1.21.0` under the accepted
+[ADR 0047 payout amendment](../docs/adr/0047-payos-active-gateway-momo-dormant.md#mb-787-payout-amendment-2026-11-04):
+current pending bank revisions, manual exact ADMIN account confirmation,
+independent PAYOS readiness, bank-list proxy, provider-affine reconciliation
+and explicit FAILED-only ADMIN retry. Existing response additions are optional
+for compatibility; synchronized web consumers must accept PAYOS and pending
+verification before the mode is enabled. No payout callback is added. The
+existing administration-audit fact adds four content-free payout inspection,
+confirmation, retry and definite-failure closure event types in the existing SPECIALIST_REVIEW domain.
+
+MB-782 amends the accepted Voice target to `1.1.0` and active Journal OpenAPI
+to `1.16.0`: display-only quota-aware duration previews and exact admitted
+room/Agent connection bindings. The [Web handoff](../docs/story-mb-782-voice-web-prerequisite.md)
+defines official `lk.agent.state` hints and consumer fallback. Existing Voice
+policy, worker control envelope and business lifecycle versions remain unchanged.
+
+MB-820 advances the active Journal OpenAPI to `1.20.0` and the approved Voice
+target to `1.2.0` with optional `VoiceReply.expression`, closed to `neutral` and
+`comfort`. Journal adds it only when the turn request sends
+`X-MentalBridge-Voice-Capabilities: expression`; otherwise the reply is unchanged.
+`warm` and `encourage` wait for a Care-owned trusted safety source. Worker
+commands and the policy schema are unchanged. The [ADR amendment](../docs/adr/0046-ai-voice-companion-contract.md#mb-820-per-reply-expression-amendment--2026-11-09)
+defines the paired LiveKit attribute and clearing rule. Web regenerates its
+consumer after the backend provider lands.
+
+MB-755 freezes the accepted [AI Voice target](proposals/companion-voice-v1.openapi.json)
+under [ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md). Journal/AI voice,
+Care's separate voice consent and narrow owner authorization reads are all
+`planned`; no active OpenAPI or runtime handler is promoted. Its closed worker
+envelope, policy schema, lifecycle, synthetic fixtures and executable contract
+tests are linked in the [proposal index](proposals/README.md). The approved
+target is separate from text-chat quotas and Consultation appointment/media
+contracts. The existing Journal CI lane runs the new proposal tests.
+
+MB-684's accepted [Community chat baseline](proposals/community-chat-v1.openapi.json)
+remains frozen in proposals with its original planned markers. Its closed
+[commands](proposals/community-chat-command-v1.schema.json),
+[socket events](proposals/community-chat-realtime-v1.schema.json) and
+[durable facts](proposals/community-chat-fact-v1.schema.json) define the accepted target.
+MB-685 registers only the delivered direct-provider subset and promotes the
+unchanged fact shape under `events/community/`. MB-687 adds nine private-group
+lifecycle operations and exact-message report intake. MB-689 promotes signed
+internal projections and isolated socket delivery; MB-690 adds presence-only
+foreground heartbeat, presence events and current authorized peer projections.
+MB-691 adds scoped chat notification authorization, the comment-reaction provider
+fragment and separate `community-comment-reaction-v1.schema.json` fact. Existing
+interaction-v1 producers and schemas remain compatible. The new generic
+`community-push-v1.schema.json` defines a payload only; actual PUSH provider/device
+delivery remains MB-675/679. Typing/shared receipts and ADMIN case operations
+remain future runtime work. MB-745 adds the implemented sender-retraction DELETE
+operation, structured active/retracted Message projections, minimized
+`MESSAGE_RETRACTED` owner facts and the promoted
+`websocket/community/event-v1.schema.json` change event. The accepted
+MB-684 proposal artifacts remain frozen.
+MB-746 adds the implemented per-user conversation DELETE operation, a durable
+server-ordered cutoff in Community, and a recipient-routed
+`CONVERSATION_CLEARED` fact used only to invalidate the actor's live sockets.
+See [ADR 0042](../docs/adr/0042-community-chat-contract.md).
+Existing appointment and Community interaction schemas are unchanged.
+
+Every OpenAPI path item declares `x-mentalbridge-status` when all methods share one state. A mixed path declares it on each operation instead:
 
 - `implemented`: the owning service has a production handler and tests for the documented method, authorization, success response, and stable errors;
 - `planned`: the shape is design input only and must not be advertised as an available runtime endpoint.
@@ -19,6 +162,83 @@ Every OpenAPI path item declares `x-mentalbridge-status`:
 New future APIs should start in `contracts/proposals/`. Existing forward-looking paths may remain in an OpenAPI file only when explicitly marked `planned`. Promoting a path to `implemented` is an atomic change containing the handler, boundary tests, and contract compatibility check.
 
 Framework DTOs, controllers, generated types, database entities, and provider payloads are never the cross-service source of truth.
+
+`openapi/identity-service-v1.yaml` exposes the implemented MB-587 ADMIN-only administration-audit browse and CSV export operations. Both use the same bounded filters, ordering, 365-day read-retention boundary, and privacy-minimized projection fields. Cross-service sources ingest through the versioned `events/identity/administration-audit-event-v1.schema.json` fact into Identity's minimized projection; the query API never reads another owner's database.
+
+`events/identity/administration-audit-event-v1.schema.json` is the implemented MB-587
+fact for cross-service administration audit events ingested from Consultation, Content,
+Community, and Identity. It carries only bounded operational metadata (sourceService, domain,
+actor, action, result, safe reasonCode, correlationId, safe target/tombstone, occurredAt).
+Raw payloads, journal text, assessment answers, chat body, credentials, tokens, and provider
+payloads are strictly excluded by schema and consumer allowlisting.
+
+`events/identity/account-state-changed-v1.schema.json` is the implemented MB-365
+fact emitted atomically when Identity suspends or restores a non-admin account.
+It carries only the account identifier, current status, immutable actor role,
+closed reason code, correlation metadata, and aggregate version. Repeated
+same-state commands emit no duplicate fact.
+
+MB-565 adds the implemented `events/care/user-notification-fact-v1.schema.json`
+and `events/identity/user-notification-fact-v1.schema.json` contracts. Care
+publishes only authenticated assessment-result and newly persisted SupportGuide
+availability facts on `mentalbridge.care.user-notification.v1`; Identity
+publishes only USER activation/restoration facts on its existing account
+lifecycle topic. Both contracts are closed, identity-bound, and exclude
+assessment answers/scores, safety flags, resource copy, email addresses, and
+provider payloads. Content/Notification owns rendering, preference enforcement,
+durable delivery state, and logical replay deduplication.
+
+For these two MB-565 v1 facts, producers truncate source instants to UTC
+microseconds before writing both JSON `payload.availableAt` and the outbox
+`occurred_at`. Truncation never rounds into the next microsecond or second.
+The relay emits the same ISO-8601 text (at most six fractional digits) after
+PostgreSQL reload. Content requires exact timestamp equality in addition to
+the existing kind, recipient, aggregate identity and version bindings.
+
+`care-service-v1.yaml` remains the unchanged v1 source for coarse historical
+SupportEvaluation behavior. `care-support-evaluation-v2.yaml` is the additive
+source for `/api/v2/support-evaluations`; consumers select the API version by
+path and must not interpret a v1 support tier as a v2 domain contribution.
+MB-667 adds the separate read-only v1
+`/support-evaluations/{supportEvaluationId}/combined-meaning` subresource so
+older strict clients keep receiving their original evaluation shape. Its exact
+pair and source policy remain separate from the versioned draft presentation;
+the owner-supplied Stitch prototype is available, while twenty neutral copy
+variants remain pending Care/content-owner review and are not approved for
+deployment. It adds no combined score, new routing policy or v2 top-level tier.
+`care-support-guide-v1.yaml` is the additive implemented owner contract for the
+all-tier one-time guide at `/api/v1/support-guides`; it is not a SupportPlan
+lifecycle contract. MB-668 adds its episode-scoped ensure operation
+`/api/v1/screening-episodes/{episodeId}/support-guide` (1.1.0) and the
+read-only `/api/v1/guided-journey/current` pointer in `care-service-v1.yaml`
+(1.6.0); clients send no assessment identifiers to either. `content-notification-service.yaml` supplies the exact
+eligible resource's immutable reviewed display snapshot alongside publication
+provenance so Care can persist stable history.
+`care-service-v1.yaml` also exposes the implemented MB-372/MB-373/MB-513/MB-376
+SupportPlan surface. It accepts only an owned SupportEvaluation v2 reference,
+returns persisted Care-owned plan snapshots, supports admitted choices and
+explicit activation/lifecycle commands, and exposes owner-only bounded activity
+occurrences with local-time and exact source provenance. Owner engagement uses
+versioned replacement/deletion; its minimized event excludes private reflection
+and does not create a specialist observation feed. The contract never accepts
+arbitrary resources, a client package, an adherence score, a recovery score, or
+AI-selected state.
+The same contract exposes MB-559 explicit reassessment self-report
+create/current/replace/delete operations plus Reassessment Summary composition
+and owner-only current/detail/history reads. `reassessment-summary-v2` keeps
+local PHQ-9/GAD-7 trends, minimized Journal/AI evidence, SupportPlan engagement,
+and explicit self-reported experience separate. Occurrence
+helpfulness/reflection is separately labelled supporting activity evidence and
+never substitutes for the self-report. Historical `reassessment-summary-v1`
+snapshots remain readable without rewrite. Neither version has a combined score
+or overall direction.
+
+The same Care contract exposes MB-638 `GET/PUT
+/api/v2/support-plan-personalization`. It returns a revision-zero deterministic
+fallback for an existing user without saved input, persists only a bounded
+non-diagnostic vocabulary, and uses strong ETag replacement. `PlanFocus`
+includes optional exact personalization provenance; updating preferences
+returns a review-required reference instead of silently mutating an active plan.
 
 ## Required paired changes
 
@@ -28,3 +248,7 @@ Framework DTOs, controllers, generated types, database entities, and provider pa
 - Runtime configuration changes together with `.env.example`, the module README, and configuration tests.
 
 Run `pwsh ./scripts/verify-repository.ps1` before opening a pull request. CI applies the same repository and changed-file policy checks.
+
+## MB-685 active direct-chat subset
+
+[`openapi/community-chat-v1.json`](openapi/community-chat-v1.json) is the runtime provider contract for delivered direct/group chat and report-intake operations. The accepted MB-684 artifact in proposals remains frozen for downstream transport and case administration. Only delivered paths are registered; schemas remain compatible with that baseline. A schema variant alone never advertises an unregistered socket/internal/ADMIN capability.

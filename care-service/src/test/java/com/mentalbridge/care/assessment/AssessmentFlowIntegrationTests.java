@@ -45,10 +45,19 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 	private static final UUID RETIRED_VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
 	private static final UUID VI_DEFINITION_ID = UUID.fromString("10000000-0000-0000-0000-000000000004");
 	private static final Set<String> IMPLEMENTED_OPERATIONS = Set.of(
+			"GET /api/v1/ai-voice-processing-disclosure",
+			"GET /api/v1/consents/ai-voice-processing",
+			"POST /api/v1/consents/ai-voice-processing",
+			"GET /api/v1/admin/product-journey-metrics",
+			"GET /api/v1/activity-dashboard",
 			"GET /api/v1/privacy-disclosures/current",
+			"GET /api/v1/ai-processing-disclosures/current",
 			"GET /api/v1/profile",
 			"PUT /api/v1/profile",
 			"GET /api/v1/consents",
+			"GET /api/v1/consents/ai-authorizations",
+			"GET /api/v1/ai-context-processing-disclosures/current",
+			"GET /api/v1/consents/ai-processing/authorization",
 			"POST /api/v1/consent-decisions",
 			"GET /api/v1/questionnaires/{instrument}/current",
 			"GET /api/v1/questionnaires/definitions/{definitionId}",
@@ -57,10 +66,63 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 			"POST /api/v1/assessments",
 			"GET /api/v1/assessments/{assessmentId}",
 			"GET /api/v1/assessments/{assessmentId}/progress",
+			"POST /api/v1/screening-episodes",
+			"GET /api/v1/screening-episodes/current",
+			"GET /api/v1/screening-episodes/history",
+			"GET /api/v1/guided-journey/current",
+			"GET /api/v1/home-next-step",
+			"POST /api/v1/screening-episodes/{episodeId}/assessments/{instrument}",
+			"POST /api/v1/screening-episodes/{episodeId}/support-evaluation",
+			"POST /api/v1/screening-episodes/{episodeId}/support-guide",
 			"POST /api/v1/support-evaluations",
+			"GET /api/v1/support-evaluations",
 			"GET /api/v1/support-evaluations/{supportEvaluationId}",
+			"GET /api/v1/support-evaluations/{supportEvaluationId}/combined-meaning",
+			"POST /api/v1/support-guides",
+			"GET /api/v1/support-guides",
+			"GET /api/v1/support-guides/{supportGuideId}",
+			"POST /api/v1/support-plans",
+			"GET /api/v1/support-plans/current-draft",
+			"GET /api/v1/support-plans/current",
+			"GET /api/v1/support-plans/history",
+			"GET /api/v1/support-plans/{supportPlanId}",
+			"PUT /api/v1/support-plans/{supportPlanId}/choices",
+			"POST /api/v1/support-plans/{supportPlanId}/activate",
+			"PUT /api/v1/support-plans/{supportPlanId}/status",
+			"POST /api/v1/support-plans/{supportPlanId}/replacement-review",
+			"POST /api/v1/support-plans/{supportPlanId}/replace",
+			"POST /api/v1/plan-change-requests",
+			"GET /api/v1/plan-change-requests/by-proposal/{proposalId}",
+			"GET /api/v1/specialist/plan-change-requests/by-proposal/{proposalId}",
+			"PUT /api/v1/plan-change-requests/{requestId}/decision",
+			"GET /api/v1/support-plan-occurrences",
+			"GET /api/v1/support-plan-occurrences/{occurrenceId}",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/state",
+			"PUT /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"DELETE /api/v1/support-plan-occurrences/{occurrenceId}/engagement",
+			"POST /api/v1/reassessment-self-reports",
+			"GET /api/v1/reassessment-self-reports/catalog",
+			"GET /api/v1/reassessment-self-reports/current",
+			"PUT /api/v1/reassessment-self-reports/{selfReportId}",
+			"DELETE /api/v1/reassessment-self-reports/{selfReportId}",
+			"POST /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries",
+			"GET /api/v1/reassessment-summaries/context",
+			"GET /api/v1/reassessment-summaries/current",
+			"GET /api/v1/reassessment-summaries/{summaryId}",
+			"GET /api/v1/consultation-briefs/screening-contexts",
+			"GET /api/v1/consultation-briefs/{appointmentId}",
+			"PUT /api/v1/consultation-briefs/{appointmentId}/draft",
+			"POST /api/v1/consultation-briefs/{appointmentId}/approve",
+			"POST /api/v1/consultation-briefs/{appointmentId}/revoke",
+			"DELETE /api/v1/consultation-briefs/{appointmentId}",
+			"POST /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs",
+			"GET /api/v1/consultation-briefs/{appointmentId}/ai-draft-jobs/{jobId}",
+			"GET /api/v1/specialist/client-continuity",
+			"GET /api/v1/specialist/consultation-briefs/{appointmentId}",
 			"POST /api/v1/anonymous-assessment-sessions/{sessionId}/assessments",
-			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}");
+			"GET /api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
+			"POST /api/v1/safety-directory-lookups");
 
 	@Autowired
 	private MockMvc mvc;
@@ -135,14 +197,18 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 		assertThat(jdbc.sql("select count(*) from assessment_answer where submission_id = :id")
 				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(9);
 		assertThat(jdbc.sql("select count(*) from outbox_event where aggregate_id = :id")
-				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(1);
+				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(2);
 		var requestHash = jdbc.sql("select request_hash from assessment_submission where id = :id")
 				.param("id", UUID.fromString(assessmentId)).query(String.class).single();
 		assertThat(requestHash).hasSize(64).isNotEqualTo(unkeyedRequestHash(1));
-		var payload = jdbc.sql("select payload::text from outbox_event where aggregate_id = :id")
+		var payload = jdbc.sql("select payload::text from outbox_event where aggregate_id = :id and message_type = 'care.assessment.submitted'")
 				.param("id", UUID.fromString(assessmentId)).query(String.class).single();
 		assertThat(payload).contains("POSITIVE_SAFETY_SCREEN", userId.toString())
 				.doesNotContain("questionId", "answerValue", "answers");
+		var notificationPayload = jdbc.sql("select payload::text from outbox_event where aggregate_id = :id and message_type = 'care.user-notification.fact'")
+				.param("id", UUID.fromString(assessmentId)).query(String.class).single();
+		assertThat(notificationPayload).contains("ASSESSMENT_RESULT_AVAILABLE", userId.toString())
+				.doesNotContain("totalScore", "screeningLevel", "safetyStatus", "questionId", "answerValue");
 
 		mvc.perform(get("/api/v1/assessments/{assessmentId}", assessmentId)
 				.with(jwt().jwt(token -> token.subject(userId.toString()))
@@ -201,6 +267,11 @@ class AssessmentFlowIntegrationTests extends CareTestProperties {
 				.andExpect(jsonPath("$.result.safetyStatus").value("POSITIVE_SAFETY_SCREEN"))
 				.andReturn();
 		var assessmentId = json(assessmentResult).get("assessmentId").asText();
+		assertThat(jdbc.sql("""
+				select count(*) from outbox_event
+				where aggregate_id = cast(:assessmentId as uuid)
+				  and message_type = 'care.user-notification.fact'
+				""").param("assessmentId", assessmentId).query(Long.class).single()).isZero();
 
 		mvc.perform(get("/api/v1/anonymous-assessment-sessions/{sessionId}/assessments/{assessmentId}",
 				sessionId, assessmentId))

@@ -5,6 +5,8 @@ import {
   ConflictException,
   HttpException,
   NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import {
   JournalEncryption,
@@ -122,11 +124,14 @@ class MemoryStore implements JournalStore {
     entry.commands.push(command);
     return Promise.resolve(entry);
   }
+  deleteAnalyses() {
+    return Promise.resolve();
+  }
 }
 
 const configuration = {
   JOURNAL_ENCRYPTION_KEY: Buffer.alloc(32, 1),
-  JOURNAL_ENCRYPTION_KEY_ID: "test-v1",
+  JOURNAL_ENCRYPTION_KEY_ID: "single-key",
   JOURNAL_IDEMPOTENCY_HMAC_KEY: Buffer.alloc(32, 2),
 } as ServiceConfiguration;
 const owner = "11111111-1111-4111-8111-111111111111";
@@ -148,6 +153,7 @@ const payload = {
   clientEntryId: "33333333-3333-4333-8333-333333333333",
   occurredAt: "2026-01-01T00:00:00.000Z",
   content: { text: "private entry" },
+  mood: "GOOD" as const,
   tags: ["daily"],
 };
 const service = (store = new MemoryStore()) => ({
@@ -159,16 +165,27 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
   const subject = service();
   const created = await subject.value.create(request(payload));
   assert.equal(created.content.text, "private entry");
+  assert.equal(created.mood, "GOOD");
   const ciphertext = subject.store.entries[0]?.revisions[0]?.content.ciphertext;
   assert.ok(Buffer.isBuffer(ciphertext));
   assert.equal(ciphertext.includes(Buffer.from("private entry")), false);
+  const encryptedMood =
+    subject.store.entries[0]?.revisions[0]?.mood?.ciphertext;
+  assert.ok(Buffer.isBuffer(encryptedMood));
+  assert.equal(encryptedMood.includes(Buffer.from("GOOD")), false);
   const duplicate = await subject.value.create(request(payload));
   assert.equal(duplicate.id, created.id);
   const revised = await subject.value.revise(
-    request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
+    request(
+      { content: { text: "revised" }, mood: "LOW" },
+      owner,
+      "revision-key-001",
+      1,
+    ),
     created.id,
   );
   assert.equal(revised.currentRevision, 2);
+  assert.equal(revised.mood, "LOW");
   await subject.value.revise(
     request(
       { content: { text: "later" }, tags: ["later"] },
@@ -179,7 +196,12 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
     created.id,
   );
   const retry = await subject.value.revise(
-    request({ content: { text: "revised" } }, owner, "revision-key-001", 1),
+    request(
+      { content: { text: "revised" }, mood: "LOW" },
+      owner,
+      "revision-key-001",
+      1,
+    ),
     created.id,
   );
   assert.deepEqual(retry, revised);
@@ -191,6 +213,44 @@ void test("encrypts at rest and supports exact mutation retries", async () => {
         created.id,
       ),
     ConflictException,
+  );
+});
+
+void test("keeps legacy clients compatible and preserves mood when revise omits it", async () => {
+  const subject = service();
+  const legacyPayload = { ...payload, mood: undefined };
+  const legacy = await subject.value.create(request(legacyPayload));
+  assert.equal(legacy.mood, null);
+
+  const created = await subject.value.create(
+    request(
+      { ...payload, clientEntryId: "44444444-4444-4444-8444-444444444444" },
+      owner,
+      "command-key-00002",
+    ),
+  );
+  const revised = await subject.value.revise(
+    request(
+      { content: { text: "mood stays encrypted" } },
+      owner,
+      "revision-key-005",
+      1,
+    ),
+    created.id,
+  );
+  assert.equal(revised.mood, "GOOD");
+});
+
+void test("rejects blank journal text and unsupported moods", async () => {
+  const subject = service();
+  await assert.rejects(
+    () =>
+      subject.value.create(request({ ...payload, content: { text: "   " } })),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => subject.value.create(request({ ...payload, mood: "EXCITED" })),
+    BadRequestException,
   );
 });
 
@@ -269,5 +329,163 @@ void test("rejects a revision beyond the bounded history before persistence", as
       ),
     (error: unknown) =>
       error instanceof ConflictException && error.getStatus() === 409,
+  );
+});
+
+void test("Journal completion evidence is content-free, read-only and uses server creation time", async () => {
+  const store = new MemoryStore();
+  const encryption = new JournalEncryption(configuration);
+  const value = new JournalService(store, encryption);
+  const created = await value.create(request(payload));
+  const before = JSON.stringify(store.entries);
+  encryption.decrypt = () => {
+    throw new Error("Completion evidence must not decrypt Journal text");
+  };
+  encryption.decryptMood = () => {
+    throw new Error("Completion evidence must not decrypt mood");
+  };
+  const evidence = await value.completionEvidence(request({}), created.id);
+  assert.deepEqual(evidence, {
+    schemaVersion: "journal-entry-completion-evidence-v1",
+    subjectUserId: owner,
+    journalId: created.id,
+    state: "RECORDED",
+    fact: {
+      ownerDomain: "JOURNAL_AI",
+      kind: "JOURNAL_ENTRY",
+      factId: created.id,
+      factRevision: "1",
+      occurredAt: created.createdAt,
+    },
+    verifiedAt: evidence.verifiedAt,
+  });
+  assert.notEqual(evidence.fact.occurredAt, payload.occurredAt);
+  assert.ok(new Date(evidence.verifiedAt) >= new Date(created.createdAt));
+  assert.equal(JSON.stringify(store.entries), before);
+  for (const privateValue of [payload.content.text, payload.mood, "daily"])
+    assert.equal(JSON.stringify(evidence).includes(privateValue), false);
+  assert.deepEqual(Object.keys(evidence).sort(), [
+    "fact",
+    "journalId",
+    "schemaVersion",
+    "state",
+    "subjectUserId",
+    "verifiedAt",
+  ]);
+});
+
+void test("Journal edits and save retries preserve one immutable creation fact", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  const first = await subject.value.completionEvidence(request({}), created.id);
+  const retry = await subject.value.create(request(payload));
+  assert.equal(retry.id, created.id);
+  await subject.value.revise(
+    request(
+      { content: { text: "private edited reflection" }, mood: "LOW" },
+      owner,
+      "journal-evidence-revise-001",
+      1,
+    ),
+    created.id,
+  );
+  const edited = await subject.value.completionEvidence(
+    request({}),
+    created.id,
+  );
+  assert.deepEqual(edited.fact, first.fact);
+  assert.equal(edited.fact?.factRevision, "1");
+  assert.equal(subject.store.entries[0]?.currentRevision, 2);
+  assert.equal(subject.store.entries.length, 1);
+});
+
+void test("Journal completion distinguishes owned deletion without revealing another owner's entry", async () => {
+  const subject = service();
+  const missingId = "44444444-4444-4444-8444-444444444444";
+  const missing = await subject.value.completionEvidence(
+    request({}),
+    missingId,
+  );
+  assert.equal(missing.state, "MISSING");
+  assert.equal(missing.fact, null);
+  const created = await subject.value.create(request(payload));
+  const other = await subject.value.completionEvidence(
+    request({}, otherOwner),
+    created.id,
+  );
+  assert.equal(other.state, "MISSING");
+  assert.equal(other.subjectUserId, otherOwner);
+  assert.equal(other.fact, null);
+  await subject.value.remove(
+    request({}, owner, "journal-evidence-delete-001"),
+    created.id,
+  );
+  const deleted = await subject.value.completionEvidence(
+    request({}),
+    created.id,
+  );
+  assert.equal(deleted.state, "DELETED");
+  assert.equal(deleted.fact, null);
+  assert.equal(JSON.stringify(deleted).includes(payload.content.text), false);
+});
+
+void test("Journal completion validates the exact ID and authenticated owner before a store read", async () => {
+  const subject = service();
+  let reads = 0;
+  subject.store.find = () => {
+    reads += 1;
+    throw new Error("Must not read for invalid context");
+  };
+  await assert.rejects(
+    subject.value.completionEvidence(request({}), "invalid"),
+    BadRequestException,
+  );
+  await assert.rejects(
+    subject.value.completionEvidence(
+      { headers: {}, body: {} },
+      payload.clientEntryId,
+    ),
+    UnauthorizedException,
+  );
+  assert.equal(reads, 0);
+});
+
+void test("Journal completion owner outage is unavailable rather than false absence", async () => {
+  const subject = service();
+  subject.store.find = () =>
+    Promise.reject(new Error("synthetic store outage"));
+  await assert.rejects(
+    subject.value.completionEvidence(request({}), payload.clientEntryId),
+    ServiceUnavailableException,
+  );
+});
+
+void test("Journal completion rejects unattributed, wrong-ID, invalid or future creation metadata", async () => {
+  const subject = service();
+  const created = await subject.value.create(request(payload));
+  const entry = subject.store.entries[0];
+  assert.ok(entry);
+  subject.store.find = () => Promise.resolve(entry);
+  entry.ownerAccountId = otherOwner;
+  await assert.rejects(
+    subject.value.completionEvidence(request({}), created.id),
+    ServiceUnavailableException,
+  );
+  entry.ownerAccountId = owner;
+  entry._id = payload.clientEntryId;
+  await assert.rejects(
+    subject.value.completionEvidence(request({}), created.id),
+    ServiceUnavailableException,
+  );
+  entry._id = created.id;
+  entry.createdAt = new Date(Number.NaN);
+  await assert.rejects(
+    subject.value.completionEvidence(request({}), created.id),
+    ServiceUnavailableException,
+  );
+  entry.createdAt = new Date(Date.now() + 60_000);
+  await assert.rejects(
+    subject.value.completionEvidence(request({}), created.id),
+    ServiceUnavailableException,
   );
 });

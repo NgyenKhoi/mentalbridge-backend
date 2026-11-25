@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
 import com.mentalbridge.care.shared.SecurityProblemSupport;
 
@@ -30,22 +31,42 @@ public class SecurityConfiguration {
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http,
 			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
-			SecurityProblemSupport securityProblems) throws Exception {
+			SecurityProblemSupport securityProblems, IdentityAccountStatusVerifier accountStatus) throws Exception {
 		http.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.requestMatchers("/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
-								"/api/v1/anonymous-assessment-sessions/**")
+								"/api/v1/ai-processing-disclosures/**",
+								"/api/v1/ai-context-processing-disclosures/**",
+								"/api/v1/anonymous-assessment-sessions/**", "/api/v1/safety-directory-lookups")
 						.permitAll()
 						.requestMatchers("/api/v1/profile/**", "/api/v1/consents/**",
 								"/api/v1/consent-decisions/**", "/api/v1/assessments/**",
-								"/api/v1/support-evaluations/**").hasRole("USER")
+								"/api/v1/screening-episodes/**", "/api/v1/guided-journey/**", "/api/v1/home-next-step",
+								"/api/v1/support-evaluations/**", "/api/v2/support-evaluations/**",
+								"/api/v1/support-guides/**", "/api/v1/support-plans/**",
+								"/api/v2/support-plans/**", "/api/v2/support-plan-occurrences/**",
+								"/api/v2/support-plan-personalization/**",
+								"/api/v1/plan-change-requests/**",
+								"/api/v1/support-plan-occurrences/**", "/api/v1/reassessment-summaries/**",
+								"/api/v1/reassessment-self-reports/**",
+								"/api/v1/consultation-briefs/**", "/api/v1/activity-dashboard").hasRole("USER")
+						.requestMatchers("/api/v1/specialist/consultation-briefs/**",
+								"/api/v1/specialist/client-continuity",
+								"/api/v1/specialist/plan-change-requests/**").hasRole("SPECIALIST")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
 						.accessDeniedHandler(securityProblems))
 				.oauth2ResourceServer(resourceServer -> resourceServer
-						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+				.addFilterAfter(new AccountStatusEnforcementFilter(accountStatus, securityProblems,
+						"/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**",
+						"/api/v1/questionnaires/**", "/api/v1/privacy-disclosures/**",
+						"/api/v1/ai-processing-disclosures/**", "/api/v1/anonymous-assessment-sessions/**",
+						"/api/v1/ai-context-processing-disclosures/**",
+						"/api/v1/safety-directory-lookups"), BearerTokenAuthenticationFilter.class);
 		return http.build();
 	}
 

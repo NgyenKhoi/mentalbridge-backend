@@ -31,7 +31,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-foreach ($service in @('identity-service', 'care-service', 'consultation-service')) {
+foreach ($service in @('identity-service', 'care-service', 'consultation-service', 'community-service')) {
     if (Test-Path -LiteralPath (Join-Path $repositoryRoot "$service/pom.xml")) {
         Invoke-Checked $service $mavenWrapper @('-B', 'test')
     }

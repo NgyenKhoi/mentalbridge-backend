@@ -1,10 +1,8 @@
 # Start Chat with Specialist
 
-> **Definition-only specification.** This document describes the approved
-> appointment-scoped chat boundary. It does not claim that the web chat UI,
-> consultation eligibility flow, or production conversation runtime is
-> delivered. Realtime foundation work is separately owned and production chat
-> eligibility remains unavailable until its contract and approval gates pass.
+> **Implemented by MB-382.** This document is the canonical appointment-scoped
+> chat boundary for the web waiting room, active session, reconnect/resync, and
+> retained read-only history flow.
 
 ## Function trigger
 
@@ -16,7 +14,9 @@ session; client-supplied appointment and conversation IDs are selectors only.
 
 - Resolve exactly one conversation for an eligible confirmed appointment.
 - Authorize both participants before history, presence, join, or send access.
-- Allow live join and sending only within the authoritative appointment window.
+- Allow waiting-room join from ten minutes before the authoritative start, but
+  allow sending only in `[startsAt, endsAt)` while the appointment remains
+  session-eligible.
 - Return bounded, cursor-based, authorized message history.
 - Treat presence as ephemeral display data, never as authorization.
 - Do not enable unrestricted direct, 24/7, emergency, or guaranteed-specialist
@@ -39,7 +39,7 @@ session; client-supplied appointment and conversation IDs are selectors only.
 | --- | --- |
 | Missing/expired session | Redirect to sign-in; disclose no conversation data. |
 | Invalid selector or unauthorized participant | Fail closed with a non-disclosing response. |
-| Ineligible, cancelled, rescheduled, or out-of-window appointment | Do not join or send; render an explicit unavailable/read-only state only where policy permits. |
+| Ineligible, cancelled, replaced by a reschedule request, or out-of-window appointment | Waiting entry is allowed only from ten minutes before start; sending is allowed only in `[startsAt, endsAt)`; afterward render retained history read-only where policy permits. |
 | History dependency unavailable | Render an explicit error and allow a safe retry without stale data presented as current. |
 | Live connection unavailable | Preserve already authorized history, state that sending is unavailable, and do not show a false sent/online state. |
 | Presence unavailable | Display unknown presence without changing authorization. |
@@ -49,7 +49,8 @@ session; client-supplied appointment and conversation IDs are selectors only.
 - Realtime Service owns realtime authentication, persistence, presence, and
   transport contracts.
 - Consultation owns appointment eligibility and participant authority.
-- The frontend chat journey and production appointment integration remain
-  outside Sprint 2 release evidence.
+- MB-382 implements the frontend chat journey and production appointment
+  integration; receipts, cross-instance fan-out, attachments, moderation, and
+  video remain separately owned capabilities.
 - The authoritative runtime contracts are the versioned Realtime REST/OpenAPI
   and WebSocket JSON Schema artifacts, plus the owning service implementation.

@@ -73,4 +73,58 @@ public class OutboxEventEntity {
 		this.createdAt = occurredAt;
 	}
 
+	void claim(Instant nextAttemptAt) {
+		this.attemptCount += 1;
+		this.nextAttemptAt = nextAttemptAt;
+	}
+
+	void published(Instant publishedAt) {
+		this.publishedAt = publishedAt;
+		this.nextAttemptAt = null;
+	}
+
+	void retryAt(Instant nextAttemptAt) {
+		this.nextAttemptAt = nextAttemptAt;
+	}
+
+	public UUID id() {
+		return id;
+	}
+
+	public String messageType() {
+		return messageType;
+	}
+
+	public String schemaVersion() {
+		return schemaVersion;
+	}
+
+	public UUID aggregateId() {
+		return aggregateId;
+	}
+
+	public long aggregateVersion() {
+		return aggregateVersion;
+	}
+
+	public UUID correlationId() {
+		return correlationId;
+	}
+
+	public Map<String, String> payload() {
+		return payload;
+	}
+
+	public Instant occurredAt() {
+		return occurredAt;
+	}
+
+	public int attemptCount() {
+		return attemptCount;
+	}
+
+	public boolean isPublished() {
+		return publishedAt != null;
+	}
+
 }

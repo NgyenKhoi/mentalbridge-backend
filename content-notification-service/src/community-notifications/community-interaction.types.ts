@@ -1,0 +1,101 @@
+import { z } from 'zod';
+import type { NotificationActionType } from '../notifications/notification.types.js';
+
+export const COMMUNITY_INTERACTION_TOPIC = 'mentalbridge.community.interaction.v1';
+export const COMMUNITY_INTERACTION_DEAD_LETTER_TOPIC =
+  'mentalbridge.content-notification.community-interaction-dead-letter.v1';
+
+export const CommunityInteractionEnvelopeSchema = z
+  .object({
+    eventId: z.uuid(),
+    schemaVersion: z.literal('1.0'),
+    actorCommunityProfileId: z.uuid(),
+    targetOwnerRoutingReference: z.uuid(),
+    targetType: z.enum(['POST', 'COMMENT']),
+    targetId: z.uuid(),
+    interactionKind: z.enum([
+      'COMMENT',
+      'REPLY',
+      'SUPPORT',
+      'RELATE',
+      'THANK_YOU',
+      'LIKE',
+      'EMPATHY',
+      'CHEER',
+      'GROWTH',
+    ]),
+    occurredAt: z.iso.datetime({ offset: true }),
+    deepLink: z
+      .object({
+        kind: z.literal('COMMUNITY_POST'),
+        postId: z.uuid(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const CommunityInteractionEventSchema = CommunityInteractionEnvelopeSchema.superRefine(
+  (event, context) => {
+    const postTarget = event.targetType === 'POST' && event.targetId === event.deepLink.postId;
+    if (event.interactionKind === 'COMMENT' && !postTarget) {
+      context.addIssue({ code: 'custom', message: 'COMMENT must target its deep-linked post' });
+    }
+    if (event.interactionKind === 'REPLY' && event.targetType !== 'COMMENT') {
+      context.addIssue({ code: 'custom', message: 'REPLY must target a parent comment' });
+    }
+    if (event.interactionKind !== 'COMMENT' && event.interactionKind !== 'REPLY' && !postTarget) {
+      context.addIssue({ code: 'custom', message: 'Reaction must target its deep-linked post' });
+    }
+  },
+);
+
+export type CommunityInteractionEvent = z.infer<typeof CommunityInteractionEventSchema>;
+
+export type CommunityNotificationProjection = Readonly<{
+  eventId: string;
+  ownerId: string;
+  kind:
+    | 'COMMUNITY_COMMENT'
+    | 'COMMUNITY_REPLY'
+    | 'COMMUNITY_REACTION'
+    | 'COMMUNITY_MESSAGE'
+    | 'COMMUNITY_REQUEST'
+    | 'COMMUNITY_INVITATION';
+  title: string;
+  body: string;
+  occurredAt: string;
+  postId?: string;
+  source?: 'COMMUNITY_INTERACTION_V1' | 'COMMUNITY_COMMENT_REACTION_V1' | 'COMMUNITY_CHAT_V1';
+  sourceIdentity?: string;
+  groupingKey?: string;
+  actionType?: NotificationActionType;
+  actionTargetId?: string;
+  authorization?: Readonly<{
+    recipientRoutingReference: string;
+    kind: 'MESSAGE_RECEIVED' | 'DIRECT_REQUESTED' | 'GROUP_INVITED';
+    targetId: string;
+    conversationId: string;
+    actorCommunityProfileId: string;
+  }>;
+}>;
+
+export type CommunityNotificationMaterialization = Readonly<{
+  notificationId: string | null;
+  delivered: boolean;
+  replayed: boolean;
+  deferredUntil?: Date;
+}>;
+
+export type CommunityInteractionDeadLetter = Readonly<{
+  schemaVersion: '1.0';
+  failedAt: string;
+  sourceTopic: string;
+  sourcePartition: number;
+  sourceOffset: string;
+  sourceMessageDigest: string;
+  errorCode: 'INVALID_JSON' | 'INVALID_EVENT';
+}>;
+
+export interface CommunityInteractionDeadLetterPublisher {
+  publish(deadLetter: CommunityInteractionDeadLetter): Promise<void>;
+}

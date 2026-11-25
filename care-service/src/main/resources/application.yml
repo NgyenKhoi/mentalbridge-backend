@@ -5,6 +5,10 @@ spring:
     url: ${CARE_DB_URL}
     username: ${CARE_DB_USERNAME}
     password: ${CARE_DB_PASSWORD}
+    hikari:
+      data-source-properties:
+        tcpKeepAlive: true
+        options: -c idle_in_transaction_session_timeout=30s
   jpa:
     hibernate:
       ddl-auto: validate
@@ -18,9 +22,36 @@ spring:
     enabled: false
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: public
+  data:
+    redis:
+      url: ${CARE_REDIS_URL:redis://localhost:6379}
+      connect-timeout: ${CARE_REDIS_CONNECT_TIMEOUT:PT0.5S}
+      timeout: ${CARE_REDIS_COMMAND_TIMEOUT:PT0.5S}
+      repositories:
+        enabled: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 mentalbridge:
   care:
+    identity-account-status:
+      base-url: ${IDENTITY_SERVICE_BASE_URL:}
+      service-token: ${CARE_IDENTITY_ACCOUNT_STATUS_SERVICE_TOKEN:}
+      connect-timeout: ${IDENTITY_ACCOUNT_STATUS_CONNECT_TIMEOUT:PT0.25S}
+      read-timeout: ${IDENTITY_ACCOUNT_STATUS_READ_TIMEOUT:PT0.75S}
+    voice-consent:
+      journal-service-token: ${CARE_VOICE_JOURNAL_SERVICE_TOKEN:}
+      idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
+    support-plan-reminder:
+      service-token: ${CARE_SUPPORT_PLAN_REMINDER_SERVICE_TOKEN:}
     jwt:
       issuer: ${IDENTITY_JWT_ISSUER}
       audience: ${IDENTITY_JWT_AUDIENCE}
@@ -30,6 +61,112 @@ mentalbridge:
       anonymous-session-maximum-lifetime: ${CARE_ANONYMOUS_SESSION_MAXIMUM_LIFETIME}
       phq9-safety-policy-version: ${CARE_PHQ9_SAFETY_POLICY_VERSION}
       idempotency-hmac-key: ${CARE_IDEMPOTENCY_HMAC_KEY}
+    user-notification-relay:
+      enabled: ${CARE_USER_NOTIFICATION_RELAY_ENABLED:false}
+      topic: ${CARE_USER_NOTIFICATION_TOPIC:mentalbridge.care.user-notification.v1}
+      batch-size: ${CARE_USER_NOTIFICATION_RELAY_BATCH_SIZE:100}
+      interval: ${CARE_USER_NOTIFICATION_RELAY_INTERVAL:PT5S}
+      send-timeout: ${CARE_USER_NOTIFICATION_RELAY_SEND_TIMEOUT:PT5S}
+      retry-base: ${CARE_USER_NOTIFICATION_RELAY_RETRY_BASE:PT5S}
+      retry-maximum: ${CARE_USER_NOTIFICATION_RELAY_RETRY_MAXIMUM:PT5M}
+    resource-eligibility:
+      base-url: ${CONTENT_RESOURCE_ELIGIBILITY_BASE_URL:}
+      connect-timeout: ${CONTENT_RESOURCE_ELIGIBILITY_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${CONTENT_RESOURCE_ELIGIBILITY_READ_TIMEOUT:PT2S}
+      max-attempts: ${CONTENT_RESOURCE_ELIGIBILITY_MAX_ATTEMPTS:2}
+      retry-wait: ${CONTENT_RESOURCE_ELIGIBILITY_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${CONTENT_RESOURCE_ELIGIBILITY_CIRCUIT_HALF_OPEN_CALLS:2}
+    safety-directory:
+      base-url: ${CONTENT_SAFETY_DIRECTORY_BASE_URL:}
+      connect-timeout: ${CONTENT_SAFETY_DIRECTORY_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${CONTENT_SAFETY_DIRECTORY_READ_TIMEOUT:PT1S}
+    entitlement:
+      base-url: ${CONSULTATION_ENTITLEMENT_BASE_URL:}
+      connect-timeout: ${CONSULTATION_ENTITLEMENT_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${CONSULTATION_ENTITLEMENT_READ_TIMEOUT:PT2S}
+    activity-dashboard:
+      journal-base-url: ${JOURNAL_AI_ACTIVITY_DASHBOARD_BASE_URL:}
+      consultation-base-url: ${CONSULTATION_ACTIVITY_DASHBOARD_BASE_URL:}
+      connect-timeout: ${ACTIVITY_DASHBOARD_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${ACTIVITY_DASHBOARD_READ_TIMEOUT:PT2S}
+    journal-longitudinal:
+      base-url: ${JOURNAL_AI_LONGITUDINAL_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_LONGITUDINAL_CONNECT_TIMEOUT:PT0.2S}
+      read-timeout: ${JOURNAL_AI_LONGITUDINAL_READ_TIMEOUT:PT0.8S}
+      max-attempts: ${JOURNAL_AI_LONGITUDINAL_MAX_ATTEMPTS:2}
+      retry-wait: ${JOURNAL_AI_LONGITUDINAL_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${JOURNAL_AI_LONGITUDINAL_CIRCUIT_HALF_OPEN_CALLS:2}
+    emotion-check-in-evidence:
+      base-url: ${JOURNAL_AI_EMOTION_EVIDENCE_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_EMOTION_EVIDENCE_CONNECT_TIMEOUT:PT0.2S}
+      read-timeout: ${JOURNAL_AI_EMOTION_EVIDENCE_READ_TIMEOUT:PT0.8S}
+      max-attempts: ${JOURNAL_AI_EMOTION_EVIDENCE_MAX_ATTEMPTS:2}
+      retry-wait: ${JOURNAL_AI_EMOTION_EVIDENCE_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${JOURNAL_AI_EMOTION_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS:2}
+    journal-entry-evidence:
+      base-url: ${JOURNAL_AI_JOURNAL_EVIDENCE_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_JOURNAL_EVIDENCE_CONNECT_TIMEOUT:PT0.2S}
+      read-timeout: ${JOURNAL_AI_JOURNAL_EVIDENCE_READ_TIMEOUT:PT0.8S}
+      max-attempts: ${JOURNAL_AI_JOURNAL_EVIDENCE_MAX_ATTEMPTS:2}
+      retry-wait: ${JOURNAL_AI_JOURNAL_EVIDENCE_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${JOURNAL_AI_JOURNAL_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS:2}
+    resource-evidence:
+      base-url: ${CONTENT_RESOURCE_EVIDENCE_BASE_URL:}
+      connect-timeout: ${CONTENT_RESOURCE_EVIDENCE_CONNECT_TIMEOUT:PT0.2S}
+      read-timeout: ${CONTENT_RESOURCE_EVIDENCE_READ_TIMEOUT:PT0.8S}
+      max-attempts: ${CONTENT_RESOURCE_EVIDENCE_MAX_ATTEMPTS:2}
+      retry-wait: ${CONTENT_RESOURCE_EVIDENCE_RETRY_WAIT:PT0.1S}
+      circuit-window-size: ${CONTENT_RESOURCE_EVIDENCE_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${CONTENT_RESOURCE_EVIDENCE_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${CONTENT_RESOURCE_EVIDENCE_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${CONTENT_RESOURCE_EVIDENCE_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${CONTENT_RESOURCE_EVIDENCE_CIRCUIT_HALF_OPEN_CALLS:2}
+    support-guide-phrasing:
+      base-url: ${JOURNAL_AI_SUPPORT_GUIDE_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_SUPPORT_GUIDE_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${JOURNAL_AI_SUPPORT_GUIDE_READ_TIMEOUT:PT8S}
+      circuit-window-size: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${JOURNAL_AI_SUPPORT_GUIDE_CIRCUIT_HALF_OPEN_CALLS:2}
+    support-plan-companion:
+      base-url: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_BASE_URL:}
+      service-token: ${CARE_SUPPORT_PLAN_COMPANION_SERVICE_TOKEN:}
+      connect-timeout: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_READ_TIMEOUT:PT8S}
+      circuit-window-size: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_WINDOW_SIZE:10}
+      circuit-minimum-calls: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_MINIMUM_CALLS:5}
+      circuit-failure-rate: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_FAILURE_RATE:50}
+      circuit-open-duration: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_OPEN_DURATION:PT10S}
+      circuit-half-open-calls: ${JOURNAL_AI_SUPPORT_PLAN_COMPANION_CIRCUIT_HALF_OPEN_CALLS:2}
+    support-plan-companion-admission:
+      enabled: ${CARE_SUPPORT_PLAN_COMPANION_ADMISSION_ENABLED:true}
+      policy-version: ${CARE_SUPPORT_PLAN_COMPANION_ADMISSION_POLICY_VERSION:companion-admission-v1}
+      maximum-requests: ${CARE_SUPPORT_PLAN_COMPANION_MAXIMUM_REQUESTS:6}
+      window: ${CARE_SUPPORT_PLAN_COMPANION_RATE_WINDOW:PT1M}
+      pending-ttl: ${CARE_SUPPORT_PLAN_COMPANION_PENDING_TTL:PT12S}
+      key-prefix: ${CARE_SUPPORT_PLAN_COMPANION_REDIS_KEY_PREFIX:mentalbridge:care:support-plan-companion}
+    consultation-brief-ai-draft:
+      base-url: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_BASE_URL:}
+      connect-timeout: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_CONNECT_TIMEOUT:PT0.5S}
+      read-timeout: ${JOURNAL_AI_CONSULTATION_BRIEF_DRAFT_READ_TIMEOUT:PT8S}
 eureka:
   client:
     enabled: ${EUREKA_CLIENT_ENABLED:true}
@@ -39,6 +176,11 @@ eureka:
 springdotenv:
   ignoreIfMissing: true
   exportToSystemProperties: false
+
+management:
+  health:
+    redis:
+      enabled: false
 
 logging:
   level:

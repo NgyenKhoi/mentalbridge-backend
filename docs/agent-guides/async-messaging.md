@@ -16,7 +16,7 @@ Kafka is not placed in the critical response path merely to claim that an API is
 ## Message categories and contract
 
 - **Integration event**: immutable past-tense fact, for example `AppointmentStatusChanged`.
-- **Asynchronous command**: imperative request with exactly one logical owner, for example `AnalyzeJournalRevision`.
+- **Asynchronous command**: imperative request with exactly one logical owner, for example a future provider-delivery command. MB-367 journal analysis remains a local MongoDB durable job and is not a Kafka command.
 
 Do not publish vague CRUD messages such as `EntityUpdated`. Messages carry the minimum data needed and stable identifiers, never access tokens, passwords, raw journal/chat bodies, assessment answer text, or provider secrets.
 
@@ -70,6 +70,14 @@ MongoDB-owned workflows require an explicitly documented equivalent: an owned ou
 If aggregate order matters, compare `aggregateVersion`, ignore stale versions, and detect gaps. A replay must not resend user-facing email/push or repeat a non-idempotent external side effect without an explicit replay policy.
 
 ## WebSocket and Redis rules
+
+The Community-only proposal in
+[ADR 0042 / MB-COMMUNITY-CHAT-001](../adr/0042-community-chat-contract.md)
+puts peer messages in Community-owned PostgreSQL with transactional outbox.
+After acceptance it is the scoped exception to the MongoDB chat-write rule
+below: Realtime only authorizes/fetches Community projections through REST and
+fans out to `/community`. Existing appointment persistence and `/realtime`
+contracts remain unchanged. No raw Community content enters Kafka or Redis.
 
 - `realtime-service` authenticates the handshake and authorizes every room subscription and command. A valid token alone does not grant conversation access.
 - WebSocket inbound/outbound JSON is defined in `contracts/websocket/` with event name, schema version, correlation/message IDs, acknowledgments, errors, size limit, and compatibility policy.

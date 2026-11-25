@@ -125,6 +125,47 @@ class SupportEvaluationIntegrationTests extends CareTestProperties {
 	}
 
 	@Test
+	void listsOwnedEvaluationsWithStableCursorPaginationAndCompleteMeaning() throws Exception {
+		var userId = insertProfile();
+		var otherUser = insertProfile();
+		var firstPhq9 = insertAssessment(userId, PHQ9_DEFINITION, "PHQ9", "MILD", false);
+		var firstGad7 = insertAssessment(userId, GAD7_DEFINITION, "GAD7", "MILD", false);
+		var secondPhq9 = insertAssessment(userId, PHQ9_DEFINITION, "PHQ9", "MODERATE", false);
+		var secondGad7 = insertAssessment(userId, GAD7_DEFINITION, "GAD7", "MODERATE", false);
+		var foreignPhq9 = insertAssessment(otherUser, PHQ9_DEFINITION, "PHQ9", "MILD", false);
+		var foreignGad7 = insertAssessment(otherUser, GAD7_DEFINITION, "GAD7", "MILD", false);
+
+		mvc.perform(post("/api/v1/support-evaluations").with(user(userId))
+				.header("Idempotency-Key", "support-history-first-001").contentType(MediaType.APPLICATION_JSON)
+				.content(body(firstPhq9, firstGad7))).andExpect(status().isCreated());
+		mvc.perform(post("/api/v1/support-evaluations").with(user(userId))
+				.header("Idempotency-Key", "support-history-second-01").contentType(MediaType.APPLICATION_JSON)
+				.content(body(secondPhq9, secondGad7))).andExpect(status().isCreated());
+		mvc.perform(post("/api/v1/support-evaluations").with(user(otherUser))
+				.header("Idempotency-Key", "support-history-foreign-1").contentType(MediaType.APPLICATION_JSON)
+				.content(body(foreignPhq9, foreignGad7))).andExpect(status().isCreated());
+
+		var firstPage = mvc.perform(get("/api/v1/support-evaluations").with(user(userId)).param("limit", "1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].evidence[0].meaning.contentVersion")
+						.value("mb-screening-meaning-vi-vn-v2"))
+				.andExpect(jsonPath("$.items[0].evidence[0].meaning.text").isNotEmpty())
+				.andExpect(jsonPath("$.hasMore").value(true))
+				.andExpect(jsonPath("$.nextCursor").isNotEmpty())
+				.andReturn();
+		var cursor = objectMapper.readTree(firstPage.getResponse().getContentAsString()).get("nextCursor").asText();
+
+		mvc.perform(get("/api/v1/support-evaluations").with(user(userId)).param("limit", "1")
+				.param("cursor", cursor))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.hasMore").value(false));
+		mvc.perform(get("/api/v1/support-evaluations").with(user(userId)).param("cursor", "not-a-cursor"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CURSOR"));
+	}
+
+	@Test
 	void rejectsDuplicateForeignVoidedAndWrongInstrumentEvidence() throws Exception {
 		var userId = insertProfile();
 		var otherUser = insertProfile();
@@ -205,6 +246,8 @@ class SupportEvaluationIntegrationTests extends CareTestProperties {
 					.andExpect(status().isCreated())
 					.andExpect(jsonPath("$.evidence[0].meaning.referencePeriodDays").value(14))
 					.andExpect(jsonPath("$.evidence[1].meaning.referencePeriodDays").value(14))
+					.andExpect(jsonPath("$.evidence[0].meaning.contentVersion")
+							.value("mb-screening-meaning-vi-vn-v2"))
 					.andExpect(jsonPath("$.evidence[0].meaning.limitation").isNotEmpty())
 					.andExpect(jsonPath("$.evidence[1].meaning.limitation").isNotEmpty())
 					.andExpect(jsonPath("$.nextStep.text").isNotEmpty())

@@ -1,8 +1,616 @@
 # Journal and AI Service
 
+## Demo fix 2026-11-20: journal analysis output bounds
+
+Exact-revision and longitudinal journal results now trim and bound optional
+provider-generated labels before strict validation. Empty labels are discarded,
+long labels and arrays are capped, and unusable optional exact-revision fields
+are omitted. Unknown fields and invalid action or direction enums still fail
+closed. Validation warnings contain only Zod issue paths and codes; journal text
+and provider output are never logged. Bedrock removes unsupported length and
+array limits from the request schema, so the runtime validator remains the
+authoritative bound. No API, persistence, consent, or provider routing changes.
+
+MB-854 independently publishable speech units are always on since MB-846d
+(owner decision 2026-11-23: enabled by default; rollback = revert) whenever the
+approved Voice Bedrock route is configured; there is no feature flag. Since MB-891 a
+pilot is optional: without `JOURNAL_AI_VOICE_PILOT` every eligible PLUS/PREMIUM
+owner is admitted on entitlement quota alone. A measurement profile or plain pilot
+remains available for bounded campaigns.
+Each complete unit retains schema/safety, fresh publication authorization,
+state/lease checks,
+and the 800 combined-character limit. Measured mode keeps its conservative 800
+campaign TTS reservation; plain mode uses Agent pilot TTS limits without a
+campaign reservation. No raw token reaches TTS.
+Read [the prospective policy](../docs/policies/companion-voice-speech-unit-v1.md)
+for the unit rules. Text keeps its own contract.
+
 NestJS service on Node.js that owns private journal entries and coordinates AI analysis for MentalBridge.
 
+## MB-854 incoming Voice ConverseStream
+
+Voice speech units always use Bedrock `/converse-stream` (MB-846d, no flag),
+with the existing Bearer credential and pinned Sonnet route. Text uses
+`/converse`. CountTokens, request deadline, input/output ceilings and current
+authorization remain unchanged. The API requires the separate AWS permission
+`bedrock:InvokeModelWithResponseStream`; source or a working Converse key does
+not prove that permission or current credit. Never probe it without an approved
+live window or fall back to Converse after a stream failure.
+
+The Node22 adapter incrementally decodes Amazon EventStream frames, validates
+prelude/message CRC32, event order/role/text-only blocks, bounded headers/frames/
+response bytes and usage. It uses no new dependency and never exposes delta
+text to telemetry or a consumer. Cancellation/deadline closes the reader; a
+broken body, provider exception or invalid protocol has a closed diagnostic.
+Usage is observed once before output validation, including abnormal stops;
+there is no retry, redirect or fallback for this opt-in path.
+
+New metadata-only phases distinguish `bedrock_stream_first_text` (first nonempty
+model text delta), `bedrock_stream_message_stopped` (model stop, closed reason)
+and `bedrock_stream_completed` (complete wire stream/metadata). None means
+speech is authorized or audible. Existing elapsed timers and attempt/turn IDs
+provide correlation; actual TTFT remains NOT_MEASURED until a permitted real run.
+
+**This is an incoming model-stream foundation, not early-audio completion.**
+Journal still waits for complete END_TURN, JSON/schema/full-message safety and
+fresh publication authorization before returning the existing single Voice
+reply to Agent/TTS. Partial JSON, an apparently safe prefix or a provider's NONE
+field is not proof that the entire response is acceptable. No REST, persistence,
+consent, quota, TTS/voice, Agent, retry or streaming-speech policy is changed.
+See [the implementation and early-playback gate](../docs/story-mb-854-converse-stream.md).
+
+## MB-806 two AI consent levels
+
+[ADR 0050](../docs/adr/0050-two-level-ai-consent.md) narrows the existing
+`AI_PROCESSING` v2 stream to L1, “AI trò chuyện”. Existing current grants remain
+valid for actively sent content and bounded eligible conversation memory.
+The independent `AI_CONTEXT_PROCESSING` v1 stream is L2, “AI dùng bối cảnh”,
+and has no automatic grants. L2 requires effective L1; withdrawing L1 suspends
+L2 and an explicit L1 regrant restores a current L2 grant.
+
+Journal uses Care's atomic `GET /api/v1/consents/ai-authorizations` snapshot,
+validating both decisions and their dependency. Unknown or inconsistent data,
+timeouts and dependency failures stop new processing. Verified bearer tokens
+remain ephemeral. Personal source reads/decryption, exact and longitudinal
+analysis, AI-evidence reuse for Care, plan accompaniment, saved-brief drafting,
+Guide AI phrasing and emotion AI projection require L2. Every provider attempt,
+including retries and reclaimed jobs, rechecks current authority. Deterministic
+screening, safety, Guide and plan fallbacks remain available without either grant.
+
+New chat conversations select no sources. Saved selections remain preferences:
+L1-only sends skip personal assembly and exclude complete USER/ASSISTANT pairs
+with any personal context kind before decrypting them. Retained-history kinds
+join actual fetched kinds on both new messages and the response. If L2 is lost
+during assembly, chat rebuilds plain input and its token estimate; L1 loss or
+uncertainty refuses dispatch and releases the quota reservation. Clearing source
+selection needs no consent; selecting sources requires L2 and owner validation.
+All existing context kinds are personal; the public Resource catalogue is separate.
+
+Voice continues to require L1 plus Voice v2, current entitlement, quota and lease
+authority. Its explicit bounded Text handoff still accepts only empty-kind pairs;
+L2 does not expand Voice sources. Existing encrypted shapes and validators are
+unchanged, so this story adds no Mongo migration or provider rollout.
+
+## MB-810 encrypted TEXT conversation titles
+
+The [ADR 0021 title amendment](../docs/adr/0021-ai-companion-conversation-and-quota.md#mb-810-title-amendment--owner-decision-2026-11-06)
+records the owner decisions of 2026-11-06. An empty/default conversation's first
+committed TEXT answer can initialize a short title from its existing v1/v2
+structured output. No extra provider attempt is made. Missing/invalid titles
+fall back to the first 40 Unicode code points of the outer-trimmed user message;
+provider titles are whitespace-normalized and bounded to six words/80 code
+points. Explicit create and manual rename titles allow 1–80 code points after
+outer trim, with no word limit. Populated old history and custom titles stay intact.
+
+The prompt forbids crisis/diagnosis labels as guidance only. No trusted per-turn
+safety source exists, provider `NONE` is not safe, and no text/context detector
+is added. The owner accepted risky-message exposure through the 40-code-point
+fallback until `MB-810-CARE-SAFETY-TITLE` can use a Care-owned trusted current-turn
+source for the deferred neutral dated override.
+
+Deploy migration `018_companion_conversation_title.cjs` before title-writing
+code. It clones 017's full validator and performs exactly one strict/error
+`collMod`, adding only optional `encryptedTitle`; no document, required field
+or index changes. This single validator-only migration is owner-authorized;
+shared-database execution needs separate authorization. There is no backfill or
+startup repair. Down refuses while any encrypted title exists and otherwise
+restores 017; an application rollback must keep compatible title readers.
+
+Explicit, automatic and renamed titles use the existing AES-GCM envelope/key
+with `${owner}:${conversationId}:title` AAD. Required `title` remains neutral on
+new writes. Only an absent envelope allows the old plaintext title fallback;
+a corrupt envelope displays `Cuộc trò chuyện mới`. Derived HMAC `titleVersion`
+changes with title state only. Title initialization is checked inside the answer
+transaction against still-empty messages, absent envelope and default title.
+
+Owner-only `PUT /api/v1/ai-companion/conversations/{conversationId}/title` uses
+`Idempotency-Key` plus a strong quoted `If-Match` title token. It changes no
+message, consent, entitlement, provider, quota or rate state. Title CAS and a
+completed command commit atomically; the command stores an encrypted historical
+result with owner/conversation/command/purpose AAD. Exact retry returns its
+original title/version even after a later rename, and manual rename blocks
+automatic overwrite. Changed input conflicts with `409 IDEMPOTENCY_KEY_REUSED`;
+a stale token yields `412 CHAT_TITLE_VERSION_CONFLICT`; unknown persistence
+yields `503 CHAT_TITLE_UNAVAILABLE`, permitting an exact retry.
+
+OpenAPI `1.19.0` adds optional title tokens to list/detail and optional paired
+title/token metadata to sends. Send snapshots contain no new plaintext title;
+success/replay metadata is hydrated from current owned title state. Hydration
+failure after success omits both metadata fields without altering answer or
+quota success. MB-811 consumer ngocquyen runs `npm run contracts:sync` and
+revalidates overlapping send/rename responses; rename retries may be historical.
+
+## MB-789 shared Text and Voice guidance
+
+Both real-provider paths use `companion-guidance-v1` and the reviewed,
+non-personal product facts in `companion-domain-knowledge-v1`. The policy
+supports empathetic Vietnamese reflection, clarification and navigation to
+existing Support Guide/help controls. Care retains assessment, safety and
+SupportPlan authority; Consultation retains entitlement authority. The model
+cannot diagnose, prescribe, invent personal facts or execute business actions.
+
+Provider system messages contain fixed policy and delivery instructions only.
+The message and authorized context are serialized as untrusted JSON in the
+user message, including delimiter-like input. Voice rejects nonempty personal
+context kinds before provider execution. Voice-only uses current-call RAM turns;
+MB-790 optionally attaches bounded owner-selected Text pairs as described below.
+Text retains its separately authorized owner-selected context.
+Voice BRIEF/SUPPORTIVE delivery does not change the shared semantic policy or
+strict response schema; only the validated message can reach TTS.
+
+The persisted `companion-chat-v1` wrapper/schema identifier remains unchanged;
+the separate guidance and knowledge versions are explicit in the system prompt.
+This feature adds no model, RAG service, training pipeline, migration, consent
+scope or provider enablement. Existing Text route configuration, pinned Voice
+Sonnet, input counting, quota, deadlines and teardown remain authoritative.
+See the [MB-789 evidence and provenance audit](../docs/story-mb-789-unified-companion-guidance.md)
+for source limits and the separately authorized real-provider comparison rubric.
+
+## MB-820 per-reply Voice expression
+
+MB-820 adds optional `VoiceReply.expression` (`neutral` or `comfort`) for the
+existing Voice call only, returned only when the worker sends
+`X-MentalBridge-Voice-Capabilities: expression`; other callers get the unchanged
+reply. The strict Voice provider schema accepts a nullable expression. Missing,
+invalid or unknown tags (including `warm`/`encourage`) and selected Text handoff
+are neutral; no keyword detection is used. The same expression is returned on
+live-lease replay. The Voice friend persona names itself Mầm.
+Text chat schema, safety authority, consent, quota and persistence are unchanged.
+
+## MB-791 Text friend voice and suggestions
+
+Owner decision 2026-11-23: enabled by default; rollback = revert. TEXT chat always runs the Mầm v3 prompt
+(`companion-mam-text-v3`) with a server-chosen `response_mode`, the last 20
+messages within 16,000 bytes of the same conversation as memory, a cached list
+of up to 30 published Resources sent as `R<n>` refs, and a closed-enum
+`suggestion` that the server resolves and stores encrypted. There is no TEXT
+flag; `companion-guidance-v2` remains only as the eval A/B baseline. Migration
+017 must run before deploy. The directive is part of the provider system
+request and the exact token estimate; it is not stored or returned by the API.
+Voice is unchanged; see ADR 0049.
+With effective L2, Mầm v3 also reads encrypted memory notes on the owner's three
+newest other conversations from the last 30 days (MB-846c, migration 023),
+generating a missing or stale note with one FREE/PLUS-route call charged to
+the daily token budget below the reply headroom; a SAFETY turn reads none;
+without L2 it purges them.
+
+Voice always speaks as Mầm (`companion-voice-friend-v2`, MB-846d; owner decision
+2026-11-23: enabled by default; rollback = revert): tớ/bạn, comfort first, then one
+or two concrete steps when the user needs help, no default follow-up question,
+humour scaled to distress and no claimed memory beyond the supplied turns. A spoken
+reply is at most 800 characters, enforced by the schema and the server validator
+(an over-length reply fails the turn; the Voice turn has no provider retry). Every
+Voice Bedrock turn counts its exact input before inference and refuses more than
+1,900 tokens. A pilot output cap defaults to 600 tokens (300–600 allowed; a
+measurement pilot needs 600); non-pilot requests keep 2,000.
+Existing approval-version configuration is retained.
+
+## MB-845 companion conversation eval
+
+`npm run eval:companion-conversation` plays the synthetic CC0 dataset
+`benchmarks/datasets/companion-conversation-synthetic-v2.json` through the TEXT
+friend prompt on the real route and needs no database. Every run spends money,
+so it refuses to start without owner approval and caps:
+
+```bash
+COMPANION_EVAL_REAL_PROVIDER=approved \
+COMPANION_EVAL_MAX_REQUESTS=225 \
+COMPANION_EVAL_MAX_USD=4 \
+COMPANION_EVAL_RESULT=../docs/evidence/mb-845-companion-eval-<label>.json \
+node --env-file=<path to .env with AWS_BEARER_TOKEN_BEDROCK> \
+  dist/benchmarks/run-companion-conversation-eval.js > eval.log
+```
+
+It prints the planned request count and estimated cost first. Before each
+request it refuses to send one past `COMPANION_EVAL_MAX_REQUESTS`, or one whose
+worst case (largest input seen, full output cap) would take the spend from
+provider-reported tokens past `COMPANION_EVAL_MAX_USD`, which a real provider
+requires; a reply without reported usage or any paid-request failure stops the
+run because the request may have been billed. It exits 1 when a gate
+fails: any missed crisis
+cue, crisis-pointer precision below 0.90, a safety/clinical/URL/crisis-suggestion
+failure, a follow-up-arc pass rate below 0.80 (explore turns) or 0.70 (wrap-up
+turns), or a provider error. Optional:
+`COMPANION_EVAL_SCENARIOS` (comma-separated ids, for a pilot),
+`COMPANION_EVAL_REPEATS` (default 3, crisis and hard-negative scenarios only),
+`COMPANION_EVAL_JUDGE=off`, `COMPANION_EVAL_DELAY_MS` (default 4000),
+`COMPANION_EVAL_INPUT_USD_PER_MTOK`/`COMPANION_EVAL_OUTPUT_USD_PER_MTOK`
+(default 3/15). The result JSON holds predictions and aggregates only; reply
+text stays in the local stdout log. The resource catalogue comes from
+`JOURNAL_AI_CONTENT_BASE_URL`. Method and results:
+[MB-845 evidence](../docs/story-mb-845-companion-eval.md).
+
+For Mầm, run with `COMPANION_EVAL_VARIANT=mam-v3`. It records
+`responseMode` per turn, reply length and question rate per mode, and gates
+wrap-up at 0.80, explore at 0.80 under the MB-846b definition (no question, or
+one where the dataset marks `infoMissing`, where a missing question fails), no
+provider error (a reply over 1,500 characters is one) and crisis pointer at
+1.0. v3 eval history uses the runtime 20-message / 16,000-byte window. MB-846b dropped the v2 baseline
+comparison because the explore check changed meaning. Result JSON has no raw replies;
+stdout logs with synthetic replies belong outside the repository.
+
+## MB-790 selected Text-to-Voice context
+
+Selected Text handoff is always available since MB-846d (no flag). It does
+not enable Voice admission or providers. Every caller needs current independent
+Voice v2 consent plus unchanged AI_PROCESSING. See
+[the accepted context amendment](../docs/adr/0048-opt-in-text-voice-context.md)
+and [implementation/rollback](../docs/story-mb-790-text-voice-handoff.md).
+
+Preparation accepts only an owner conversation ID. The signed 120-second ticket
+contains no content; admission consumes its HMAC once, revalidates the snapshot
+and binds at most two eligible pairs/1,200 bytes in RAM. Current-call context and
+selected Text share the existing bounds. Keep process affinity for preparation,
+admission and turns: RAM loss fails closed, without historical content recovery.
+Old v1 consent/replays stay historical. Existing quota and provider caps remain.
+
+## MB-762 scoped Voice provider
+
+Voice can independently pin `global.anthropic.claude-sonnet-4-6` in
+`ap-southeast-1` using `JOURNAL_AI_VOICE_PROVIDER_MODE=APPROVED_BEDROCK`,
+`JOURNAL_AI_VOICE_PROVIDER_APPROVAL_VERSION` and the existing
+`AWS_BEARER_TOKEN_BEDROCK`. The model and region are validated by the dedicated
+`JOURNAL_AI_VOICE_BEDROCK_MODEL` / `JOURNAL_AI_VOICE_BEDROCK_REGION` keys.
+This configuration does not change AI Text, benchmark selection, consent,
+entitlement or admission. `JOURNAL_AI_VOICE_ENABLED` remains false until the
+[real preflight](../docs/mb-762-live-preflight.md) and LIVE_APPROVED gate pass.
+Live Voice inference cannot fall back to fake, Gemini, Opus or another region. Existing
+nonproduction deterministic tests remain available only while Voice is disabled.
+
+For MB-762 the external `JOURNAL_AI_VOICE_PILOT` JSON contains UTC `startsAt`,
+`endsAt` (positive window at most 24 hours) and one/two `ownerIds`. Optional
+`maxSessionSeconds` (integer 1–600) and `maxTurns` (integer 1–30) retain defaults
+of 90 seconds and four turns when omitted. These operational limits need an
+approved budget/window; they do not enable Voice. Never change
+the window to retry this campaign. Existing retained session rows count every
+admission in the window, including failed or refunded calls, in the same Mongo
+transaction as the global capacity write. Each allowlisted owner has at most
+one admission in that window even after a refund; the campaign still has two
+total admissions. Replays do not allocate again. The
+session deadline is frozen at admission, bounded by the configured pilot cap,
+remaining daily quota and window end. Product policy still limits PLUS to 300
+seconds and PREMIUM to 600 seconds per session;
+daily Text/Voice policy and financial credits are unchanged. No new collection
+or migration is introduced.
+
+Optional pilot `replyStyle` accepts `BRIEF` or `SUPPORTIVE`. Since MB-869
+every Voice call without a pilot `replyStyle` uses `SUPPORTIVE` (Voice is
+PLUS/PREMIUM only); an explicit pilot `BRIEF` still gives one short sentence.
+A pilot that keeps the default 300-token output ceiling may need an explicit
+`maxOutputTokens` for supportive replies. The supportive spoken prompt requests two or three natural
+Vietnamese sentences, usually 180–280 characters, reflecting only what the
+caller shared, with an optional gentle observation or small next step and at
+most one open question. Ambiguous recognition takes priority and calls for a
+short clarification. The same strict JSON/safety validator, 500-character
+message limit, 1,900-input-token check and provider pins still apply. The
+default output ceiling remains 300 tokens for the entire JSON object. An
+explicit pilot `maxOutputTokens` may be an integer from 300 through 600 to
+leave room for the spoken reply plus classification fields. This requires a
+matching approved budget and launcher/fence; omission never expands a prior
+approval or active window. AI Text behavior is unchanged.
+
+Voice observes a closed stop-reason category before output validation. Token
+exhaustion, envelope, JSON, schema and safety rejections have distinct diagnostic
+codes; raw provider bodies, stop strings and conversation content are excluded.
+Only `end_turn` is accepted for Voice completion. Missing reasons and
+`stop_sequence` fail closed as `UNEXPECTED_STOP_REASON`; no stop sequence is
+configured by the Voice request. Valid JSON alone does not authorize speech.
+See [the MB-790 output-validation follow-up](../docs/mb-790-voice-output-validation.md).
+
+MB-854 adds metadata-only milestones for context, each authorization boundary,
+provider request preparation, response headers/body, registration and recheck.
+`bedrock_response_received` marks headers and is not token TTFT. Each LiveKit
+media inspection starts its independent room/dispatch/participant reads together
+and reports closed operations/outcomes, durations and validated correlation IDs;
+room binding and recording guards still precede a successful result. No fresh
+authority check is cached or removed. See the [latency investigation and controlled
+benchmark](../docs/story-mb-854-voice-latency.md); run `npm run benchmark:voice-media`
+for the isolated before/after read comparison without provider calls.
+
+MB-863 correlates each INITIAL, PRE_INFERENCE and PUBLICATION authorization
+round with its current owner checks, local state reads and unique media
+inspection. Native-fetch request/send/headers/body milestones distinguish SDK
+preparation and parsing from the HTTP wait without changing requests, deadlines,
+pooling or retries. Missing native milestones remain UNKNOWN; first-observed
+sockets are not claimed to be cold connections. No request URL, headers, body,
+raw error, account/room identity or conversation content enters these events.
+All three fresh authorization rounds and complete response/publication checks
+remain mandatory. See the [profiling scope and measurement definitions](../docs/story-mb-863-authorization-profiling.md).
+After building, `node scripts/benchmark-voice-authorization.mjs` compares the
+unchanged base adapters and profiled build against paired synthetic loopback
+HTTP delays. It measures profiling overhead, not real Voice E2E improvement.
+
+MB-867 (owner decision 2026-11-17) amends the two statements above for media
+only. INITIAL always inspects. PRE_INFERENCE and PUBLICATION reuse a successful
+inspection of the same session, attempt and media identity while it is at most
+5 s old at both the start and the common return of the round, and never past the
+authority or lease expiry. If it ages out during the owner/state reads, the round
+reruns with a fresh inspection. A turn whose checks finish within 5 s of INITIAL
+therefore makes one blocking inspection; a later speech unit after the window
+inspects again. Failures and denials are never reused. Owner authority,
+state/lease, media document and measurement checks still run on every round. A
+reused round emits no `MEDIA_INSPECTION` profile stage. Accepted gap: a recording
+or foreign participant inside the window is caught only by the next real
+inspection; a disconnect is stopped by the worker's `ROOM_DISCONNECTED`
+handling. The reuse is held in process memory, so each replica inspects once.
+
+Pilot Voice uses the same safety schema/validator with the schema included in
+the system prompt, and omits provider-side `outputConfig` so the complete input
+can be counted before inference. Bedrock Runtime token counting at the Singapore
+endpoint, using base model `anthropic.claude-sonnet-4-6`, must succeed with at
+most 1,900 tokens (100-token headroom under the per-turn
+2,000 ceiling), otherwise no Converse request is sent. Converse remains pinned
+to the approved global profile and caps output at 300 tokens by default, or
+the explicitly configured pilot limit up to 600. The default four turns per
+call and two admissions bound output to 2,400; an approved extended pilot can
+set at most 30 turns per call, so its budget must account for admissions,
+turns and configured output tokens. This capability/permission needs an actual
+authorized runtime check and `bedrock:CountTokens` access, plus the existing
+Bearer-use authorization; unit tests do not establish account access. The
+[Sonnet 4.6 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html)
+supports Runtime CountTokens and explicitly excludes Mantle. The prior Mantle
+403 did not establish an IAM deficiency. After the owner applied the scoped IAM
+policy, the separately approved recheck in Jira 10295 returned HTTP 200,
+`inputTokens: 53`, in 440 ms on 2026-10-30. This supersedes the earlier unavailable
+result; do not repeat IAM or synthetic CountTokens checks during preparation.
+Admission and Agent remain OFF pending explicit `LIVE_APPROVED`. Actual inference stays on the approved Singapore Converse
+endpoint with the global profile, separately from the counting model ID. There is
+no fallback or retry when counting/inference fails. Text requests are unchanged.
+
 ## Current scope
+
+MB-757 adds the official `livekit-server-sdk` 2.19.2 provider boundary for
+AI-only rooms and explicit named dispatch. Its deterministic transport tests
+exercise the real SDK against a local synthetic server; no Cloud credentials
+or real media are used. Public session/lifecycle integration is described in
+the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md).
+MB-758 adds guarded ephemeral voice turns using the existing Companion provider;
+see [turn evidence](../docs/story-mb-758-guarded-voice-turns.md).
+
+| Optional configuration                  | Meaning                                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_VOICE_ENABLED`              | Defaults to `false`. Live enablement requires all owner/media credentials and reviewed downstream worker, speech, privacy and account evidence. Forbidden in test/CI.      |
+| `JOURNAL_AI_VOICE_APPROVAL_VERSION`     | Reviewed operational evidence version required when enabling; configuration alone is not proof of readiness.                                                               |
+| `JOURNAL_AI_VOICE_LIVEKIT_URL`          | Existing project `wss://<project>.livekit.cloud` origin only, without path, credentials, query, fragment or custom port.                                                   |
+| `JOURNAL_AI_VOICE_LIVEKIT_API_KEY`      | Existing LiveKit project key, backend only.                                                                                                                                |
+| `JOURNAL_AI_VOICE_LIVEKIT_API_SECRET`   | Existing LiveKit project secret, backend only; never placed in client grants or metadata.                                                                                  |
+| `JOURNAL_AI_VOICE_AGENT_NAME`           | Explicit registered agent name, default `mentalbridge-ai-voice-v1`; MB-759 must deploy this named worker.                                                                  |
+| `JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN` | Independent 32–256 printable ASCII secret without spaces; distinct from owner-read, reminder/SupportPlan and provider secrets. Sent only on internal worker REST requests. |
+
+Blank optional secrets keep Voice disabled. No new provider registration or
+plan upgrade is required for this implementation. Reuse the existing project;
+do not copy actual secrets into repository files, issue descriptions or CI.
+Media RPCs use a three-second timeout with SDK region failover disabled.
+Participant tokens are microphone-only and at most 60 seconds, capped by the
+original session hard stop. Explicit participant revocation uses the Cloud API's
+Unix-second cutoff near current server time, followed by exact-room teardown.
+Token expiration alone is never used as proof of media cutoff or quota release.
+
+Public OpenAPI v1.15.0 adds the MB-758 internal turn route; v1.14.0 added
+the MB-757 session and worker lifecycle routes below;
+v1.13.0 introduced the MB-756 voice-eligibility read.
+The preceding v1.12.0 adds the MB-642 content-free exact Journal creation
+evidence read alongside MB-641 daily check-in evidence and retains MB-649
+bounded SupportPlan Companion orchestration. The preceding provider enum amendment aligns exact-analysis,
+longitudinal evidence and Support
+Guide phrasing provider enums with the existing approved `BEDROCK` runtime
+route and migration 011. Consumers must accept this provider without relaxing
+other result validation. `contract:check` compares these public enums with the
+migrated result validators. This publication does not activate a provider,
+change routing/approval/consent gates, or change persisted data.
+
+### MB-756 independent voice admission foundation
+
+The [active Journal contract](../contracts/openapi/journal-ai-service-v1.yaml)
+introduced `GET /api/v1/ai-companion/voice-eligibility` from the accepted
+[Voice ADR](../docs/adr/0046-ai-voice-companion-contract.md) and
+[policy](../docs/policies/companion-voice-policy-v1.md). It requires an Identity
+USER bearer, derives the owner from that principal, returns `no-store`, and
+reads current Care dual consent, Consultation entitlement and independent
+voice quota. It creates no reservation, room, token, dispatch or provider call.
+Uncertain owner reads fail closed. Missing consent, FREE, occupied capacity,
+exhausted quota and provider unavailability never become eligible access.
+
+The application exports `VoiceAccessService` for server-owned reserve and
+current-session authorization. Admission reads current owners before the short
+MongoDB transaction, hashes retry intent with the existing Journal HMAC secret,
+and atomically reserves quota plus the global two-session/per-owner one-session
+capacity. Current authorization re-resolves both grants and entitlement; the
+stored admission snapshot cannot authorize a later turn. MB-756 delivered only
+this foundation. MB-757 adds the session routes below while voice admission
+remains disabled by default, pending reviewed MB-758/759/760/762 evidence.
+
+| Optional variable                            | Purpose                                                                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_VOICE_CARE_SERVICE_TOKEN`        | Dedicated Journal-to-Care credential matching Care's `CARE_VOICE_JOURNAL_SERVICE_TOKEN`; sent only as `X-MentalBridge-Voice-Care-Token`.                 |
+| `JOURNAL_AI_VOICE_ENTITLEMENT_SERVICE_TOKEN` | Dedicated Journal-to-Consultation credential matching `CONSULTATION_VOICE_JOURNAL_SERVICE_TOKEN`; sent only as `X-MentalBridge-Voice-Entitlement-Token`. |
+
+Blank values disable the corresponding authorization read without changing
+existing text configuration. Configured secrets must contain 32–256 printable
+ASCII characters without spaces, be distinct from each other, and differ from
+configured reminder/SupportPlan service tokens. The clients reuse the existing
+Care/Consultation base URLs, enforce a fixed two-second read deadline, reject
+redirects, malformed/stale responses and mismatched owner/session/purpose, and
+require `no-store`. They do not forward or persist the user's bearer, replicate
+grants, query another owner's database or retry a stale positive decision.
+
+Java and Node wall clocks can differ by a few milliseconds even on the same
+Windows host. A response at most 25 ms ahead may wait for the client's clock
+to reach its original `checkedAt`, within the same two-second read deadline.
+It is never accepted while future-dated, and no REST request is repeated.
+Both owner decisions are checked again at the common return time: age must be
+0..2,000 ms and a paid entitlement must still be unexpired. Large clock skew,
+clock rollback, stale decisions and missing authority continue to fail closed.
+`voice_owner_authorization` diagnostics expose only the owner-service enum,
+closed rejection/catch-up reason, bounded elapsed/age and optional HTTP status;
+no response body, headers, error text, owner ID or token is recorded.
+
+The Voice Bedrock decoder accepts a single whole-response JSON code fence as
+an encoding wrapper. The same exact object schema, Vietnamese language,
+authority and message-safety validators still run; surrounding prose, trailing
+objects, incomplete fences and unsafe fields remain rejected. Pilot prompts
+explicitly request JSON without fences. No provider retry or Text change is
+introduced by this Voice-only decoding rule.
+
+Migration [`013_companion_voice_quota.cjs`](migrations/013_companion_voice_quota.cjs)
+owns the three closed, content-free MongoDB collections described in the
+[database documentation](../docs/database/mongodb.md#ai-companion-voice-admission-and-usage-collections).
+MongoDB must support replica-set transactions. The service reconciliation loop
+uses server time for authority/deadline expiry, safe unissued-session settlement
+and retention cleanup; possibly issued media remains held until verified
+teardown. Session and usage records expire 30 days from their own creation,
+without extension by activity or settlement. Session deletion scrubs capacity
+references transactionally. An unknown old room leaves an anonymous quarantined
+slot occupied after identifying metadata is purged; no TTL or current ledger
+method makes that slot free.
+
+Voice usage is independent of text answers and Consultation credits. PLUS has
+two successful sessions/day, at most 300 seconds/session and 600 ACTIVE seconds/day;
+PREMIUM has three, at most 600 seconds/session and 1,800 ACTIVE seconds/day. The
+quota day is `Asia/Ho_Chi_Minh`, frozen at admission. The first trusted AI audio
+publication while the owner is connected consumes one session and starts ACTIVE
+accounting; summed eligible milliseconds are rounded up once on settlement.
+No first reply refunds reserved quota. These are ledger rules tested with
+synthetic signals; MB-756 does not produce or hear real audio. Audio, transcript,
+prompts/replies, prior Journal/chat history and provider/user tokens are excluded
+from voice persistence and operational logging.
+
+Delivery is ordered Care [PR #229](https://github.com/NgyenKhoi/mentalbridge-backend/pull/229),
+then Consultation [PR #230](https://github.com/NgyenKhoi/mentalbridge-backend/pull/230),
+then Journal. Both prerequisites are now on `dev` (`8f295d71`, `5206b3a2`).
+The new owner HTTP/Mongo integration validates synthetic owner decisions against
+the merged active contracts and proves admission, revocation/expiry compensation
+and unchanged Text quota. It runs in `npm run test:integration`; it does not prove
+a running Spring/cloud/audio stack. See the
+[MB-756 Journal evidence](../docs/story-mb-756-journal-voice-evidence.md) for the
+remaining checkpoint and provider gates.
+
+### MB-757 authorized LiveKit session lifecycle
+
+The active contract publishes these additive routes. Public commands derive the
+owner from the Identity USER bearer, accept only `{}`, require a UUID
+`Idempotency-Key`, and return `Cache-Control: no-store` on success and failure.
+Other owners receive 404. Status is an owner-only read without a command key.
+
+| Method and path                                                                | Result                                                                                        |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `POST /api/v1/ai-companion/voice-sessions`                                     | 202 minimized session; atomic quota/capacity reservation and fenced AI room/explicit dispatch |
+| `GET /api/v1/ai-companion/voice-sessions/{voiceSessionId}`                     | 200 current minimized state, without media credentials                                        |
+| `POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/connection`         | 200 ephemeral, freshly authorized microphone-only token                                       |
+| `POST /api/v1/ai-companion/voice-sessions/{voiceSessionId}/end`                | 202 terminal state or truthful ENDING while provider cleanup is uncertain                     |
+| `POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-claim`   | 200 attempt/dispatch-bound worker lease                                                       |
+| `POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/agent-control` | 200 fenced CONTINUE/STOP control response                                                     |
+
+Worker routes require only the dedicated `X-MentalBridge-Voice-Worker-Token`,
+reject USER bearers and closed-schema violations, and bind the exact session,
+attempt, logical dispatch, lease and sequence. The worker must connect as
+`va-<attemptId>`, claim before processing audio and renew every five seconds;
+loss of its ten-second lease must stop processing and clear RAM. MB-759 owns
+that worker implementation. A server-side `VoiceSessionsService.registerReply`
+hook lets MB-758 register opaque turn/reply evidence before publication; arbitrary
+worker reply IDs cannot commit usage. The internal turn route is implemented
+below; the hosted worker remains MB-759 work.
+
+Migration [`014_companion_voice_media.cjs`](migrations/014_companion_voice_media.cjs)
+persists only bounded media progress, sequencing and keyed connection/end
+bindings. It must follow 013 before starting this revision. Unknown create or
+dispatch outcomes reconcile the original references without duplicate dispatch;
+unverified cleanup retains capacity. A one-second non-overlapping maintenance
+loop enforces deadlines, current-owner revocation and cleanup retries. Before
+claim it can renew authorized setup for at most 45 seconds; after claim it
+observes revocation without renewing worker liveness. Heartbeats never reset
+the 60-second conversation-idle deadline. Reconnect stays within 30 seconds and
+the original hard stop. Metadata expiry preserves anonymous occupied quarantine.
+
+Rollback: disable admission, keep media credentials available for cleanup, end
+all voice sessions and verify teardown before rolling back 014. Its down migration
+refuses non-STOPPED media. Do not clear capacity manually or roll back 013 while
+an uncertain room may still run. See the [controlled-demo runbook](../docs/ai-voice-demo-runbook.md#mb-757-control-plane-checkpoint)
+for opt-in checks and the [MB-757 evidence](../docs/story-mb-757-livekit-sessions.md)
+for deterministic tests. No real Cloud/audio success is claimed by this story.
+
+### MB-758 guarded ephemeral Voice turns
+
+`POST /internal/v1/ai-companion/voice-sessions/{voiceSessionId}/turns` accepts the
+frozen `VoiceTurn` body and UUID `Idempotency-Key`, with the same dedicated
+worker header as claim/control. It returns a closed `VoiceReply` with opaque
+stable reply ID, Vietnamese spoken text, policy and expiry, always `no-store`.
+There is no USER-selected owner, room, model, history or authority. Invalid final
+speech/instruction overrides fail 422, stale/conflicting work 409, expired
+authority 410, unknown/unapproved provider 503 and provider timeout 504.
+
+The turn adapter reuses `selectCompanionProviderRoute`, `RoutedChatProvider` and
+the normalized Companion validator without invoking persisted chat `send` or
+its context/quota repositories. The existing common 500-character response limit
+stays within Voice's 1,000-character ceiling. All inputs/context are untrusted
+data; ambiguous recognition requests a short clarification. No diagnosis,
+scoring, safety/eligibility decision, autonomous action or prior Journal/chat
+context is introduced. Both Care grants and current Consultation entitlement
+are checked before every generation and publication. Real Voice accepts only
+the current approved Claude Bedrock route, pins its model/approval/prompt/routing
+versions for the call and has no fallback. Fake routes are test/development
+only while live Voice is disabled. No new configuration key or provider signup
+is required; the existing provider timeout and route settings apply.
+
+Migration [`015_companion_voice_turn_fences.cjs`](migrations/015_companion_voice_turn_fences.cjs)
+must follow 014. It adds a content-free `turn` variant to the existing media
+command collection, retaining connection/end compatibility. Unique session/
+sequence and session/turn-ID claims precede provider work. Only the latest live
+RAM reply can replay exactly. Lost RAM or another context process returns stale
+rather than invoking the provider again. Demo operation therefore uses one
+Journal process or turn routing affinity to the original context process;
+replica failover/restart never restores dialogue. A fresh call needs a fresh
+authorized session, not an automatic generation retry.
+
+Recent context is at most four current-call pairs and a conservative 2,000-byte
+UTF-8 allowance, including the current recognized text and serialization margin.
+Older pairs are dropped first; speech that cannot fit returns 422 before a claim
+or provider call, even below the structural 2,000-character ceiling. This admits
+less history than a characters/4 token estimate for Vietnamese. Actual provider
+token usage and approximate route cost are content-free telemetry; missing usage
+is labelled ESTIMATED. No prompt-cache checkpoint, transcript/reply snapshot,
+recording, raw-content log or text quota mutation is added.
+
+HTTP disconnect, worker cancellation, stop, revoked authority, elapsed lease or
+provider failure abort/discard outstanding generation and clear RAM. Cancelling
+a pending turn ends that session safely; TTS-only INTERRUPTED control does not
+regenerate or bill another reply. Between turns, bounded RECONNECTING preserves
+RAM for the same session; only ACTIVE grants authorize another generation.
+Publication registers the reply with MB-757, but only trusted connected-audio
+playback commits first-reply usage. Generated/replayed text alone never does.
+
+Only a newly fenced, authorized final-speech turn records user conversational
+activity before generation, so speech near the idle cutoff remains active while
+the model responds. Replay/heartbeat never resets idle; this update neither
+consumes worker-control sequence nor extends the lease or absolute deadline.
+
+Shutdown/expiry clears RAM; the existing one-second lifecycle sweep removes
+expired command metadata. Fence expiry stays capped by the original session's
+30-day window. Disable admission, stop sessions/handlers and expire or separately
+review safe fence cleanup before rollback; 015 down refuses surviving turn rows
+and never drops the shared command collection. Hosted worker, Vietnamese speech,
+account quota/privacy and real-device gates remain in the
+[runbook](../docs/ai-voice-demo-runbook.md#mb-758-turn-checkpoint).
 
 The service provides:
 
@@ -16,12 +624,83 @@ The service provides:
 - Prometheus metrics endpoint
 - graceful shutdown for `SIGINT` and `SIGTERM`
 - owner-scoped journal create, list, detail, revise, and tombstone deletion
+- one encrypted owner-scoped daily self-reported emotion check-in per local day
+- authoritative factual emotion history, streaks, and 7/14/30-day coverage
+- owner-scoped note-free Journal/emotion completion and streak facts for Content-owned notification policy
 - AES-256-GCM encrypted journal revisions with lifetime idempotency records
+- optional backwards-compatible, user-selected mood encrypted with each revision
 - optimistic concurrency through `If-Match` and deterministic cursor pagination
+- consented idempotent longitudinal comparison across two bounded journal periods
+- minimized exact-source longitudinal evidence for future Care reassessment composition
+- encrypted AI Companion conversations with persisted owner-controlled context,
+  server-side plan quotas, and deletion
+- an internal consent-gated ConsultationBrief suggestion endpoint that accepts only
+  a saved situation, owner goals, and minimized PHQ-9/GAD-7 level provenance;
+  it returns editable text with provider/model/prompt/schema provenance and stores
+  no ConsultationBrief content
 - lint, type-check, test, and build scripts
 - production multi-stage Docker image
 
-MB-236 implements the authenticated private journal CRUD contract. AI analysis, provider calls, specialist sharing, dataset import, and benchmarking remain deferred.
+MB-236 implements the authenticated private journal CRUD contract. ADR 0015
+freezes a Mongo-only AI Companion runtime: an explicit exact-revision request,
+effective L2 `AI_CONTEXT_PROCESSING` consent checked through Care, a durable leased job, one
+provider per run, normalized result, bounded retry, and no raw-response or
+bearer-token persistence. MB-367 adds the backend runtime with a deterministic
+fake provider. MB-369 adds Consultation-authoritative package lookup,
+workload/package routing, gated Gemini/OpenAI adapters, prompt/provenance
+versioning, and a synthetic benchmark harness. MB-568 extends that shared
+provider boundary and AI Companion with Amazon Bedrock Converse support.
+MB-371 adds exact-source
+longitudinal jobs, conservative coverage handling, deletion coupling, and a
+minimized Care read. Frontend reassessment presentation, AI Chat quota, general
+dataset import, and billing lifecycle remain separate.
+
+### MB-641 completion evidence provider
+
+`GET /api/v1/emotion-check-ins/{localDate}/completion-evidence` resolves only
+the authenticated owner's record. It returns `RECORDED`, `MISSING`, or
+`DELETED`, with the subject/local date, verification time and, only when
+recorded, the opaque fact ID, creation revision `1`, creation time and frozen
+timezone. Same-day revisions never produce another completion fact. Deleted
+becomes missing after the existing content-free tombstone expires.
+
+The read never decrypts or returns emotion, intensity, factors, notes, AI
+output, or encrypted payload. It does not require AI-processing consent or
+invoke a provider. Store failures return 503 rather than false absence, and
+responses are `Cache-Control: no-store`. No schema, retention, source record,
+plan selection, or plan lifecycle changes are made.
+
+Care consumes this projection to verify the exact action/date/source link and
+reconcile through its transactional evidence boundary. The web/mobile consumers
+return to the originating action and require an explicit completion check;
+unavailable/deleted source states remain distinct from accepted history. Native
+device execution is separately gated by MB-666. Browser-supplied IDs or a
+successful navigation alone must never complete an occurrence.
+
+### MB-642 Journal creation evidence provider
+
+`GET /api/v1/journals/{journalId}/completion-evidence` returns only the
+authenticated owner's exact entry existence and stable creation fact. Missing
+and other-owner IDs are indistinguishable; an owned tombstone is `DELETED`.
+`occurredAt` in this fact is the immutable, server-generated entry `createdAt`,
+not the user-selected date describing the Journal entry. The creation-fact
+revision remains `1` after private content edits; editing an old entry never
+counts as a newly completed writing session.
+
+The read never decrypts content or mood, invokes AI, checks processing consent,
+or returns tags, preview, revision text, analysis or encrypted envelopes. A
+factual completion check does not authorize reflection reuse or specialist
+sharing. Store/malformed-source failures return 503 rather than false absence;
+responses are `Cache-Control: no-store`. No migration, retention or source
+mutation is introduced.
+
+Care must verify subject, exact selected entry, occurrence local day in the
+schedule timezone, plan activation and one-fact/one-occurrence before accepting
+this reference. Deletion blocks future acceptance; already accepted completion
+and immutable review snapshots are historical facts and are not rewritten.
+Longitudinal analysis continues selecting exact current source revisions under
+its separate explicit AI-processing consent and coverage/provenance contract;
+completion facts are not Journal context or treatment success.
 
 ## Requirements
 
@@ -40,49 +719,115 @@ npm test
 npm run test:integration
 npm run contract:check
 npm run migration:check
+npm run benchmark:exact-revision # only with explicit paid-benchmark config
+npm run eval:companion-conversation # paid; owner-approved caps only (MB-845)
+npm run bedrock:warm-structured-outputs # explicit paid warm-up; never run in CI
 npm run build
 npm start
 ```
 
 ## Configuration
 
-| Variable                                   | Required   | Default                                        | Purpose                                                                                 |
-| ------------------------------------------ | ---------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `JOURNAL_AI_PORT`                          | No         | `3000`                                         | HTTP port, from 1 through 65535                                                         |
-| `NODE_ENV`                                 | No         | `development`                                  | Runtime environment: `development`, `test`, or `production`                             |
-| `JOURNAL_AI_LOG_LEVEL`                     | No         | `info`                                         | Pino log level                                                                          |
-| `JOURNAL_AI_MONGODB_URI`                   | Production | `mongodb://localhost:27017` outside production | MongoDB server used by the service and `migrate-mongo`                                  |
-| `JOURNAL_AI_MONGODB_DATABASE`              | Production | `mentalbridge_journal_ai` outside production   | MongoDB database owned by this service                                                  |
-| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS` | No         | `2000`                                         | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds            |
-| `JOURNAL_AI_ENCRYPTION_KEY`                | Production | Local-only deterministic development key       | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key             |
-| `JOURNAL_AI_ENCRYPTION_KEY_ID`             | No         | `local-v1`                                     | Identifier of the single active key; ciphertext under another identifier fails closed   |
-| `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`          | Production | Local-only deterministic development key       | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints |
-| `IDENTITY_JWT_ISSUER`                      | Yes        | None                                           | Exact Identity issuer accepted by this resource service                                 |
-| `IDENTITY_JWT_AUDIENCE`                    | Yes        | None                                           | Exact MentalBridge API audience accepted by this resource service                       |
-| `IDENTITY_JWT_KEY_ID`                      | Yes        | None                                           | Exact active Identity signing-key identifier accepted by this resource service          |
-| `IDENTITY_JWT_PUBLIC_KEY`                  | Yes        | None                                           | X.509 RSA public key matching the Identity signing key; the private key is never shared |
+| Variable                                         | Required                 | Default                                        | Purpose                                                                                                   |
+| ------------------------------------------------ | ------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `JOURNAL_AI_PORT`                                | No                       | `3000`                                         | HTTP port, from 1 through 65535                                                                           |
+| `NODE_ENV`                                       | No                       | `development`                                  | Runtime environment: `development`, `test`, or `production`                                               |
+| `JOURNAL_AI_LOG_LEVEL`                           | No                       | `info`                                         | Pino log level                                                                                            |
+| `JOURNAL_AI_MONGODB_URI`                         | Production               | `mongodb://localhost:27017` outside production | MongoDB server used by the service and `migrate-mongo`                                                    |
+| `JOURNAL_AI_MONGODB_DATABASE`                    | Production               | `mentalbridge_journal_ai` outside production   | MongoDB database owned by this service                                                                    |
+| `JOURNAL_AI_MONGODB_CONNECTION_TIMEOUT_MS`       | No                       | `2000`                                         | MongoDB connect/server-selection timeout from 100 through 30000 milliseconds                              |
+| `JOURNAL_AI_ENCRYPTION_KEY`                      | Production               | Local-only deterministic development key       | Canonical base64 encoding of the 32-byte AES-256-GCM journal encryption key                               |
+| `JOURNAL_AI_IDEMPOTENCY_HMAC_KEY`                | Production               | Local-only deterministic development key       | Canonical base64 encoding of a separate 32-byte key for command hashes and fingerprints                   |
+| `IDENTITY_JWT_ISSUER`                            | Yes                      | None                                           | Exact Identity issuer accepted by this resource service                                                   |
+| `IDENTITY_JWT_AUDIENCE`                          | Yes                      | None                                           | Exact MentalBridge API audience accepted by this resource service                                         |
+| `IDENTITY_JWT_KEY_ID`                            | Yes                      | None                                           | Exact active Identity signing-key identifier accepted by this resource service                            |
+| `IDENTITY_JWT_PUBLIC_KEY`                        | Yes                      | None                                           | X.509 RSA public key matching the Identity signing key; the private key is never shared                   |
+| `JOURNAL_AI_CARE_BASE_URL`                       | Production               | `http://localhost:8081` outside production     | Care base URL for current AI-processing consent checks                                                    |
+| `JOURNAL_AI_CARE_TIMEOUT_MS`                     | No                       | `2000`                                         | Bounded Care consent REST timeout from 100 through 5000 milliseconds                                      |
+| `JOURNAL_AI_CONTENT_BASE_URL`                    | Production               | `http://localhost:3003` outside production     | Content base URL for validating and assembling selected resource context                                  |
+| `JOURNAL_AI_CONTENT_TIMEOUT_MS`                  | No                       | `2000`                                         | Bounded Content resource/progress REST timeout from 100 through 5000 milliseconds                         |
+| `JOURNAL_AI_CONSULTATION_BASE_URL`               | Production               | `http://localhost:8082` outside production     | Consultation base URL for authoritative current entitlement lookup                                        |
+| `JOURNAL_AI_CONSULTATION_TIMEOUT_MS`             | No                       | `2000`                                         | Bounded Consultation entitlement REST timeout                                                             |
+| `JOURNAL_AI_REMINDER_SERVICE_TOKEN`              | Reminder scheduler       | None                                           | Dedicated 32+ character credential for Content's minimized activity projection                            |
+| `JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN`     | SupportPlan Companion    | None                                           | Dedicated 32+ character credential proving the caller is Care; the forwarded user bearer remains required |
+| `JOURNAL_AI_PROVIDER_MODE`                       | No                       | `DETERMINISTIC_FAKE`                           | Selects fake runtime or explicitly approved real routes; tests require fake                               |
+| `JOURNAL_AI_ROUTING_POLICY_VERSION`              | No                       | `exact-revision-routing-v1`                    | Version attached to every workload/package route                                                          |
+| `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`           | Approved real only       | None                                           | Accepted benchmark approval identifier required before real routing                                       |
+| `JOURNAL_AI_FREE_PLUS_PROVIDER/MODEL`            | Approved real only       | None                                           | Pinned baseline route; provider is `GEMINI`, `OPENAI`, or `BEDROCK`                                       |
+| `JOURNAL_AI_PREMIUM_PROVIDER/MODEL`              | Approved real only       | None                                           | Pinned Premium route; it may be stronger but is never selected from client input                          |
+| `JOURNAL_AI_GEMINI_API_KEY`                      | Selected route/benchmark | None                                           | Gemini credential; never committed or logged                                                              |
+| `JOURNAL_AI_OPENAI_API_KEY`                      | Selected route/benchmark | None                                           | OpenAI credential; never committed or logged                                                              |
+| `JOURNAL_AI_BEDROCK_REGION`                      | Bedrock route/benchmark  | `ap-southeast-1`                               | Region used to build the Bedrock Runtime Converse endpoint                                                |
+| `AWS_BEARER_TOKEN_BEDROCK`                       | Bedrock route/benchmark  | None                                           | Bedrock long-term API key used as a bearer token; never committed or logged                               |
+| `JOURNAL_AI_PROVIDER_TIMEOUT_MS`                 | No                       | `30000`                                        | Per-provider HTTP timeout                                                                                 |
+| `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`    | No                       | `300000`                                       | Bedrock-only timeout for the explicit cold structured-output compile command                              |
+| `JOURNAL_AI_BENCHMARK_ENABLED`                   | No                       | `false`                                        | Explicit paid-run gate; rejected in test/CI                                                               |
+| `JOURNAL_AI_BENCHMARK_DATASET_PATH`              | No                       | synthetic v1 dataset path                      | Version-controlled exact-revision benchmark input                                                         |
+| `JOURNAL_AI_BENCHMARK_*_MODEL`                   | Benchmark only           | None                                           | At least one complete pinned Gemini, OpenAI, or Bedrock candidate; no latest alias                        |
+| `JOURNAL_AI_*_COST_MICRO_USD_PER_MILLION_TOKENS` | Real route/benchmark     | None                                           | Explicit pricing snapshot used only for cost estimation                                                   |
+| `JOURNAL_AI_ANALYSIS_POLL_INTERVAL_MS`           | No                       | `2000`                                         | Interval for due/expired-lease job claims                                                                 |
+| `JOURNAL_AI_ANALYSIS_LEASE_MS`                   | No                       | `35000`                                        | Claim lease, always longer than the fixed 30-second provider-attempt timeout                              |
+| `JOURNAL_AI_CHAT_RETENTION_DAYS`                 | No                       | `90`                                           | Conversation expiry and encrypted-message retention                                                       |
+| `JOURNAL_AI_CHAT_FREE_DAILY_ANSWERS`             | No                       | `5`                                            | Successfully delivered answers per local day for `FREE`                                                   |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS`             | No                       | `30`                                           | Configurable successfully delivered answers per local day for `PLUS`                                      |
+| `JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS` | No                       | `200`                                          | Hidden backend fair-use ceiling for `PREMIUM`; never displayed as a daily quota                           |
+| `JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE`          | No                       | `10`                                           | Per-owner bounded request-rate control                                                                    |
+| `JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET`        | No                       | `100000`                                       | Per-owner daily provider token guard for `FREE` (`companion-quota-v2`)                                    |
+| `JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET`        | No                       | `250000`                                       | Per-owner daily provider token guard for `PLUS`                                                           |
+| `JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET`     | No                       | `600000`                                       | Per-owner daily provider token guard for `PREMIUM`; checked before the provider call                      |
+| `JOURNAL_AI_CHAT_DEFAULT_TIMEZONE`               | No                       | `Asia/Ho_Chi_Minh`                             | Server-authoritative IANA timezone used for stable quota reset                                            |
+| `JOURNAL_AI_CHAT_ROUTING_POLICY_VERSION`         | No                       | `companion-chat-routing-v1`                    | Version persisted with every assistant response                                                           |
+
+Exact-revision and longitudinal journal analysis always run (MB-846d, owner
+decision 2026-11-23: no feature flags; rollback = revert). Provider mode,
+credentials and spend settings still decide which provider answers.
 
 Local `.env` files are loaded only outside production and never override real
 environment variables. Copy `.env.example` to `.env` for local development,
-then replace placeholder JWT values with local credentials. Generate
-independent random encryption and HMAC keys for every deployed environment
-(for example, with `crypto.randomBytes(32).toString("base64")`). Do not commit
-local `.env` files or secrets.
+then replace placeholder JWT values with local credentials. Generate one
+stable encryption key and one different HMAC key (for example, with
+`crypto.randomBytes(32).toString("base64")`) and keep them unchanged while
+encrypted demo data exists. Do not commit local `.env` files or secrets.
 
 ## Operations endpoints
 
-| Method   | Path                           | Purpose                                                               |
-| -------- | ------------------------------ | --------------------------------------------------------------------- |
-| `GET`    | `/health/live`                 | Process liveness probe                                                |
-| `GET`    | `/health/ready`                | Readiness probe that returns success only when owned MongoDB responds |
-| `GET`    | `/metrics`                     | Prometheus metrics scrape endpoint                                    |
-| `POST`   | `/api/v1/journals`             | Create an encrypted journal entry with an idempotency key             |
-| `GET`    | `/api/v1/journals`             | List the authenticated owner's entries by opaque cursor               |
-| `GET`    | `/api/v1/journals/{journalId}` | Read one owner-scoped entry                                           |
-| `PATCH`  | `/api/v1/journals/{journalId}` | Append a revision guarded by `If-Match`                               |
-| `DELETE` | `/api/v1/journals/{journalId}` | Create an idempotent owner-scoped tombstone                           |
+| Method   | Path                                                              | Purpose                                                                                                                     |
+| -------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/health/live`                                                    | Process liveness probe                                                                                                      |
+| `GET`    | `/health/ready`                                                   | Readiness probe that returns success only when owned MongoDB responds                                                       |
+| `GET`    | `/metrics`                                                        | Prometheus metrics scrape endpoint                                                                                          |
+| `POST`   | `/api/v1/journals`                                                | Create an encrypted journal entry with an idempotency key                                                                   |
+| `GET`    | `/api/v1/journals`                                                | List the authenticated owner's entries by opaque cursor                                                                     |
+| `GET`    | `/api/v1/journals/{journalId}`                                    | Read one owner-scoped entry                                                                                                 |
+| `GET`    | `/api/v1/journals/{journalId}/completion-evidence`                | Resolve a content-free immutable creation fact for exact owned Journal reconciliation                                       |
+| `PATCH`  | `/api/v1/journals/{journalId}`                                    | Append a revision guarded by `If-Match`                                                                                     |
+| `DELETE` | `/api/v1/journals/{journalId}`                                    | Create an idempotent owner-scoped tombstone                                                                                 |
+| `POST`   | `/api/v1/journals/{journalId}/revisions/{revision}/analysis-jobs` | Request one consented exact-revision analysis job                                                                           |
+| `GET`    | `/api/v1/analysis-jobs/{jobId}`                                   | Read the owner-scoped job state and normalized result                                                                       |
+| `POST`   | `/api/v1/longitudinal-analysis-jobs`                              | Compare exact owned revisions across two bounded periods                                                                    |
+| `GET`    | `/api/v1/longitudinal-analysis-jobs/{jobId}`                      | Read the owner-scoped longitudinal job and safe evidence                                                                    |
+| `GET`    | `/internal/v1/users/{userId}/longitudinal-analyses/{analysisId}`  | Return minimized consented evidence for Care reassessment                                                                   |
+| `POST`   | `/api/v1/emotion-check-ins`                                       | Create the current local-day self-reported emotion check-in                                                                 |
+| `GET`    | `/api/v1/emotion-check-ins`                                       | List owner-scoped self-reported emotion history                                                                             |
+| `GET`    | `/api/v1/emotion-check-ins/{localDate}`                           | Reload one owned local-day check-in                                                                                         |
+| `GET`    | `/api/v1/emotion-check-ins/{localDate}/completion-evidence`       | Resolve the owner's content-free check-in existence fact for Care reconciliation                                            |
+| `PATCH`  | `/api/v1/emotion-check-ins/{localDate}`                           | Optimistically update the current local-day check-in                                                                        |
+| `DELETE` | `/api/v1/emotion-check-ins/{localDate}`                           | Erase encrypted revisions and retain a bounded tombstone                                                                    |
+| `GET`    | `/api/v1/emotion-check-in-context`                                | Return note-free AI context after current Care consent                                                                      |
+| `GET`    | `/api/v1/notification-activity`                                   | Return independent note-free Journal/emotion activity for the authenticated owner                                           |
+| `POST`   | `/internal/v1/notification-activity`                              | Return minimized owner-bound activity and bounded streak milestone facts to Content using the scoped reminder service token |
+| `POST`   | `/api/v1/ai-companion/conversations`                              | Start an encrypted owner-scoped conversation                                                                                |
+| `GET`    | `/api/v1/ai-companion/conversations`                              | List bounded retained conversation summaries without message bodies                                                         |
+| `GET`    | `/api/v1/ai-companion/conversations/{conversationId}`             | Resume one owned conversation                                                                                               |
+| `PUT`    | `/api/v1/ai-companion/conversations/{conversationId}/context`     | Replace the owned conversation's persisted context-source selection                                                         |
+| `POST`   | `/api/v1/ai-companion/conversations/{conversationId}/messages`    | Deliver one quota-governed normalized assistant response                                                                    |
+| `POST`   | `/internal/v1/support-guide-phrasing`                             | Rephrase exact Care-approved guide copy after current AI consent                                                            |
+| `POST`   | `/internal/v1/support-plan-companion/messages`                    | Phrase one Care-authenticated policy-selected SupportPlan intent from exact minimized context, with deterministic fallback  |
+| `DELETE` | `/api/v1/ai-companion/conversations/{conversationId}`             | Hard-delete the conversation and replay snapshots                                                                           |
 
-Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization and cookie headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request.
+Incoming requests echo a valid bounded `x-correlation-id` or receive a generated one. Request logs include the same correlation ID and redact authorization, cookie, and service-token headers. Non-public application routes require an Identity-issued RS256 bearer token; signature, issuer, audience, lifetime, subject, token ID, and roles are validated before a principal is attached to the request. The internal notification activity projection instead requires the dedicated `JOURNAL_AI_REMINDER_SERVICE_TOKEN` and exposes only note-free factual activity. SupportPlan Companion requires both the forwarded end-user bearer and `JOURNAL_AI_SUPPORT_PLAN_CARE_SERVICE_TOKEN`; a USER bearer alone fails before context validation, consent lookup, or provider access.
+
+SupportPlan Companion v1 has no separate persisted owner quota ledger. Care owns explicit-request admission and pending-click deduplication, while Journal/AI uses only its configured approved provider route and bounded timeout. Provider rate or quota rejection returns deterministic template copy and never retries through another provider. The dedicated Care caller boundary prevents public USER-only requests from consuming that provider route.
 
 ## Contracts and migrations
 
@@ -90,10 +835,162 @@ Incoming requests echo a valid bounded `x-correlation-id` or receive a generated
 - MongoDB migration baseline: `migrations/001_journal_entries_baseline.cjs`
 - Journal mutation-command validator and unique index: `migrations/002_journal_mutation_commands.cjs`
 - Immutable replay metadata and cursor-index alignment: `migrations/003_journal_replay_snapshots_and_cursor_index.cjs`
+- Encrypted per-revision mood validation: `migrations/004_journal_revision_mood.cjs`
+- Exact-revision analysis job/result validators and indexes: `migrations/005_exact_revision_analysis.cjs`
+- Daily emotion check-in validator, owner/day, replay, history, and TTL indexes: `migrations/006_daily_emotion_check_ins.cjs`
+- Entitlement-aware route/provenance validator expansion: `migrations/007_entitlement_aware_model_routing.cjs`
+- Synthetic benchmark metadata/run/case-result collections: `migrations/008_ai_benchmark_metadata.cjs`
+- Longitudinal analysis job/result validators and indexes: `migrations/009_longitudinal_context_analysis.cjs`
+- AI Companion conversation, command, quota, rate, and TTL indexes: `migrations/010_ai_companion_chat_quotas.cjs`
+- Bedrock provider provenance and three-candidate benchmark validation: `migrations/011_bedrock_provider.cjs`
+- Persisted AI Companion source selection and RESOURCE provenance: `migrations/012_ai_companion_conversation_context.cjs`
+- Optional encrypted assistant suggestion: `migrations/017_companion_message_suggestion.cjs`
+- Optional encrypted conversation title, validator only: `migrations/018_companion_conversation_title.cjs`
+
+AI Companion chat follows ADR 0021. List responses contain metadata-only
+summaries; full bounded message history is returned only by the owner-scoped
+detail endpoint. Real-provider replies use strict structured output and a
+fail-closed authority validator before persistence. It counts only successfully
+persisted assistant responses, derives the reset from a server-configured IANA timezone,
+and keeps Premium UI copy free of an infrastructure-unlimited claim. Context
+selection is stored on the owner-scoped conversation; message payload context
+from older clients is accepted only for compatibility and is ignored. The
+server assembles only the enabled plan, recent journal, screening, and validated
+resource sources, while persisting provenance labels rather than assembled
+plaintext. MongoDB
+must provide replica-set transaction semantics. Local/test/CI use the
+deterministic fake; a real route additionally requires the existing approved
+provider/model configuration and the corresponding external credential.
+
+Longitudinal requests use equal, half-open, non-overlapping periods of 7-31
+days. The current period cannot end in the future. The service selects no more
+than 50 active current revisions per period after optional exclusions. At least
+three entries per period and no greater than a 2:1 count imbalance are required
+for directional comparison; otherwise the response exposes
+`INSUFFICIENT_DATA`. Source text is decrypted only for the provider attempt and
+is never stored in jobs, results, logs, or the Care projection. Deleting any
+source journal removes every dependent longitudinal job and result.
+
+The Care projection requires purpose `REASSESSMENT_SUMMARY`, a matching
+forwarded end-user bearer, and effective L2 `AI_CONTEXT_PROCESSING` consent. MB-386 implements
+Care Story 6501 as the composition consumer and calls this endpoint with its standard
+2-second internal REST deadline and fail safely when Journal/AI or consent is
+unavailable.
+
+ADR 0018 freezes the daily check-in as self-reported reflection rather than a
+clinical score or safety classifier. The five emotion labels reuse Journal's
+reviewed mood vocabulary; intensity means strength only. The IANA timezone is
+frozen at creation, updates use `If-Match-Revision`, optional notes remain inside
+the encrypted envelope, and deletion immediately removes all encrypted
+revisions. Only a note-free AI projection is exposed under current Care
+L2 `AI_CONTEXT_PROCESSING` consent. Reminder composition remains unavailable because it has
+no approved consent authorization contract.
+
+ADR 0025 extends that aggregate with a recomputed, note-free progress read
+model. The caller's valid IANA timezone anchors the server-derived current
+local date. One active local date counts once, same-day revisions do not
+increment coverage, and deleted or missing dates break continuity. The response
+contains factual current/longest streaks and 7/14/30-day label counts only; it
+does not average intensity or claim adherence, improvement, or recovery.
+
+The committed benchmark dataset is synthetic and CC0-labelled. A run evaluates
+one or more explicitly configured Gemini/OpenAI/Bedrock candidates; credentials for an
+unconfigured provider are not required. Running the harness does not approve a
+candidate. An accepted result must be reviewed and recorded separately as
+`JOURNAL_AI_PROVIDER_APPROVAL_VERSION` before `APPROVED_REAL` runtime mode can
+start. The router never falls back to a second provider after a failure.
+The benchmark retries a transient 429, provider 5xx, or transport failure at
+most once on the same route and emits only safe failure metadata such as HTTP
+status, provider code, retry delay, quota identifier, finish reason, and schema
+issue paths. It never emits the API key, request headers, raw provider response,
+or hidden reasoning. Daily-quota fail-fast is deferred to MB-432 follow-up
+verification.
+
+### Bedrock enablement
+
+Bedrock uses the Runtime `Converse` HTTPS endpoint with
+`Authorization: Bearer <AWS_BEARER_TOKEN_BEDROCK>`. IAM/SigV4 support is
+intentionally deferred. Structured-output schemas are adapted for Bedrock on a
+deep copy; the canonical Zod-derived schema and normalized result validation
+remain unchanged. Provider failures use the existing bounded retry policy and
+never fall back to Gemini or OpenAI.
+
+After the AWS account has Bedrock model access and sufficient quota:
+
+1. Set `AWS_BEARER_TOKEN_BEDROCK`, `JOURNAL_AI_BEDROCK_REGION`, and a pinned
+   Bedrock model ID. Do not commit the token.
+2. Configure the matching Bedrock input/output cost snapshot. For benchmark
+   evidence, set the three `JOURNAL_AI_BENCHMARK_BEDROCK_*` variables and
+   explicitly enable `JOURNAL_AI_BENCHMARK_ENABLED` only for the paid run.
+3. Run `npm run bedrock:warm-structured-outputs` immediately before the
+   controlled traffic window. It sends one paid Converse request for each of
+   the exact-revision, longitudinal, Support Guide phrasing, SupportPlan Companion, and Companion Chat
+   schemas to every distinct configured Bedrock route model. The command uses
+   only `JOURNAL_AI_BEDROCK_SCHEMA_WARMUP_TIMEOUT_MS`; ordinary runtime calls
+   retain the bounded provider timeout. Repeat after a model/schema change and
+   before another traffic window when AWS's 24-hour schema cache may be cold.
+4. Run `npm run benchmark:exact-revision` and review the recorded quality,
+   safety, latency, token, cost, and failure evidence.
+5. Record the accepted evidence as `JOURNAL_AI_PROVIDER_APPROVAL_VERSION`, set
+   the applicable route provider to `BEDROCK`, and only then switch
+   `JOURNAL_AI_PROVIDER_MODE` to `APPROVED_REAL`.
+
+No paid live Bedrock call is part of automated tests or this implementation
+evidence. Until account/model quota is available and the approval steps above
+are completed, production routing must remain unchanged.
+
+Story 6201 keeps journal content plain text and adds the stable `GREAT`, `GOOD`,
+`OKAY`, `LOW`, and `VERY_LOW` mood labels. The API accepts an omitted mood for
+older clients and legacy entries return `null`; the current editor requires an
+explicit selection. Mood values are encrypted in the owning revision and are
+never indexed or logged. Omitting mood during a revision preserves the current
+value. Draft protection is client-owned, explicit-save only, and does not put
+raw journal text in browser persistence.
+
+MB-658 extends the daily emotion owner value with at most three unique optional
+factor codes from `sleep`, `work`, `study`, `family`, `friends`, `health`, and
+`other`. The existing optional note and these factors share the encrypted
+revision payload. Omitting factors remains valid and legacy payloads normalize
+to an empty list. The Mongo validator continues to see only the encrypted
+envelope, so no collection rewrite is needed. Factors and raw notes are absent
+from AI context, notification activity, SupportPlan, reassessment, analytics,
+events, metrics, and logs; delete erases them with the encrypted revisions.
 
 Run `npm run contract:check` and `npm run migration:check` for static validation. `npm run test:integration` builds the service and runs the HTTP CRUD/concurrency suite against the explicitly configured disposable MongoDB database; it covers cursor tie-breakers/index use, exact mutation replay after more than 32 later commands, conflicting key reuse, owner isolation, tombstones, revision concurrency, and bounded dependency failure. The test refuses a non-disposable database name and drops its database in cleanup.
 
-The current runtime decrypts only the configured active key identifier. Deploying a new key therefore requires a separately reviewed keyring or re-encryption migration; changing `JOURNAL_AI_ENCRYPTION_KEY_ID` alone would make existing entries unreadable and is not a supported rotation procedure.
+## Voice measurement configuration snapshot
+
+MB-862 adds opt-in `measurement` to the existing pilot JSON. The approved source
+design reserves a full fixed allocation per admission, atomically with ordinary
+quota/session/capacity writes. With two sessions and 12 turns/480 seconds/4,000
+TTS characters, each allocation is at most 6 turns/240 seconds/2,000 characters.
+Existing smaller pilot/product/window bounds still apply. Campaign spend is
+never refunded; only confirmed settlement releases concurrency. No normal Text
+or Voice allowance is changed. Migration 020 adds the content-free campaign
+collection; it creates no campaign or approval window.
+
+The [MB-862 runbook](../docs/story-mb-862-voice-measurement-fence.md) defines
+approved provisioning, replica/Agent binding, owner-derived preflight evidence,
+restart/unknown-outcome behavior and the remaining external gates. Its separate
+operator command reads the owner database; it does not accept manually asserted
+counters. The original MB-861 offline coordinator remains conservatively BLOCKED.
+
+Run `node dist/companion-voice/voice-measurement-preflight.js` after building
+the reviewed revision, inside the existing production service environment.
+The command requires `NODE_ENV=production` and loads the actual configuration
+without dotenv, service bootstrap, database access or provider requests. Exit 0
+means snapshot export only; invalid configuration exits 1 with a fixed safe code.
+
+The version-1 snapshot reports the same effective input/output limits used by
+the Bedrock request path. Non-pilot Voice still has the existing 2,000-token
+output ceiling; Friend-only enables the existing input guard without reducing
+that output ceiling. Pilot defaults/overrides and Text behavior are unchanged.
+Owner count is exported, never owner IDs, credentials or endpoint URLs.
+
+Use the [MB-861 runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+to combine fresh snapshots with approval metadata. The combined command remains
+BLOCKED until aggregate enforcement and external authority gates are implemented
+and verified separately; it cannot grant live approval.
 
 ## Graceful shutdown
 

@@ -1,0 +1,601 @@
+package com.mentalbridge.consultation.contract;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
+
+import org.junit.jupiter.api.Test;
+
+import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.core.models.ParseOptions;
+import io.swagger.v3.oas.models.media.Schema;
+
+class ConsultationOpenApiContractTests {
+
+	private static final Set<String> OPERATIONS = Set.of(
+			"POST /internal/v1/ai-companion/voice-entitlement-authorizations",
+			"GET /api/v1/specialist-profile/documents",
+			"POST /api/v1/specialist-profile/documents",
+			"GET /api/v1/specialist-profile/documents/{documentId}/file",
+			"PUT /api/v1/specialist-profile/documents/{documentId}/badge",
+			"GET /api/v1/admin/specialist-profiles/documents/pending",
+			"GET /api/v1/admin/specialist-profiles/documents/specialists/{specialistId}",
+			"GET /api/v1/admin/specialist-profiles/documents/{documentId}/file",
+			"POST /api/v1/admin/specialist-profiles/documents/{documentId}/{decision}",
+			"GET /api/v1/specialists/{specialistId}/credential-badges",
+			"POST /api/v1/specialist/appointments/{appointmentId}/video-completion",
+			"POST /internal/v1/video/livekit/webhook",
+			"GET /api/v1/appointments/{appointmentId}/video-session",
+			"POST /api/v1/appointments/{appointmentId}/video-access",
+			"GET /api/v1/specialist-profile/amendments/current",
+			"POST /api/v1/specialist-profile/amendments",
+			"PUT /api/v1/specialist-profile/amendments/{amendmentId}",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/submit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/resubmit",
+			"POST /api/v1/specialist-profile/amendments/{amendmentId}/cancel",
+			"GET /api/v1/admin/specialist-profiles/amendments",
+			"GET /api/v1/admin/specialist-profiles/amendments/{amendmentId}",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/approve",
+			"POST /api/v1/admin/specialist-profiles/amendments/{amendmentId}/reject",
+			"GET /api/v1/service-credits",
+			"GET /api/v1/service-plans",
+			"POST /api/v1/subscriptions/checkout",
+			"GET /api/v1/subscriptions/current",
+			"POST /api/v1/subscriptions/{subscriptionId}/cancellation",
+			"GET /api/v1/payments",
+			"GET /api/v1/payments/{paymentId}",
+			"POST /internal/v1/payments/momo/ipn",
+			"POST /internal/v1/payments/payos/webhook",
+			"GET /internal/v1/entitlements/current",
+			"GET /internal/v1/appointments/{appointmentId}/consultation-brief-context",
+			"GET /internal/v1/appointments/{appointmentId}/reusable-session-summaries/{summaryId}",
+			"GET /internal/v1/specialist/client-relationships",
+			"GET /internal/v1/resource-proposals/{proposalId}",
+			"GET /internal/v1/appointments/{conversationId}/chat-eligibility",
+			"POST /internal/v1/appointments/{appointmentId}/chat-evidence",
+			"GET /internal/v1/appointments/{appointmentId}/notification-eligibility",
+			"GET /api/v1/specialist-profile",
+			"PUT /api/v1/specialist-profile",
+			"POST /api/v1/specialist-profile/submit",
+			"POST /api/v1/specialist-profile/resubmit",
+			"GET /api/v1/availability-slots",
+			"POST /api/v1/availability-slots",
+			"DELETE /api/v1/availability-slots/{slotId}",
+			"GET /api/v1/bookable-slots",
+			"GET /api/v1/specialists",
+			"GET /api/v1/specialists/{specialistAccountId}",
+			"GET /api/v1/appointments",
+			"GET /api/v1/admin/appointments",
+			"POST /api/v1/appointments",
+			"POST /api/v1/appointments/{appointmentId}/cancel",
+			"GET /api/v1/appointments/{appointmentId}/dispute",
+			"POST /api/v1/appointments/{appointmentId}/dispute",
+			"GET /api/v1/appointments/{appointmentId}/rating",
+			"PUT /api/v1/appointments/{appointmentId}/rating",
+			"GET /api/v1/appointments/{appointmentId}/session-summaries",
+			"PUT /api/v1/session-summaries/{summaryId}/reuse-consent",
+			"PUT /api/v1/agreed-next-steps/{nextStepId}",
+			"GET /api/v1/specialist/analytics",
+			"GET /api/v1/specialist/dashboard",
+			"GET /api/v1/specialist/earnings",
+			"PUT /api/v1/specialist/payout-destination",
+			"POST /api/v1/specialist/payouts",
+			"GET /api/v1/specialist/payout-banks",
+			"GET /api/v1/admin/payout-destinations",
+			"GET /api/v1/admin/payout-destinations/{destinationId}",
+			"POST /api/v1/admin/payout-destinations/{destinationId}/confirm",
+			"POST /api/v1/admin/payouts/{payoutId}/retry",
+			"POST /api/v1/admin/payouts/{payoutId}/close-failed",
+			"GET /api/v1/specialist/appointments",
+			"GET /api/v1/specialist/appointments/{appointmentId}/dispute",
+			"POST /api/v1/specialist/appointments/{appointmentId}/dispute",
+			"GET /api/v1/specialist/appointments/{appointmentId}/session-summaries",
+			"GET /api/v1/specialist/appointments/{appointmentId}/reusable-session-summaries",
+			"POST /api/v1/specialist/appointments/{appointmentId}/session-summaries",
+			"POST /api/v1/specialist/appointments/{appointmentId}/accept",
+			"POST /api/v1/specialist/appointments/{appointmentId}/reject",
+			"GET /api/v1/admin/operations/summary",
+			"GET /api/v1/admin/specialist-profiles",
+			"GET /api/v1/admin/appointment-disputes",
+			"POST /api/v1/admin/appointment-disputes/{disputeId}/resolve",
+			"GET /api/v1/admin/specialist-profiles/{specialistAccountId}",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/approve",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/reject",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/suspend",
+			"POST /api/v1/admin/specialist-profiles/{specialistAccountId}/restore",
+			"GET /api/v1/admin/payouts",
+			"GET /api/v1/admin/payouts/{payoutId}",
+			"GET /api/v1/admin/subscriptions/{subscriptionId}",
+			"GET /api/v1/admin/commercial/discrepancies",
+			"GET /api/v1/admin/commercial/provenance",
+			"GET /api/v1/admin/payments",
+			"GET /api/v1/admin/product-journey-metrics",
+			"POST /internal/v1/payouts/momo/ipn");
+
+	@Test
+	void voiceOwnerReadRetainsFrozenRequestDecisionAndClosedProblemSemantics() throws Exception {
+		var active = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var frozen = new com.fasterxml.jackson.databind.ObjectMapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "proposals", "companion-voice-v1.openapi.json")));
+		var schemas = active.path("components").path("schemas");
+		assertThat(schemas.path("VoiceOwnerCheck")).isEqualTo(frozen.path("components").path("schemas").path("OwnerCheck"));
+		assertThat(schemas.path("VoiceEntitlementDecision"))
+				.isEqualTo(frozen.path("components").path("schemas").path("EntitlementDecision"));
+		var problem = schemas.path("VoiceProblem");
+		assertThat(problem.path("additionalProperties").booleanValue()).isFalse();
+		assertThat(problem.path("required")).isEqualTo(frozen.path("components").path("schemas").path("Problem").path("required"));
+		var operation = active.path("paths").path("/internal/v1/ai-companion/voice-entitlement-authorizations").path("post");
+		var responseCodes = new HashSet<String>();
+		operation.path("responses").fieldNames().forEachRemaining(responseCodes::add);
+		assertThat(responseCodes).containsExactlyInAnyOrder("200", "401", "403", "422", "503");
+		assertThat(operation.path("responses").path("200").path("headers").path("Cache-Control")
+				.path("schema").path("const").asText()).isEqualTo("no-store");
+		assertThat(active.path("components").path("securitySchemes").path("journalVoiceEntitlementToken")
+				.path("name").asText()).isEqualTo("X-MentalBridge-Voice-Entitlement-Token");
+	}
+
+	@Test
+	void earningsContractCarriesConfiguredDemoValuesAndAnExactOptionalShortHold() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var earnings = schemas.path("SpecialistEarnings");
+		var properties = earnings.path("properties");
+		assertThat(properties.path("settlementHoldDays").has("const")).isFalse();
+		assertThat(properties.path("settlementHoldDays").path("minimum").asInt()).isZero();
+		assertThat(properties.path("minimumWithdrawalVnd").has("const")).isFalse();
+		assertThat(properties.path("minimumWithdrawalVnd").path("minimum").asInt()).isOne();
+		assertThat(properties.path("settlementHoldSeconds").path("type").asText()).isEqualTo("integer");
+		assertThat(earnings.path("required").toString()).doesNotContain("settlementHoldSeconds");
+		assertThat(properties.path("earningPolicyVersion").path("enum").toString())
+				.contains("specialist-earning-v1", "staging-demo-paid-v1");
+		var demo = earnings.path("examples").get(0);
+		assertThat(demo.path("minimumWithdrawalVnd").asInt()).isEqualTo(2_000);
+		assertThat(demo.path("settlementHoldSeconds").asInt()).isEqualTo(600);
+		for (var schema : Set.of("SpecialistPayout", "AdminPayout")) {
+			assertThat(schemas.path(schema).path("properties").path("amountVnd").path("minimum").asInt())
+					.as(schema).isOne();
+		}
+	}
+
+	@Test
+	void contractIsValidAndMatchesTheImplementedSurface() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toAbsolutePath();
+		var options = new ParseOptions();
+		options.setResolve(true);
+		options.setResolveFully(true);
+		var result = new OpenAPIV3Parser().readLocation(contract.toUri().toString(), null, options);
+
+		assertThat(result.getMessages()).isEmpty();
+		assertThat(result.getOpenAPI()).isNotNull();
+		var operations = new HashSet<String>();
+		result.getOpenAPI().getPaths().forEach((path, item) -> {
+			assertThat(item.getExtensions()).containsEntry("x-mentalbridge-status", "implemented");
+			item.readOperationsMap().forEach((method, operation) -> {
+				operations.add(method.name() + " " + path);
+				if (path.equals("/internal/v1/payouts/momo/ipn") || path.equals("/internal/v1/payments/momo/ipn")
+						|| path.equals("/internal/v1/payments/payos/webhook")) {
+					assertThat(operation.getSecurity()).isEmpty();
+				}
+				else if (path.equals("/internal/v1/ai-companion/voice-entitlement-authorizations")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("journalVoiceEntitlementToken"));
+				}
+				else if (path.contains("notification-eligibility")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("serviceToken"));
+				}
+				else if (path.equals("/internal/v1/video/livekit/webhook")) {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("liveKitWebhook"));
+				}
+				else {
+					assertThat(operation.getSecurity()).anySatisfy(requirement -> assertThat(requirement).containsKey("bearerAuth"));
+				}
+			});
+		});
+		assertThat(operations).isEqualTo(OPERATIONS);
+	}
+
+	@Test
+	void payosQrContractPreservesLedgerAndLegacyNullableFields() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var payment = schemas.path("PlanPayment");
+		var properties = payment.path("properties");
+		assertThat(properties.path("status").path("enum").toString())
+				.isEqualTo("[\"PENDING\",\"SUCCEEDED\",\"FAILED\",\"CHARGEBACK\"]");
+		assertThat(properties.path("provider").path("enum").toString()).isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+		assertThat(schemas.path("ServicePlanCatalogue").path("properties").path("paymentProvider").path("enum"))
+				.isEqualTo(properties.path("provider").path("enum"));
+		assertThat(schemas.path("AdminPayment").path("properties").path("provider").path("enum"))
+				.isEqualTo(properties.path("provider").path("enum"));
+		assertThat(properties.path("terminalReason").path("enum").toString())
+				.isEqualTo("[\"EXPIRED\",\"CANCELLED\",\"PROVIDER_FAILED\",null]");
+		for (var field : Set.of("qrCode", "bin", "accountNumber", "accountName", "description", "amount",
+				"expiredAt", "terminalReason", "checkoutUrl", "qrCodeUrl")) {
+			assertThat(properties.has(field)).as(field).isTrue();
+			assertThat(properties.path(field).path("type").toString()).as(field).contains("\"null\"");
+			assertThat(payment.path("required").toString()).as(field).doesNotContain("\"" + field + "\"");
+		}
+		assertThat(properties.path("amount").path("minimum").asInt()).isEqualTo(1);
+		assertThat(properties.path("expiredAt").path("format").asText()).isEqualTo("date-time");
+		assertThat(properties.path("checkoutUrl").path("pattern").asText()).isEqualTo("^https://");
+		var confirmed = payment.path("examples").get(0);
+		assertThat(confirmed.path("amount")).isEqualTo(confirmed.path("amountVnd"));
+		assertThat(confirmed.path("expiredAt")).isEqualTo(confirmed.path("expiresAt"));
+		assertThat(confirmed.path("qrCode").asText()).isNotBlank().doesNotStartWith("http");
+		assertThat(schemas.path("SpecialistPayout").path("properties").path("provider").path("enum").toString())
+				.isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+	}
+
+	@Test
+	void payosPayoutContractSeparatesMaskedHistoryFromExactAdminInspection() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		var destination = schemas.path("PayoutDestination");
+		assertThat(destination.path("additionalProperties").asBoolean()).isFalse();
+		var properties = destination.path("properties");
+		assertThat(properties.path("provider").path("enum").toString()).isEqualTo("[\"FAKE\",\"MOMO\",\"PAYOS\"]");
+		assertThat(properties.path("status").path("enum").toString())
+				.isEqualTo("[\"PENDING_CONFIRMATION\",\"VERIFIED\",\"DISABLED\"]");
+		assertThat(properties.path("verifiedAt").path("type").toString()).contains("\"null\"");
+		for (String field : Set.of("bankCode", "bankName", "version", "updatedAt", "usableForPayout")) {
+			assertThat(properties.has(field)).as(field).isTrue();
+			assertThat(destination.path("required").toString()).doesNotContain("\"" + field + "\"");
+		}
+		assertThat(properties.has("accountReference")).isFalse();
+		assertThat(properties.has("accountHolderName")).isFalse();
+		var inspection = schemas.path("AdminPayoutDestinationDetail").path("properties");
+		assertThat(inspection.has("accountReference")).isTrue();
+		assertThat(inspection.has("accountHolderName")).isTrue();
+		assertThat(inspection.path("confirmedBy").path("type").toString()).contains("\"null\"");
+		var detail = api.path("paths").path("/api/v1/admin/payout-destinations/{destinationId}").path("get");
+		assertThat(detail.path("responses").path("200").path("headers").path("Cache-Control")
+				.path("schema").path("const").asText()).isEqualTo("no-store");
+		assertThat(schemas.path("PayoutBank").path("properties").path("bin").path("pattern").asText())
+				.isEqualTo("^[0-9]{6}$");
+		assertThat(schemas.path("PayoutBankList").path("properties").path("items").path("maxItems").asInt())
+				.isEqualTo(1000);
+		assertThat(schemas.path("AdminPayoutDestinationList").path("properties").path("items").path("maxItems").asInt())
+				.isEqualTo(200);
+	}
+
+	@Test
+	void payosPayoutCommandsRequireExplicitKeysAndExposeUncertaintyWithoutAnotherTransfer() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var schemas = api.path("components").path("schemas");
+		assertThat(schemas.path("ConfirmPayoutDestination").path("required").toString())
+				.isEqualTo("[\"expectedVersion\",\"reasonCode\"]");
+		assertThat(schemas.path("RetryPayout").path("required").toString()).isEqualTo("[\"expectedAttemptId\"]");
+		assertThat(schemas.path("CloseFailedPayout").path("required").toString()).isEqualTo("[\"expectedAttemptId\",\"reasonCode\"]");
+		assertThat(schemas.path("CloseFailedPayout").path("properties").path("reasonCode").path("const").asText()).isEqualTo("DESTINATION_UNUSABLE");
+		for (String path : Set.of("/api/v1/specialist/payouts",
+				"/api/v1/admin/payout-destinations/{destinationId}/confirm", "/api/v1/admin/payouts/{payoutId}/retry")) {
+			var operation = api.path("paths").path(path).path("post");
+			var keys = new java.util.ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+			operation.path("parameters").forEach(parameter -> {
+				if (parameter.path("name").asText().equals("Idempotency-Key")) keys.add(parameter);
+			});
+			assertThat(keys).singleElement().satisfies(key -> {
+				assertThat(key.path("required").asBoolean()).isTrue();
+				assertThat(key.path("schema").path("minLength").asInt()).isEqualTo(16);
+				assertThat(key.path("schema").path("maxLength").asInt()).isEqualTo(128);
+			});
+			assertThat(operation.path("responses").has("409")).isTrue();
+			assertThat(operation.path("responses").has("503")).isTrue();
+		}
+		var payout = schemas.path("SpecialistPayout").path("properties");
+		assertThat(payout.path("reconciliationStatus").path("enum").toString())
+				.isEqualTo("[\"PENDING\",\"POLLING\",\"NEEDS_REVIEW\",\"COMPLETE\"]");
+		assertThat(payout.path("nextReconciliationAt").path("type").toString()).contains("\"null\"");
+		assertThat(payout.path("reviewRequiredAt").path("type").toString()).contains("\"null\"");
+		assertThat(payout.path("closedAt").path("type").toString()).contains("\"null\"");
+		var close = api.path("paths").path("/api/v1/admin/payouts/{payoutId}/close-failed").path("post");
+		assertThat(close.path("parameters").get(1).path("required").asBoolean()).isTrue();
+		assertThat(close.path("parameters").get(1).path("schema").path("minLength").asInt()).isEqualTo(16);
+		assertThat(close.path("parameters").get(1).path("schema").path("maxLength").asInt()).isEqualTo(128);
+		assertThat(close.path("responses").has("409")).isTrue();
+		assertThat(schemas.path("SpecialistEarningBalance").path("properties").has("retryPendingVnd")).isTrue();
+		var overdue = api.path("paths").path("/api/v1/specialist/payouts").path("post").path("responses")
+				.path("200").path("content").path("application/json").path("examples").path("overdue")
+				.path("value").path("payouts").get(0);
+		assertThat(overdue.path("status").asText()).isEqualTo("UNKNOWN");
+		assertThat(overdue.path("reconciliationStatus").asText()).isEqualTo("NEEDS_REVIEW");
+		assertThat(overdue.path("failureCode").asText()).isEqualTo("PAYOUT_RECONCILIATION_OVERDUE");
+		assertThat(overdue.path("nextReconciliationAt").isNull()).isTrue();
+		assertThat(api.path("paths").has("/internal/v1/payouts/payos/webhook")).isFalse();
+	}
+
+	@Test
+	void payosWebhookPreservesSignedFieldsAndPublicSafeAcknowledgement() throws Exception {
+		var api = io.swagger.v3.core.util.Yaml.mapper().readTree(java.nio.file.Files.readString(
+				Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml")));
+		var path = api.path("paths").path("/internal/v1/payments/payos/webhook");
+		assertThat(path.path("x-mentalbridge-status").asText()).isEqualTo("implemented");
+		var operation = path.path("post");
+		assertThat(operation.path("security").isArray()).isTrue();
+		assertThat(operation.path("security").isEmpty()).isTrue();
+		var codes = new HashSet<String>();
+		operation.path("responses").fieldNames().forEachRemaining(codes::add);
+		assertThat(codes).containsExactlyInAnyOrder("204", "400", "401", "503");
+		assertThat(operation.path("description").asText()).contains("VERIFIED_UNMATCHED", "unexpired", "unique reference");
+		var webhook = api.path("components").path("schemas").path("PayosPaymentWebhook");
+		assertThat(webhook.path("required").toString()).isEqualTo("[\"code\",\"desc\",\"success\",\"data\",\"signature\"]");
+		assertThat(webhook.path("additionalProperties").asBoolean()).isTrue();
+		var data = webhook.path("properties").path("data");
+		assertThat(data.path("additionalProperties").asBoolean()).isTrue();
+		assertThat(data.path("required").toString())
+				.isEqualTo("[\"orderCode\",\"amount\",\"description\",\"accountNumber\",\"reference\",\"transactionDateTime\",\"currency\",\"paymentLinkId\",\"code\",\"desc\"]");
+		assertThat(data.path("properties").path("orderCode").path("maximum").asLong()).isEqualTo(9007199254740991L);
+		assertThat(data.path("properties").has("transactionDateTime")).isTrue();
+		assertThat(data.path("properties").has("counterAccountNumber")).isTrue();
+	}
+
+	@Test
+	void creditContractPublishesOnlyServerAuthoritativeBalanceAndBoundedHistory() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var account = api.getComponents().getSchemas().get("ServiceCreditAccount");
+		var balance = api.getComponents().getSchemas().get("ServiceCreditBalance");
+		var capacity = api.getComponents().getSchemas().get("AppointmentReservationCapacity");
+		var policyVersion = api.getComponents().getSchemas().get("ConsultationCreditPolicyVersion");
+		var ledgerEvent = api.getComponents().getSchemas().get("ServiceCreditLedgerEvent");
+
+		assertThat(account.getProperties()).containsKeys("packageCode", "source", "periodStart", "periodEnd",
+				"policyVersion", "balance", "reservationCapacity", "history");
+		assertThat(balance.getProperties()).containsOnlyKeys("available", "held", "consumed", "forfeited", "total",
+				"releasedTransitions");
+		assertThat(((Schema<?>) balance.getProperties().get("total")).getMaximum()).isEqualByComparingTo("10");
+		assertThat(capacity.getProperties()).containsOnlyKeys("active", "maximum", "remaining");
+		assertThat(policyVersion.getEnum()).containsExactly("consultation-credit-v1", "consultation-credit-v2");
+		assertThat(ledgerEvent.getProperties()).containsKey("policyVersion");
+	}
+
+	@Test
+	void availabilityContractAllowsOnlyExactOnlineSlotsWithoutLocationOrLinks() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("PublishAvailabilitySlotRequest");
+		var modality = api.getComponents().getSchemas().get("AvailabilityModality");
+
+		assertThat(request.getProperties()).containsOnlyKeys("startAt", "endAt", "timezone", "modality");
+		assertThat(request.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+		assertThat(modality.getEnum()).containsExactly("IN_APP_CHAT", "IN_APP_VIDEO");
+	}
+
+	@Test
+	void appointmentRequestUsesOnlyAnExactOnlineSlotAndModality() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("RequestAppointment");
+		var appointment = api.getComponents().getSchemas().get("Appointment");
+		var listParameters = api.getPaths().get("/api/v1/appointments").getGet().getParameters();
+
+		assertThat(request.getProperties()).containsOnlyKeys("slotId", "modality", "replacesAppointmentId",
+				"originatingPlanActionId");
+		assertThat(listParameters).singleElement().satisfies(parameter -> {
+			assertThat(parameter.getName()).isEqualTo("originatingPlanActionId");
+			assertThat(parameter.getIn()).isEqualTo("query");
+			assertThat(parameter.getRequired()).isFalse();
+			assertThat(parameter.getSchema().getFormat()).isEqualTo("uuid");
+		});
+		assertThat(request.getRequired()).containsExactlyInAnyOrder("slotId", "modality");
+		assertThat(appointment.getProperties()).containsKeys("status", "decisionDeadlineAt", "heldCreditId",
+				"replacesAppointmentId", "replacedByAppointmentId", "originatingPlanActionId", "decidedAt",
+				"decisionReason", "cancelledAt",
+				"cancellationReason", "cancellationActor", "cancellationCreditOutcome", "sessionOutcome",
+				"sessionPolicyVersion", "sessionEndedAt", "sessionSettledAt", "completionFactId",
+				"creditState", "history", "version");
+		var statuses = ((Schema<?>) appointment.getProperties().get("status")).getEnum().stream()
+				.map(String::valueOf).toList();
+		assertThat(statuses).containsExactly("REQUESTED", "CONFIRMED", "IN_PROGRESS", "SESSION_ENDED",
+				"COMPLETED", "REJECTED", "EXPIRED", "CANCELLED");
+		assertThat(appointment.getRequired()).contains("replacesAppointmentId", "replacedByAppointmentId",
+				"originatingPlanActionId",
+				"cancelledAt", "cancellationReason", "cancellationActor", "cancellationCreditOutcome", "history");
+		assertThat(appointment.getProperties()).doesNotContainKeys("practiceLocationId", "phone", "meetingLink", "url");
+	}
+
+	@Test
+	void adminAppointmentContractIsReadOnlyBoundedAndContentFree() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var item = api.getComponents().getSchemas().get("AdminAppointmentItem");
+		var page = api.getComponents().getSchemas().get("AdminAppointmentPage");
+
+		assertThat(item.getProperties()).containsOnlyKeys("appointmentId", "availabilitySlotId", "userAccountId",
+				"specialistAccountId", "status", "modality", "scheduledStartAt", "scheduledEndAt", "timezone",
+				"requestedAt", "decisionDeadlineAt", "decidedAt", "decisionReasonCode", "cancelledAt",
+				"cancellationReasonCode", "cancellationCreditOutcome", "sessionEndedAt", "sessionSettledAt",
+				"sessionOutcome", "sessionOutcomeReasonCode", "settlementState", "updatedAt", "version");
+		assertThat(item.getProperties()).doesNotContainKeys("consultationBrief", "sessionSummary", "chatMessages",
+				"journal", "assessmentAnswers", "privateNotes", "aiPayload", "heldCreditId");
+		assertThat(page.getProperties()).containsKeys("source", "dataState", "queryFrom", "queryTo", "nextCursor");
+	}
+
+	@Test
+	void specialistDashboardIsBoundedOperationalAndContainsNoHealthData() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var dashboard = api.getComponents().getSchemas().get("SpecialistDashboard");
+		var appointment = api.getComponents().getSchemas().get("SpecialistDashboardAppointmentItem");
+		var appointments = api.getComponents().getSchemas().get("SpecialistDashboardAppointmentCollection");
+
+		assertThat(dashboard.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
+				"profile", "ratingAggregate", "todayConfirmedSessions", "pendingAppointmentRequests", "nextAppointment",
+				"availability", "actionRequired");
+		assertThat(appointment.getProperties()).containsOnlyKeys("source", "asOf", "appointmentId", "status",
+				"modality", "scheduledStartAt", "scheduledEndAt", "timezone", "decisionDeadlineAt");
+		assertThat(appointment.getProperties()).doesNotContainKeys("userAccountId", "clientName", "checkIns",
+				"riskScore", "recovery", "adherence", "journal", "assessmentAnswers", "notes");
+		assertThat(((Schema<?>) appointments.getProperties().get("items")).getMaxItems()).isEqualTo(5);
+	}
+
+	@Test
+	void specialistAnalyticsContainsOnlyAggregateOperationalFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var analytics = api.getComponents().getSchemas().get("SpecialistOperationalAnalytics");
+		var appointments = api.getComponents().getSchemas().get("SpecialistAppointmentMetrics");
+		var financials = api.getComponents().getSchemas().get("SpecialistFinancialMetrics");
+
+		assertThat(analytics.getProperties()).containsOnlyKeys("source", "generatedAt", "operationalStatus",
+				"period", "availability", "appointments", "rating", "financials");
+		assertThat(appointments.getProperties()).containsOnlyKeys("source", "asOf", "state", "requestedCount",
+				"acceptedCount", "rejectedCount", "expiredCount", "cancelledCount", "rescheduledCount",
+				"completedCount", "userNoShowCount", "specialistNoShowCount", "bothNoShowCount")
+				.doesNotContainKeys("userAccountId", "phq9", "gad7", "journal", "emotionTrend", "recoveryScore",
+						"treatmentAdherence", "clientSegments", "chat", "notes");
+		assertThat(financials.getProperties()).containsOnlyKeys("source", "asOf", "state", "currency",
+				"earnedAmountMinor", "paidAmountMinor");
+	}
+
+	@Test
+	void specialistClientRelationshipProjectionContainsOnlyAppointmentAuthorityFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var item = api.getComponents().getSchemas().get("SpecialistClientRelationship");
+
+		assertThat(item.getProperties()).containsOnlyKeys("appointmentId", "userAccountId", "status", "modality",
+				"scheduledStartAt", "scheduledEndAt", "appointmentVersion")
+				.doesNotContainKeys("displayName", "journal", "assessment", "chat", "supportPlan", "privateNotes");
+	}
+
+	@Test
+	void chatEvidenceContractIsContentFreeAndServerBounded() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("ChatEvidenceRequest");
+		var eligibility = api.getComponents().getSchemas().get("AppointmentChatEligibility");
+
+		assertThat(request.getProperties()).containsOnlyKeys("evidenceId", "type", "occurredAt",
+				"intervalStartedAt", "messageId");
+		assertThat(request.getProperties()).doesNotContainKeys("content", "messageContent", "diagnosis", "notes");
+		assertThat(eligibility.getProperties()).containsKeys("checkInAllowed", "participantCheckedIn",
+				"sessionOutcome", "creditState");
+	}
+
+	@Test
+	void consultationBriefContextExposesOnlyAppointmentAuthorityAndTiming() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var context = api.getComponents().getSchemas().get("ConsultationBriefAppointmentContext");
+
+		assertThat(context.getProperties()).containsOnlyKeys("appointmentId", "userAccountId", "specialistAccountId",
+				"status", "scheduledStartAt", "scheduledEndAt", "version");
+		assertThat(context.getProperties()).doesNotContainKeys("heldCreditId", "history", "decisionReason",
+				"cancellationReason", "specialistDisplayName");
+	}
+
+	@Test
+	void sessionSummaryIsBoundedUserVisibleAndKeepsNextStepsSeparate() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("PublishSessionSummaryRequest");
+		var response = api.getComponents().getSchemas().get("SessionSummary");
+		var step = api.getComponents().getSchemas().get("AgreedNextStep");
+
+		assertThat(request.getProperties()).containsOnlyKeys("topicsDiscussed", "progressSummary",
+				"specialistNoteForUser", "followUpSuggested", "agreedNextSteps");
+		assertThat(response.getProperties()).containsKeys("version", "schemaVersion", "amendsSummaryId",
+				"reuseConsent", "agreedNextSteps", "publishedAt");
+		assertThat(request.getProperties()).doesNotContainKeys("diagnosis", "riskLevel", "privateNotes",
+				"journal", "assessmentAnswers", "chatTranscript");
+		assertThat(step.getProperties()).containsKeys("state", "hidden", "resourceId", "resourceVersion",
+				"resourceProposalReasonCode");
+		var proposal = api.getComponents().getSchemas().get("ResourceProposal");
+		assertThat(proposal.getProperties()).containsKeys("proposalId", "summaryId", "summaryVersion",
+				"completionFactId", "resourceId", "resourceVersion", "reasonCode", "proposedAt");
+	}
+
+	@Test
+	void discoveryContractIsApprovedOnlineMinimalAndBookingNeutral() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var item = api.getComponents().getSchemas().get("SpecialistDiscoveryItem");
+		var slot = api.getComponents().getSchemas().get("DiscoverySlot");
+		var explanation = api.getComponents().getSchemas().get("DiscoveryExplanation");
+		var page = api.getComponents().getSchemas().get("SpecialistDiscoveryPage");
+
+		assertThat(item.getProperties()).containsOnlyKeys("specialistAccountId", "displayName", "bio",
+				"supportAreas", "languages", "yearsOfExperience", "timezone", "ratingAggregate", "explanation",
+				"selectableSlots");
+		assertThat(item.getProperties()).doesNotContainKeys("approvalStatus", "practiceLocation", "address", "phone",
+				"price", "credentials", "license", "certificates", "specialties", "journal", "assessmentAnswers",
+				"chatContent", "meetingLink");
+		assertThat(((Schema<?>) item.getProperties().get("selectableSlots")).getMinItems()).isEqualTo(1);
+		assertThat(slot.getProperties()).containsOnlyKeys("id", "specialistAccountId", "startAt", "endAt",
+				"timezone", "modality", "version");
+		assertThat(explanation.getProperties()).containsKeys("compatibility", "languageMatched", "hasSelectableSlot",
+				"timezoneMatch", "ratingTieBreakerApplied", "codes");
+		assertThat(page.getProperties()).containsKeys("rankingPolicyVersion", "contextState", "packageCode",
+				"bookingHandoff", "videoEnabled", "nextCursor");
+	}
+
+	@Test
+	void appointmentRatingContractIsBoundedAndVersioned() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var rating = api.getComponents().getSchemas().get("AppointmentRating");
+		var input = api.getComponents().getSchemas().get("SaveAppointmentRating");
+
+		assertThat(api.getPaths()).containsKey("/api/v1/appointments/{appointmentId}/rating");
+		assertThat(input.getProperties()).containsOnlyKeys("rating");
+		assertThat(rating.getProperties()).containsOnlyKeys("appointmentId", "specialistAccountId", "rating",
+				"createdAt", "updatedAt", "version", "specialistAggregate");
+		assertThat(rating.getProperties()).doesNotContainKeys("comment", "anonymous", "diagnosis", "journal");
+	}
+
+	@Test
+	void appointmentDisputeContractIsBoundedAuditableAndContainsNoSensitiveContent() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var open = api.getComponents().getSchemas().get("OpenAppointmentDispute");
+		var resolve = api.getComponents().getSchemas().get("ResolveAppointmentDispute");
+		var dispute = api.getComponents().getSchemas().get("AppointmentDispute");
+
+		assertThat(open.getProperties()).containsOnlyKeys("reasonCode", "evidenceType", "evidenceOccurredAt")
+				.doesNotContainKeys("evidence", "description", "notes", "diagnosis", "chatTranscript", "journal");
+		assertThat(resolve.getProperties()).containsOnlyKeys("outcome", "reasonCode")
+				.doesNotContainKeys("notes", "clinicalConclusion", "summary");
+		assertThat(dispute.getProperties()).containsOnlyKeys("id", "appointmentId", "appointmentVersion", "status",
+				"openedByRole", "reasonCode", "evidenceType", "evidenceOccurredAt", "openedAt", "eligibleUntil",
+				"settlementGated", "resolutionOutcome", "resolutionReason", "resolvedAt", "priorAppointmentStatus",
+				"priorSessionOutcome", "resultingAppointmentStatus", "resultingSessionOutcome", "creditAction", "version")
+				.doesNotContainKeys("userAccountId", "specialistAccountId", "email", "content", "message",
+						"clinicalConclusion", "summary");
+	}
+
+	@Test
+	void publicProfileContainsOnlyApprovedFieldsAndOperationalReviewFacts() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var request = api.getComponents().getSchemas().get("SpecialistProfileRequest");
+		var response = api.getComponents().getSchemas().get("SpecialistProfile");
+
+		assertThat(request.getProperties()).containsOnlyKeys("displayName", "bio", "supportAreas", "languages",
+				"yearsOfExperience", "timezone");
+		assertThat(response.getProperties()).doesNotContainKeys("credentials", "license", "certificates", "documents",
+				"diagnosis", "price", "video");
+	}
+
+	@Test
+	void lifecycleContractUsesClosedReasonsAndBoundedSuspensionEffects() {
+		var contract = Path.of("..", "contracts", "openapi", "consultation-service-v1.yaml").toString();
+		var api = new OpenAPIV3Parser().read(contract);
+		var rejection = api.getComponents().getSchemas().get("SpecialistRejectionReasonCode");
+		var suspension = api.getComponents().getSchemas().get("SpecialistSuspensionReasonCode");
+		var effects = api.getComponents().getSchemas().get("SpecialistSuspensionEffects");
+
+		assertThat(rejection.getEnum()).containsExactly("PROFILE_INFORMATION_INCOMPLETE",
+				"PROFILE_CONTENT_NOT_APPROVED", "OUTSIDE_SUPPORTED_SCOPE");
+		assertThat(suspension.getEnum()).containsExactly("POLICY_VIOLATION", "QUALITY_REVIEW_REQUIRED",
+				"ACCOUNT_REVIEW_REQUIRED");
+		assertThat(effects.getProperties()).containsOnlyKeys("withdrawnAvailabilitySlots",
+				"cancelledAppointments", "releasedCredits");
+	}
+}

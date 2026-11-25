@@ -13,6 +13,7 @@ Apply `mentalbridge-repository-workflow` first. Apply `mentalbridge-architecture
 2. Do not trust a status label such as `implemented` by itself. Check contract-to-handler request and response shapes, required headers, status/errors, storage compatibility, authorization, idempotency, concurrency, and relevant runtime tests.
 3. Surface provider/consumer and UI/contract mismatches as explicit prerequisite work. Do not hide backend fixes inside a frontend integration task or persist unsupported UI fields by inference.
 4. Keep stretch work as an ordered candidate pool. State the pull order and dependencies, preserve the committed Sprint Goal, and distinguish total candidate points from work that fits the remaining capacity.
+5. Prefer horizontal feature throughput. Do not assign the whole team to one bounded feature when independent domains have approved or confirmable flows; make cross-owner prerequisites explicit and let appointment, specialist/admin, Journal/AI, SupportPlan, and other ready slices progress in parallel.
 
 ## Use the MentalBridge task shape
 
@@ -22,9 +23,33 @@ For a feature or Sprint backlog comparable to the repository import files, use:
 - Story: objective, scope/dependencies, checklist Acceptance Criteria, checklist Definition of Done, Evidence fields, and Completion Notes.
 - Subtask: one reviewable implementation or verification concern, objective, checklist Acceptance Criteria, checklist Definition of Done, and an Original Estimate.
 
+Every new feature Story includes one first subtask named in the form `Confirm
+<feature> ADR and user flow`. It must list only unresolved decisions that would
+materially change the API, UI, ownership, persistence, or actor journey, record
+the accepted decision in the canonical ADR/policy/module docs, and unblock code.
+Do not create a ceremonial documentation gate when the behavior is already
+approved; such a subtask confirms the existing decision and identifies any
+narrow remaining choices.
+
+The remaining subtasks must describe concrete delivery slices, for example:
+
+- backend endpoints/commands/queries and their observable response or state;
+- persistence or owner integration needed for that feature flow;
+- frontend screen/component state, including whether it exists today and what
+  the user can view or do afterward;
+- integrated actor journey and runnable acceptance evidence.
+
+Story scope, Acceptance Criteria, and Definition of Done must state the usable
+feature outcome, not merely that documents, boundaries, rate limits, or generic
+infrastructure exist. Put authorization, idempotency, concurrency, rate-limit,
+observability, and failure behavior in the implementation or verification
+subtask where they protect a concrete feature. Keep them proportional to risk;
+do not turn them into most of the backlog unless the Story itself is explicitly
+a platform/security/reliability feature.
+
 Give Story Points only to Stories. Give Subtasks positive Original Estimates in seconds and leave their Story Points blank. Do not fabricate assignees, Jira keys, approvals, pull requests, or completion evidence. Import-local IDs may be generated only to establish parent relationships.
 
-Split provider contract/persistence, consumer/BFF, visible UI, testing, and delivery evidence when they have independently reviewable outcomes. Keep behavior with its relevant contract and tests; do not create subtasks that are merely layers with no independently verifiable result.
+Split provider contract/persistence, consumer/BFF, visible UI, testing, and delivery evidence when they have independently reviewable outcomes. Keep behavior with its relevant contract and tests; do not create subtasks that are merely layers with no independently verifiable result. A feature Story is not complete while its intended user-facing flow is absent unless the Story explicitly and truthfully defines a backend-only enabling outcome with a named frontend follow-up dependency.
 
 ## Match the current Jira Cloud hierarchy
 

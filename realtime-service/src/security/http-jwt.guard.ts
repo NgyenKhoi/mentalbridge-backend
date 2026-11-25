@@ -24,6 +24,7 @@ export class HttpJwtGuard implements CanActivate {
     }
     try {
       request.principal = await this.verifier.verify(match[1]);
+      request.bearerToken = match[1];
       return true;
     } catch {
       throw new UnauthorizedException('Bearer token is invalid');

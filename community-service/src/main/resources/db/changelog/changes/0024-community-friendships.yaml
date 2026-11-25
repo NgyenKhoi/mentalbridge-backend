@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0024-community-friendships
+      author: mentalbridge
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE TABLE community_friendship (
+                id uuid PRIMARY KEY,
+                first_profile_id uuid NOT NULL REFERENCES community_profile(id) ON DELETE CASCADE,
+                second_profile_id uuid NOT NULL REFERENCES community_profile(id) ON DELETE CASCADE,
+                requester_profile_id uuid NOT NULL REFERENCES community_profile(id) ON DELETE CASCADE,
+                state varchar(16) NOT NULL CHECK (state IN ('PENDING', 'ACCEPTED')),
+                created_at timestamptz NOT NULL,
+                accepted_at timestamptz,
+                CONSTRAINT uq_community_friend_pair UNIQUE (first_profile_id, second_profile_id),
+                CONSTRAINT ck_community_friend_pair CHECK (first_profile_id < second_profile_id),
+                CONSTRAINT ck_community_friend_requester CHECK (requester_profile_id IN (first_profile_id, second_profile_id)),
+                CONSTRAINT ck_community_friend_acceptance CHECK ((state = 'ACCEPTED') = (accepted_at IS NOT NULL))
+              );
+              CREATE INDEX ix_community_friend_first ON community_friendship (first_profile_id, id);
+              CREATE INDEX ix_community_friend_second ON community_friendship (second_profile_id, id);

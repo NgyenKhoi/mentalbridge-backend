@@ -97,11 +97,11 @@ class Gad7AssessmentIntegrationTests extends CareTestProperties {
 				}).single();
 		assertThat(safety).containsExactly(null, "NOT_APPLICABLE", null);
 		assertThat(jdbc.sql("select count(*) from outbox_event where aggregate_id = :id")
-				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(1);
+				.param("id", UUID.fromString(assessmentId)).query(Long.class).single()).isEqualTo(2);
 		var event = jdbc.sql("""
 				select schema_version || '|' || (payload ->> 'instrument') || '|' ||
 				       (payload ->> 'safetyStatus') || '|' || (payload ->> 'totalScore')
-				from outbox_event where aggregate_id = :id
+				from outbox_event where aggregate_id = :id and message_type = 'care.assessment.submitted'
 				""").param("id", UUID.fromString(assessmentId)).query(String.class).single();
 		assertThat(event).isEqualTo("2.0|GAD7|NOT_APPLICABLE|10");
 	}

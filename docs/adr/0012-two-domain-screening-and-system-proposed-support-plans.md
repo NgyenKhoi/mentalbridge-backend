@@ -5,6 +5,7 @@
 - Decision ID: `MB-SCOPE-DOMAIN-001`
 - Tracks: [#47](https://github.com/NgyenKhoi/mentalbridge-backend/issues/47)
 - Amends: [ADR 0009](0009-care-screening-safety-and-support-boundaries.md)
+- Clarified by: [ADR 0013](0013-freeze-support-plan-policy-v1.md), which resolves the SupportPlan policy questions below
 
 ## Context
 
@@ -115,8 +116,10 @@ arbitrary initial resource set.
 Completing a SupportPlan means its selected period ended; it does not mean
 recovery. A new assessment or SupportEvaluation never silently rewrites,
 supersedes, or activates an existing plan. Normal activation and replacement
-remain explicit user commands. The revised contract and unresolved policy
-decisions are tracked by [#49](https://github.com/NgyenKhoi/mentalbridge-backend/issues/49).
+remain explicit user commands. ADR 0013 and the versioned SupportPlan policy
+resolve the product rules tracked by
+[#49](https://github.com/NgyenKhoi/mentalbridge-backend/issues/49); runtime
+contracts and implementation retain their separate delivery gates.
 
 ### Resource eligibility
 
@@ -125,7 +128,8 @@ generic category. New-plan selection requires an exact reviewed content version
 whose approved eligibility accounts for domain, applicable instrument band,
 support pathway, locale, publication state, and effective window. Cross-domain
 wellbeing resources remain possible, but their applicability must be reviewed
-and versioned rather than inferred.
+and versioned rather than inferred. ADR 0013 fixes exact-version roles as
+`PRIMARY` or `ADJUNCT`; only `PRIMARY` can satisfy a domain core slot.
 
 Content/Notification owns resource definitions and review provenance. Care owns
 the SupportEvaluation, proposal selection policy, plan lifecycle, and final
@@ -133,29 +137,37 @@ eligibility decision for a plan. Neither service reads the other's database.
 The resource contract work is tracked by
 [#50](https://github.com/NgyenKhoi/mentalbridge-backend/issues/50).
 
-## Open decisions before executable SupportPlan work
+## Resolved SupportPlan policy decisions
 
-This ADR deliberately does not decide:
+The Product Owner approved the policy freeze recorded in ADR 0013 on
+2026-09-13:
 
-1. whether `SupportPlanTemplate` is a persisted aggregate or immutable
-   versioned policy data;
-2. the exact meaning of required and optional proposed resources;
-3. the minimum and maximum number of user choices;
-4. whether template selection is expressed as code rules or persisted mapping;
-5. whether safety-positive activation requires confirmation beyond the normal
-   SupportPlan activation confirmation.
+1. `SupportPlanTemplate` is immutable versioned Care policy data; V1 has no
+   mutable administrator CRUD.
+2. Templates use `CORE` and `OPTIONAL` slots. Core requires one eligible
+   alternative, while optional selections may be removed. Safety and
+   professional-support calls to action remain outside plan slots.
+3. An activatable plan contains 1 through 5 resources, normally 2 through 3;
+   Care owns composition, deduplication, priority, and truncation.
+4. Care uses compositional deterministic rules versioned as
+   `mb-support-plan-selection-v1`, not a persisted matrix of band combinations.
+5. Safety-positive activation uses the normal explicit activation action with
+   safety guidance and available immediate/professional support presented first;
+   no additional acknowledgement checkbox is required.
+6. Exact resource eligibility uses `PRIMARY` and `ADJUNCT`; adjunct content can
+   never satisfy a domain core slot.
 
-The Product Owner and accountable Care/Content reviewers must resolve these in
-[#49](https://github.com/NgyenKhoi/mentalbridge-backend/issues/49) before an
-OpenAPI proposal is frozen or runtime implementation begins.
+The complete template families, lifecycle invariants, revalidation boundary,
+and acceptance examples are authoritative in
+[SupportPlan policy v1](../policies/support-plan-policy-v1.md).
 
 ## Consequences
 
 - MB-179 terminology and the Sprint 3 backlog must be read through this
   correction; “severity-to-support” is replaced by domain-aware support.
-- The unmerged Story 4101 proposal that accepts arbitrary resource versions is
-  not an approved implementation contract and must be revised rather than
-  promoted.
+- The Story 4101 draft that accepted arbitrary resource versions is superseded
+  by the server-proposed design input under `contracts/proposals/`; neither is
+  an executable API.
 - Active SupportEvaluation v1 contracts, migrations, events, and historical
   rows are not edited by this documentation change.
 - Resource metadata and SupportEvaluation/SupportPlan evolution use compatible

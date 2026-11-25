@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/user-notification-fact-v1.schema.json",
+  "title": "Care user notification fact v1",
+  "description": "Producers truncate the source Instant to microseconds before writing both payload.availableAt and the outbox occurred_at. Both wire timestamps use the identical UTC ISO-8601 representation after PostgreSQL reload (at most six fractional digits, never rounded). Envelope occurredAt must exactly equal payload.availableAt; aggregateId/aggregateVersion must match targetId/targetVersion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.user-notification.fact" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "1.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "type": "integer", "minimum": 0 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recipientId", "factType", "targetId", "targetVersion", "availableAt"],
+      "properties": {
+        "recipientId": { "type": "string", "format": "uuid" },
+        "factType": {
+          "enum": [
+            "ASSESSMENT_RESULT_AVAILABLE",
+            "SUPPORT_GUIDE_AVAILABLE"
+          ]
+        },
+        "targetId": { "type": "string", "format": "uuid" },
+        "targetVersion": { "type": "integer", "minimum": 0 },
+        "availableAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

@@ -1,0 +1,137 @@
+export const NOTIFICATION_KINDS = [
+  'REMINDER',
+  'MESSAGE',
+  'APPOINTMENT',
+  'SYSTEM_RESOURCE',
+  'ASSESSMENT_REASSESSMENT',
+  'STREAK_MILESTONE',
+  'JOURNAL_REMINDER',
+  'EMOTION_CHECKIN_REMINDER',
+  'JOURNAL_STREAK_MILESTONE',
+  'EMOTION_STREAK_MILESTONE',
+  'COMMUNITY_COMMENT',
+  'COMMUNITY_REPLY',
+  'COMMUNITY_REACTION',
+  'COMMUNITY_MESSAGE',
+  'COMMUNITY_REQUEST',
+  'COMMUNITY_INVITATION',
+  'ASSESSMENT_RESULT_AVAILABLE',
+  'SUPPORT_GUIDE_AVAILABLE',
+  'ACCOUNT_STATUS',
+  'SUPPORT_PLAN_DAILY_REMINDER',
+] as const;
+
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH';
+export type NotificationActionType =
+  | 'OPEN_JOURNAL'
+  | 'OPEN_MESSAGES'
+  | 'OPEN_APPOINTMENTS'
+  | 'OPEN_APPOINTMENT'
+  | 'OPEN_RESOURCES'
+  | 'OPEN_ASSESSMENTS'
+  | 'OPEN_SPECIALIST_APPOINTMENTS'
+  | 'OPEN_RESOURCE'
+  | 'OPEN_COMMUNITY_POST'
+  | 'OPEN_COMMUNITY_CONVERSATION'
+  | 'OPEN_COMMUNITY_REQUEST'
+  | 'OPEN_COMMUNITY_INVITATION'
+  | 'OPEN_SUPPORT_GUIDE'
+  | 'OPEN_SUPPORT_PLAN';
+
+export interface NotificationAction {
+  readonly type: NotificationActionType;
+  readonly targetId: string | null;
+  readonly href: string;
+}
+
+export interface NotificationItem {
+  readonly id: string;
+  readonly kind: NotificationKind;
+  readonly title: string;
+  readonly body: string;
+  readonly priority: NotificationPriority;
+  readonly occurredAt: string;
+  readonly createdAt: string;
+  readonly read: boolean;
+  readonly readAt: string | null;
+  readonly action: NotificationAction | null;
+  readonly lifecycleState: 'ACTIVE';
+  readonly expiresAt: string;
+}
+
+export interface NotificationPage {
+  readonly items: readonly NotificationItem[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+  readonly unreadCount: number;
+}
+
+export interface NotificationCursor {
+  readonly createdAt: string;
+  readonly id: string;
+}
+
+export interface NotificationCreate {
+  readonly ownerId: string;
+  readonly kind: NotificationKind;
+  readonly title: string;
+  readonly body: string;
+  readonly occurredAt: string;
+  readonly action?: Readonly<{
+    type: NotificationActionType;
+    targetId?: string;
+  }>;
+  readonly source: string;
+  readonly sourceIdentity: string;
+  readonly priority: NotificationPriority;
+  readonly expiresAt?: string;
+}
+
+export interface NotificationRow {
+  readonly id: string;
+  readonly recipient_id: string;
+  readonly category: string;
+  readonly title: string;
+  readonly body: string;
+  readonly action_type: NotificationActionType | null;
+  readonly action_target_id: string | null;
+  readonly priority: NotificationPriority;
+  readonly read_at: Date | string | null;
+  readonly expires_at: Date | string;
+  readonly occurred_at: Date | string;
+  readonly created_at: Date | string;
+  readonly source: string;
+  readonly source_identity: string;
+  readonly request_fingerprint: string;
+  readonly delivery_state: string;
+  readonly deleted_at: Date | string | null;
+  readonly version: string | number;
+}
+
+export interface InAppNotificationOperationsSummary {
+  readonly total: number;
+  readonly delivered: number;
+  readonly pending: number;
+  readonly failed: number;
+  readonly cancelled: number;
+  readonly unread: number;
+  readonly read: number;
+}
+
+export interface EmailReminderOperationsSummary {
+  readonly total: number;
+  readonly pending: number;
+  readonly processing: number;
+  readonly delivered: number;
+  readonly failed: number;
+  readonly suppressed: number;
+  readonly invalidated: number;
+}
+
+export interface NotificationOperationsSummary {
+  readonly source: 'CONTENT_NOTIFICATION';
+  readonly asOf: string;
+  readonly inApp: InAppNotificationOperationsSummary;
+  readonly emailReminders: EmailReminderOperationsSummary;
+}

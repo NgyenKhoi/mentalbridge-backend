@@ -3,3 +3,17 @@ databaseChangeLog:
       file: db/changelog/changes/001-identity-baseline.sql
   - include:
       file: db/changelog/changes/002-single-account-role.sql
+  - include:
+      file: db/changelog/changes/003-platform-reporting.sql
+  - include:
+      file: db/changelog/changes/004-report-schedules.sql
+  - include:
+      file: db/changelog/changes/005-audit-browse-support.sql
+  - include:
+      file: db/changelog/changes/006-retention-and-deletion-governance.sql
+  - include:
+      file: db/changelog/changes/007-retention-execution-stale-status.sql
+  - include:
+      file: db/changelog/changes/008-deletion-request-previous-status.sql
+  - include:
+      file: db/changelog/changes/009-staging-admin-seed.sql

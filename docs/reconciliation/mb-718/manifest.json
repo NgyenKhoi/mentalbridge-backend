@@ -1,0 +1,57 @@
+{
+  "base": "2ac6d3d65199ba8c7657fa489e1f44333b575cfd",
+  "splitHead": "711d0f0622f59a8f814b70aa9defedbd2830c246",
+  "sources": [
+    "docs/database/postgresql-field-data-dictionary.md",
+    "docs/domain-model/relational/postgresql-logical-schema.sql",
+    "docs/requirements-traceability.md"
+  ],
+  "entries": [
+    {
+      "pr": 222,
+      "story": "MB-675",
+      "ref": "origin/feat/content-notification-secure-push-(MB-675)",
+      "head": "3d19e679052efe24790dff624864baba7422e4e8",
+      "mergeBase": "2ac6d3d65199ba8c7657fa489e1f44333b575cfd",
+      "patch": "docs/reconciliation/mb-718/pr-222.patch",
+      "destinations": [
+        "docs/database/postgresql/content-notification-service.md",
+        "docs/domain-model/relational/content-notification-service.sql",
+        "docs/requirements-traceability/stories/mb-684.md"
+      ],
+      "evidencePaths": [],
+      "status": "PENDING_OWNER_REBASE"
+    },
+    {
+      "pr": 216,
+      "story": "MB-673",
+      "ref": "origin/feat/admin-retention-deletion-governance-(MB-673)",
+      "head": "1cf26404ea06718b1447b8d806aee8b29f1a1c94",
+      "mergeBase": "cd71159dc0ab3e9ed6a13dafd9f134e0e0416851",
+      "patch": "docs/reconciliation/mb-718/pr-216.patch",
+      "destinations": [
+        "docs/database/postgresql/identity-service.md",
+        "docs/domain-model/relational/identity-service.sql",
+        "docs/requirements-traceability/stories/mb-673.md"
+      ],
+      "evidencePaths": [
+        "docs/evidence/mb-673-retention-deletion-governance-evidence.md"
+      ],
+      "status": "PENDING_OWNER_REBASE"
+    },
+    {
+      "pr": 220,
+      "story": "MB-745",
+      "ref": "origin/feat/community-message-retraction-(MB-745)",
+      "head": "036f33558e0585cf159d5243be33a44073d522a1",
+      "mergeBase": "ff0f924f6284e88c8f04493810ac0592bb7e17dc",
+      "patch": "docs/reconciliation/mb-718/pr-220.patch",
+      "destinations": [
+        "docs/database/postgresql/community-service.md",
+        "docs/domain-model/relational/community-service.sql"
+      ],
+      "evidencePaths": [],
+      "status": "PENDING_OWNER_REBASE"
+    }
+  ]
+}

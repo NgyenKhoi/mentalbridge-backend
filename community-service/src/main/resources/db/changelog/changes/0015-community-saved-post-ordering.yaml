@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0015-community-saved-post-ordering
+      author: mentalbridge
+      comment: Support deterministic owner-scoped newest-saved pagination for MB-616.
+      changes:
+        - sql:
+            sql: |
+              CREATE INDEX ix_community_post_bookmark_saved_order
+                  ON community_post_bookmark (profile_id, created_at DESC, post_id DESC);

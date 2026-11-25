@@ -6,7 +6,14 @@ export const createLogger = (configuration: ServiceConfiguration): Logger =>
   pino({
     level: configuration.LOG_LEVEL,
     redact: {
-      paths: ['password', 'token', 'secret', 'req.headers.authorization', 'req.headers.cookie'],
+      paths: [
+        'password',
+        'token',
+        'secret',
+        'req.headers.authorization',
+        'req.headers.cookie',
+        "req.headers['x-mentalbridge-service-token']",
+      ],
       censor: '[REDACTED]',
     },
     base: {

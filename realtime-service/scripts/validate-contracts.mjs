@@ -8,13 +8,24 @@ const openApiPath = fileURLToPath(
   new URL('../../contracts/openapi/realtime-service-v1.yaml', import.meta.url),
 );
 const openApi = await SwaggerParser.validate(openApiPath);
+await SwaggerParser.validate(
+  fileURLToPath(new URL('../../contracts/openapi/community-realtime-v1.json', import.meta.url)),
+);
 if (openApi.openapi !== '3.1.0') throw new Error('Realtime OpenAPI must use version 3.1.0');
 
 const expectedAvailability = new Map([
   ['GET /health/live', 'implemented'],
   ['GET /health/ready', 'implemented'],
   ['GET /metrics', 'implemented'],
-  ['GET /api/v1/conversations/{conversationId}/messages', 'planned'],
+  ['POST /internal/v1/socket-credentials', 'implemented'],
+  ['POST /internal/v1/community/socket-credentials', 'implemented'],
+  ['POST /api/v1/community/socket-credentials', 'implemented'],
+  ['GET /api/v1/conversations/{conversationId}/messages', 'implemented'],
+  ['DELETE /api/v1/conversations/{conversationId}/messages/{messageId}', 'implemented'],
+  ['POST /api/v1/conversations/{conversationId}/messages/{messageId}/reports', 'implemented'],
+  ['GET /api/v1/admin/appointment-chat/reports', 'implemented'],
+  ['GET /api/v1/admin/appointment-chat/reports/{reportId}', 'implemented'],
+  ['PATCH /api/v1/admin/appointment-chat/reports/{reportId}', 'implemented'],
 ]);
 const actualAvailability = new Map();
 for (const [path, pathItem] of Object.entries(openApi.paths ?? {})) {
@@ -43,10 +54,44 @@ for (const name of [
   'acknowledgement-v1.schema.json',
   'error-v1.schema.json',
   'server-event-v1.schema.json',
+  'notification-server-event-v1.schema.json',
 ]) {
   const path = new URL(`../../contracts/websocket/realtime/${name}`, import.meta.url);
   const schema = JSON.parse(await readFile(path, 'utf8'));
   ajv.compile(schema);
 }
 
+for (const [schemaName, fixtureName] of [
+  ['events/content/notification-created-v1.schema.json', 'content/notification-created-v1.json'],
+  [
+    'events/realtime/specialist-notification-dead-letter-v1.schema.json',
+    'realtime/specialist-notification-dead-letter-v1.json',
+  ],
+  [
+    'websocket/realtime/notification-server-event-v1.schema.json',
+    'realtime/notification-created-v1.json',
+  ],
+]) {
+  const schema = JSON.parse(
+    await readFile(new URL('../../contracts/' + schemaName, import.meta.url), 'utf8'),
+  );
+  const fixture = JSON.parse(
+    await readFile(new URL('../../contracts/fixtures/' + fixtureName, import.meta.url), 'utf8'),
+  );
+  const validate = ajv.getSchema(schema.$id) ?? ajv.compile(schema);
+  if (!validate(fixture)) {
+    throw new Error(`${fixtureName}: ${ajv.errorsText(validate.errors)}`);
+  }
+}
+
 console.log('Validated Realtime OpenAPI and WebSocket v1 contracts');
+for (const name of ['handshake-v1.schema.json', 'command-v1.schema.json', 'event-v1.schema.json']) {
+  ajv.compile(
+    JSON.parse(
+      await readFile(
+        new URL('../../contracts/websocket/community/' + name, import.meta.url),
+        'utf8',
+      ),
+    ),
+  );
+}

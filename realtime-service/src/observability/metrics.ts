@@ -17,6 +17,8 @@ export interface RealtimeMetrics {
   readonly commands: CounterType;
   readonly dependencyChecks: CounterType;
   readonly messagePersistSeconds: HistogramType;
+  readonly notificationConsumerLag: GaugeType;
+  readonly notificationDeliverySeconds: HistogramType;
   render(): Promise<string>;
 }
 
@@ -51,6 +53,17 @@ export const createMetrics = (configuration: ServiceConfiguration): RealtimeMetr
     messagePersistSeconds: new Histogram({
       name: 'realtime_message_persist_seconds',
       help: 'MongoDB message persistence latency.',
+      registers: [registry],
+    }),
+    notificationConsumerLag: new Gauge({
+      name: 'realtime_notification_consumer_lag',
+      help: 'Specialist notification broker records remaining in the partition.',
+      labelNames: ['topic', 'partition'],
+      registers: [registry],
+    }),
+    notificationDeliverySeconds: new Histogram({
+      name: 'realtime_notification_delivery_seconds',
+      help: 'Delay from durable inbox creation to local socket emission.',
       registers: [registry],
     }),
     render: () => registry.metrics(),

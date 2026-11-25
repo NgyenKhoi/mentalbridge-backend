@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mentalbridge.local/contracts/events/care/support-evaluation-created-v2.schema.json",
+  "title": "Care support evaluation created v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageId", "messageType", "occurredAt", "producer", "schemaVersion", "correlationId", "aggregateId", "aggregateVersion", "payload"],
+  "properties": {
+    "messageId": { "type": "string", "format": "uuid" },
+    "messageType": { "const": "care.support-evaluation.created" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "care-service" },
+    "schemaVersion": { "const": "2.0" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "aggregateVersion": { "const": 0 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportEvaluationId", "userId", "evaluationVersion", "policyVersion", "evaluatedAt", "contributingDomains", "safetyEvidence"],
+      "properties": {
+        "supportEvaluationId": { "type": "string", "format": "uuid" },
+        "userId": { "type": "string", "format": "uuid" },
+        "evaluationVersion": { "const": 2 },
+        "policyVersion": { "const": "mb-support-routing-capstone-v2" },
+        "evaluatedAt": { "type": "string", "format": "date-time" },
+        "contributingDomains": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/domainContribution" }
+        },
+        "safetyEvidence": { "$ref": "#/$defs/safetyEvidence" }
+      }
+    }
+  },
+  "$defs": {
+    "domainContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assessmentId", "questionnaireDefinitionId", "instrument", "domain", "questionnaireVersion", "scoringVersion", "screeningLevel", "supportPathway", "reasonCodes"],
+      "properties": {
+        "assessmentId": { "type": "string", "format": "uuid" },
+        "questionnaireDefinitionId": { "type": "string", "format": "uuid" },
+        "instrument": { "enum": ["PHQ9", "GAD7"] },
+        "domain": { "enum": ["DEPRESSIVE_SYMPTOMS", "ANXIETY_SYMPTOMS"] },
+        "questionnaireVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "scoringVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "screeningLevel": { "enum": ["MINIMAL", "MILD", "MODERATE", "MODERATELY_SEVERE", "SEVERE"] },
+        "supportPathway": { "enum": ["SELF_GUIDED_SUPPORT", "PROFESSIONAL_SUPPORT_RECOMMENDED"] },
+        "reasonCodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "PHQ9_LEVEL_MINIMAL",
+              "PHQ9_LEVEL_MILD",
+              "PHQ9_LEVEL_MODERATE",
+              "PHQ9_LEVEL_MODERATELY_SEVERE",
+              "PHQ9_LEVEL_SEVERE",
+              "GAD7_LEVEL_MINIMAL",
+              "GAD7_LEVEL_MILD",
+              "GAD7_LEVEL_MODERATE",
+              "GAD7_LEVEL_SEVERE"
+            ]
+          }
+        }
+      }
+    },
+    "safetyEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceAssessmentId", "instrument", "trigger", "status", "policyVersion", "reasonCode"],
+      "properties": {
+        "sourceAssessmentId": { "type": "string", "format": "uuid" },
+        "instrument": { "const": "PHQ9" },
+        "trigger": { "const": "PHQ9_ITEM_9" },
+        "status": { "enum": ["NEGATIVE_SAFETY_SCREEN", "POSITIVE_SAFETY_SCREEN"] },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "reasonCode": { "enum": ["PHQ9_ITEM9_NEGATIVE", "PHQ9_ITEM9_POSITIVE"] }
+      }
+    }
+  }
+}

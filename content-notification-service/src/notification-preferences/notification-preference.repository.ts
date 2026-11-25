@@ -1,0 +1,242 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { DATABASE_SERVICE_TOKEN } from '../application.tokens.js';
+import type { DatabaseService } from '../database/database.service.js';
+import type {
+  NotificationPreferenceRow,
+  NotificationPreferences,
+  NotificationPreferenceOwnerType,
+  ReminderCandidate,
+} from './notification-preference.types.js';
+
+const COLUMNS = `user_id, owner_type, notifications_enabled,
+  channel_in_app_enabled, channel_email_enabled, channel_push_enabled,
+  group_journal_reminder_enabled, group_emotion_check_in_enabled,
+  group_streak_milestone_enabled, group_screening_reassessment_enabled,
+  group_appointment_message_enabled, group_resource_system_enabled,
+  group_community_interaction_enabled, group_support_plan_reminder_enabled,
+  daily_reminder_time::text,
+  quiet_hours_enabled, quiet_hours_start::text, quiet_hours_end::text, time_zone,
+  email_cadence, email_wellbeing_digest_enabled, email_resource_reminders_enabled,
+  email_daily_digest_time::text, email_resource_reminder_time::text,
+  email_appointment_reminders_enabled,
+  version, created_at, updated_at`;
+
+export class NotificationPreferenceVersionMismatchError extends Error {
+  constructor() {
+    super('Notification preference version mismatch');
+    this.name = 'NotificationPreferenceVersionMismatchError';
+  }
+}
+
+function time(value: string): string {
+  return value.slice(0, 5);
+}
+
+export function toNotificationPreferences(row: NotificationPreferenceRow): NotificationPreferences {
+  return {
+    notificationsEnabled: row.notifications_enabled,
+    channels: {
+      inApp: row.channel_in_app_enabled,
+      email: row.channel_email_enabled,
+      push: row.channel_push_enabled,
+    },
+    contentGroups: {
+      journalReminder: row.group_journal_reminder_enabled,
+      emotionCheckIn: row.group_emotion_check_in_enabled,
+      streakMilestone: row.group_streak_milestone_enabled,
+      screeningReassessment: row.group_screening_reassessment_enabled,
+      appointmentMessage: row.group_appointment_message_enabled,
+      resourceSystem: row.group_resource_system_enabled,
+      communityInteraction: row.group_community_interaction_enabled,
+      supportPlanReminder: row.group_support_plan_reminder_enabled,
+    },
+    dailyReminderTime: time(row.daily_reminder_time),
+    quietHours: {
+      enabled: row.quiet_hours_enabled,
+      start: time(row.quiet_hours_start),
+      end: time(row.quiet_hours_end),
+      timeZone: row.time_zone,
+    },
+    email: {
+      cadence: row.email_cadence,
+      wellbeingDigestEnabled: row.email_wellbeing_digest_enabled,
+      resourceRemindersEnabled: row.email_resource_reminders_enabled,
+      dailyDigestTime: time(row.email_daily_digest_time),
+      resourceReminderTime: time(row.email_resource_reminder_time),
+      appointmentRemindersEnabled: row.email_appointment_reminders_enabled,
+    },
+    version: Number(row.version),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+@Injectable()
+export class NotificationPreferenceRepository {
+  constructor(
+    @Inject(DATABASE_SERVICE_TOKEN)
+    private readonly db: DatabaseService,
+  ) {}
+
+  async createDefaults(userId: string, ownerType: NotificationPreferenceOwnerType): Promise<void> {
+    await this.db.query(
+      `INSERT INTO notification_preference (
+         user_id, owner_type,
+         group_journal_reminder_enabled, group_emotion_check_in_enabled,
+         group_streak_milestone_enabled, group_screening_reassessment_enabled,
+         group_community_interaction_enabled, group_support_plan_reminder_enabled,
+         email_wellbeing_digest_enabled, email_resource_reminders_enabled
+       ) VALUES ($1,$2,$3,$3,$3,$3,$3,$3,$3,$3)
+       ON CONFLICT (user_id) DO UPDATE SET
+         owner_type = EXCLUDED.owner_type,
+         group_journal_reminder_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_journal_reminder_enabled END,
+         group_emotion_check_in_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_emotion_check_in_enabled END,
+         group_streak_milestone_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_streak_milestone_enabled END,
+         group_screening_reassessment_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_screening_reassessment_enabled END,
+         group_community_interaction_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_community_interaction_enabled END,
+         group_support_plan_reminder_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.group_support_plan_reminder_enabled END,
+         email_wellbeing_digest_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.email_wellbeing_digest_enabled END,
+         email_resource_reminders_enabled = CASE WHEN EXCLUDED.owner_type='SPECIALIST' THEN false ELSE notification_preference.email_resource_reminders_enabled END
+       WHERE notification_preference.owner_type <> EXCLUDED.owner_type`,
+      [userId, ownerType, ownerType === 'USER'],
+    );
+  }
+
+  async getOrCreate(
+    userId: string,
+    ownerType: NotificationPreferenceOwnerType,
+  ): Promise<NotificationPreferences> {
+    await this.createDefaults(userId, ownerType);
+    const result = await this.db.query<NotificationPreferenceRow>(
+      `SELECT ${COLUMNS} FROM notification_preference WHERE user_id = $1`,
+      [userId],
+    );
+    return toNotificationPreferences(result.rows[0]);
+  }
+
+  async update(
+    userId: string,
+    expectedVersion: number,
+    preferences: NotificationPreferences,
+  ): Promise<NotificationPreferences> {
+    return this.db.withTransaction(async (client) => {
+      const result = await client.query<NotificationPreferenceRow>(
+        `UPDATE notification_preference
+       SET notifications_enabled = $3,
+           channel_in_app_enabled = $4,
+           channel_email_enabled = $5,
+           channel_push_enabled = $6,
+           group_journal_reminder_enabled = $7,
+           group_emotion_check_in_enabled = $8,
+           group_streak_milestone_enabled = $9,
+           group_screening_reassessment_enabled = $10,
+           group_appointment_message_enabled = $11,
+           group_resource_system_enabled = $12,
+           group_community_interaction_enabled = $13,
+           quiet_hours_enabled = $14,
+           quiet_hours_start = $15::time,
+           quiet_hours_end = $16::time,
+           time_zone = $17,
+           email_cadence = $18,
+           email_wellbeing_digest_enabled = $19,
+           email_resource_reminders_enabled = $20,
+           email_daily_digest_time = $21::time,
+           email_resource_reminder_time = $22::time,
+           email_appointment_reminders_enabled = $23,
+           group_support_plan_reminder_enabled = $24,
+           daily_reminder_time = $25::time,
+           version = version + 1,
+           updated_at = now()
+       WHERE user_id = $1 AND version = $2
+       RETURNING ${COLUMNS}`,
+        [
+          userId,
+          expectedVersion,
+          preferences.notificationsEnabled,
+          preferences.channels.inApp,
+          preferences.channels.email,
+          preferences.channels.push,
+          preferences.contentGroups.journalReminder,
+          preferences.contentGroups.emotionCheckIn,
+          preferences.contentGroups.streakMilestone,
+          preferences.contentGroups.screeningReassessment,
+          preferences.contentGroups.appointmentMessage,
+          preferences.contentGroups.resourceSystem,
+          preferences.contentGroups.communityInteraction,
+          preferences.quietHours.enabled,
+          preferences.quietHours.start,
+          preferences.quietHours.end,
+          preferences.quietHours.timeZone,
+          preferences.email.cadence,
+          preferences.email.wellbeingDigestEnabled,
+          preferences.email.resourceRemindersEnabled,
+          preferences.email.dailyDigestTime,
+          preferences.email.resourceReminderTime,
+          preferences.email.appointmentRemindersEnabled,
+          preferences.contentGroups.supportPlanReminder,
+          preferences.dailyReminderTime,
+        ],
+      );
+      if (!result.rows[0]) throw new NotificationPreferenceVersionMismatchError();
+      await client.query(
+        `UPDATE push_delivery_attempt a
+         SET available_at = now(), updated_at = now()
+         FROM notification n
+         WHERE n.id = a.notification_id AND n.recipient_id = $1
+           AND n.category IN ('JOURNAL_REMINDER', 'EMOTION_CHECKIN_REMINDER', 'SUPPORT_PLAN_DAILY_REMINDER')
+           AND a.state = 'FAILED' AND a.failure_code = 'REMINDER_NOT_DUE'
+           AND a.available_at > now()`,
+        [userId],
+      );
+      return toNotificationPreferences(result.rows[0]);
+    });
+  }
+
+  async listReminderCandidates(
+    afterOwnerId: string | null,
+    limit: number,
+  ): Promise<readonly ReminderCandidate[]> {
+    const result = await this.db.query<NotificationPreferenceRow>(
+      `SELECT ${COLUMNS}
+       FROM notification_preference
+       WHERE owner_type = 'USER'
+         AND notifications_enabled = true
+         AND channel_in_app_enabled = true
+         AND (
+           group_journal_reminder_enabled = true
+           OR group_emotion_check_in_enabled = true
+           OR group_streak_milestone_enabled = true
+           OR group_support_plan_reminder_enabled = true
+         )
+         AND ($1::uuid IS NULL OR user_id > $1::uuid)
+       ORDER BY user_id
+       LIMIT $2`,
+      [afterOwnerId, limit],
+    );
+    return result.rows.map((row) => ({
+      ownerId: row.user_id,
+      preferences: toNotificationPreferences(row),
+    }));
+  }
+
+  async listEmailCandidates(
+    afterOwnerId: string | null,
+    limit: number,
+  ): Promise<readonly ReminderCandidate[]> {
+    const result = await this.db.query<NotificationPreferenceRow>(
+      `SELECT ${COLUMNS}
+       FROM notification_preference
+       WHERE owner_type = 'USER'
+         AND notifications_enabled = true
+         AND channel_email_enabled = true
+         AND (email_wellbeing_digest_enabled = true OR email_resource_reminders_enabled = true)
+         AND ($1::uuid IS NULL OR user_id > $1::uuid)
+       ORDER BY user_id
+       LIMIT $2`,
+      [afterOwnerId, limit],
+    );
+    return result.rows.map((row) => ({
+      ownerId: row.user_id,
+      preferences: toNotificationPreferences(row),
+    }));
+  }
+}

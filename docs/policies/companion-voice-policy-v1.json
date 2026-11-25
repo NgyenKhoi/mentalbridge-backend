@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "companion-voice-policy-v1",
+  "decisionId": "MB-AI-VOICE-COMPANION-001",
+  "approvalDate": "2026-10-23",
+  "status": "APPROVED_TARGET_NOT_IMPLEMENTED",
+  "timeZone": "Asia/Ho_Chi_Minh",
+  "packages": {
+    "FREE": {
+      "voiceEligible": false,
+      "sessionsPerDay": 0,
+      "dailySeconds": 0,
+      "perSessionSeconds": 0
+    },
+    "PLUS": {
+      "voiceEligible": true,
+      "sessionsPerDay": 2,
+      "dailySeconds": 600,
+      "perSessionSeconds": 300
+    },
+    "PREMIUM": {
+      "voiceEligible": true,
+      "sessionsPerDay": 3,
+      "dailySeconds": 1800,
+      "perSessionSeconds": 600
+    }
+  },
+  "limits": {
+    "globalSessions": 2,
+    "userSessions": 1,
+    "idleTimeoutSeconds": 60,
+    "reconnectGraceSeconds": 30,
+    "authorizationLeaseSeconds": 10,
+    "leaseRenewalSeconds": 5,
+    "ownerReadTimeoutMilliseconds": 2000,
+    "connectTimeoutSeconds": 45,
+    "requestTimeoutSeconds": 10,
+    "startAttemptsPerMinute": 3,
+    "startAttemptsPerDay": 10,
+    "maxContextTurnPairs": 4,
+    "maxContextTokens": 2000,
+    "maxFinalTranscriptCharacters": 2000,
+    "maxSpokenReplyCharacters": 1000
+  },
+  "usage": {
+    "dayAssignment": "AUTHORIZED_LOCAL_DAY",
+    "reset": "LOCAL_MIDNIGHT_NO_ROLLOVER",
+    "admission": "RESERVE_SESSION_AND_MIN_REMAINING_SECONDS",
+    "hardDeadline": "AUTHORIZED_AT_PLUS_ADMITTED_SECONDS_NEVER_EXTENDED",
+    "sessionConsumedOn": "FIRST_TRUSTED_VALIDATED_AI_AUDIO_PUBLICATION_WHILE_OWNER_CONNECTED",
+    "timeChargedFrom": "FIRST_REPLY_PUBLICATION_ACTIVE_INTERVALS_ONLY",
+    "rounding": "CEIL_SUMMED_ACTIVE_MILLISECONDS_ONCE_PER_SESSION",
+    "noDeliveredReply": "RELEASE_ALL_RESERVED_QUOTA",
+    "deliveredReplyFailure": "KEEP_DELIVERED_SESSION_AND_USED_ACTIVE_SECONDS",
+    "upgrade": "RAISE_CURRENT_DAY_CAP_WITHOUT_RESET_OR_SESSION_EXTENSION",
+    "entitlementLoss": "TERMINATE_AND_SETTLE_USED_QUOTA"
+  },
+  "privacy": {
+    "recordAudio": false,
+    "persistTranscripts": false,
+    "agentObservability": false,
+    "reuseJournal": false,
+    "reuseTextHistory": false,
+    "contextStorage": "SESSION_RAM_ONLY",
+    "metadataRetentionDays": 30,
+    "requiredConsents": ["AI_PROCESSING", "AI_VOICE_PROCESSING"],
+    "voiceConsentVersion": "ai-voice-processing-capstone-v1",
+    "consentOwner": "CARE",
+    "voiceAuthority": "JOURNAL_AI",
+    "entitlementOwner": "CONSULTATION",
+    "materialProviderOrPurposeChange": "NEW_VOICE_DISCLOSURE_AND_RECONSENT"
+  },
+  "providers": {
+    "media": "LIVEKIT_CLOUD",
+    "agent": "LIVEKIT_CLOUD_HOSTED_NODE",
+    "speech": "LIVEKIT_INFERENCE_CANDIDATES_PENDING_MB_760",
+    "reasoning": "JOURNAL_AI_BEDROCK",
+    "bedrockRegion": "ap-southeast-1",
+    "approvedGlobalProfiles": [
+      "global.anthropic.claude-sonnet-4-6",
+      "global.anthropic.claude-opus-4-6-v1"
+    ],
+    "routing": "REUSE_CURRENT_APPROVED_PACKAGE_ROUTE_NO_AUTOMATIC_FALLBACK",
+    "residency": "GLOBAL_PROFILES_MAY_PROCESS_CROSS_REGION",
+    "liveReadiness": "ACCOUNT_ACCESS_QUOTA_AND_SPEECH_BENCHMARK_REQUIRED"
+  }
+}

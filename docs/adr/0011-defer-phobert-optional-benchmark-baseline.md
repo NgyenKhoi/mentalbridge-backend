@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-11
 - Supersedes: ADR 0001 only where it requires `phobert-worker` as a baseline deployable; the service ownership and transport decisions in ADR 0001 remain accepted.
+- Complemented by: [ADR 0015](0015-ai-companion-analysis-contract.md), which freezes the provider-neutral AI Companion runtime contract without activating PhoBERT
 
 ## Context
 

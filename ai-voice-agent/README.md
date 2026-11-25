@@ -1,0 +1,311 @@
+# MentalBridge AI Voice agent — MB-759
+
+MB-854 speech units use the independently versioned
+[internal JSON contract](../contracts/openapi/journal-ai-voice-speech-units-v1.json).
+Speech units are always on since MB-846d (owner decision 2026-11-23: enabled
+by default; rollback = revert); there is no `AI_VOICE_SPEECH_UNITS_ENABLED`
+flag. A spoken reply is at most 800 characters across its units. Journal and
+Agent images must deploy together in one step: either one alone fails every
+Voice call (old 500 vs new 800 limit, and the speech-unit capability check). A bound measurement hash is required only for a
+measured campaign; Journal rejects an unexpected or mismatched claim.
+The client reads complete authorized objects incrementally, plays one unit at a
+time, ACKs successful complete playback and cancels the exact provider turn on
+barge-in. No retry/fallback, text/audio persistence or raw token speech is added.
+See [policy and rollout limits](../docs/policies/companion-voice-speech-unit-v1.md).
+
+Journal/AI owns this independently deployable Node 22 worker. The accepted
+[ADR 0046](../docs/adr/0046-ai-voice-companion-contract.md) permits LiveKit's
+media SDK; every synchronous business call still uses
+[Journal REST](../contracts/openapi/journal-ai-service-v1.yaml).
+Default: **disabled**. This package does not start a consultation participant,
+call Bedrock directly, create a room or allocate quota. Journal alone owns the
+global two-call limit, one active call per user, consent, entitlement, usage,
+30-day minimized metadata and provider-verified teardown. Local admission/load
+limits supplement that authority; they are not a distributed quota counter.
+
+## MB-762 local real pilot
+
+The first authorized real pilot runs this worker locally against LiveKit Cloud,
+with Journal on verified loopback HTTP. No Hosted Agent or staging deployment is
+needed for this checkpoint. Keep `AI_VOICE_AGENT_ENABLED=false` until preflight
+and explicit `LIVE_APPROVED`; registration, named dispatch and real media remain
+unverified while disabled.
+
+Set `AI_VOICE_PILOT=true` in the external private env for the approved run. It
+pins Nova-3, Sonic 3 and an explicit approved voice. The owner selected Lien
+`8e8f222d-c817-4cc5-822b-8bf76ca7e98d` for future pilots after finding Xia quiet.
+Historical Xia `b8cd71e3-bc14-4538-a530-d6314731c036` remains in the pilot
+allowlist so prior configurations and evidence retain their original identity.
+`AI_VOICE_TTS_VOICE_ID` has no default: the operator must select the approved
+voice explicitly; missing or unknown pilot voices fail startup. No gain or
+volume override accompanies this selection. The per-attempt TTS
+input reservation defaults to 1,200 characters; an approved pilot budget may set
+`AI_VOICE_PILOT_TTS_MAX_CHARACTERS` to an integer from 1 to 8,000. Reservation
+happens before synthesis and is never refunded for interrupted, failed or unknown
+speech. Never restart/re-dispatch an unknown attempt. Journal owns the approved
+campaign's admission, duration and Claude-turn limits; changing this worker cap
+does not extend them or activate Voice. Existing no-retry, no-recording and
+no-export controls still apply. See [preflight evidence](../docs/mb-762-live-preflight.md).
+
+## Build and verify without Cloud
+
+MB-782 adds the official `lk.agent.state` display hint through a single scoped
+server API writer. Agent and USER own-metadata permissions remain denied to
+avoid competing SDK writes; no content enters attributes. See the
+[Web consumer handoff](../docs/story-mb-782-voice-web-prerequisite.md)
+for transitions, exact identity/room filtering and bounded stale-state fallback.
+
+MB-820 sends `X-MentalBridge-Voice-Capabilities: expression` on turn calls and
+pairs `mb.mam.expression` with `lk.agent.state` in the same serialized
+admitted-Agent attribute write. `neutral` or `comfort` appears only when first
+audio playout is authorized and speaking begins. While still admitted, every
+non-speaking write clears expression with `""`; failed writes are isolated and
+trigger a best-effort clear. A reconnecting or disconnected room cannot be
+written, so Web resets on reconnect/disconnect/`speaking` end without relying
+on the clear and treats missing, stale or unknown values as neutral.
+
+MB-760 adds [speech QA tooling](qa/README.md) for a scripted matrix, Unicode
+WER/CER, aggregate-only reports and a mock pilot. The first live benchmark remains
+`BLOCKED_ALLOWANCE`; no live provider or microphone command is added. QA source
+is excluded from the runtime image and runs through the existing worker CI lane.
+
+```sh
+npm ci
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run contract:check
+npm run migration:check
+npm run build
+```
+
+Tests use synthetic local HTTP and media/provider boundaries, including the
+pinned SDK's real STT wire validation and transcript processing. They never
+enable the worker or need Cloud, model or owner-service credentials.
+`migration:check` verifies the no-database/no-direct-reasoning-provider boundary;
+there is no worker database, migration, durable transcript or audio store.
+SDK versions, including native RTC/Silero, are pinned in the lockfile. SDK
+transitive OpenAI/telemetry packages are not configured or invoked by this worker.
+Zod is pinned to 4.6.7 and ONNX's `adm-zip` is narrowly overridden to 0.6.1 for
+[Zod validation](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) and
+[ZIP extraction](https://github.com/advisories/GHSA-rcw4-f5rp-g42v) advisories.
+The patched production image passes `npm audit --omit=dev` and loads the
+packaged Silero VAD with `--network none`; revisit the override when ONNX updates.
+
+## Configuration and startup
+
+MB-862 optionally binds a measurement worker with
+`AI_VOICE_MEASUREMENT_POLICY_HASH`, the non-secret digest exported by Journal's
+approved measurement configuration. It requires pilot mode and exactly the
+server-allocated TTS cap/approved voice. The claim sends `measurementHash` and
+validates the optional lease `measurement` object before starting media.
+Missing, unexpected or mismatched policy/cap/voice fails closed without retry.
+Journal allows only one measurement worker claim per attempt, including after
+an unknown response or process restart. Normal unbound claims are unchanged.
+No environment value enables a campaign or supplies consent. See the
+[MB-862 operator and verification runbook](../docs/story-mb-862-voice-measurement-fence.md).
+
+Use exactly the keys in [.env.example](.env.example), injected into the server
+through managed secrets. No dotenv file is loaded automatically. Never put keys
+in a client, dispatch, Jira, repository, command-line value or build argument.
+
+| Key                                     | Meaning                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `AI_VOICE_AGENT_ENABLED`                | Defaults to `false`; explicit `true` is rejected in CI/test                                                          |
+| `AI_VOICE_PILOT`                        | Defaults to `false`; pilot mode pins Nova-3/Sonic 3 and an explicitly approved voice, with the configured TTS budget |
+| `AI_VOICE_PILOT_TTS_MAX_CHARACTERS`     | Integer 1..8000, default 1200; approved pilot TTS input budget, including interrupted/failed/unknown speech          |
+| `AI_VOICE_FINAL_AGGREGATION_MS`         | Integer 500..1500, default 750; pause joining adjacent valid STT finals before requesting a Journal turn             |
+| `AI_VOICE_AGENT_APPROVAL_VERSION`       | Reviewed account/privacy/speech QA record identifier, required when enabled                                          |
+| `LIVEKIT_URL`                           | Existing mentalbridge project's `wss://…livekit.cloud` origin                                                        |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-only existing project credentials, also used for LiveKit Inference                                            |
+| `AI_VOICE_JOURNAL_BASE_URL`             | HTTPS Journal origin reachable by hosted worker; loopback HTTP allowed locally; default `http://127.0.0.1:3002`      |
+| `AI_VOICE_JOURNAL_SERVICE_TOKEN`        | Purpose-specific token matching Journal `JOURNAL_AI_VOICE_WORKER_SERVICE_TOKEN`; distinct from LiveKit secret        |
+| `AI_VOICE_STT_MODEL`                    | Candidate `deepgram/nova-3` (default), or `deepgram/nova-2`, Vietnamese `vi`                                         |
+| `AI_VOICE_TTS_MODEL`                    | Pinned candidate `cartesia/sonic-3-2026-01-12`, Vietnamese `vi`                                                      |
+| `AI_VOICE_TTS_VOICE_ID`                 | Required explicit reviewed Cartesia UUID; current pilot Lien, historical Xia retained; blank means no enablement     |
+
+No additional Deepgram, Cartesia, OpenAI or AWS credentials belong in this
+worker. Enabled startup rejects those provider credentials and OTLP export
+configuration. No fallback model, cloned/custom voice or worker LLM is used.
+Candidate selection is not speech-quality approval. MB-760 must benchmark and
+record the chosen allowed model/voice before approving enablement; a different
+model requires a reviewed configuration/code change.
+
+The existing LiveKit Cloud `mentalbridge` project is sufficient for development.
+No new account, paid upgrade or VPS is required by this change. Before an opt-in
+Cloud test, verify Hosted Agents/Inference allowance, model/voice access, privacy
+settings and Journal's existing Bedrock access using the
+[controlled-demo runbook](../docs/ai-voice-demo-runbook.md). Unknown allowance
+blocks enablement; this implementation has not inspected account quotas.
+
+From the repository root:
+
+```sh
+docker build -t mentalbridge-ai-voice-agent:mb759 ai-voice-agent
+```
+
+The image contains no secrets and runs as the unprivileged `node` user. Default
+startup exits safely with `VOICE_AGENT_UNAVAILABLE` without connecting. After
+the opt-in gates are approved, deploy this image to the existing Hosted Agent
+project using a Dockerfile rooted in `ai-voice-agent/` and inject runtime secrets.
+For local authorized QA, with an explicit environment file **outside** the repo:
+
+```sh
+node --env-file=/secure/path/voice-agent.env ai-voice-agent/dist/main.js
+```
+
+Use `SIGTERM`/Ctrl+C or stop the hosted deployment to shut down. The parent closes
+SDK job processes (5-second shutdown deadline); each job disables input, cuts
+playout, cancels Journal work, disconnects and discards RAM. Journal verifies
+actual room/agent absence before releasing capacity. Failed/unknown cleanup does
+not free a slot from a worker-local timeout. Follow the runbook to reconcile it.
+Do not start another agent by joining an arbitrary room or replaying a job.
+
+## Media behavior and limits
+
+Only named dispatch `mentalbridge-ai-voice-v1` with exact opaque session,
+attempt and logical dispatch UUIDs is accepted. Runtime rooms use `ai-voice-UUID`,
+room metadata is the logical dispatch UUID, and the accepted agent identity is
+`va-ATTEMPT_UUID`. Journal must accept `agent-claim` before connecting. Subscribe
+to one standard `vu-UUID` microphone participant only, no video/screens/data/text,
+and reject recorded, consultation, extra-participant or changed-owner rooms.
+RoomIO creates an audio input but it is detached before session startup. Only
+after `MEDIA_READY` acknowledgement does the worker attach it and explicitly
+subscribe the owner's microphone. Mute/disconnect/end detach and unsubscribe;
+newly published owner tracks follow the same gate. This is distinct from
+`inputOptions.audioEnabled:false`, which omits the SDK input permanently.
+
+Every job owns one session and current-turn RAM. Silero VAD is CPU-local and
+ships its model with the plugin. Endpointing plus a final-segment aggregation
+pause accommodates hesitant Vietnamese speech. The pause defaults to 750 ms;
+`AI_VOICE_FINAL_AGGREGATION_MS` can bound it between 500 and 1,500 ms for an
+approved latency setting, including rollback to 1,500 ms. A new nonempty
+Vietnamese interim suspends dispatch of a pending final until a fresh final
+arrives; replayed accepted segment IDs cannot stall it. Interim text never
+enters a Journal request. Missing subsequent finals remain fail-closed under
+existing idle/session deadlines. The worker checks due work every 50 ms; lease
+renewals retain their existing independent deadlines and serialized controls.
+The shorter pause does not change confidence validation, quota or provider deadlines. Interim words can
+interrupt after 500 ms/two words but cannot call Journal. A finite, in-range
+Vietnamese final below confidence 0.8 is discarded with the unsubmitted pending
+utterance. It cannot call Journal, generate TTS, interrupt an approved reply or
+cancel an authorized in-flight turn. This input-quality rejection does not reset
+idle time, quota, lease or hard stop; the user may provide a fresh valid utterance
+in the same authorized call. No rejected text is fabricated, forwarded or saved.
+Malformed confidence, non-Vietnamese or oversized final input and genuine
+SDK/provider failures still close the call. Clients can offer explicit text or
+manual push-to-talk re-entry; this worker adds no client UI or silent fallback.
+
+The adapter normalizes valid Vietnamese BCP 47 recognition tags such as `vi-VN`
+and `vi-Latn-VN` to `vi`. Other languages and tags still malformed after SDK
+processing remain rejected. The SDK itself repairs `vi_VN` to `vi-VN` first;
+confidence must be finite, within 0..1 and at least 0.8 before Journal receives a
+turn. Lower valid confidence is classified DISCARDED rather than fatal REJECTED;
+invalid values remain fatal. The pinned SDK defaults
+omitted aggregate confidence to 1 and rejects null confidence at wire validation.
+Empty finals remain nonfatal and do not call Journal. These SDK semantics are
+regression-tested; normalization does not raise recognition confidence.
+
+Only Journal's validated short `spokenText` reaches TTS. First audio publication
+reports its exact turn/reply identity once. Barge-in cuts the current TTS stream,
+reports interruption and never resumes an old prefix or retries generation.
+The worker speaks `spokenText` one sentence at a time with a 200 ms pause
+between sentences and before a following speech unit; with the ~180 ms TTS
+first byte this gives about 350–400 ms of audible silence. The first sentence
+starts without delay, and a stop or barge-in drops the remaining sentences.
+TTS requests Cartesia `speed: 0.9` through Inference `modelOptions`.
+Final speech arriving while a Journal request is unresolved stays in the bounded
+pending buffer. A later turn starts only after the current request and playback
+finish; a failed or cancelled request discards pending speech. There are no automatic REST,
+STT/TTS or dispatch retries after an unknown outcome.
+
+Claim requests time out after 2 seconds and turns after 30 seconds. Control
+requests allow at most 3.5 seconds, bounded by the command expiry; expired or
+cancelled acknowledgements cannot renew authority. STT/TTS connection/frame
+failures stop safely. Renew every 5 seconds against Journal's 10-second lease,
+or sooner to retain 4.5 seconds of lease headroom after a delayed acknowledgement.
+The previous acknowledged lease and original hard stop remain authoritative
+while renewal is in flight; neither can be extended locally. Muting clears
+pending speech and input; owner disconnect between turns permits the same owner
+to return within 30 seconds after fresh authorization. Agent network loss or
+disconnect during generation/playback ends the attempt. Reconnect creates no
+new quota or extended duration.
+
+Before playback the worker waits for already queued control acknowledgements
+and checks the reply against its acknowledged lease. A reply never renews that
+lease. An expired or denied control prevents TTS, and authority expiry has an
+explicit diagnostic category.
+
+Ordinary turns and playback preserve the same recognition stream. Coordinator
+pending text is cleared locally; SDK `clearUserTurn()` is not used because it
+restarts recognition in the pinned SDK. Microphone mute/end still disable input,
+and terminal cleanup closes the session. Nova-3 endpointing is 500ms; the worker
+defaults to 750ms aggregation for adjacent finals. Diagnostic HTTP status is limited
+to numeric 400–599, without raw SDK messages or payloads.
+
+The caller must enable acoustic echo cancellation and browser/device noise
+suppression. Exact normalized recent TTS echoes are additionally suppressed.
+This guard is not proof of acoustic noise rejection: speakers, headphones,
+background speech and hesitant pauses require MB-760 real-device benchmarks.
+No paid managed noise filter is enabled without allowance/quality evidence.
+
+## Privacy and operational evidence
+
+### Measurement configuration snapshot
+
+After building the reviewed revision, run
+`node dist/measurement-preflight.js` inside the Agent's existing environment.
+This command only loads configuration and prints the version-1 allowlisted
+snapshot; it does not register a worker or contact Journal/LiveKit. Exit 0 means
+the snapshot was exported, not that a measurement is authorized. Invalid
+configuration exits 1 with a fixed code and no configuration values.
+
+`configuredTtsCharactersPerAttempt` is only a configured number. The effective
+`ttsCharactersPerAttempt` is null when pilot reservations are off. No voice UUID,
+owner, credential or endpoint is exported. See the
+[MB-861 preflight runbook](../docs/story-mb-861-voice-measurement-preflight.md)
+for the combined blocking check and the remaining aggregate-enforcement gate.
+
+MB-854 adds numeric per-turn dispatch and Journal round-trip timings, Agent
+playout delays, and finite SDK TTS first-byte/synthesis timings. Match Agent
+`turnSequence` with Journal's numeric turn sequence within the same attempt.
+Agent `playout_first_audio` is not browser audibility; SDK TTS first-byte time
+is not end-to-end latency. Missing metrics stay absent, never zero-filled.
+Existing full response and publication checks still precede speech.
+`schedulerLagMs` can include waiting for a busy prior turn or coordination,
+not only timer jitter. See the [MB-854 investigation and benchmark](../docs/story-mb-854-voice-latency.md).
+
+`AgentSession.start({record:false})` disables SDK session recording and content
+observability. Text/video input, transcription output/sync, preemptive generation,
+SDK LLM and chat-history insertion are disabled. Raw STT is intercepted before
+SDK history; TTS uses `addToChatCtx:false`. The SDK logger is silent in both
+parent and job processes; errors expose only fixed safe codes. No debug export,
+audio file, transcript, prompt, reply or token is logged/persisted by this package.
+Current input/reply and deduplication digests remain only in bounded call RAM
+and are dropped on end; there is no recovery from disk or previous chats.
+
+Bounded diagnostics distinguish empty/pending/rejected STT finals, fixed rejection
+reasons and SDK/room/participant/publication failure sources. Rejection evidence
+contains only valid numeric confidence and language-match booleans, never raw
+language or transcript. Media errors expose a closed component enum, optional
+recoverability and HTTP status class, never error messages, response bodies or
+headers. The first failure survives shutdown; a later SDK close cannot replace it.
+
+`input_audio_level` contains only approximately one-second numeric RMS, peak
+amplitude and duration aggregates. Frames are forwarded unchanged and are not
+retained by the meter. It records no device identity, audio samples or transcript,
+and cannot establish the microphone amplitude of an earlier unmeasured call.
+
+The operator must also disable project-side recording, session insights, content
+tracing, exports and content sampling before enablement. Application settings
+cannot prove provider/account retention. See official pinned-boundary references:
+[recording options](https://docs.livekit.io/reference/agents/session-recording-options/),
+[pipeline nodes](https://docs.livekit.io/agents/logic/nodes/),
+[STT](https://docs.livekit.io/agents/models/stt/deepgram/),
+[TTS](https://docs.livekit.io/agents/models/tts/cartesia/).
+
+No hosted deployment, real spoken reply, provider privacy/quota verification or
+Vietnamese noise benchmark is claimed by automated tests. Record exact commit
+SHA, model/voice IDs, device and provider modes in the authorized opt-in QA story.
+Do not attach raw audio/transcript to evidence.

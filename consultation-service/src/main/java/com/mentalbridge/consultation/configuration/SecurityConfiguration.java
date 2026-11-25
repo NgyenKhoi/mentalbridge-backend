@@ -1,0 +1,144 @@
+package com.mentalbridge.consultation.configuration;
+
+import java.security.KeyFactory;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.env.Environment;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+
+import com.mentalbridge.consultation.entitlement.VoiceEntitlementAuthenticationFilter;
+import com.mentalbridge.consultation.entitlement.VoiceEntitlementProperties;
+
+import com.mentalbridge.consultation.shared.SecurityProblemSupport;
+
+@Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(VoiceEntitlementProperties.class)
+public class SecurityConfiguration {
+
+	@Bean
+	@Order(1)
+	SecurityFilterChain voiceEntitlementSecurity(HttpSecurity http, VoiceEntitlementProperties properties,
+			Environment environment)
+			throws Exception {
+		if (properties.journalServiceToken() != null && !properties.journalServiceToken().isEmpty()) {
+			properties.requireDistinctFrom(environment.getProperty("mentalbridge.consultation.evidence-service-token"),
+					environment.getProperty("mentalbridge.consultation.appointment-notifications.service-token"));
+		}
+		http.securityMatcher(VoiceEntitlementAuthenticationFilter.PATH)
+				.csrf(csrf -> csrf.disable())
+				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.addFilterBefore(new VoiceEntitlementAuthenticationFilter(properties), AuthorizationFilter.class)
+				.authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll());
+		return http.build();
+	}
+
+	@Bean
+	SecurityFilterChain securityFilterChain(HttpSecurity http,
+			Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
+			SecurityProblemSupport securityProblems, IdentityAccountStatusVerifier accountStatus) throws Exception {
+		http.csrf(csrf -> csrf.disable())
+				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.authorizeHttpRequests(authorize -> authorize
+						.requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**")
+						.permitAll()
+						.requestMatchers("/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn", "/internal/v1/payments/payos/webhook").permitAll()
+						.requestMatchers("/internal/v1/video/livekit/webhook").permitAll()
+						.requestMatchers("/internal/v1/appointments/*/notification-eligibility").permitAll()
+						.requestMatchers("/internal/v1/entitlements/current").hasRole("USER")
+						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+						.requestMatchers("/internal/v1/appointments/*/consultation-brief-context",
+								"/internal/v1/appointments/*/chat-eligibility",
+								"/internal/v1/appointments/*/chat-evidence",
+								"/internal/v1/appointments/*/reusable-session-summaries/*")
+						.hasAnyRole("USER", "SPECIALIST")
+						.requestMatchers("/internal/v1/specialist/client-relationships").hasRole("SPECIALIST")
+						.requestMatchers("/api/v1/service-credits", "/api/v1/service-plans",
+								"/api/v1/subscriptions/**", "/api/v1/payments/**", "/api/v1/payments")
+						.hasRole("USER")
+						.requestMatchers("/api/v1/specialist/dashboard", "/api/v1/specialist/analytics",
+								"/api/v1/specialist/appointments/**", "/api/v1/specialist/earnings",
+								"/api/v1/specialist/payout-destination", "/api/v1/specialist/payouts",
+								"/api/v1/specialist/payout-banks")
+						.hasRole("SPECIALIST")
+						.requestMatchers("/api/v1/appointments/*/video-session", "/api/v1/appointments/*/video-access")
+						.hasAnyRole("USER", "SPECIALIST")
+						.requestMatchers("/api/v1/appointments/**", "/api/v1/session-summaries/**",
+								"/api/v1/agreed-next-steps/**", "/api/v1/bookable-slots", "/api/v1/specialists/**")
+						.hasRole("USER")
+						.requestMatchers("/api/v1/specialist-profile/**").hasRole("SPECIALIST")
+						.requestMatchers("/api/v1/availability-slots/**").hasRole("SPECIALIST")
+						.requestMatchers("/api/v1/admin/specialist-profiles/**").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/appointments/**").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/appointment-disputes/**").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/payouts", "/api/v1/admin/payments").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/operations/**").hasRole("ADMIN")
+						.anyRequest().authenticated())
+				.exceptionHandling(errors -> errors.authenticationEntryPoint(securityProblems)
+						.accessDeniedHandler(securityProblems))
+				.oauth2ResourceServer(resourceServer -> resourceServer
+						.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+				.addFilterAfter(new AccountStatusEnforcementFilter(accountStatus, securityProblems,
+						"/actuator/health", "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**",
+						"/internal/v1/payouts/momo/ipn", "/internal/v1/payments/momo/ipn", "/internal/v1/payments/payos/webhook",
+						"/internal/v1/video/livekit/webhook", "/internal/v1/appointments/*/notification-eligibility"),
+						BearerTokenAuthenticationFilter.class);
+		return http.build();
+	}
+
+	@Bean
+	JwtDecoder jwtDecoder(ConsultationJwtProperties properties) {
+		var decoder = NimbusJwtDecoder.withPublicKey(publicKey(properties.publicKey()))
+				.signatureAlgorithm(SignatureAlgorithm.RS256).build();
+		var issuer = JwtValidators.createDefaultWithIssuer(properties.issuer());
+		var audience = new JwtClaimValidator<java.util.List<String>>("aud",
+				audiences -> audiences != null && audiences.contains(properties.audience()));
+		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuer, audience));
+		return decoder;
+	}
+
+	@Bean
+	Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter() {
+		var authorities = new JwtGrantedAuthoritiesConverter();
+		authorities.setAuthoritiesClaimName("roles");
+		authorities.setAuthorityPrefix("ROLE_");
+		var converter = new JwtAuthenticationConverter();
+		converter.setJwtGrantedAuthoritiesConverter(authorities);
+		return converter;
+	}
+
+	private RSAPublicKey publicKey(String pem) {
+		try {
+			var bytes = Base64.getDecoder().decode(stripPem(pem));
+			return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(bytes));
+		}
+		catch (Exception exception) {
+			throw new IllegalStateException("Consultation JWT public key is invalid", exception);
+		}
+	}
+
+	private String stripPem(String pem) {
+		return pem.replace("\\n", "\n").replace("-----BEGIN PUBLIC KEY-----", "")
+				.replace("-----END PUBLIC KEY-----", "").replaceAll("\\s", "");
+	}
+}

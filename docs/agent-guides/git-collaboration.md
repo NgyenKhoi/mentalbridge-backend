@@ -21,20 +21,26 @@ git rev-list --left-right --count origin/dev...HEAD
 
 The first count is commits present only on `origin/dev`; a value greater than zero means the feature is behind. Integrate the current base before coding: rebase a branch owned by one developer, or merge `origin/dev` into a branch shared by multiple developers. Resolve conflicts deliberately and run the smallest baseline gates before adding new changes. Do not knowingly build a feature on a stale architectural, contract, migration, or security baseline.
 
-Branch names use lowercase kebab-case:
+Branch names use lowercase kebab-case for type, scope, and description, followed
+by the real uppercase task key in parentheses:
 
 ```text
-<type>/<scope>-<short-description>
+<type>/<scope>-<short-description>-(<TASK-KEY>)
 ```
 
 Allowed types mirror the PR template: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`. Preferred scopes are module/domain names such as `identity`, `care`, `consultation`, `journal-ai`, `realtime`, `content-notification`, `phobert`, `database`, `platform`, `ci`, or `docs`.
 
+The task key is mandatory and must match the tracked task exactly; do not invent
+one. Quote the complete branch name in shell commands because unescaped
+parentheses have special meaning in some shells. If no tracked task exists,
+obtain one before creating the branch.
+
 Examples:
 
 ```text
-feat/realtime-message-receipts
-fix/consultation-double-booking
-docs/platform-agent-workflow
+feat/realtime-message-receipts-(MB-412)
+fix/consultation-double-booking-(MB-287)
+docs/platform-agent-workflow-(MB-519)
 ```
 
 ## Issues
@@ -52,7 +58,7 @@ Feature issue titles follow the template: `feat(<scope>): <lowercase short descr
 
 Plan commit slices before substantial implementation whenever a task spans multiple concerns. Each slice identifies one reviewable reason to change, its owning module or boundary, the expected artifacts, and the focused check that must pass. Commit a completed slice after that check passes instead of accumulating the entire task for one final commit. If the person or agent performing the work is not authorized to commit, keep the slice file groups distinct and hand off the proposed commit sequence.
 
-Keep behavior with its tests, a migration with its data dictionary and mapping tests, and generated output with its source contract. Every commit must build or validate independently and must not depend on a later commit to repair a known broken state. Separate different service owners, behavior changes, refactors, formatting, dependency upgrades, contracts, migrations, and operational configuration unless they are one indivisible compatibility change. Cross-service evolution normally uses separate compatible commits: additive provider contract, consumer adoption, then provider cleanup.
+Keep behavior with its tests, a material persistence migration with its canonical logical model, data dictionary, and mapping tests, and generated output with its source contract. Every commit must build or validate independently and must not depend on a later commit to repair a known broken state. Separate different service owners, behavior changes, refactors, formatting, dependency upgrades, contracts, migrations, and operational configuration unless they are one indivisible compatibility change. Cross-service evolution normally uses separate compatible commits: additive provider contract, consumer adoption, then provider cleanup.
 
 Stage only reviewed files belonging to one slice. Inspect `git diff --cached --stat`, `git diff --cached`, and the remaining unstaged/untracked state before committing. Re-slice if the staged change has more than one independently reversible reason, mixes unrelated scopes, needs `and` to describe its subject, or cannot be reviewed without understanding a later commit. A commit must not accidentally include unrelated binary/source documents, generated artifacts, credentials, or teammate work. Before publishing requirement binaries, review them for personal contact information and confirm the target repository has the intended visibility.
 
@@ -82,6 +88,19 @@ Append `(#issue)` only when a real tracked issue exists; never fabricate one. Bu
 - every checklist item truthfully. Leave an item unchecked and explain the blocker instead of falsely marking it done.
 
 Before opening/updating the PR, synchronize safely with the target branch, resolve conflicts deliberately, rerun affected quality gates, and review the final base-to-head diff. Do not force-push a shared branch unless the user explicitly authorizes it and the team impact is understood.
+
+### Conflict-safe delivery (MB-706)
+
+Jira MB-706 holds the agreed team rules; this is the working summary for backend PRs.
+
+- **Story.** One Story is one demonstrable use case with one accountable feature owner across backend, web and mobile. It states the UC goal, BE/FE owners, affected paths, contract, UX handoff, authored test files, execution status, merge order and an acceptance-states table (state | what the screen shows | what it must not show | business rule and policy link). Add a `BE/CONTRACT` subtask only when a service, schema or endpoint changes; add `FE-WEB` or `FE-MOBILE` for the consumer, and `UX-POLISH` only after `ui-ready`.
+- **One writer per file.** While a PR is open, only its owner commits its feature files. Paths in `.github/CODEOWNERS` (contracts, migrations and changelogs, ADRs, database and domain-model docs, workflows) change with integrator approval and stay as narrow as the behaviour needs.
+- **Overlap check.** Before opening and before merging, run `node scripts/pr-overlap.mjs` from the repository root. It lists open PRs into `dev` that change the same files and the shared files you touch; agree the merge order with those owners. CI posts the same report as a PR comment; it warns and never blocks.
+- **Size and freshness.** About 30 files or fewer excluding generated output; rebase on `origin/dev` at least daily; a branch lives at most three days. `git diff origin/dev...HEAD --stat` shows only your paths. No workspace snapshot PRs.
+- **Migrations.** Two open PRs must not add the same changeset number to one service; the overlap report flags a shared `db.changelog-master.yaml`. Never reorder or rename an applied changeset.
+- **Generated conflicts.** Never hand-resolve `*.generated.ts` or synced OpenAPI YAML; take `dev` and re-run `npm run contracts:sync` from the intended backend branch in the frontend repository.
+- **Merge order.** Backend contract and owner API, then the compatible web or mobile consumer (which re-runs `npm run contracts:sync` from the merged contract), then UI polish, then the milestone E2E batch.
+- **Regression checks.** Before merge: required CI green on the last rebase and affected local gates re-run after it. After merge: the feature owner walks every acceptance-table row on the Docker dev stack before the frontend Story is labelled `ui-ready`.
 
 ### Synchronizing a stale feature branch
 

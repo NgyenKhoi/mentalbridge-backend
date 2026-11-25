@@ -1,10 +1,40 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
+const measurementMigration = createRequire(import.meta.url)(
+  "../migrations/020_voice_measurement_campaigns.cjs",
+);
+assert.equal(
+  measurementMigration.collectionName,
+  "ai_voice_measurement_campaigns",
+);
+assert.equal(
+  measurementMigration.validator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  measurementMigration.validator.$jsonSchema.properties.reservations.maxItems,
+  2,
+);
+assert.equal(typeof measurementMigration.up, "function");
+assert.equal(typeof measurementMigration.down, "function");
+
 const require = createRequire(import.meta.url);
 const migration = require("../migrations/001_journal_entries_baseline.cjs");
 const commandsMigration = require("../migrations/002_journal_mutation_commands.cjs");
 const replayMigration = require("../migrations/003_journal_replay_snapshots_and_cursor_index.cjs");
+const moodMigration = require("../migrations/004_journal_revision_mood.cjs");
+const analysisMigration = require("../migrations/005_exact_revision_analysis.cjs");
+const emotionCheckInMigration = require("../migrations/006_daily_emotion_check_ins.cjs");
+const routingMigration = require("../migrations/007_entitlement_aware_model_routing.cjs");
+const benchmarkMigration = require("../migrations/008_ai_benchmark_metadata.cjs");
+const longitudinalMigration = require("../migrations/009_longitudinal_context_analysis.cjs");
+const companionChatMigration = require("../migrations/010_ai_companion_chat_quotas.cjs");
+const bedrockMigration = require("../migrations/011_bedrock_provider.cjs");
+const conversationContextMigration = require("../migrations/012_ai_companion_conversation_context.cjs");
+const benchmarkGovernanceMigration = require("../migrations/019_benchmark_dataset_governance.cjs");
+const benchmarkExecutionMigration = require("../migrations/021_benchmark_execution_governance.cjs");
+const longitudinalPromptV2Migration = require("../migrations/022_longitudinal_prompt_v2.cjs");
 
 assert.equal(migration.collectionName, "journal_entries");
 assert.equal(typeof migration.up, "function");
@@ -20,6 +50,140 @@ assert.equal(
   migration.validator.$jsonSchema.properties.revisions.items.properties
     .contentPreview,
   undefined,
+);
+assert.equal(analysisMigration.jobCollection, "analysis_jobs");
+assert.equal(analysisMigration.resultCollection, "journal_analysis_results");
+assert.equal(typeof analysisMigration.up, "function");
+assert.equal(typeof analysisMigration.down, "function");
+assert.equal(emotionCheckInMigration.collectionName, "emotion_check_ins");
+assert.equal(typeof emotionCheckInMigration.up, "function");
+assert.equal(typeof emotionCheckInMigration.down, "function");
+assert.equal(
+  emotionCheckInMigration.validator.$jsonSchema.properties.revisions.maxItems,
+  32,
+);
+assert.equal(
+  emotionCheckInMigration.validator.$jsonSchema.properties.commands.maxItems,
+  33,
+);
+assert.ok(
+  analysisMigration.jobValidator.$jsonSchema.required.includes("keyHash"),
+);
+assert.equal(typeof conversationContextMigration.up, "function");
+assert.equal(typeof conversationContextMigration.down, "function");
+assert.ok(
+  conversationContextMigration.conversationValidator.$jsonSchema.required.includes(
+    "context",
+  ),
+);
+assert.ok(
+  conversationContextMigration.conversationValidator.$jsonSchema.properties.messages.items.properties.contextKinds.items.enum.includes(
+    "RESOURCE",
+  ),
+);
+assert.ok(
+  analysisMigration.jobValidator.$jsonSchema.required.includes("nextAttemptAt"),
+);
+assert.equal(
+  analysisMigration.resultValidator.$jsonSchema.properties.provider.enum[0],
+  "DETERMINISTIC_FAKE",
+);
+assert.equal(typeof routingMigration.up, "function");
+assert.equal(typeof routingMigration.down, "function");
+assert.ok(routingMigration.jobValidator.$jsonSchema.properties.route);
+assert.deepEqual(
+  routingMigration.resultValidator.$jsonSchema.properties.provider.enum,
+  ["DETERMINISTIC_FAKE", "GEMINI", "OPENAI"],
+);
+assert.equal(benchmarkMigration.datasetCollection, "benchmark_datasets");
+assert.equal(benchmarkMigration.runCollection, "benchmark_runs");
+assert.equal(benchmarkMigration.caseResultCollection, "benchmark_case_results");
+assert.equal(typeof benchmarkMigration.up, "function");
+assert.equal(typeof benchmarkMigration.down, "function");
+assert.equal(longitudinalMigration.jobCollection, "longitudinal_analysis_jobs");
+assert.equal(
+  longitudinalMigration.resultCollection,
+  "journal_longitudinal_analysis_results",
+);
+assert.equal(typeof longitudinalMigration.up, "function");
+assert.equal(typeof longitudinalMigration.down, "function");
+assert.deepEqual(
+  longitudinalPromptV2Migration.longitudinalResultValidator.$jsonSchema
+    .properties.promptVersion.enum,
+  ["longitudinal-v1", "longitudinal-v2"],
+);
+assert.deepEqual(
+  longitudinalPromptV2Migration.longitudinalJobValidator.$jsonSchema.properties
+    .route.properties.promptVersion.enum,
+  ["longitudinal-v1", "longitudinal-v2"],
+);
+assert.ok(
+  longitudinalPromptV2Migration.longitudinalResultValidator.$jsonSchema.properties.provider.enum.includes(
+    "BEDROCK",
+  ),
+);
+assert.equal(
+  longitudinalMigration.jobValidator.$jsonSchema.properties.route.properties
+    .workload.enum[0],
+  "LONGITUDINAL",
+);
+assert.equal(
+  longitudinalMigration.resultValidator.$jsonSchema.properties.result.properties
+    .changesComparedWithPreviousPeriod.items.properties.direction.enum[3],
+  "INSUFFICIENT_DATA",
+);
+assert.deepEqual(
+  benchmarkMigration.caseResultValidator.$jsonSchema.properties.provider.enum,
+  ["GEMINI", "OPENAI"],
+);
+assert.ok(
+  benchmarkMigration.runValidator.$jsonSchema.properties.candidates.items.required.includes(
+    "inputCostMicroUsdPerMillionTokens",
+  ),
+);
+assert.equal(
+  benchmarkMigration.runValidator.$jsonSchema.properties.candidates.minItems,
+  1,
+);
+assert.equal(
+  benchmarkMigration.runValidator.$jsonSchema.properties.candidates.maxItems,
+  2,
+);
+assert.equal(
+  companionChatMigration.conversationCollection,
+  "ai_companion_conversations",
+);
+assert.equal(
+  companionChatMigration.quotaCollection,
+  "ai_companion_quota_ledgers",
+);
+assert.equal(typeof companionChatMigration.up, "function");
+assert.equal(typeof companionChatMigration.down, "function");
+assert.equal(
+  companionChatMigration.conversationValidator.$jsonSchema.properties.messages
+    .items.properties.content.properties.algorithm.enum[0],
+  "AES-256-GCM",
+);
+assert.equal(typeof bedrockMigration.up, "function");
+assert.equal(typeof bedrockMigration.down, "function");
+assert.deepEqual(
+  bedrockMigration.exactResultValidator.$jsonSchema.properties.provider.enum,
+  ["DETERMINISTIC_FAKE", "GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.deepEqual(
+  bedrockMigration.benchmarkCaseResultValidator.$jsonSchema.properties.provider
+    .enum,
+  ["GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.equal(
+  bedrockMigration.benchmarkRunValidator.$jsonSchema.properties.candidates
+    .maxItems,
+  3,
+);
+assert.ok(
+  bedrockMigration.companionConversationValidator.$jsonSchema.properties.messages.items.properties.route.properties.provider.enum.includes(
+    "BEDROCK",
+  ),
 );
 assert.equal(typeof commandsMigration.up, "function");
 assert.equal(typeof commandsMigration.down, "function");
@@ -41,7 +205,208 @@ assert.ok(
     .response,
 );
 assert.equal(replayMigration.cursorIndex.deleted, 1);
+assert.equal(typeof moodMigration.up, "function");
+assert.equal(typeof moodMigration.down, "function");
+assert.ok(
+  moodMigration.validator.$jsonSchema.properties.revisions.items.properties
+    .mood,
+);
+assert.equal(
+  moodMigration.validator.$jsonSchema.properties.revisions.items.required.includes(
+    "mood",
+  ),
+  false,
+);
 
+const voiceMigration = require("../migrations/013_companion_voice_quota.cjs");
+assert.equal(typeof voiceMigration.up, "function");
+assert.equal(typeof voiceMigration.down, "function");
+assert.equal(
+  voiceMigration.sessionValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  voiceMigration.usageValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  voiceMigration.capacityValidator.$jsonSchema.properties.slots.maxItems,
+  2,
+);
+const mediaMigration = require("../migrations/014_companion_voice_media.cjs");
+assert.equal(typeof mediaMigration.up, "function");
+assert.equal(typeof mediaMigration.down, "function");
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  mediaMigration.commandValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.properties.participantToken,
+  undefined,
+);
+assert.equal(
+  mediaMigration.mediaValidator.$jsonSchema.properties.transcript,
+  undefined,
+);
+const turnMigration = require("../migrations/015_companion_voice_turn_fences.cjs");
+assert.equal(typeof turnMigration.up, "function");
+assert.equal(typeof turnMigration.down, "function");
+assert.equal(
+  turnMigration.commandValidator.$jsonSchema.oneOf[1].additionalProperties,
+  false,
+);
+const handoffMigration = require("../migrations/016_companion_voice_context_handoff.cjs");
+assert.equal(typeof handoffMigration.up, "function");
+assert.equal(typeof handoffMigration.down, "function");
+assert.equal(
+  handoffMigration.sessionValidator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.equal(
+  handoffMigration.sessionValidator.$jsonSchema.properties.contextHandoffHash
+    .bsonType,
+  "string",
+);
+for (const field of ["handoffToken", "selectedText", "summary", "transcript"])
+  assert.equal(
+    handoffMigration.sessionValidator.$jsonSchema.properties[field],
+    undefined,
+  );
+const suggestionMigration = require("../migrations/017_companion_message_suggestion.cjs");
+assert.equal(typeof suggestionMigration.up, "function");
+assert.equal(typeof suggestionMigration.down, "function");
+const suggestionMessage =
+  suggestionMigration.conversationValidator.$jsonSchema.properties.messages
+    .items;
+assert.equal(suggestionMessage.additionalProperties, false);
+assert.equal(suggestionMessage.required.includes("suggestion"), false);
+assert.deepEqual(
+  suggestionMessage.properties.suggestion,
+  suggestionMessage.properties.content,
+);
+const titleMigration = require("../migrations/018_companion_conversation_title.cjs");
+assert.equal(typeof titleMigration.up, "function");
+assert.equal(typeof titleMigration.down, "function");
+const titleValidator = titleMigration.conversationValidator;
+assert.equal(
+  titleValidator.$jsonSchema.required.includes("encryptedTitle"),
+  false,
+);
+const memoryNoteMigration = require("../migrations/023_companion_memory_note.cjs");
+assert.equal(typeof memoryNoteMigration.up, "function");
+assert.equal(typeof memoryNoteMigration.down, "function");
+const memoryNoteSchema = memoryNoteMigration.conversationValidator.$jsonSchema;
+assert.equal(memoryNoteSchema.required.includes("memoryNote"), false);
+assert.deepEqual(
+  memoryNoteSchema.properties.memoryNote,
+  titleValidator.$jsonSchema.properties.encryptedTitle,
+);
+assert.equal(memoryNoteSchema.properties.memoryNoteUpdatedAt.bsonType, "date");
+assert.equal(
+  benchmarkGovernanceMigration.commandCollection,
+  "benchmark_admin_commands",
+);
+assert.equal(
+  benchmarkGovernanceMigration.datasetValidator.$jsonSchema.properties.cases
+    .maxItems,
+  200,
+);
+assert.equal(
+  benchmarkGovernanceMigration.commandValidator.$jsonSchema.properties
+    .fingerprint.pattern,
+  "^[0-9a-f]{64}$",
+);
+assert.deepEqual(
+  benchmarkExecutionMigration.runValidator.$jsonSchema.properties.candidates
+    .items.properties.provider.enum,
+  ["GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.equal(
+  benchmarkExecutionMigration.runValidator.$jsonSchema.required.includes(
+    "rubricSha256",
+  ),
+  true,
+);
+assert.deepEqual(
+  benchmarkExecutionMigration.caseResultValidator.$jsonSchema.properties
+    .provider.enum,
+  ["GEMINI", "OPENAI", "BEDROCK"],
+);
+assert.equal(
+  benchmarkExecutionMigration.approvalCollection,
+  "benchmark_dataset_approvals",
+);
+assert.equal(
+  benchmarkExecutionMigration.approvalValidator.$jsonSchema.properties.registry
+    .enum[0],
+  "MB369_CURATED_REGISTRY",
+);
+assert.equal(
+  benchmarkExecutionMigration.datasetValidator.$jsonSchema.properties
+    .activeRunCount.minimum,
+  0,
+);
+assert.deepEqual(
+  titleValidator.$jsonSchema.properties.encryptedTitle,
+  suggestionMessage.properties.content,
+);
+const previousValidator = structuredClone(titleValidator);
+delete previousValidator.$jsonSchema.properties.encryptedTitle;
+assert.deepEqual(previousValidator, suggestionMigration.conversationValidator);
+const titleCommands = [];
+const titleDatabase = {
+  command(value) {
+    titleCommands.push(value);
+    return Promise.resolve();
+  },
+  collection(name) {
+    assert.equal(name, "ai_companion_conversations");
+    return {
+      countDocuments(filter) {
+        assert.deepEqual(filter, { encryptedTitle: { $exists: true } });
+        return Promise.resolve(1);
+      },
+    };
+  },
+};
+await titleMigration.up({
+  command: titleDatabase.command,
+});
+assert.deepEqual(titleCommands, [
+  {
+    collMod: "ai_companion_conversations",
+    validator: titleValidator,
+    validationLevel: "strict",
+    validationAction: "error",
+  },
+]);
+titleCommands.length = 0;
+await assert.rejects(titleMigration.down(titleDatabase), /Cannot remove/u);
+assert.equal(titleCommands.length, 0);
+await titleMigration.down({
+  command: titleDatabase.command,
+  collection(name) {
+    assert.equal(name, "ai_companion_conversations");
+    return {
+      countDocuments(filter) {
+        assert.deepEqual(filter, { encryptedTitle: { $exists: true } });
+        return Promise.resolve(0);
+      },
+    };
+  },
+});
+assert.deepEqual(titleCommands, [
+  {
+    collMod: "ai_companion_conversations",
+    validator: suggestionMigration.conversationValidator,
+    validationLevel: "strict",
+    validationAction: "error",
+  },
+]);
 console.log(
-  "Validated Mongo migrations: 001_journal_entries_baseline.cjs, 002_journal_mutation_commands.cjs, 003_journal_replay_snapshots_and_cursor_index.cjs",
+  "Validated Mongo migrations: 001 through 021, including voice measurement and benchmark execution governance",
 );

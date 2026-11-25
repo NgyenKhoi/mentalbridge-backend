@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "companion-voice-policy-v1",
+  "states": [
+    "REQUESTED",
+    "AUTHORIZED",
+    "CONNECTING",
+    "ACTIVE",
+    "RECONNECTING",
+    "ENDING",
+    "ENDED",
+    "FAILED",
+    "EXPIRED"
+  ],
+  "initialState": "REQUESTED",
+  "terminalStates": ["ENDED", "FAILED", "EXPIRED"],
+  "capacityHeldStates": [
+    "AUTHORIZED",
+    "CONNECTING",
+    "ACTIVE",
+    "RECONNECTING",
+    "ENDING"
+  ],
+  "transitions": [
+    {
+      "from": "REQUESTED",
+      "to": "AUTHORIZED",
+      "trigger": "BOTH_CONSENTS_AND_ENTITLEMENT_VERIFIED_QUOTA_AND_CAPACITY_RESERVED"
+    },
+    {
+      "from": "REQUESTED",
+      "to": "FAILED",
+      "trigger": "AUTHORIZATION_OR_ADMISSION_DENIED"
+    },
+    {
+      "from": "REQUESTED",
+      "to": "EXPIRED",
+      "trigger": "REQUEST_DEADLINE"
+    },
+    {
+      "from": "AUTHORIZED",
+      "to": "CONNECTING",
+      "trigger": "EXACT_ROOM_CREATED_AND_AGENT_DISPATCHED"
+    },
+    {
+      "from": "AUTHORIZED",
+      "to": "ENDING",
+      "trigger": "STOP_OR_AUTHORIZATION_LOSS"
+    },
+    {
+      "from": "CONNECTING",
+      "to": "ACTIVE",
+      "trigger": "AUTHORIZED_OWNER_AND_CLAIMED_AGENT_MEDIA_READY"
+    },
+    {
+      "from": "CONNECTING",
+      "to": "ENDING",
+      "trigger": "STOP_OR_FAILURE_OR_DEADLINE"
+    },
+    {
+      "from": "ACTIVE",
+      "to": "RECONNECTING",
+      "trigger": "OWNER_MEDIA_DISCONNECTED"
+    },
+    {
+      "from": "ACTIVE",
+      "to": "ENDING",
+      "trigger": "STOP_OR_FAILURE_OR_AUTHORIZATION_LOSS_OR_DEADLINE"
+    },
+    {
+      "from": "RECONNECTING",
+      "to": "ACTIVE",
+      "trigger": "FRESH_OWNER_AUTHORIZATION_AND_SAME_SESSION_RECONNECTED"
+    },
+    {
+      "from": "RECONNECTING",
+      "to": "ENDING",
+      "trigger": "GRACE_OR_HARD_DEADLINE_OR_AUTHORIZATION_LOSS"
+    },
+    {
+      "from": "ENDING",
+      "to": "ENDED",
+      "trigger": "CONFIRMED_TEARDOWN_NORMAL_STOP"
+    },
+    {
+      "from": "ENDING",
+      "to": "FAILED",
+      "trigger": "CONFIRMED_TEARDOWN_PROVIDER_OR_AGENT_FAILURE"
+    },
+    {
+      "from": "ENDING",
+      "to": "EXPIRED",
+      "trigger": "DEADLINE_TEARDOWN_OR_FENCED_AUTHORIZATION_EXPIRY"
+    }
+  ],
+  "timers": {
+    "requestSeconds": 10,
+    "connectSeconds": 45,
+    "idleSeconds": 60,
+    "reconnectSeconds": 30,
+    "authorizationLeaseSeconds": 10,
+    "renewEverySeconds": 5
+  },
+  "invariants": [
+    "NO_PROVIDER_EFFECT_BEFORE_ATOMIC_ADMISSION",
+    "GLOBAL_AT_MOST_TWO_AND_OWNER_AT_MOST_ONE_ACROSS_PROCESSES",
+    "ENDING_HOLDS_CAPACITY_UNTIL_TEARDOWN_OR_FENCED_LEASE_EXPIRY",
+    "NO_TERMINAL_STATE_RESURRECTION",
+    "RECONNECT_NEVER_EXTENDS_HARD_STOP_OR_RESETS_QUOTA",
+    "NO_AUDIO_PROCESSING_AFTER_LEASE_EXPIRY",
+    "CONSENT_WITHDRAWAL_OR_ENTITLEMENT_LOSS_CANCELS_TURN_AND_PURGES_CONTEXT",
+    "ALL_PROVIDER_FAILURES_AND_CLIENT_TIMEOUTS_RECONCILED_IDEMPOTENTLY"
+  ]
+}

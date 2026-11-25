@@ -24,6 +24,12 @@ const configuration: ServiceConfiguration = {
   IDENTITY_JWT_PUBLIC_KEY:
     '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0\n-----END PUBLIC KEY-----',
   IDENTITY_JWT_CLOCK_TOLERANCE_SECONDS: 60,
+  JOURNAL_AI_SERVICE_URL: 'http://localhost:3005',
+  JOURNAL_AI_SERVICE_TIMEOUT_MS: 2_000,
+  JOURNAL_AI_REMINDER_SERVICE_TOKEN: undefined,
+  REMINDER_SCHEDULER_ENABLED: false,
+  REMINDER_SCHEDULER_INTERVAL_MS: 60_000,
+  REMINDER_SCHEDULER_BATCH_SIZE: 100,
   E2E_TEST_MODE: false,
 };
 
@@ -33,11 +39,23 @@ const publishedResource: ResourceRow = {
   locale: 'vi-VN',
   title: 'Kỹ thuật thở 4-7-8',
   summary: 'Kỹ thuật thở giúp giảm căng thẳng',
+  content_body: 'Reviewed body',
   external_url: null,
+  source_organization: 'NHS',
+  source_title: 'Breathing exercises for stress',
+  source_url:
+    'https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/',
+  source_review_note: 'Reviewed test provenance',
+  source_review_status: 'REVIEWED',
+  catalogue_visibility: 'LISTED',
   status: 'PUBLISHED',
+  reviewed_by: 'a13e4567-e89b-42d3-a456-426614174000',
   reviewed_at: new Date('2024-01-15T10:00:00Z'),
+  effective_at: new Date('2024-01-15T10:00:00Z'),
+  expires_at: null,
   created_at: new Date('2024-01-15T09:00:00Z'),
   updated_at: new Date('2024-01-15T10:00:00Z'),
+  version: 0,
 };
 
 function makeRepository(impl: Partial<ResourceRepository>): ResourceRepository {
@@ -68,6 +86,7 @@ describe('GET /api/v1/resources', () => {
     expect(response.body.data[0].id).toBe(publishedResource.id);
     expect(response.body.data[0].category).toBe('BREATHING');
     expect(response.body.data[0].status).toBe('PUBLISHED');
+    expect(response.body.data[0].sourceOrganization).toBe('NHS');
     expect(response.body.count).toBe(1);
     expect(response.body.data[0]).not.toHaveProperty('hotline');
     expect(response.body.data[0]).not.toHaveProperty('emergencyNumber');

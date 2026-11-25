@@ -62,7 +62,7 @@ describe('Realtime HTTP boundary', () => {
     }
   });
 
-  it('reports connected dependencies and correlation ID', async () => {
+  it('reports Community transport degradation and correlation ID', async () => {
     const app = await createApplication(configuration, { mongo, redis });
     await app.init();
     try {
@@ -72,10 +72,11 @@ describe('Realtime HTTP boundary', () => {
         .expect('x-correlation-id', 'health-test')
         .expect(200)
         .expect({
-          status: 'ok',
+          status: 'degraded',
           service: 'realtime-service',
           mongodb: 'connected',
           redis: 'connected',
+          community: 'degraded',
         });
     } finally {
       await app.close();
@@ -153,6 +154,110 @@ describe('Realtime HTTP boundary', () => {
         .expect((response) => {
           const body = response.body as { code?: unknown };
           expect(body.code).toBe('AUTHENTICATION_REQUIRED');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('fails owner deletion closed when Consultation eligibility is unavailable', async () => {
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .delete(
+          '/api/v1/conversations/22222222-2222-4222-8222-222222222222/messages/33333333-3333-4333-8333-333333333333',
+        )
+        .set('authorization', `Bearer ${token}`)
+        .set('idempotency-key', 'mb-694-http-delete-0001')
+        .expect(503)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('CHAT_ELIGIBILITY_UNAVAILABLE');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('hides appointment report administration from non-admin actors', async () => {
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .get('/api/v1/admin/appointment-chat/reports')
+        .set('authorization', `Bearer ${token}`)
+        .expect(403)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('ACCESS_DENIED');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('issues a bounded one-use socket credential for a chat participant', async () => {
+    const credentialRedis = {
+      ping: () => Promise.resolve(true),
+      execute: (callback: (client: { set: () => Promise<string> }) => Promise<unknown>) =>
+        callback({ set: () => Promise.resolve('OK') }),
+      onApplicationShutdown: () => Promise.resolve(),
+    } as unknown as RedisService;
+    const app = await createApplication(configuration, { mongo, redis: credentialRedis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .post('/internal/v1/socket-credentials')
+        .set('authorization', `Bearer ${token}`)
+        .expect(201)
+        .expect((response) => {
+          const body = response.body as { accessToken?: unknown; expiresAt?: unknown };
+          expect(body.accessToken).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]{43}$/));
+          expect(body.expiresAt).toEqual(expect.any(String));
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rejects ADMIN socket credential exchange', async () => {
+    const adminToken = await issueToken(keys.privateKey, configuration, undefined, {
+      role: 'ADMIN',
+      tokenId: 'admin-token',
+    });
+    const app = await createApplication(configuration, { mongo, redis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .post('/internal/v1/socket-credentials')
+        .set('authorization', `Bearer ${adminToken}`)
+        .expect(403)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('ACCESS_DENIED');
+        });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns dependency unavailable when a socket credential cannot be stored', async () => {
+    const failedRedis = {
+      ping: () => Promise.resolve(false),
+      execute: () => Promise.reject(new Error('offline')),
+      onApplicationShutdown: () => Promise.resolve(),
+    } as unknown as RedisService;
+    const app = await createApplication(configuration, { mongo, redis: failedRedis });
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .post('/internal/v1/socket-credentials')
+        .set('authorization', `Bearer ${token}`)
+        .expect(503)
+        .expect((response) => {
+          const body = response.body as { code?: unknown };
+          expect(body.code).toBe('DEPENDENCY_UNAVAILABLE');
         });
     } finally {
       await app.close();
