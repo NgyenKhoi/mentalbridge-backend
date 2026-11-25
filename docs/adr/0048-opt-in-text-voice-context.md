@@ -74,3 +74,19 @@ voice-only action. Session `contextMode` confirms preparation, not model use.
 This decision authorizes implementation, not a new live campaign, staging or
 merge. Recording, transcript persistence, content logging and exports remain
 off. Provider routing, quota ceilings and safety decisions are unchanged.
+
+## Voice write-back amendment (owner decision 2026-11-25)
+
+Amends the "transcript persistence remains off" clause above for handed-off
+calls only. When a Voice session that consumed a Text handoff ends (user end,
+expiry, failure or revocation), Journal appends the pairs spoken in that call,
+in order, to the same owner's unexpired source conversation. Each user
+transcript and Mầm reply becomes a normal encrypted Text message (same envelope
+and AAD) marked `channel: VOICE`; the handed-off Text pairs are not copied
+again. A safety response is written as spoken, like Text. The append is
+fenced once per `voiceSessionId`, respects the 400-message bound and never
+crosses owners. Voice-only calls persist nothing. Voice metadata collections,
+logs, replay snapshots and events still carry no transcript. The source
+conversation reference stays in process RAM; a restart before the call ends
+loses the RAM pairs, so nothing is written (no database content fallback).
+Migration 024 adds the optional `channel` and `voiceSessionId` message fields.

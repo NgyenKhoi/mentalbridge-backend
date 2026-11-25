@@ -137,7 +137,9 @@ export const voiceSessionView = (session: VoiceSession) => ({
 });
 
 export class VoiceSessionsService {
-  private readonly terminationListeners = new Set<(id: string) => void>();
+  private readonly terminationListeners = new Set<
+    (id: string) => Promise<void> | undefined
+  >();
   private readonly inspected = new Map<
     string,
     { identity: string; at: number }
@@ -188,21 +190,23 @@ export class VoiceSessionsService {
         )
       : session;
     const value = await result;
-    if (closed(value)) this.discardContext(value.voiceSessionId);
+    if (closed(value)) await this.discardContext(value.voiceSessionId);
     return value;
   }
 
-  onTermination(listener: (id: string) => void): () => void {
+  onTermination(
+    listener: (id: string) => Promise<void> | undefined,
+  ): () => void {
     this.terminationListeners.add(listener);
     return () => {
       this.terminationListeners.delete(listener);
     };
   }
 
-  private discardContext(id: string) {
+  private async discardContext(id: string) {
     this.inspected.delete(id);
     this.handoffs?.discard(id);
-    for (const listener of this.terminationListeners) listener(id);
+    for (const listener of this.terminationListeners) await listener(id);
   }
 
   async contextAlive(id: string, attemptId: string, leaseId: string) {
@@ -313,7 +317,7 @@ export class VoiceSessionsService {
         }
         return round.authority;
       } catch (error) {
-        this.discardContext(id);
+        await this.discardContext(id);
         await profile.measure("DENIAL_CLEANUP", () => this.failTurn(id));
         throw error;
       }
@@ -571,7 +575,7 @@ export class VoiceSessionsService {
   }
 
   private async cleanup(session: VoiceSession): Promise<void> {
-    if (closed(session)) this.discardContext(session.voiceSessionId);
+    if (closed(session)) await this.discardContext(session.voiceSessionId);
     if (session.state !== "ENDING") return;
     let document = await this.store.find(session.voiceSessionId, this.clock());
     try {
@@ -915,7 +919,7 @@ export class VoiceSessionsService {
           );
           if (!session) return;
           if (terminal(session) && document.phase === "NEW") {
-            this.discardContext(session.voiceSessionId);
+            await this.discardContext(session.voiceSessionId);
             await this.store.advance(document, "STOPPED", this.clock());
             return;
           }

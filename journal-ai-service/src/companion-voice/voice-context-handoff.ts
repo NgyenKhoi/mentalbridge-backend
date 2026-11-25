@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type {
+  ChatMessage,
   Conversation,
   ChatCrypto,
 } from "../companion-chat/companion-chat.js";
@@ -33,8 +34,10 @@ const ticketSchema = z
   .strict();
 interface PreparedHandoff {
   hash: string;
+  conversation: string;
   pairs: VoiceHandoffPair[];
 }
+const CONVERSATION_MESSAGE_LIMIT = 400;
 interface BoundHandoff extends PreparedHandoff {
   owner: string;
   attempt: string;
@@ -52,8 +55,15 @@ export class VoiceContextHandoffs {
     private readonly secret: Buffer,
     private readonly conversations: {
       findConversation(owner: string, id: string): Promise<Conversation | null>;
+      appendVoiceMessages(
+        owner: string,
+        id: string,
+        voiceSessionId: string,
+        messages: ChatMessage[],
+        updatedAt: Date,
+      ): Promise<unknown>;
     },
-    private readonly crypto: Pick<ChatCrypto, "decrypt">,
+    private readonly crypto: Pick<ChatCrypto, "decrypt" | "encrypt">,
     private readonly clock: () => Date = () => new Date(),
   ) {}
   private digest(value: string) {
@@ -166,7 +176,7 @@ export class VoiceContextHandoffs {
     const snapshot = await this.snapshot(owner, value.conversation);
     if (snapshot.snapshot !== value.snapshot)
       throw new VoiceAccessError("STALE_ATTEMPT");
-    return { hash, pairs: snapshot.pairs };
+    return { hash, conversation: value.conversation, pairs: snapshot.pairs };
   }
   async resolveStart(owner: string, token: string, session?: VoiceSession) {
     const hash = this.reference(owner, token);
@@ -223,8 +233,11 @@ export class VoiceContextHandoffs {
       taken: false,
     });
   }
-  take(session: VoiceSession): VoiceHandoffPair[] {
-    if (!session.contextHandoffHash) return [];
+  take(session: VoiceSession): {
+    conversation?: string;
+    pairs: VoiceHandoffPair[];
+  } {
+    if (!session.contextHandoffHash) return { pairs: [] };
     const value = this.bound.get(session.voiceSessionId);
     if (
       value?.owner !== session.ownerId ||
@@ -237,7 +250,53 @@ export class VoiceContextHandoffs {
     const pairs = value.pairs;
     value.pairs = [];
     value.taken = true;
-    return pairs;
+    return { conversation: value.conversation, pairs };
+  }
+  async writeBack(
+    owner: string,
+    conversation: string,
+    voiceSessionId: string,
+    pairs: VoiceHandoffPair[],
+  ) {
+    const row = await this.conversations.findConversation(owner, conversation);
+    const now = this.clock();
+    if (
+      row?.ownerAccountId !== owner ||
+      row.expiresAt <= now ||
+      row.messages.some((message) => message.voiceSessionId === voiceSessionId)
+    )
+      return;
+    const room = Math.floor(
+      (CONVERSATION_MESSAGE_LIMIT - row.messages.length) / 2,
+    );
+    const messages = pairs.slice(0, Math.max(0, room)).flatMap((pair) =>
+      (
+        [
+          ["USER", pair.user],
+          ["ASSISTANT", pair.assistant],
+        ] as const
+      ).map(([role, text]): ChatMessage => {
+        const messageId = randomUUID();
+        return {
+          messageId,
+          role,
+          content: this.crypto.encrypt(owner, conversation, messageId, text),
+          createdAt: now,
+          route: null,
+          contextKinds: [],
+          channel: "VOICE",
+          voiceSessionId,
+        };
+      }),
+    );
+    if (messages.length)
+      await this.conversations.appendVoiceMessages(
+        owner,
+        conversation,
+        voiceSessionId,
+        messages,
+        now,
+      );
   }
   discard(id: string) {
     const value = this.bound.get(id);
