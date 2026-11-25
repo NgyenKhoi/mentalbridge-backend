@@ -39,6 +39,9 @@ public class SecurityConfiguration {
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 						.requestMatchers("/api/v1/community/admin/**").hasRole("ADMIN")
 						.requestMatchers(HttpMethod.GET, "/api/v1/community/avatars").authenticated()
+						// The community avatar is also the account avatar: specialists set their own (owner 2026-11-25).
+						.requestMatchers("/api/v1/community/profile", "/api/v1/community/profile/avatar",
+								"/api/v1/community/media/**").hasAnyRole("USER", "SPECIALIST")
 						.requestMatchers("/api/v1/community/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(problems).accessDeniedHandler(problems))
