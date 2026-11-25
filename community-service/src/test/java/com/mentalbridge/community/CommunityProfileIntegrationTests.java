@@ -133,14 +133,20 @@ class CommunityProfileIntegrationTests extends CommunityTestProperties {
 	}
 
 	@Test
-	void onlyLocallyVerifiedUserRoleCanManageTheProfile() throws Exception {
+	void onlyUserOrSpecialistRoleCanManageTheProfile() throws Exception {
 		mvc.perform(get("/api/v1/community/profile"))
 				.andExpect(status().isUnauthorized());
 
 		mvc.perform(get("/api/v1/community/profile").with(jwt()
 				.jwt(token -> token.subject(OWNER.toString()))
-				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
 				.andExpect(status().isForbidden());
+
+		// The community avatar is also the account avatar: a specialist reads its own (absent) profile.
+		mvc.perform(get("/api/v1/community/profile").with(jwt()
+				.jwt(token -> token.subject(OWNER.toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_SPECIALIST"))))
+				.andExpect(status().isNotFound());
 	}
 
 	private void create(UUID owner, String displayName, String avatarPreset) throws Exception {
