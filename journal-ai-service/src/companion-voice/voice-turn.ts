@@ -75,6 +75,8 @@ interface Context {
   busy: boolean;
   pairs: Pair[];
   textPairs: Pair[];
+  source?: { owner: string; conversation: string };
+  spoken: Pair[];
   controller: AbortController;
   latest: { keyHash: string; fingerprint: string; response: VoiceReply } | null;
   cancelledTurnId?: string;
@@ -179,6 +181,7 @@ const trimSelectedText = (
 export class VoiceTurnService {
   private readonly contexts = new Map<string, Context>();
   private readonly speechJobs = new Map<string, SpeechUnitJob>();
+  private readonly writeBacks = new Map<string, Promise<void>>();
   private readonly unsubscribe: () => void;
   constructor(
     private readonly sessions: Sessions,
@@ -188,10 +191,14 @@ export class VoiceTurnService {
     private readonly clock: () => Date = () => new Date(),
     private readonly telemetry: (metric: VoiceTurnMetric) => void = () =>
       undefined,
-    private readonly handoffs?: Pick<VoiceContextHandoffs, "take">,
+    private readonly handoffs?: Pick<
+      VoiceContextHandoffs,
+      "take" | "writeBack"
+    >,
   ) {
     this.unsubscribe = sessions.onTermination((id) => {
       this.discard(id);
+      return this.writeBacks.get(id);
     });
   }
 
@@ -208,6 +215,17 @@ export class VoiceTurnService {
     context.pairs.length = 0;
     context.textPairs.length = 0;
     context.latest = null;
+    const spoken = context.spoken.splice(0);
+    if (!context.source || !spoken.length || !this.handoffs) return;
+    const write = this.handoffs
+      .writeBack(context.source.owner, context.source.conversation, id, spoken)
+      .catch(() => {
+        this.telemetry({ outcome: "FAILED", code: "INTERNAL" });
+      })
+      .finally(() => {
+        this.writeBacks.delete(id);
+      });
+    this.writeBacks.set(id, write);
   }
   close() {
     this.unsubscribe();
@@ -336,6 +354,11 @@ export class VoiceTurnService {
       if (this.contexts.size >= 2) await this.reconcile();
       if (this.contexts.size >= 2)
         throw new VoiceLedgerError("GLOBAL_CAPACITY_FULL");
+      if (session.contextHandoffHash && !this.handoffs)
+        throw new VoiceMediaError();
+      const handoff = session.contextHandoffHash
+        ? this.handoffs?.take(session)
+        : undefined;
       context = {
         id: randomUUID(),
         attemptId: input.attemptId,
@@ -344,13 +367,16 @@ export class VoiceTurnService {
         sequence: 0,
         busy: false,
         pairs: [],
-        textPairs: session.contextHandoffHash
-          ? this.handoffs
-            ? this.handoffs.take(session)
-            : (() => {
-                throw new VoiceMediaError();
-              })()
-          : [],
+        textPairs: handoff?.pairs ?? [],
+        ...(handoff?.conversation
+          ? {
+              source: {
+                owner: session.ownerId,
+                conversation: handoff.conversation,
+              },
+            }
+          : {}),
+        spoken: [],
         controller: new AbortController(),
         latest: null,
       };
@@ -612,10 +638,9 @@ export class VoiceTurnService {
         if (!streamedReply || unitSequence < 1 || requestSignal.aborted)
           throw new VoiceLedgerError("SESSION_EXPIRED");
         const result = { ...streamedReply, spokenText: reply.message };
-        context.pairs = history([
-          ...recent,
-          { user: input.finalTranscript, assistant: reply.message },
-        ]);
+        const pair = { user: input.finalTranscript, assistant: reply.message };
+        context.pairs = history([...recent, pair]);
+        if (context.source) context.spoken.push(pair);
         trimSelectedText(context.textPairs, context.pairs);
         context.latest = { keyHash, fingerprint, response: result };
         report({ outcome: "GENERATED", phase });
@@ -698,10 +723,9 @@ export class VoiceTurnService {
         expiresAt: expiresAt.toISOString(),
         policyVersion: "companion-voice-policy-v1",
       };
-      context.pairs = history([
-        ...recent,
-        { user: input.finalTranscript, assistant: spokenText },
-      ]);
+      const pair = { user: input.finalTranscript, assistant: spokenText };
+      context.pairs = history([...recent, pair]);
+      if (context.source) context.spoken.push(pair);
       trimSelectedText(context.textPairs, context.pairs);
       context.latest = { keyHash, fingerprint, response: result };
       report({ outcome: "GENERATED", phase });

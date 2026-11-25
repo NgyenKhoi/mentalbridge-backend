@@ -34,10 +34,20 @@ public class CommunityMemberService {
         return new MemberPage(page.stream().limit(limit).map(this::author).toList(), page.size() > limit ? page.get(limit - 1).id() : null);
     }
 
+    @Transactional(readOnly = true)
+    public AvatarPage avatars(UUID subject, List<UUID> accountIds) {
+        var viewer = profiles.bySubject(subject).map(CommunityChatProfiles.Profile::id).orElse(null);
+        return new AvatarPage(members.avatars(accountIds, viewer).stream()
+                .map(profile -> new Avatar(profile.accountSubject(), profile.avatarPreset(), profile.avatarImage()))
+                .toList());
+    }
+
     private CommunityResponses.Author author(CommunityProfileEntity profile) {
         return new CommunityResponses.Author(profile.id(), profile.displayName(), profile.avatarPreset(),
                 CommunityResponses.AuthorState.ACTIVE, profile.avatarImage());
     }
 
     public record MemberPage(List<CommunityResponses.Author> items, UUID nextCursor) {}
+    public record Avatar(UUID accountId, AvatarPreset avatarPreset, CommunityResponses.AvatarImage avatarImage) {}
+    public record AvatarPage(List<Avatar> items) {}
 }

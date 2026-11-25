@@ -20,4 +20,11 @@ interface CommunityMemberRepository extends JpaRepository<CommunityProfileEntity
 
     @Query(value = VISIBLE + " and p.id <> :viewer and position(lower(:query) in lower(p.display_name)) > 0 and (cast(:cursor as uuid) is null or p.id > :cursor) order by p.id", nativeQuery = true)
     List<CommunityProfileEntity> search(@Param("viewer") UUID viewer, @Param("query") String query, @Param("cursor") UUID cursor, Pageable page);
+
+    @Query(value = """
+        select p.* from community_profile p where p.status = 'ACTIVE' and p.account_subject in (:subjects)
+          and not exists (select 1 from community_access_restriction r where r.profile_id = p.id and r.lifted_at is null)
+          and not exists (select 1 from community_block b where (b.blocker_profile_id = cast(:viewer as uuid) and b.blocked_profile_id = p.id) or (b.blocker_profile_id = p.id and b.blocked_profile_id = cast(:viewer as uuid)))
+        """, nativeQuery = true)
+    List<CommunityProfileEntity> avatars(@Param("subjects") List<UUID> subjects, @Param("viewer") UUID viewer);
 }

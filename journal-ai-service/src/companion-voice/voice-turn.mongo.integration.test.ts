@@ -159,6 +159,7 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       for (const name of [
         "010_ai_companion_chat_quotas.cjs",
         "012_ai_companion_conversation_context.cjs",
+        "024_companion_voice_message_channel.cjs",
       ])
         await (
           require(`../../migrations/${name}`) as { up(db: Db): Promise<void> }
@@ -1533,6 +1534,53 @@ void test("guarded Voice turns keep current-call content in RAM and fence paid e
       f.revoke();
       await assert.rejects(f.generate(f.input(2)));
       assert.equal(f.calls(), 1);
+    },
+  );
+
+  await t.test(
+    "ending a handed-off call writes its spoken pairs once to the source Text conversation, encrypted and marked VOICE",
+    async () => {
+      const f = await fixture(false, true);
+      await f.generate(f.input(1, "Câu nói giọng thứ nhất"));
+      await f.generate(f.input(2, "Câu nói giọng thứ hai"));
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+      await f.left.sessions.end(f.owner, f.active.id, randomUUID());
+      const conversation = await f.db
+        .collection<Conversation>("ai_companion_conversations")
+        .findOne({ ownerAccountId: f.owner });
+      assert.ok(conversation);
+      const crypto = new ChatCrypto(f.config);
+      assert.deepEqual(
+        conversation.messages.map((message) => [
+          message.role,
+          crypto.decrypt(f.owner, conversation._id, message),
+          message.channel ?? null,
+          message.voiceSessionId ?? null,
+        ]),
+        [
+          ["USER", "Chủ đề học tiếng Việt giả lập", null, null],
+          ["ASSISTANT", "Mình nghe bạn nói về việc học.", null, null],
+          ["USER", "Câu nói giọng thứ nhất", "VOICE", f.active.id],
+          ["ASSISTANT", reply().message, "VOICE", f.active.id],
+          ["USER", "Câu nói giọng thứ hai", "VOICE", f.active.id],
+          ["ASSISTANT", reply().message, "VOICE", f.active.id],
+        ],
+      );
+      assert.equal(
+        JSON.stringify(conversation.messages).includes("Câu nói giọng"),
+        false,
+      );
+      for (const name of [
+        "ai_voice_sessions",
+        "ai_voice_media",
+        "ai_voice_media_commands",
+      ])
+        assert.equal(
+          JSON.stringify(await f.db.collection(name).find().toArray()).includes(
+            "Câu nói giọng",
+          ),
+          false,
+        );
     },
   );
 

@@ -174,6 +174,12 @@ indexes for four Journal/AI collections:
   `memoryNoteVersion`; they are written only with effective L2, never from pairs that used
   personal context, and unset for the owner on a TEXT send without L2. There
   is no account-erasure consumer here; notes go with owner delete or TTL.
+  Migration `024_companion_voice_message_channel.cjs` adds optional message
+  fields `channel` (`VOICE`; absent means Text) and `voiceSessionId`. When a
+  Voice session started from a Text handoff ends, its spoken pairs are appended
+  once to the source conversation with the same envelope/AAD as Text turns;
+  the update is fenced on owner, unexpired conversation, absent
+  `messages.voiceSessionId` and the 400-message bound.
   New explicit-create, automatic and manual titles are encrypted; required
   `title` remains the neutral `Cuộc trò chuyện mới` on every new title write.
   Absence of the envelope alone allows an old document's plaintext `title`

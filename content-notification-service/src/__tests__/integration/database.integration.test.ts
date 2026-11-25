@@ -2940,11 +2940,11 @@ describe('Database Integration', () => {
       } as unknown as DatabaseService;
       const repository = new NotificationRepository(database);
       const owner = '12000000-0000-4000-8000-000000000001';
-      for (const [index, occurredAt] of [
-        '2026-09-26T01:00:00.000Z',
-        '2026-09-26T02:00:00.000Z',
-        '2026-09-26T03:00:00.000Z',
-      ].entries()) {
+      // Relative to now: the retention check caps expires_at at created_at + 90 days, so fixed dates expire.
+      const hour = 3_600_000;
+      for (const [index, occurredAt] of [3, 2, 1]
+        .map((hours) => new Date(Date.now() - hours * hour).toISOString())
+        .entries()) {
         await pool.query(
           `INSERT INTO notification
              (recipient_id, category, title, body, occurred_at, source, source_identity,

@@ -8,6 +8,7 @@ import java.util.Base64;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -37,6 +38,7 @@ public class SecurityConfiguration {
 				.authorizeHttpRequests(authorize -> authorize
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 						.requestMatchers("/api/v1/community/admin/**").hasRole("ADMIN")
+						.requestMatchers(HttpMethod.GET, "/api/v1/community/avatars").authenticated()
 						.requestMatchers("/api/v1/community/**").hasRole("USER")
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint(problems).accessDeniedHandler(problems))

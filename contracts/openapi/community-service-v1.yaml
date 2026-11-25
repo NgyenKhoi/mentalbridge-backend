@@ -543,6 +543,36 @@ paths:
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
         "412": { $ref: "#/components/responses/Problem" }
+  /api/v1/community/avatars:
+    get:
+      x-mentalbridge-status: implemented
+      operationId: lookupCommunityAvatars
+      security: [{ BearerAuth: [] }]
+      description: Batch avatar lookup by Identity account ID for any authenticated account (for example specialist cards and the viewer's own shell avatar). Returns only ACTIVE, unrestricted Community profiles that have not blocked or been blocked by the viewer; unknown, inactive, restricted and blocked accounts are omitted rather than reported. Never creates a profile and never returns display names or profile IDs.
+      parameters:
+        - name: accountIds
+          in: query
+          required: true
+          description: Comma-separated canonical UUIDs, 1 to 50 distinct values.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 50
+            items: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Avatars for the requested accounts that have a visible Community profile, in no particular order.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityAvatarPage" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /api/v1/community/profile:
     get:
       x-mentalbridge-status: implemented
@@ -1166,6 +1196,29 @@ components:
         url: { type: string, format: uri, maxLength: 2048 }
         width: { type: integer, minimum: 1 }
         height: { type: integer, minimum: 1 }
+    CommunityAccountAvatar:
+      type: object
+      additionalProperties: false
+      required: [accountId, avatarPreset, avatarImage]
+      properties:
+        accountId: { type: string, format: uuid }
+        avatarPreset:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityAvatarPreset"
+            - type: "null"
+        avatarImage:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityAvatarImage"
+            - type: "null"
+    CommunityAvatarPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/CommunityAccountAvatar" }
     CommunityAvatarPreset:
       type: string
       description: Closed, Community-owned visual preset. Arbitrary image URLs and account-profile avatars are never accepted.

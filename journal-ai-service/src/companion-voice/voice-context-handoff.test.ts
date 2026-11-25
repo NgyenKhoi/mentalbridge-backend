@@ -36,6 +36,11 @@ function fixture() {
     updatedAt: now,
     expiresAt: new Date(now.getTime() + 86400000),
   };
+  const appends: {
+    owner: string;
+    conversation: string;
+    voiceSessionId: string;
+  }[] = [];
   const add = (user: string, assistant: string, privateContext = false) => {
     assert.ok(row);
     for (const [role, content] of [
@@ -59,6 +64,20 @@ function fixture() {
       {
         findConversation: (o, c) =>
           Promise.resolve(o === owner && c === id ? row : null),
+        appendVoiceMessages: (o, c, voiceSessionId, messages, updatedAt) => {
+          appends.push({ owner: o, conversation: c, voiceSessionId });
+          if (
+            row &&
+            o === owner &&
+            c === id &&
+            !row.messages.some((m) => m.voiceSessionId === voiceSessionId) &&
+            row.messages.length + messages.length <= 400
+          ) {
+            row.messages.push(...messages);
+            row.updatedAt = updatedAt;
+          }
+          return Promise.resolve();
+        },
       },
       crypto,
       () => now,
@@ -76,6 +95,8 @@ function fixture() {
     owner,
     id,
     add,
+    crypto,
+    appends,
     create,
     handoffs,
     session,
@@ -104,7 +125,7 @@ void test("handoff tickets carry no Text content and bind selected owner pairs o
     session = f.session(prepared.hash);
   f.handoffs.bind(session, prepared);
   f.handoffs.bind(session);
-  assert.deepEqual(f.handoffs.take(session), [
+  assert.deepEqual(f.handoffs.take(session).pairs, [
     { user: "SYNTHETIC_TOPIC", assistant: "Mình đang lắng nghe." },
   ]);
   assert.throws(() => f.handoffs.take(session), code("STALE_ATTEMPT"));
@@ -142,7 +163,7 @@ void test("an accepted same-session START can prepare its still-unbound seed wit
     await f.handoffs.resolveStart(f.owner, ticket.handoffToken, session),
     undefined,
   );
-  assert.deepEqual(f.handoffs.take(session), [
+  assert.deepEqual(f.handoffs.take(session).pairs, [
     { user: "SYNTHETIC_TOPIC", assistant: "Synthetic answer" },
   ]);
   f.advance(120000);
@@ -277,3 +298,57 @@ for (const kind of [
     });
   }
 }
+
+void test("write-back appends spoken Voice pairs once, encrypted, marked VOICE, only to the owner's live conversation", async () => {
+  const f = fixture();
+  f.add("SYNTHETIC_TOPIC", "Mình đang lắng nghe.");
+  const ticket = await f.handoffs.prepare(f.owner, f.id);
+  const prepared = await f.handoffs.resolve(f.owner, ticket.handoffToken),
+    session = f.session(prepared.hash);
+  f.handoffs.bind(session, prepared);
+  assert.equal(f.handoffs.take(session).conversation, f.id);
+  const spoken = [
+    { user: "Giọng nói một", assistant: "Mầm trả lời một." },
+    { user: "Giọng nói hai", assistant: "Mầm trả lời hai." },
+  ];
+  await f.handoffs.writeBack(
+    randomUUID(),
+    f.id,
+    session.voiceSessionId,
+    spoken,
+  );
+  assert.equal(f.appends.length, 0);
+  await f.handoffs.writeBack(f.owner, f.id, session.voiceSessionId, spoken);
+  await f.handoffs.writeBack(f.owner, f.id, session.voiceSessionId, spoken);
+  const row = f.row();
+  assert.ok(row);
+  assert.equal(f.appends.length, 1);
+  const voice = row.messages.slice(2);
+  assert.deepEqual(
+    voice.map((message) => [
+      message.role,
+      f.crypto.decrypt(f.owner, f.id, message),
+      message.channel,
+      message.voiceSessionId,
+      message.contextKinds.length,
+    ]),
+    [
+      ["USER", "Giọng nói một", "VOICE", session.voiceSessionId, 0],
+      ["ASSISTANT", "Mầm trả lời một.", "VOICE", session.voiceSessionId, 0],
+      ["USER", "Giọng nói hai", "VOICE", session.voiceSessionId, 0],
+      ["ASSISTANT", "Mầm trả lời hai.", "VOICE", session.voiceSessionId, 0],
+    ],
+  );
+  assert.equal(JSON.stringify(voice).includes("Giọng nói"), false);
+  assert.equal(row.messages[0]?.channel, undefined);
+
+  for (let i = row.messages.length; i < 398; i += 2) f.add("Đầy", "Đầy.");
+  await f.handoffs.writeBack(f.owner, f.id, randomUUID(), spoken);
+  assert.equal(row.messages.length, 400);
+  await f.handoffs.writeBack(f.owner, f.id, randomUUID(), spoken);
+  assert.equal(row.messages.length, 400);
+  assert.equal(f.appends.length, 2);
+  f.advance(86400000);
+  await f.handoffs.writeBack(f.owner, f.id, randomUUID(), spoken);
+  assert.equal(f.appends.length, 2);
+});

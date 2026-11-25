@@ -61,6 +61,24 @@ class CommunitySocialController {
         return noStore(members.search(subject(jwt), query, cursor, limit));
     }
 
+    @GetMapping("/avatars")
+    ResponseEntity<CommunityMemberService.AvatarPage> avatars(@AuthenticationPrincipal Jwt jwt,
+            @RequestParam String accountIds) {
+        properties.requireEnabled();
+        var ids = new java.util.LinkedHashSet<UUID>();
+        for (var value : accountIds.split(",", -1)) {
+            try {
+                var id = UUID.fromString(value);
+                if (!id.toString().equalsIgnoreCase(value)) throw ChatException.invalid();
+                ids.add(id);
+            } catch (IllegalArgumentException exception) {
+                throw ChatException.invalid();
+            }
+        }
+        if (ids.size() > 50) throw ChatException.invalid();
+        return noStore(members.avatars(subject(jwt), List.copyOf(ids)));
+    }
+
     @GetMapping("/members/{profileId}")
     ResponseEntity<MemberProfile> member(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID profileId,
             @RequestParam(required = false) String cursor, @RequestParam(defaultValue = "20") int limit) {
