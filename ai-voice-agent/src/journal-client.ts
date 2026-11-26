@@ -16,6 +16,8 @@ import {
   speechUnitCapability,
   speechUnitMaxCharacters,
 } from "./speech-units.js";
+/** Upper bound for one speech-unit turn stream, playback of both units included. */
+export const speechUnitsTimeoutMs = 90_000;
 export class JournalClient {
   constructor(
     private readonly configuration: AgentConfiguration,
@@ -256,7 +258,10 @@ export class JournalClient {
   ): Promise<void> {
     if (!this.configuration.journalToken)
       throw new AgentFailure("CONFIGURATION_INVALID");
-    const timeout = AbortSignal.timeout(30000);
+    // The stream stays open while unit 1 plays and unit 2 is published, so a long reply needs more
+    // than the 30 s it had (owner report 2026-11-27: calls dropped mid-reply). The session lease and
+    // authority expiry still bound it on Journal's side.
+    const timeout = AbortSignal.timeout(speechUnitsTimeoutMs);
     const abort = AbortSignal.any([timeout, signal]);
     const aborted = () => abort.aborted;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
