@@ -284,6 +284,54 @@ class SpecialistPayoutFlowIntegrationTests extends ConsultationTestProperties {
 				.andExpect(jsonPath("$.earnings[0].sharePercent").value(70));
 	}
 
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+	void unreadableDestinationPreservesLedgerAndBlocksNewPayoutWithoutReservingFunds(boolean wrongVersion) throws Exception {
+		var fixture = earningFixture(clock.instant().minusSeconds(8 * 86_400L), 210_000);
+		var request = new SavePayoutDestinationRequest("MOMO_WALLET", "0900000622", "Synthetic specialist", null);
+		var destination = payouts.saveDestination(fixture.specialistId(), request);
+		jdbc.sql(wrongVersion
+				? "update specialist_payout_destination set encryption_key_version='unavailable-version' where id=:id"
+				: "update specialist_payout_destination set destination_ciphertext='unreadable-ciphertext' where id=:id")
+				.param("id", destination.id()).update();
+
+		mvc.perform(get("/api/v1/specialist/earnings").with(specialist(fixture.specialistId())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.balance.availableVnd").value(210000))
+				.andExpect(jsonPath("$.earnings[0].consumedCreditId").value(fixture.creditId().toString()))
+				.andExpect(jsonPath("$.destination.id").value(destination.id().toString()))
+				.andExpect(jsonPath("$.destination.displayHint").value("•••• 0622"))
+				.andExpect(jsonPath("$.destination.bankCode").doesNotExist())
+				.andExpect(jsonPath("$.destination.bankName").doesNotExist())
+				.andExpect(jsonPath("$.destination.usableForPayout").value(false));
+		mvc.perform(post("/api/v1/specialist/payouts").with(specialist(fixture.specialistId()))
+				.header("Idempotency-Key", "unreadable-destination-0001").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"destinationId\":\"%s\"}".formatted(destination.id())))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("PAYOUT_CONFIGURATION_UNAVAILABLE"));
+		assertThat(jdbc.sql("select count(*) from specialist_payout where specialist_account_id=:id")
+				.param("id", fixture.specialistId()).query(Long.class).single()).isZero();
+		assertThat(jdbc.sql("select status from specialist_earning where consumed_credit_id=:id")
+				.param("id", fixture.creditId()).query(String.class).single()).isEqualTo("AVAILABLE");
+
+		var recovered = payouts.saveDestination(fixture.specialistId(), request);
+		assertThat(recovered.id()).isNotEqualTo(destination.id());
+		assertThat(recovered.usableForPayout()).isTrue();
+		assertThat(payouts.earnings(fixture.specialistId()).balance().availableVnd()).isEqualTo(210_000);
+	}
+
+	@Test
+	void unreadableDestinationDoesNotResubmitAnExistingPayoutOnReplay() {
+		var fixture = earningFixture(clock.instant().minusSeconds(8 * 86_400L), 210_000);
+		var destination = payouts.saveDestination(fixture.specialistId(),
+				new SavePayoutDestinationRequest("MOMO_WALLET", "0900000622", "Synthetic specialist", null));
+		var first = transactions.prepare(fixture.specialistId(), destination.id(), "unreadable-replay-0001");
+		jdbc.sql("update specialist_payout_destination set destination_ciphertext='unreadable-ciphertext' where id=:id")
+				.param("id", destination.id()).update();
+		var replay = transactions.prepare(fixture.specialistId(), destination.id(), "unreadable-replay-0001");
+		assertThat(replay.payoutId()).isEqualTo(first.payoutId());
+		assertThat(replay.submit()).isFalse();
+	}
+
 	@Test
 	void specialistWithdrawsSettledEarningOnceThroughDeterministicFake() throws Exception {
 		var fixture = earningFixture(Instant.now().minusSeconds(8 * 86_400L), 210_000);

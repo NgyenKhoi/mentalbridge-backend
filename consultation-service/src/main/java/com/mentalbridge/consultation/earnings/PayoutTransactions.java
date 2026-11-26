@@ -202,10 +202,18 @@ class PayoutTransactions {
 	}
 
 	private Destination usableDestination(UUID owner,UUID id,String providerName,boolean retry) {
-		var row=jdbc.sql("select id,destination_type,destination_ciphertext,payout_provider,status,is_current from specialist_payout_destination where id=:id and specialist_account_id=:owner for update")
+		var row=jdbc.sql("select id,destination_type,destination_ciphertext,encryption_key_version,payout_provider,status,is_current from specialist_payout_destination where id=:id and specialist_account_id=:owner for update")
 				.param("id",id).param("owner",owner).query().listOfRows().stream().findFirst().orElseThrow(()->retry?conflict("PAYOUT_RETRY_NOT_AVAILABLE"):notFound("PAYOUT_DESTINATION_NOT_FOUND"));
 		if(!providerName.equals(row.get("payout_provider"))) throw conflict(retry?"PAYOUT_RETRY_NOT_AVAILABLE":"PAYOUT_DESTINATION_PROVIDER_MISMATCH");
 		if(!Boolean.TRUE.equals(row.get("is_current"))||!"VERIFIED".equals(row.get("status"))) throw conflict(retry?"PAYOUT_RETRY_NOT_AVAILABLE":"PAYOUT_DESTINATION_CONFIRMATION_REQUIRED");
+		try {
+			if (!properties.getEncryptionKeyVersion().equals(row.get("encryption_key_version"))) throw new IllegalStateException();
+			new PayoutDestinationCipher(properties).decrypt((String) row.get("destination_ciphertext"));
+		}
+		catch (IllegalStateException | ApiException exception) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PAYOUT_CONFIGURATION_UNAVAILABLE",
+					"Payout destination configuration is unavailable");
+		}
 		return new Destination(id,(String)row.get("destination_type"),(String)row.get("destination_ciphertext"));
 	}
 

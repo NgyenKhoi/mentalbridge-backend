@@ -60,7 +60,7 @@ public class SpecialistPayoutService {
 				from specialist_earning where specialist_account_id=:specialistId
 				""").param("specialistId", specialistId).query((row, ignored) -> new SpecialistEarningsResponse.Balance(
 				row.getLong("pending"), row.getLong("available"), row.getLong("processing"), row.getLong("paid"), row.getLong("retry_pending"))).single();
-		var destination = destinations.current(specialistId);
+		var destination = destinations.currentForEarnings(specialistId);
 		var earnings = jdbc.sql("""
 				select id, appointment_id, consumed_credit_id, plan_version, credit_allocation_minor,
 				 specialist_share_bps, specialist_amount_minor, status, earned_at, settlement_available_at

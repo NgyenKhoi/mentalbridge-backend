@@ -78,7 +78,12 @@ public class PayoutDestinationService {
 					where specialist_account_id=:owner and is_current for update
 					""").param("owner", specialistId).query(this::row).optional();
 			if (existing.isPresent() && existing.orElseThrow().fingerprint().equals(fingerprint)) {
-				return view(existing.orElseThrow());
+				try {
+					return view(existing.orElseThrow());
+				}
+				catch (ApiException exception) {
+					if (!"PAYOUT_CONFIGURATION_UNAVAILABLE".equals(exception.code())) throw exception;
+				}
 			}
 			var now = database(clock.instant());
 			jdbc.sql("""
@@ -104,6 +109,20 @@ public class PayoutDestinationService {
 	public SpecialistEarningsResponse.Destination current(UUID specialistId) {
 		return jdbc.sql("select * from specialist_payout_destination where specialist_account_id=:owner and is_current")
 				.param("owner", specialistId).query(this::row).optional().map(this::view).orElse(null);
+	}
+
+	public SpecialistEarningsResponse.Destination currentForEarnings(UUID specialistId) {
+		return jdbc.sql("select * from specialist_payout_destination where specialist_account_id=:owner and is_current")
+				.param("owner", specialistId).query(this::row).optional().map(row -> {
+					try {
+						return view(row);
+					}
+					catch (ApiException exception) {
+						if (!"PAYOUT_CONFIGURATION_UNAVAILABLE".equals(exception.code())) throw exception;
+						return new SpecialistEarningsResponse.Destination(row.id(), row.provider(), row.type(),
+								row.hint(), row.status(), row.verifiedAt(), null, null, row.version(), row.updatedAt(), false);
+					}
+				}).orElse(null);
 	}
 
 	public SpecialistEarningsResponse.Destination destination(UUID specialistId, UUID id) {
