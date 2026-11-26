@@ -787,7 +787,12 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
     mamTextV3: true,
     responseMode: "SAFETY",
   });
-  assert.match(prompt, /Mầm speaks as “tớ” to “bạn”/u);
+  assert.match(
+    prompt,
+    /Mầm calls itself “tớ” \(or “Mầm”\), never “mình”, and mirrors how the user sets the address/u,
+  );
+  assert.match(prompt, /call them by that same word/u);
+  assert.match(prompt, /Example LISTEN, the user sets the address/u);
   assert.match(prompt, /Server response_mode: SAFETY/u);
   assert.match(
     prompt,
@@ -819,7 +824,7 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
         /Example (?:LISTEN|CLARIFY|SUPPORT_AND_WRAP_UP|BOUNDARY)/gu,
       ) ?? []
     ).length,
-    10,
+    11,
   );
   assert.match(
     prompt,
