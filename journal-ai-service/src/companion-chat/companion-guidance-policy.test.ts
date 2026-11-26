@@ -789,10 +789,12 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
   });
   assert.match(
     prompt,
-    /Mầm calls itself “tớ” \(or “Mầm”\), never “mình”, and mirrors how the user sets the address/u,
+    /Mầm calls itself “tớ”, or “tui” when the user writes “tui”, or “Mầm”, and mirrors how the user sets the address/u,
   );
   assert.match(prompt, /call them by that same word/u);
-  assert.match(prompt, /Example LISTEN, the user sets the address/u);
+  assert.match(prompt, /Example CLARIFY, the user sets the address/u);
+  assert.match(prompt, /never make the user classify the feeling/u);
+  assert.equal(prompt.includes("Buồn kiểu mệt mỏi"), false);
   assert.match(prompt, /Server response_mode: SAFETY/u);
   assert.match(
     prompt,
