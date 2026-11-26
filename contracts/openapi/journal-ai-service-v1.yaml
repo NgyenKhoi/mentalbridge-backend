@@ -1286,9 +1286,16 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/CreateAiConversationRequest" }
+            examples:
+              fromJournal:
+                summary: Open after a journal entry, using latest diary context only with effective L2 consent.
+                value: { opening: FROM_JOURNAL }
+              fromResult:
+                summary: Open after a mild screening result, using screening context only with effective L2 consent.
+                value: { opening: FROM_RESULT }
       responses:
         "201":
-          description: Conversation created.
+          description: Conversation created. A requested opener may add one ASSISTANT message; authorization, quota or provider failure leaves messages empty.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiConversation" }
@@ -3543,6 +3550,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        opening:
+          type: string
+          enum: [FROM_JOURNAL, FROM_RESULT]
+          description: Optional first assistant opener. FROM_JOURNAL selects latest diary entries and FROM_RESULT selects screening only with effective L2 AI context consent; no personal source is selected otherwise. Opener generation uses ordinary chat consent, entitlement and quota checks, and failure never prevents conversation creation.
         title:
           type: string
           minLength: 1

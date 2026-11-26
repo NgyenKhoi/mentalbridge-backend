@@ -54,6 +54,23 @@ void test("friend input adds history and a compact catalogue as data", () => {
   });
 });
 
+void test("friend prompt carries assistant_reply_number for the next response", () => {
+  const input = companionUserInput({
+    message: "Tớ mệt quá",
+    context: { kinds: [], prompt: "" },
+    friend: {
+      history: [{ role: "ASSISTANT", text: "Tớ nghe nè." }],
+      catalog: [],
+    },
+    assistantReplyNumber: 2,
+  });
+  assert.equal(
+    (JSON.parse(input) as { assistant_reply_number: number })
+      .assistant_reply_number,
+    2,
+  );
+});
+
 void test("token estimate counts UTF-8 bytes of system and input, rounded up", () => {
   assert.equal(estimateInputTokens("ab", "cd"), 1);
   assert.equal(estimateInputTokens("abc", "de"), 2);

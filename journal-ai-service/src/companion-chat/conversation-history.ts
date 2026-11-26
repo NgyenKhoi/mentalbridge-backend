@@ -87,6 +87,19 @@ export const conversationMemory = (
     );
     for (const kind of pairKinds) kinds.add(kind);
   }
+  const opener = messages[0];
+  if (
+    opener?.role === "ASSISTANT" &&
+    recent[0] === opener &&
+    opener.contextKinds.every((kind) => selected(kind, sources))
+  ) {
+    const openerText = decrypt(opener);
+    const openerBytes = Buffer.byteLength(openerText, "utf8");
+    if (history.length === 0 || bytes + openerBytes <= limits.bytes) {
+      history.unshift({ role: "ASSISTANT", text: openerText });
+      for (const kind of opener.contextKinds) kinds.add(kind);
+    }
+  }
   return { history, kinds: [...kinds] };
 };
 

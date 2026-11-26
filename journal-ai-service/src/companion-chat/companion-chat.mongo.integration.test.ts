@@ -1382,6 +1382,67 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
         titleForMessage = null;
       },
     );
+    await t.test(
+      "opening commits one encrypted assistant answer and one quota success",
+      async () => {
+        providerFails = false;
+        consentAuthorized = true;
+        contextAuthorized = true;
+        plan = "FREE";
+        now = new Date("2026-10-02T12:00:00.000Z");
+        const openingOwner = "99999999-9999-4999-8999-999999999999";
+        const openingAuthorization = {
+          Authorization: `Bearer ${await tokenFor(openingOwner)}`,
+        };
+        const created = await request(server)
+          .post("/api/v1/ai-companion/conversations")
+          .set(openingAuthorization)
+          .send({ opening: "FROM_RESULT" })
+          .expect(201);
+        const body = created.body as {
+          conversationId: string;
+          context: { sources: { screening: boolean } };
+          messages: { role: string; suggestion: unknown }[];
+        };
+        assert.equal(body.context.sources.screening, true);
+        assert.equal(body.messages.length, 1);
+        assert.ok(body.messages[0]);
+        assert.equal(body.messages[0].role, "ASSISTANT");
+        assert.equal(body.messages[0].suggestion, null);
+        const persisted = await database
+          .collection("ai_companion_conversations")
+          .findOne({ _id: body.conversationId as never });
+        assert.ok(persisted);
+        assert.equal((persisted.messages as unknown[]).length, 1);
+        assert.equal(
+          JSON.stringify(persisted).includes("Phản hồi tổng hợp"),
+          false,
+        );
+        const quota = await database
+          .collection("ai_companion_quota_ledgers")
+          .findOne({ ownerAccountId: openingOwner });
+        assert.ok(quota);
+        assert.equal(quota.successfulAnswers, 1);
+        titleForMessage = () => "Chuyện của mình";
+        await request(server)
+          .post(
+            `/api/v1/ai-companion/conversations/${body.conversationId}/messages`,
+          )
+          .set(openingAuthorization)
+          .set("Idempotency-Key", "mam-guide-first-user-message-0001")
+          .send({ message: "Tớ thấy mệt" })
+          .expect(201);
+        const detail = await request(server)
+          .get(`/api/v1/ai-companion/conversations/${body.conversationId}`)
+          .set(openingAuthorization)
+          .expect(200);
+        assert.equal(
+          (detail.body as { title: string }).title,
+          "Chuyện của mình",
+        );
+        titleForMessage = null;
+      },
+    );
   } finally {
     await app.close();
     if (externalUri) await database.dropDatabase();
