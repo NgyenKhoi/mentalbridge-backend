@@ -162,6 +162,17 @@ actual room/agent absence before releasing capacity. Failed/unknown cleanup does
 not free a slot from a worker-local timeout. Follow the runbook to reconcile it.
 Do not start another agent by joining an arbitrary room or replaying a job.
 
+### ElevenLabs speech (owner choice, 2026-11-26)
+
+Set both `ELEVENLABS_API_KEY` (a Text to Speech-only key) and
+`AI_VOICE_ELEVENLABS_VOICE_ID` (the 20-character ElevenLabs voice ID) to speak
+through ElevenLabs Flash v2.5 in Vietnamese instead of LiveKit Inference
+Cartesia; `AI_VOICE_TTS_VOICE_ID` is then not required. Each speech unit is one
+generation (no per-sentence split or pause), so intonation carries across
+sentences. Remove both values to return to Cartesia. Setting only one of them,
+or combining them with `AI_VOICE_PILOT=true`, fails startup. Speech recognition
+stays on LiveKit Inference Deepgram.
+
 ## Media behavior and limits
 
 Only named dispatch `mentalbridge-ai-voice-v1` with exact opaque session,
