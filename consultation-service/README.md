@@ -1,5 +1,21 @@
 # Consultation Service
 
+## Earnings reads with an unavailable payout encryption key
+
+The specialist earnings ledger remains readable when the current destination
+cannot be decrypted. It returns only the persisted masked destination metadata,
+null bank details and `usableForPayout=false`; strict destination/admin reads
+continue to fail closed. Fresh payout admission and retries authenticate the
+destination ciphertext and key version before reserving funds. Existing payout
+idempotency replays remain observations without another provider submission.
+Re-entering the same destination replaces an unreadable revision instead of
+returning it as an unchanged update. PAYOS replacements still require confirmation.
+No key, destination or financial rows are repaired automatically. No migration
+or payout-provider activation is required.
+
+Verification: `SpecialistPayoutFlowIntegrationTests`,
+`PayoutDestinationIntegrationTests` and `ConsultationOpenApiContractTests`.
+
 ## MB-795 staging scheduler hotfix
 
 Each due video end and room closure runs independently, so one failing item
@@ -370,7 +386,9 @@ or owns the shared dev/staging Consultation database.
 Discovery uses the existing profile, language/support-area, availability,
 appointment-hold, and current-entitlement tables in one owner database; MB-363
 requires no new persistence or migration. Every request rechecks current
-`APPROVED` state and selectable slots. `FREE` receives `BROWSE_ONLY`, while
+`APPROVED` state and selectable slots. Approved public profiles remain browsable
+without a selectable schedule; their slot list is empty, so no booking can be
+started from that profile until a real slot is available. `FREE` receives `BROWSE_ONLY`, while
 `PLUS`/`PREMIUM` receive an exact slot identity with
 `BOOKING_POLICY_CHECK_REQUIRED`; MB-378 remains the booking authority and
 revalidates all mutable state. Discovery policy v2 displays only authoritative

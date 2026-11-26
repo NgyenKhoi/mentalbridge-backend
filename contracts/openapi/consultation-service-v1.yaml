@@ -1124,7 +1124,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: discoverApprovedSpecialists
-      description: Returns only current APPROVED profiles and their unexpired selectable exact 60-minute online slots, including currently active windows without advance booking delay. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
+      description: Returns only current APPROVED profiles and their unexpired selectable exact 60-minute online slots, including currently active windows without advance booking delay. Approved profiles remain listed when no selectable slot exists; their selectableSlots array is empty. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: supportEvaluationId, in: query, schema: { type: string, format: uuid } }
@@ -1150,7 +1150,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getApprovedSpecialistDetail
-      description: Rechecks current approval and slot selectability and returns one approved public profile only when at least one selectable slot remains. A profile that is suspended, rejected, pending, missing, or has no selectable slot is indistinguishable as SPECIALIST_NOT_DISCOVERABLE.
+      description: Rechecks current approval and returns one approved public profile, including when no selectable slot remains. In that case selectableSlots is empty and hasSelectableSlot is false. Suspended, rejected, pending and missing profiles are indistinguishable as SPECIALIST_NOT_DISCOVERABLE. Booking still requires a currently selectable slot.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/SpecialistAccountId'
@@ -5695,7 +5695,7 @@ components:
         bankName: { type: [string, 'null'], maxLength: 255 }
         version: { type: integer, format: int64, minimum: 0 }
         updatedAt: { type: string, format: date-time }
-        usableForPayout: { type: boolean, description: True only for the exact current confirmed revision compatible with the configured provider. }
+        usableForPayout: { type: boolean, description: True only for the exact current confirmed revision compatible with the configured provider and readable with the configured encryption key. Earnings reads retain masked destination metadata when decryption is unavailable with null bank details and usableForPayout false. }
     SavePayoutDestination:
       type: object
       additionalProperties: false
@@ -7056,8 +7056,9 @@ components:
         explanation: { $ref: '#/components/schemas/DiscoveryExplanation' }
         selectableSlots:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 20
+          description: Currently selectable slots; empty when the approved specialist has not published a selectable schedule. The public profile remains browsable.
           items: { $ref: '#/components/schemas/DiscoverySlot' }
     SpecialistDiscoveryPage:
       type: object

@@ -65,7 +65,7 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 
 		var response = discover(UUID.randomUUID());
 
-		response.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
+		response.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(2))
 				.andExpect(jsonPath("$.items[0].specialistAccountId").value(approved.toString()))
 				.andExpect(jsonPath("$.items[0].selectableSlots.length()").value(1))
 				.andExpect(jsonPath("$.items[0].selectableSlots[0].id").value(selectable.toString()))
@@ -95,9 +95,10 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 				.with(admin(admin)).header("If-Match", suspended.getResponse().getHeader("ETag")))
 				.andExpect(status().isOk()).andReturn();
 		assertThat(restored.getResponse().getHeader("ETag")).isNotBlank();
-		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1));
 		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
-				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SPECIALIST_NOT_DISCOVERABLE"));
+				.andExpect(status().isOk()).andExpect(jsonPath("$.selectableSlots").isEmpty())
+				.andExpect(jsonPath("$.explanation.hasSelectableSlot").value(false));
 		assertThat(jdbc.sql("select status from availability_slot where id=:id").param("id", originalSlot)
 				.query(String.class).single()).isEqualTo("WITHDRAWN");
 
@@ -211,13 +212,27 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID()))
 				.param("supportEvaluationId", evaluation.toString()))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.contextState").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.count").value(2))
 				.andExpect(jsonPath("$.items[0].specialistAccountId").value(available.toString()))
 				.andExpect(jsonPath("$.items[0].explanation.compatibility").value("UNAVAILABLE"));
 		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
-				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SPECIALIST_NOT_DISCOVERABLE"));
+				.andExpect(status().isOk()).andExpect(jsonPath("$.selectableSlots").isEmpty());
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID())).param("cursor", "not-a-cursor"))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DISCOVERY_CURSOR_STALE"));
+	}
+
+	@Test
+	void approvedProfileWithoutPublishedScheduleRemainsBrowsable() throws Exception {
+		var specialist = profile("APPROVED", "No published schedule", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		discover(UUID.randomUUID()).andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].specialistAccountId").value(specialist.toString()))
+				.andExpect(jsonPath("$.items[0].selectableSlots").isEmpty())
+				.andExpect(jsonPath("$.items[0].explanation.hasSelectableSlot").value(false));
+		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.selectableSlots").isEmpty())
+				.andExpect(jsonPath("$.explanation.earliestSelectableStartAt").doesNotExist());
 	}
 
 	@Test

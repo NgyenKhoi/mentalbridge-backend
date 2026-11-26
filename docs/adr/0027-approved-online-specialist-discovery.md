@@ -150,6 +150,18 @@ room or current video session exists.
 - A later rating story may add an authoritative aggregate additively, but it
   must preserve the primary factor order and Premium-only tie-break rule.
 
+## Owner amendment: directory browsing (2026-11-07)
+
+The owner-approved directory amendment of 2026-11-07 supersedes this ADR's
+requirement for at least one selectable slot to display a profile. Lists and
+details now include every currently APPROVED public profile, with an empty
+`selectableSlots` array, `hasSelectableSlot=false` and a null earliest time when
+none is available. Pending, rejected and suspended profiles remain hidden.
+Withdrawn, held and disabled-video slots remain excluded, and the booking
+authority still requires and revalidates an actual selectable slot. Ranking
+factor order and public-field privacy are unchanged. No persisted shape or
+migration changes are required; consumers must accept an empty slot array.
+
 ## Rejected alternatives
 
 - A weighted composite score: rejected because a high rating could obscure a
