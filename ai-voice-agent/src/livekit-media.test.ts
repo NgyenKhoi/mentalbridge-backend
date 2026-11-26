@@ -5,6 +5,7 @@ import { ReadableStream } from "node:stream/web";
 import test from "node:test";
 import {
   asLanguageCode,
+  inference,
   stt,
   voice,
   type JobRequest,
@@ -24,8 +25,10 @@ import {
   sentenceChunks,
   sentencePauseMs,
   silence,
+  speechTts,
   ttsModelOptions,
 } from "./livekit-media.js";
+import * as elevenlabs from "@livekit/agents-plugin-elevenlabs";
 import { loadConfiguration } from "./configuration.js";
 import { DispatchAdmission, run } from "./main.js";
 import { agentName, policyVersion, type Dispatch } from "./contract.js";
@@ -823,6 +826,56 @@ void test("sentence chunks split Vietnamese sentence ends but keep decimals and 
   ]);
   assert.deepEqual(sentenceChunks("Ừ. Mình hiểu."), ["Ừ.", "Mình hiểu."]);
   assert.deepEqual(ttsModelOptions, { speed: 0.9 });
+});
+
+void test("ElevenLabs speaks a whole unit in one Flash v2.5 generation; without it Cartesia stays", async () => {
+  const livekit = {
+    apiKey: "synthetic-key",
+    apiSecret: "synthetic-livekit-secret-32-characters",
+  };
+  const base = loadConfiguration({
+    AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+  });
+  const eleven = speechTts(
+    {
+      ...base,
+      elevenLabs: {
+        apiKey: "sk_synthetic_elevenlabs_key_0001",
+        voiceId: "Abc123Def456Ghi789Jk",
+      },
+    },
+    livekit,
+  );
+  assert.ok(eleven instanceof elevenlabs.TTS);
+  assert.equal(eleven.model, "eleven_flash_v2_5");
+  await eleven.close();
+  const cartesia = speechTts(base, livekit);
+  assert.ok(cartesia instanceof inference.TTS);
+  await cartesia.close();
+
+  const said: string[] = [];
+  const pauses: number[] = [];
+  const output = new EventEmitter();
+  await approvedPlayback(
+    output,
+    "Chào bạn. Mình nghe đây! Bạn kể nhé?",
+    (chunk) => {
+      said.push(chunk);
+      output.emit(voice.AudioOutput.EVENT_PLAYBACK_STARTED);
+      return { waitForPlayout: () => Promise.resolve(), exception: () => null };
+    },
+    () => Promise.resolve(),
+    new AbortController().signal,
+    () => assert.fail("unexpected interrupt"),
+    () => assert.fail("unexpected failure"),
+    (ms) => {
+      pauses.push(ms);
+      return Promise.resolve();
+    },
+    (whole) => [whole],
+  );
+  assert.deepEqual(said, ["Chào bạn. Mình nghe đây! Bạn kể nhé?"]);
+  assert.deepEqual(pauses, []);
 });
 
 void test("playback speaks sentence chunks in order with a pause between them and none before the first", async () => {

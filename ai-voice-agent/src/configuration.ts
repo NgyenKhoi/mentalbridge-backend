@@ -83,6 +83,9 @@ const environmentSchema = z.object({
     .literal("cartesia/sonic-3-2026-01-12")
     .default("cartesia/sonic-3-2026-01-12"),
   AI_VOICE_TTS_VOICE_ID: optional(z.uuid()),
+  // Both set: Voice speaks through ElevenLabs Flash v2.5; both unset: LiveKit Inference Cartesia as before.
+  ELEVENLABS_API_KEY: optional(z.string().regex(/^[A-Za-z0-9_-]{20,128}$/)),
+  AI_VOICE_ELEVENLABS_VOICE_ID: optional(z.string().regex(/^[A-Za-z0-9]{20}$/)),
 });
 export interface AgentConfiguration {
   measurementPolicyHash?: string | null;
@@ -99,6 +102,8 @@ export interface AgentConfiguration {
   sttModel: "deepgram/nova-3" | "deepgram/nova-2";
   ttsModel: "cartesia/sonic-3-2026-01-12";
   voiceId: string | null;
+  /** ElevenLabs Flash v2.5 replaces Cartesia when configured; null keeps Cartesia. */
+  elevenLabs?: { apiKey: string; voiceId: string } | null;
 }
 export function loadConfiguration(
   environment: Record<string, string | undefined>,
@@ -109,6 +114,8 @@ export function loadConfiguration(
   const enabled = value.AI_VOICE_AGENT_ENABLED === "true";
   const optionalString = (input: unknown): string | null =>
     typeof input === "string" ? input : null;
+  const elevenLabsKey = optionalString(value.ELEVENLABS_API_KEY);
+  const elevenLabsVoice = optionalString(value.AI_VOICE_ELEVENLABS_VOICE_ID);
   const configuration: AgentConfiguration = {
     measurementPolicyHash: optionalString(
       value.AI_VOICE_MEASUREMENT_POLICY_HASH,
@@ -126,7 +133,17 @@ export function loadConfiguration(
     sttModel: value.AI_VOICE_STT_MODEL,
     ttsModel: value.AI_VOICE_TTS_MODEL,
     voiceId: optionalString(value.AI_VOICE_TTS_VOICE_ID),
+    elevenLabs:
+      elevenLabsKey && elevenLabsVoice
+        ? { apiKey: elevenLabsKey, voiceId: elevenLabsVoice }
+        : null,
   };
+  // Half an ElevenLabs setup is a mistake, and the approved pilot stays on its pinned Cartesia voices.
+  if (
+    Boolean(elevenLabsKey) !== Boolean(elevenLabsVoice) ||
+    (configuration.pilot && configuration.elevenLabs)
+  )
+    throw new AgentFailure("CONFIGURATION_INVALID");
   if (configuration.measurementPolicyHash && !configuration.pilot)
     throw new AgentFailure("CONFIGURATION_INVALID");
   if (
@@ -155,7 +172,7 @@ export function loadConfiguration(
             "apiKey",
             "apiSecret",
             "journalToken",
-            "voiceId",
+            ...(configuration.elevenLabs ? [] : ["voiceId"]),
           ].includes(key) && item === null,
       ) ||
       [

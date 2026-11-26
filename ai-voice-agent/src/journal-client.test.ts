@@ -598,6 +598,45 @@ void test("configuration is disabled by default and never leaks unsafe setup val
     assert.throws(() => loadConfiguration({ ...accepted, ...additional }));
 });
 
+void test("ElevenLabs replaces the Cartesia voice only when fully configured, and never for the pilot", () => {
+  const enabled = {
+    AI_VOICE_AGENT_ENABLED: "true",
+    AI_VOICE_AGENT_APPROVAL_VERSION: "reviewed-qa-v1",
+    LIVEKIT_URL: "wss://synthetic.livekit.cloud",
+    LIVEKIT_API_KEY: "synthetic-key",
+    LIVEKIT_API_SECRET: "synthetic-livekit-secret-32-characters",
+    AI_VOICE_JOURNAL_SERVICE_TOKEN: "synthetic-worker-service-token-32-chars",
+  };
+  const eleven = {
+    ELEVENLABS_API_KEY: "sk_synthetic_elevenlabs_key_0001",
+    AI_VOICE_ELEVENLABS_VOICE_ID: "Abc123Def456Ghi789Jk",
+  };
+  // No Cartesia voice is needed once ElevenLabs speaks.
+  const configured = loadConfiguration({ ...enabled, ...eleven });
+  assert.deepEqual(configured.elevenLabs, {
+    apiKey: eleven.ELEVENLABS_API_KEY,
+    voiceId: eleven.AI_VOICE_ELEVENLABS_VOICE_ID,
+  });
+  assert.equal(configured.voiceId, null);
+  assert.equal(configuration().elevenLabs, null);
+  for (const broken of [
+    { ELEVENLABS_API_KEY: eleven.ELEVENLABS_API_KEY },
+    { AI_VOICE_ELEVENLABS_VOICE_ID: eleven.AI_VOICE_ELEVENLABS_VOICE_ID },
+    { ...eleven, AI_VOICE_ELEVENLABS_VOICE_ID: "not-an-elevenlabs-id" },
+    {
+      ...eleven,
+      AI_VOICE_PILOT: "true",
+      AI_VOICE_TTS_VOICE_ID: "8e8f222d-c817-4cc5-822b-8bf76ca7e98d",
+    },
+  ])
+    assert.throws(
+      () => loadConfiguration({ ...enabled, ...broken }),
+      (error) =>
+        error instanceof AgentFailure &&
+        !error.message.includes("sk_synthetic"),
+    );
+});
+
 void test("Journal diagnostic failures distinguish HTTP class, invalid body, cancellation and transport without raw payload", async () => {
   for (const [response, expected] of [
     [new Response("PRIVATE", { status: 403 }), "HTTP_4XX"],
