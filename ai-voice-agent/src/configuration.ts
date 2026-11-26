@@ -86,6 +86,10 @@ const environmentSchema = z.object({
   // Both set: Voice speaks through ElevenLabs Flash v2.5; both unset: LiveKit Inference Cartesia as before.
   ELEVENLABS_API_KEY: optional(z.string().regex(/^[A-Za-z0-9_-]{20,128}$/)),
   AI_VOICE_ELEVENLABS_VOICE_ID: optional(z.string().regex(/^[A-Za-z0-9]{20}$/)),
+  // v4 Turbo pronounces Vietnamese better than Flash v2.5 at the same price and latency (owner call, 2026-11-26).
+  AI_VOICE_ELEVENLABS_MODEL: z
+    .enum(["eleven_v4_turbo", "eleven_v4", "eleven_flash_v2_5"])
+    .default("eleven_v4_turbo"),
 });
 export interface AgentConfiguration {
   measurementPolicyHash?: string | null;
@@ -103,7 +107,11 @@ export interface AgentConfiguration {
   ttsModel: "cartesia/sonic-3-2026-01-12";
   voiceId: string | null;
   /** ElevenLabs Flash v2.5 replaces Cartesia when configured; null keeps Cartesia. */
-  elevenLabs?: { apiKey: string; voiceId: string } | null;
+  elevenLabs?: {
+    apiKey: string;
+    voiceId: string;
+    model: "eleven_v4_turbo" | "eleven_v4" | "eleven_flash_v2_5";
+  } | null;
 }
 export function loadConfiguration(
   environment: Record<string, string | undefined>,
@@ -135,7 +143,11 @@ export function loadConfiguration(
     voiceId: optionalString(value.AI_VOICE_TTS_VOICE_ID),
     elevenLabs:
       elevenLabsKey && elevenLabsVoice
-        ? { apiKey: elevenLabsKey, voiceId: elevenLabsVoice }
+        ? {
+            apiKey: elevenLabsKey,
+            voiceId: elevenLabsVoice,
+            model: value.AI_VOICE_ELEVENLABS_MODEL,
+          }
         : null,
   };
   // Half an ElevenLabs setup is a mistake, and the approved pilot stays on its pinned Cartesia voices.
