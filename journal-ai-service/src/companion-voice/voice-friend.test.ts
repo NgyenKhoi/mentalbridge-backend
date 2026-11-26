@@ -44,7 +44,7 @@ const response = (value = output()) =>
     usage: { inputTokens: 1200, outputTokens: 180 },
   });
 
-void test("Voice always speaks as Mầm: compact, speech-only, comfort plus a step, no default question", () => {
+void test("Voice always speaks as Mầm: compact, speech-only, the Text v3 voice, comfort plus a step", () => {
   for (const textHandoff of [false, true])
     for (const replyStyle of [undefined, "BRIEF", "SUPPORTIVE"] as const) {
       const friend = companionGuidanceSystem({
@@ -53,10 +53,18 @@ void test("Voice always speaks as Mầm: compact, speech-only, comfort plus a st
         ...(replyStyle ? { replyStyle } : {}),
       });
       assert.match(friend, /You are Mầm/u);
-      assert.match(friend, /as tớ to bạn/u);
       assert.match(
         friend,
-        /Do not ask follow-up questions by default. When sufficient context exists, provide helpful guidance and end naturally. Ask at most ONE question, only when essential information is missing or the user explicitly wants to explore further. Do not optimize for conversation length./u,
+        /Call yourself tớ \(tui if the user says tui\) and mirror their address/u,
+      );
+      assert.match(friend, /never make the user classify the feeling/u);
+      assert.match(
+        friend,
+        /no crude, bookish or stock lines \(bạn ơi, mình hiểu, nặng lắm/u,
+      );
+      assert.match(
+        friend,
+        /Ask at most ONE question per reply, built on their own words; once you understand, stop asking./u,
       );
       assert.match(friend, /then one or two concrete small steps/u);
       assert.match(friend, /Humour scales with distress/u);
