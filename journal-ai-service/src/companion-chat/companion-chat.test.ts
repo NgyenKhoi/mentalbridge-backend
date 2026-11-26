@@ -97,9 +97,9 @@ const configuration = loadConfiguration({
   JOURNAL_AI_CHAT_PLUS_DAILY_ANSWERS: "7",
   JOURNAL_AI_CHAT_PREMIUM_FAIR_USE_DAILY_ANSWERS: "9",
   JOURNAL_AI_CHAT_RATE_LIMIT_PER_MINUTE: "20",
-  JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET: "10000",
-  JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET: "10000",
-  JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET: "10000",
+  JOURNAL_AI_CHAT_FREE_DAILY_TOKEN_BUDGET: "20000",
+  JOURNAL_AI_CHAT_PLUS_DAILY_TOKEN_BUDGET: "20000",
+  JOURNAL_AI_CHAT_PREMIUM_DAILY_TOKEN_BUDGET: "20000",
 });
 
 class MemoryRepository implements ChatRepository {
@@ -919,7 +919,7 @@ void test("token budget follows the package plan", async () => {
   const budgets = {
     ...configuration,
     CHAT_FREE_DAILY_TOKEN_BUDGET: 1_000,
-    CHAT_PLUS_DAILY_TOKEN_BUDGET: 5_000,
+    CHAT_PLUS_DAILY_TOKEN_BUDGET: 8_000,
   };
   const free = subject("FREE", { provider: costly }, budgets);
   const freeConversation = await create(free.service);
@@ -1739,7 +1739,7 @@ void test("MB-829 repairs existing message rejection once without showing the fi
 
 void test("MB-829 checks the second estimate atomically and retains the first charge", async () => {
   let calls = 0;
-  const budget = 5_000;
+  const budget = 8_000;
   const { repository, service } = subject(
     "FREE",
     {
@@ -1748,7 +1748,7 @@ void test("MB-829 checks the second estimate atomically and retains the first ch
           calls += 1;
           return Promise.resolve({
             message: "invalid",
-            inputTokens: 4_900,
+            inputTokens: 7_900,
             outputTokens: 0,
           });
         },
@@ -1768,7 +1768,7 @@ void test("MB-829 checks the second estimate atomically and retains the first ch
   assert.equal(calls, 1);
   const quota = [...repository.quota.values()][0];
   assert.ok(quota);
-  assert.equal(quota.tokens, 4_900);
+  assert.equal(quota.tokens, 7_900);
   assert.equal(quota.successes, 0);
   assert.equal(quota.reservations.size, 0);
 });
