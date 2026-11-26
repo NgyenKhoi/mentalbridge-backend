@@ -80,13 +80,13 @@
               "const": true
             },
             "sessionsPerDay": {
-              "const": 2
+              "const": 10
             },
             "dailySeconds": {
               "const": 600
             },
             "perSessionSeconds": {
-              "const": 300
+              "const": 600
             }
           }
         },
@@ -104,13 +104,13 @@
               "const": true
             },
             "sessionsPerDay": {
-              "const": 3
+              "const": 10
             },
             "dailySeconds": {
               "const": 1800
             },
             "perSessionSeconds": {
-              "const": 600
+              "const": 1800
             }
           }
         }
@@ -278,7 +278,10 @@
         },
         "requiredConsents": {
           "type": "array",
-          "const": ["AI_PROCESSING", "AI_VOICE_PROCESSING"]
+          "const": [
+            "AI_PROCESSING",
+            "AI_VOICE_PROCESSING"
+          ]
         },
         "voiceConsentVersion": {
           "const": "ai-voice-processing-capstone-v1"

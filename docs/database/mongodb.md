@@ -406,9 +406,11 @@ expired. Empty pending arrays are excluded from that index.
 the reconciliation sweep also removes expired usage explicitly. It never
 releases capacity through this TTL.
 
-FREE has no voice allowance. PLUS admits at most two delivered sessions per day,
-300 seconds per session, and 600 seconds per day; PREMIUM admits three,
-600 seconds, and 1,800 seconds. Admission reserves one session and the lesser of
+FREE has no voice allowance. PLUS admits up to ten delivered sessions per day (the
+fair-use start cap), 600 seconds per session and 600 seconds per day; PREMIUM ten,
+1,800 seconds and 1,800 seconds (minutes are the budget since migration 025). Stored
+maxima: `usedSessions` 10, `reservedSeconds` and session `admittedSeconds`/`chargedSeconds` 1,800.
+Admission reserves one session and the lesser of
 the package session maximum and remaining daily seconds. Current package
 upgrades raise the daily ceiling without resetting used or reserved counters or
 extending an existing session's deadline. Voice counters are independent of

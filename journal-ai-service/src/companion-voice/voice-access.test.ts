@@ -177,7 +177,7 @@ for (const [label, change, state] of [
     assert.equal(result.state, state);
     assert.equal(result.eligible, false);
     assert.equal(result.availableSessionSeconds, 0);
-    assert.equal(result.maxSessionSeconds, label === "FREE" ? 0 : 300);
+    assert.equal(result.maxSessionSeconds, label === "FREE" ? 0 : 600);
     assert.equal(mutations, 0);
     await assert.rejects(
       service.reserve(ownerId, key, key),
@@ -214,11 +214,11 @@ void test("paid and DEMO PLUS/PREMIUM use current owner package and fresh check-
       assert.equal(result.packageCode, packageCode);
       assert.equal(
         result.maxSessionSeconds,
-        packageCode === "PLUS" ? 300 : 600,
+        packageCode === "PLUS" ? 600 : 1800,
       );
       assert.equal(
         result.availableSessionSeconds,
-        packageCode === "PLUS" ? 300 : 600,
+        600, // bounded by the fixture quota (remainingSeconds 600)
       );
       assert.notEqual(checks[0], checks[1]);
       assert.equal(JSON.stringify(result).includes("sourceReference"), false);
@@ -229,7 +229,7 @@ void test("pilot eligibility retains default 90 seconds and bounds extended sess
   for (const row of [
     { plan: "PREMIUM", remaining: 1800, window: 900, expected: 90 },
     { plan: "PREMIUM", remaining: 1800, window: 900, cap: 600, expected: 600 },
-    { plan: "PLUS", remaining: 600, window: 900, cap: 600, expected: 300 },
+    { plan: "PLUS", remaining: 600, window: 900, cap: 600, expected: 600 },
     { plan: "PREMIUM", remaining: 120, window: 900, cap: 600, expected: 120 },
     { plan: "PREMIUM", remaining: 1800, window: 75, cap: 600, expected: 75 },
   ] as const) {
@@ -255,7 +255,7 @@ void test("pilot eligibility retains default 90 seconds and bounds extended sess
     const result = await service.eligibility(ownerId, key);
     assert.equal(result.state, "ELIGIBLE");
     assert.equal(result.availableSessionSeconds, row.expected);
-    assert.equal(result.maxSessionSeconds, row.plan === "PLUS" ? 300 : 600);
+    assert.equal(result.maxSessionSeconds, row.plan === "PLUS" ? 600 : 1800);
   }
 });
 
@@ -335,7 +335,7 @@ void test("preview uses unreserved seconds once and stale snapshots do not autho
   );
   const first = await service.eligibility(ownerId, key);
   assert.equal(first.availableSessionSeconds, 120);
-  assert.equal(first.maxSessionSeconds, 300);
+  assert.equal(first.maxSessionSeconds, 600);
   remainingSeconds = 60;
   assert.equal(
     (await service.eligibility(ownerId, key)).availableSessionSeconds,

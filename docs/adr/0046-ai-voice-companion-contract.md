@@ -131,8 +131,12 @@ text token budgets and consultation credits:
 | Package | Successful voice sessions per local day | Maximum session ceiling | Daily chargeable ACTIVE time |
 | ------- | --------------------------------------: | ----------------------: | ---------------------------: |
 | FREE    |                                       0 |               0 seconds |                    0 seconds |
-| PLUS    |                                       2 |             300 seconds |                  600 seconds |
-| PREMIUM |                                       3 |             600 seconds |                1,800 seconds |
+| PLUS    |                                      10 |             600 seconds |                  600 seconds |
+| PREMIUM |                                      10 |           1,800 seconds |                1,800 seconds |
+
+Since 2026-11-27 (owner) minutes are the budget: one call may use whatever is left of the day, and the session
+count only matches the fair-use cap of ten starts per day, so short calls never forfeit the remaining minutes.
+Migration `025_companion_voice_minutes_quota` raises the stored maxima to match.
 
 The authoritative day is frozen at admission in `Asia/Ho_Chi_Minh`; reset is
 00:00 with no rollover. Midnight never renews an in-flight session. An upgrade

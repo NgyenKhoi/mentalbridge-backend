@@ -142,8 +142,8 @@ test("Web duration previews enforce policy caps and fail closed on denied eligib
   const validate = component("Eligibility");
   const value = positiveExample("Eligibility");
   for (const [packageCode, maxSessionSeconds] of [
-    ["PLUS", 300],
-    ["PREMIUM", 600],
+    ["PLUS", 600],
+    ["PREMIUM", 1800],
   ]) {
     const preview = {
       ...value,
@@ -265,15 +265,15 @@ test("policy fixes finite independent package quotas and the Vietnamese quota da
     },
     PLUS: {
       voiceEligible: true,
-      sessionsPerDay: 2,
+      sessionsPerDay: 10,
       dailySeconds: 600,
-      perSessionSeconds: 300,
+      perSessionSeconds: 600,
     },
     PREMIUM: {
       voiceEligible: true,
-      sessionsPerDay: 3,
+      sessionsPerDay: 10,
       dailySeconds: 1800,
-      perSessionSeconds: 600,
+      perSessionSeconds: 1800,
     },
   });
   assert.equal(policy.limits.globalSessions, 2);

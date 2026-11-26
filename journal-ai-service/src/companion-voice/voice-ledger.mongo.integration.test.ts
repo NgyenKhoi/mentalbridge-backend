@@ -29,6 +29,10 @@ const handoffMigration =
     up(database: Db): Promise<void>;
     down(database: Db): Promise<void>;
   };
+const minutesMigration =
+  require("../../migrations/025_companion_voice_minutes_quota.cjs") as {
+    up(database: Db): Promise<void>;
+  };
 const start = new Date("2026-10-23T16:59:55.000Z");
 const at = (milliseconds: number) => new Date(start.getTime() + milliseconds);
 const entitlement = (
@@ -177,6 +181,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
     assert.equal((await database.listCollections().toArray()).length, 0);
     await migration.up(database);
     await handoffMigration.up(database);
+    await minutesMigration.up(database);
     return {
       databaseName,
       database,
@@ -278,7 +283,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
         at(100),
       );
       const quota = await a.snapshot(owner, "PLUS", at(200));
-      assert.equal(quota.remainingSessions, 2);
+      assert.equal(quota.remainingSessions, 10);
       assert.equal(quota.remainingSeconds, 600);
       assert.equal(quota.reservedSessions, 0);
       const restarted = new MongoVoiceLedger(second, databaseName, pilot);
@@ -305,7 +310,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
     async () => {
       for (const row of [
         { plan: "PREMIUM", usedSeconds: 0, window: 900, expected: 600 },
-        { plan: "PLUS", usedSeconds: 0, window: 900, expected: 300 },
+        { plan: "PLUS", usedSeconds: 0, window: 900, expected: 600 },
         { plan: "PREMIUM", usedSeconds: 1680, window: 900, expected: 120 },
         { plan: "PREMIUM", usedSeconds: 0, window: 75, expected: 75 },
       ] as const) {
@@ -423,7 +428,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
       );
       assert.deepEqual(
         previews.map((value) => value.availableSessionSeconds),
-        [300, 300],
+        [600, 600],
       );
       const admissions = await Promise.allSettled(
         access.map((service, index) =>
@@ -552,7 +557,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
       );
       assert.equal(
         (await a.snapshot(request.ownerId, "PLUS", start)).reservedSeconds,
-        300,
+        600,
       );
       assert.equal(
         (await b.availability(request.ownerId, start)).dailyAttempts,
@@ -1050,7 +1055,7 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
       );
       assert.equal(
         (await a.snapshot(request.ownerId, "PLUS", at(500))).reservedSeconds,
-        300,
+        600,
       );
       const settled = await b.settle(
         dispatched.voiceSessionId,
@@ -1322,18 +1327,20 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
           at(offset + 202),
         );
       }
-      await assert.rejects(
-        a.reserve(input(owner, at(2500))),
-        code("QUOTA_EXHAUSTED"),
-      );
-      const upgraded = input(owner, at(2500));
-      upgraded.entitlement = entitlement(at(2500), "PREMIUM");
-      const third = await a.reserve(upgraded);
-      assert.equal(third.admittedSeconds, 600);
-      assert.equal(
-        (await a.snapshot(owner, "PREMIUM", at(2500))).usedSessions,
-        2,
-      );
+      // Two short calls never forfeit the rest of the day: the third gets what is left.
+      const charged = (await a.snapshot(owner, "PLUS", at(2500))).usedSeconds;
+      assert.equal((await a.snapshot(owner, "PLUS", at(2500))).usedSessions, 2);
+      const third = await a.reserve(input(owner, at(2500)));
+      assert.equal(third.admittedSeconds, 600 - charged);
+      // The session ceiling only matches the fair-use start cap, and an upgrade keeps used sessions.
+      const busyOwner = randomUUID();
+      await a.recordStartAttempt(busyOwner, start, input().keyHash);
+      await database
+        .collection("ai_voice_daily_usage")
+        .updateOne({ ownerId: busyOwner }, { $set: { usedSessions: 10 } });
+      const upgraded = input(busyOwner);
+      upgraded.entitlement = entitlement(start, "PREMIUM");
+      await assert.rejects(a.reserve(upgraded), code("QUOTA_EXHAUSTED"));
       const remainingOwner = randomUUID();
       await a.recordStartAttempt(remainingOwner, start, input().keyHash);
       await database
@@ -1497,14 +1504,14 @@ void test("voice ledger enforces quota and fencing across independent Mongo clie
         at(4000),
         entitlement(at(4000), "PREMIUM"),
       );
-      assert.equal(renewed.admittedSeconds, 300);
+      assert.equal(renewed.admittedSeconds, 600);
       assert.deepEqual(renewed.entitlement, request.entitlement);
       assert.equal(renewed.entitlement.packageCode, "PLUS");
       assert.equal(renewed.authorityExpiresAt.getTime(), at(14_000).getTime());
       assert.equal(
         (await a.snapshot(request.ownerId, "PREMIUM", at(4000)))
           .remainingSeconds,
-        1500,
+        1200,
       );
       assert.equal(
         renewed.hardStopAt.toISOString(),
