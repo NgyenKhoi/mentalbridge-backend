@@ -437,7 +437,7 @@ void test("persists encrypted quota-governed AI Companion conversations with rea
           )
           .findOne({ ownerAccountId: otherOwnerId })
       )?.usedTokens ?? 0;
-    configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET = premiumUsed + 25_000;
+    configuration.CHAT_PREMIUM_DAILY_TOKEN_BUDGET = premiumUsed + 27_000;
     rendezvous = [];
     const tokenAttempts = await Promise.all(
       ["0001", "0002"].map((suffix) =>
