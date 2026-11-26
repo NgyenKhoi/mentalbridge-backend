@@ -29,6 +29,7 @@ const require = createRequire(import.meta.url);
 const migrations = [
   require("../../migrations/013_companion_voice_quota.cjs"),
   require("../../migrations/014_companion_voice_media.cjs"),
+  require("../../migrations/025_companion_voice_minutes_quota.cjs"),
 ] as { up(db: Db): Promise<void>; down(db: Db): Promise<void> }[];
 const rejected = (code: string) => (error: unknown) =>
   error instanceof VoiceLedgerError && error.code === code;
@@ -1416,7 +1417,7 @@ void test("Voice media lifecycle remains atomic, fenced and content-free on real
         assert.equal(
           (await f.ledger.snapshot(f.owner, "PLUS", f.clock()))
             .remainingSessions,
-          2,
+          10,
         );
       },
     );

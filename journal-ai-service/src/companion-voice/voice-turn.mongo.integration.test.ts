@@ -54,6 +54,7 @@ const migrations = [
   "015_companion_voice_turn_fences.cjs",
   "016_companion_voice_context_handoff.cjs",
   "020_voice_measurement_campaigns.cjs",
+  "025_companion_voice_minutes_quota.cjs",
 ].map(
   (file) =>
     require(`../../migrations/${file}`) as {

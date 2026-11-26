@@ -64,6 +64,11 @@ void test("measurement reservations use real replica-set transactions", async (t
     const db = first.db(name);
     await capacityMigration.up(db);
     await migration.up(db);
+    await (
+      require("../../migrations/025_companion_voice_minutes_quota.cjs") as {
+        up(db: Db): Promise<void>;
+      }
+    ).up(db);
     const config = pilot();
     const a = new MongoVoiceMeasurementStore(first, name, config);
     const b = new MongoVoiceMeasurementStore(second, name, config);
@@ -225,7 +230,7 @@ void test("measurement reservations use real replica-set transactions", async (t
       await assert.rejects(ledger.reserve(input(remainingOwner)), denied);
       await ledger.reconcile(at);
       const snapshot = await ledger.snapshot(session.ownerId, "PLUS", at);
-      assert.equal(snapshot.remainingSessions, 2);
+      assert.equal(snapshot.remainingSessions, 10);
       assert.equal(snapshot.remainingSeconds, 600);
       const second = await ledger.reserve(input(remainingOwner));
       assert.equal(second.admittedSeconds, 240);

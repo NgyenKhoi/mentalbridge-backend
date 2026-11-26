@@ -487,8 +487,8 @@ slot occupied after identifying metadata is purged; no TTL or current ledger
 method makes that slot free.
 
 Voice usage is independent of text answers and Consultation credits. PLUS has
-two successful sessions/day, at most 300 seconds/session and 600 ACTIVE seconds/day;
-PREMIUM has three, at most 600 seconds/session and 1,800 ACTIVE seconds/day. The
+up to ten successful sessions/day (matching the start cap), at most 600 seconds/session and 600 ACTIVE seconds/day;
+PREMIUM has ten, at most 1,800 seconds/session and 1,800 ACTIVE seconds/day: minutes are the budget, so short calls keep the rest. The
 quota day is `Asia/Ho_Chi_Minh`, frozen at admission. The first trusted AI audio
 publication while the owner is connected consumes one session and starts ACTIVE
 accounting; summed eligible milliseconds are rounded up once on settlement.

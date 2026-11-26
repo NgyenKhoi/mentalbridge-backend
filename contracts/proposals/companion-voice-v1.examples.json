@@ -20,15 +20,15 @@
           },
           "PLUS": {
             "voiceEligible": true,
-            "sessionsPerDay": 2,
+            "sessionsPerDay": 10,
             "dailySeconds": 600,
-            "perSessionSeconds": 300
+            "perSessionSeconds": 600
           },
           "PREMIUM": {
             "voiceEligible": true,
-            "sessionsPerDay": 3,
+            "sessionsPerDay": 10,
             "dailySeconds": 1800,
-            "perSessionSeconds": 600
+            "perSessionSeconds": 1800
           }
         },
         "limits": {
@@ -111,15 +111,15 @@
           },
           "PLUS": {
             "voiceEligible": true,
-            "sessionsPerDay": 2,
+            "sessionsPerDay": 10,
             "dailySeconds": 600,
-            "perSessionSeconds": 300
+            "perSessionSeconds": 600
           },
           "PREMIUM": {
             "voiceEligible": true,
-            "sessionsPerDay": 3,
+            "sessionsPerDay": 10,
             "dailySeconds": 0,
-            "perSessionSeconds": 600
+            "perSessionSeconds": 1800
           }
         },
         "limits": {
@@ -202,15 +202,15 @@
           },
           "PLUS": {
             "voiceEligible": true,
-            "sessionsPerDay": 2,
+            "sessionsPerDay": 10,
             "dailySeconds": 600,
-            "perSessionSeconds": 300
+            "perSessionSeconds": 600
           },
           "PREMIUM": {
             "voiceEligible": true,
-            "sessionsPerDay": 3,
+            "sessionsPerDay": 10,
             "dailySeconds": 1800,
-            "perSessionSeconds": 600
+            "perSessionSeconds": 1800
           }
         },
         "limits": {
@@ -618,8 +618,8 @@
         },
         "checkedAt": "2026-10-23T14:00:00Z",
         "voiceConsentVersion": "ai-voice-processing-capstone-v1",
-        "maxSessionSeconds": 300,
-        "availableSessionSeconds": 300
+        "maxSessionSeconds": 600,
+        "availableSessionSeconds": 600
       }
     },
     {
@@ -668,8 +668,8 @@
         },
         "checkedAt": "2026-10-23T14:00:00Z",
         "voiceConsentVersion": "ai-voice-processing-capstone-v1",
-        "maxSessionSeconds": 300,
-        "availableSessionSeconds": 300
+        "maxSessionSeconds": 600,
+        "availableSessionSeconds": 600
       }
     },
     {

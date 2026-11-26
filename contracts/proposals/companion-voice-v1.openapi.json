@@ -1358,7 +1358,7 @@
           "remainingSessions": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 3
+            "maximum": 10
           },
           "remainingSeconds": {
             "type": "integer",
@@ -1373,7 +1373,7 @@
           "reservedSeconds": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 600
+            "maximum": 1800
           }
         }
       },
@@ -1430,13 +1430,13 @@
           },
           "maxSessionSeconds": {
             "type": "integer",
-            "enum": [0, 300, 600],
+            "enum": [0, 600, 1800],
             "description": "Current package policy ceiling in seconds. Not an admission or reservation."
           },
           "availableSessionSeconds": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 600,
+            "maximum": 1800,
             "description": "Display-only server-derived duration when ELIGIBLE, positive and at most min(maxSessionSeconds, unreserved daily remainingSeconds); additional operational caps or a remaining operational window may reduce it further. Zero otherwise. Reauthorize and admit atomically on POST; never derive a deadline from this snapshot."
           }
         },
@@ -1509,11 +1509,11 @@
             "then": {
               "properties": {
                 "maxSessionSeconds": {
-                  "const": 300
+                  "const": 600
                 },
                 "availableSessionSeconds": {
                   "type": "integer",
-                  "maximum": 300
+                  "maximum": 600
                 }
               }
             }
@@ -1530,11 +1530,11 @@
             "then": {
               "properties": {
                 "maxSessionSeconds": {
-                  "const": 600
+                  "const": 1800
                 },
                 "availableSessionSeconds": {
                   "type": "integer",
-                  "maximum": 600
+                  "maximum": 1800
                 }
               }
             }
@@ -1593,12 +1593,12 @@
           "admittedSeconds": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 600
+            "maximum": 1800
           },
           "chargedSeconds": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 600
+            "maximum": 1800
           },
           "deliveredSession": {
             "type": "boolean"
@@ -2114,7 +2114,7 @@
                       "admittedSeconds": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 600
+                        "maximum": 1800
                       }
                     }
                   }
