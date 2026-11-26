@@ -90,6 +90,42 @@ public class NativeSupportPlanService {
 		return views.get(userId, id);
 	}
 
+	public SupportPlanV3Service.SupportPlanV3View ensureInitial(UUID userId, UUID evaluationId, String bearer,
+			String key, UUID correlationId) {
+		String hash = hash("NATIVE_INITIAL_PROPOSE\n" + evaluationId);
+		var state = writer.initialState(userId, key, hash, clock.instant());
+		if (state != null && !"DRAFT".equals(state.status())) return views.get(userId, state.id());
+		var entitlement = paid(userId, bearer, correlationId);
+		var evaluation = validateInitialContext(userId, evaluationId);
+		Runnable guard = () -> validateInitialContext(userId, evaluationId);
+		if (state != null) {
+			var plan = plans.findByIdAndUserId(state.id(), userId).orElseThrow(this::stale);
+			if (!evaluationId.equals(plan.supportEvaluationId())) throw stale();
+			if (plan.modelVersion() == 2) revalidateLegacy(userId, bearer, correlationId, plan);
+			else revalidate(userId, bearer, correlationId, writer.required(userId, state.id()), entitlement);
+			return views.get(userId, writer.acceptInitialDraft(userId, state.id(), state.version(), key, hash, clock.instant(), guard));
+		}
+		var personalization = preferences.currentSnapshot(userId).orElse(null);
+		var template = policy.template(evaluation, personalization);
+		var request = policy.request(template, eligibility.currentVersions(template.resourceIds(), bearer, correlationId));
+		var proposal = policy.composeNative(request, eligibility.resolve(request.batch(), bearer, correlationId), personalization);
+		UUID id = writer.proposeInitial(userId, key, hash, evaluation, entitlement, proposal, personalization,
+				"STANDARD_SAFETY_REMINDER",
+				"Nếu bạn cảm thấy không an toàn, hãy chủ động tìm hỗ trợ trực tiếp phù hợp tại khu vực bạn đã chọn.", clock.instant(), guard);
+		return views.get(userId, id);
+	}
+
+	private SupportEvaluationV2Service.EvaluationView validateInitialContext(UUID userId, UUID evaluationId) {
+		var evaluation = evaluations.getCurrentCompatible(userId, evaluationId);
+		var episode = episodes.requiredEvaluationContext(userId, evaluationId);
+		if (!"INITIAL_CHECK".equals(episode.purpose()) || episodes.latestCompleted(userId, "INITIAL_CHECK")
+				.filter(current -> current.episodeId().equals(episode.episodeId())).isEmpty()) {
+			throw conflict("SCREENING_EPISODE_NOT_CURRENT", "Initial proposal requires the current completed initial check");
+		}
+		requireSafeProposal(evaluation);
+		return evaluation;
+	}
+
 	public SupportPlanV3Service.SupportPlanV3View activate(UUID userId, UUID draftId, long version,
 			String bearer, String key, UUID correlationId) {
 		String hash = hash("NATIVE_ACTIVATE\n" + draftId + "\n" + version);

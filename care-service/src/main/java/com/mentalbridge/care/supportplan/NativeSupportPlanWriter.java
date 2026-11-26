@@ -71,7 +71,54 @@ class NativeSupportPlanWriter {
 			CurrentEntitlementResponse entitlement, Proposal proposal, PersonalizationSnapshot preferences,
 			String safetyCode, String safetyCopy, Instant now) {
 		return propose(userId, key, hash, evaluation, entitlement, proposal, preferences, safetyCode, safetyCopy,
-				now, null, null, null);
+				now, null, null, null, false);
+	}
+
+	@Transactional
+	UUID proposeInitial(UUID userId, String key, String hash, EvaluationView evaluation,
+			CurrentEntitlementResponse entitlement, Proposal proposal, PersonalizationSnapshot preferences,
+			String safetyCode, String safetyCopy, Instant now, Runnable guard) {
+		return propose(userId, key, hash, evaluation, entitlement, proposal, preferences, safetyCode, safetyCopy,
+				now, null, null, guard, true);
+	}
+
+	@Transactional
+	InitialState initialState(UUID userId, String key, String hash, Instant now) {
+		lockOwner(userId);
+		rejectOtherLedgers(userId, key, "REQUEST");
+		var request = plans.findRequest(userId, key).orElse(null);
+		if (request != null && !hash.equals(request.getRequestHash())) throw idempotencyConflict();
+		var current = plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED"));
+		var plan = current.orElseGet(() -> plans.findByUserIdAndStatus(userId, "DRAFT").orElse(null));
+		if (plan == null && request != null)
+			throw conflict("SUPPORT_PLAN_INITIAL_CHANGED", "Initial plan state changed; reload before retrying");
+		if (plan == null && !plans.findTerminalHistory(userId, null, null, 1).isEmpty())
+			throw conflict("SUPPORT_PLAN_INITIAL_NOT_ELIGIBLE", "Initial proposal is unavailable after a prior plan");
+		if (plan != null && request != null && current.isEmpty() && !plan.id().equals(request.getPlanId()))
+			throw conflict("SUPPORT_PLAN_INITIAL_CHANGED", "Initial plan state changed; reload before retrying");
+		if (current.isPresent() && request == null) plans.insertRequest(userId, key, hash, plan.id(), now);
+		return plan == null ? null : new InitialState(plan.id(), plan.status(), plan.version());
+	}
+
+	@Transactional
+	UUID acceptInitialDraft(UUID userId, UUID draftId, long version, String key, String hash, Instant now, Runnable guard) {
+		lockOwner(userId);
+		rejectOtherLedgers(userId, key, "REQUEST");
+		var replay = plans.findRequest(userId, key).orElse(null);
+		if (replay != null && !hash.equals(replay.getRequestHash())) throw idempotencyConflict();
+		var current = plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED"));
+		if (current.isPresent()) {
+			if (replay == null) plans.insertRequest(userId, key, hash, current.get().id(), now);
+			return current.get().id();
+		}
+		var draft = plans.findByUserIdAndStatus(userId, "DRAFT").orElse(null);
+		if (draft == null || !draft.id().equals(draftId) || draft.version() != version ||
+				(replay != null && !replay.getPlanId().equals(draft.id())))
+			throw conflict("SUPPORT_PLAN_INITIAL_CHANGED", "Initial plan state changed; reload before retrying");
+		activities.assertCurrentPersonalization(draft);
+		guard.run();
+		if (replay == null) plans.insertRequest(userId, key, hash, draft.id(), now);
+		return draft.id();
 	}
 
 	@Transactional
@@ -79,26 +126,37 @@ class NativeSupportPlanWriter {
 			EvaluationView evaluation, CurrentEntitlementResponse entitlement, Proposal proposal,
 			PersonalizationSnapshot preferences, String safetyCode, String safetyCopy, Instant now, Runnable guard) {
 		return propose(userId, key, hash, evaluation, entitlement, proposal, preferences, safetyCode, safetyCopy,
-				now, currentId, currentVersion, guard);
+				now, currentId, currentVersion, guard, false);
 	}
 
 	private UUID propose(UUID userId, String key, String hash, EvaluationView evaluation,
 			CurrentEntitlementResponse entitlement, Proposal proposal, PersonalizationSnapshot preferences,
-			String safetyCode, String safetyCopy, Instant now, UUID currentId, Long currentVersion, Runnable guard) {
+			String safetyCode, String safetyCopy, Instant now, UUID currentId, Long currentVersion, Runnable guard, boolean initial) {
 		now = now.truncatedTo(ChronoUnit.MICROS);
 		lockOwner(userId);
 		rejectOtherLedgers(userId, key, "REQUEST");
 		var replay = plans.findRequest(userId, key).orElse(null);
+		if (replay != null && !hash.equals(replay.getRequestHash())) throw idempotencyConflict();
+		if (initial) {
+			var currentPlan = plans.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PAUSED"));
+			if (currentPlan.isPresent()) {
+				if (replay == null) plans.insertRequest(userId, key, hash, currentPlan.get().id(), now);
+				return currentPlan.get().id();
+			}
+		}
 		if (replay != null) {
-			if (!hash.equals(replay.getRequestHash())) throw idempotencyConflict();
+			if (initial) throw conflict("SUPPORT_PLAN_INITIAL_CHANGED", "Initial plan state changed; reload before retrying");
 			return required(userId, replay.getPlanId()).plan().id();
 		}
+		if (initial && !plans.findTerminalHistory(userId, null, null, 1).isEmpty())
+			throw conflict("SUPPORT_PLAN_INITIAL_NOT_ELIGIBLE", "Initial proposal is unavailable after a prior plan");
 		var current = currentId == null ? null : lockedCurrent(userId, currentId, currentVersion);
-		if (guard != null) guard.run();
+		if (guard != null && !initial) guard.run();
 		var existing = plans.findByUserIdAndStatus(userId, "DRAFT").orElse(null);
 		if (existing != null) {
-			throw conflict("SUPPORT_PLAN_DRAFT_EXISTS", "Review or explicitly discard the existing draft before a new native proposal");
+			throw conflict(initial ? "SUPPORT_PLAN_INITIAL_CHANGED" : "SUPPORT_PLAN_DRAFT_EXISTS", "Review or explicitly discard the existing draft before a new native proposal");
 		}
+		if (initial) guard.run();
 		boolean emotion = preferences == null || !preferences.provided()
 				|| preferences.preferredActivityModes().contains(ActivityMode.EMOTION_CHECK_IN);
 		boolean journal = preferences != null && preferences.preferredActivityModes().contains(ActivityMode.JOURNALING);
@@ -112,6 +170,7 @@ class NativeSupportPlanWriter {
 				safety.status().name(), safety.reasonCode().name(), safety.policyVersion(), safetyCode, safetyCopy,
 				proposal.slots().size() + professionalCount + (emotion ? 1 : 0) + (journal ? 1 : 0) + 1, now);
 		plan.snapshotPersonalization(preferences);
+		if (initial) activities.assertCurrentPersonalization(plan);
 		plan.snapshotChecklist(proposal.symptomMapping());
 		plan.initializeCycle(profiles.findTimezoneByAccountId(userId).orElseThrow(() -> new ApiException(
 				HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Care profile was not found")));
@@ -416,5 +475,6 @@ class NativeSupportPlanWriter {
 	private ApiException idempotencyConflict() { return conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different plan command"); }
 
 	record Snapshot(SupportPlanEntity plan, List<SupportPlanTemplateFamilyEntity> families, List<PlanActionEntity> actions) { }
+	record InitialState(UUID id, String status, long version) { }
 	record ReviewedReplay(String result, UUID planId) { }
 }
