@@ -383,7 +383,7 @@ void test("Voice pins Sonnet independently of fake/Gemini Text while admission r
       model: "global.anthropic.claude-sonnet-4-6",
       providerApprovalVersion: "mb762-po-20261029-sonnet",
       routingPolicyVersion: "companion-voice-sonnet-v1",
-      promptVersion: "companion-voice-friend-v2",
+      promptVersion: "companion-voice-friend-v3",
     });
   }
 });
@@ -660,7 +660,7 @@ void test("supportive pilot counts its exact grounded spoken prompt and accepts 
           assert.match(system, /Length follows the moment/);
           assert.match(system, /400–650, never more than 700/);
           assert.match(system, /grounded only in what the user said/);
-          assert.match(system, /Do not ask follow-up questions by default/);
+          assert.match(system, /Ask at most ONE question per reply/);
           assert.match(
             system,
             /never invent feelings, causes, events, personal facts/,
