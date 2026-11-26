@@ -194,9 +194,11 @@ generating a missing or stale note with one FREE/PLUS-route call charged to
 the daily token budget below the reply headroom; a SAFETY turn reads none;
 without L2 it purges them.
 
-Voice always speaks as Mầm (`companion-voice-friend-v2`, MB-846d; owner decision
-2026-11-23: enabled by default; rollback = revert): tớ/bạn, comfort first, then one
-or two concrete steps when the user needs help, no default follow-up question,
+Voice always speaks as Mầm (`companion-voice-friend-v3`, MB-846d; owner decision
+2026-11-23: enabled by default; rollback = revert; v3 2026-11-27 aligns it with Text
+v3): tớ with the user's mirrored address, clean Gen Z words, no stock lines such as
+bạn ơi, asks what happened on a vague opener, at most one question per reply,
+comfort first, then one or two concrete steps when the user needs help,
 humour scaled to distress and no claimed memory beyond the supplied turns. A spoken
 reply is at most 800 characters, enforced by the schema and the server validator
 (an over-length reply fails the turn; the Voice turn has no provider retry). Every

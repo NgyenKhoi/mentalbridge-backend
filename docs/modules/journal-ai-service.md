@@ -240,8 +240,10 @@ an approved live listening/evaluation window. Details are in
 
 MB-846d (owner decision 2026-11-23: enabled by default; rollback = revert)
 removes the Voice flags: Voice always uses the Mầm prompt
-`companion-voice-friend-v2` (tớ/bạn, comfort then one or two concrete steps,
-no default question), selected Text handoff is always available, and speech
+`companion-voice-friend-v3` (tớ, mirrored user address, clean Gen Z words and
+banned stock lines as in Text v3, asks what happened on a vague opener without
+making the user classify the feeling, at most one question per reply, comfort then
+one or two concrete steps), selected Text handoff is always available, and speech
 units stream whenever the approved Voice Bedrock route is configured. A spoken
 reply is at most 800 characters; a pilot output cap defaults to 600 tokens.
 Journal exact-revision and longitudinal analysis always run; the
