@@ -16,7 +16,7 @@ import com.mentalbridge.identity.security.SecureTokenService;
 @Service
 public class AuthenticateAccountService {
 
-	private static final Duration REFRESH_LIFETIME = Duration.ofDays(30);
+	static final Duration REFRESH_LIFETIME = Duration.ofDays(30);
 
 	private final AuthenticationPersistence persistence;
 	private final BCryptPasswordHasher passwordHasher;

@@ -70,7 +70,8 @@ public class RefreshSessionService {
 
 		var refreshToken = tokens.generate();
 		var successor = new AuthenticationPersistence.RefreshSession(UUID.randomUUID(), current.familyId(),
-				current.accountId(), tokens.hash(refreshToken), null, current.expiresAt(), current.id(), now);
+				current.accountId(), tokens.hash(refreshToken), null,
+				now.plus(AuthenticateAccountService.REFRESH_LIFETIME), current.id(), now);
 		persistence.rotateRefresh(current.id(), successor, now);
 		var accessToken = tokenService.issue(current.accountId(), current.role(), now);
 		var result = new AuthenticateAccountService.TokenPair(accessToken.value(), accessToken.expiresInSeconds(),
