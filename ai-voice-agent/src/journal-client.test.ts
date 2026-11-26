@@ -616,13 +616,23 @@ void test("ElevenLabs replaces the Cartesia voice only when fully configured, an
   assert.deepEqual(configured.elevenLabs, {
     apiKey: eleven.ELEVENLABS_API_KEY,
     voiceId: eleven.AI_VOICE_ELEVENLABS_VOICE_ID,
+    model: "eleven_v4_turbo",
   });
   assert.equal(configured.voiceId, null);
+  assert.equal(
+    loadConfiguration({
+      ...enabled,
+      ...eleven,
+      AI_VOICE_ELEVENLABS_MODEL: "eleven_flash_v2_5",
+    }).elevenLabs?.model,
+    "eleven_flash_v2_5",
+  );
   assert.equal(configuration().elevenLabs, null);
   for (const broken of [
     { ELEVENLABS_API_KEY: eleven.ELEVENLABS_API_KEY },
     { AI_VOICE_ELEVENLABS_VOICE_ID: eleven.AI_VOICE_ELEVENLABS_VOICE_ID },
     { ...eleven, AI_VOICE_ELEVENLABS_VOICE_ID: "not-an-elevenlabs-id" },
+    { ...eleven, AI_VOICE_ELEVENLABS_MODEL: "eleven_monolingual_v1" },
     {
       ...eleven,
       AI_VOICE_PILOT: "true",
