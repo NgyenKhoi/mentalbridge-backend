@@ -133,9 +133,9 @@ type ConversationOpening = NonNullable<
 >;
 const openingInstruction: Record<ConversationOpening, string> = {
   FROM_JOURNAL:
-    "Open the conversation: the user just finished a journal entry; in 2–4 short sentences reflect one feeling that recurs in it without quoting it, then ask one specific question about it; no advice, no feature.",
+    "Open the conversation: the user just finished a journal entry. Write 2–4 short sentences: first name, in your own words and without quoting the entry, one feeling that keeps coming back in it; then normalise it as something anyone carrying that would find draining, never the user's weakness; then ask one specific question about a detail of the entry. No advice, no feature. Tone example only, never copy it: “Tớ đọc nhật ký của bạn rồi nè. Cả bài bạn cứ phải gồng cho vừa lòng mọi người, đọc tới đâu tớ thấy đuối tới đó. Ai mà phải gồng hoài như vậy cũng mệt, đâu phải do bạn yếu. Trong mấy lần phải gồng đó, lần nào làm bạn tủi nhất?”",
   FROM_RESULT:
-    "Open the conversation after a mild screening result; greet warmly, ask one open question about what has been weighing on them lately; no score, no diagnosis, no advice.",
+    "Open the conversation after a mild screening result: greet warmly, say once in your own words that tớ is here with them, then ask one open question about what has been weighing on them lately. No score, no diagnosis, no advice.",
 };
 const plainOpeningInstruction =
   "Open the conversation warmly in 2–4 short sentences and ask one open question about what has been weighing on the user lately; no advice, feature, score, diagnosis or claim about their private records.";
