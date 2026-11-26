@@ -266,7 +266,7 @@ class MemoryRepository implements ChatRepository {
   }
   complete(
     command: ChatCommand,
-    userMessage: ChatMessage,
+    userMessage: ChatMessage | null,
     assistantMessage: ChatMessage,
     result: SendResult,
     deadline: number,
@@ -280,12 +280,15 @@ class MemoryRepository implements ChatRepository {
     if (!conversation) throw new Error("missing conversation");
     if (
       encryptedTitle &&
-      conversation.messages.length === 0 &&
+      (conversation.messages.length === 0 ||
+        (conversation.messages.length === 1 &&
+          conversation.messages[0]?.role === "ASSISTANT")) &&
       !Object.hasOwn(conversation, "encryptedTitle") &&
       conversation.title === "Cuộc trò chuyện mới"
     )
       conversation.encryptedTitle = encryptedTitle;
-    conversation.messages.push(userMessage, assistantMessage);
+    if (userMessage) conversation.messages.push(userMessage);
+    conversation.messages.push(assistantMessage);
     conversation.updatedAt = new Date(result.createdAt);
     const quota = [...this.quota.values()].find((row) =>
       row.reservations.has(command._id),
@@ -453,6 +456,252 @@ const subject = (
 
 const create = (service: CompanionChatService, accountId = ownerId) =>
   service.create(request({}, "unused-create-key", accountId));
+
+void test("create FROM_JOURNAL with effective L2 selects diary and persists one assistant opener", async () => {
+  const calls: string[] = [];
+  const { service, repository } = subject("FREE", {
+    context: {
+      assemble: () =>
+        Promise.resolve({
+          kinds: ["JOURNAL"],
+          prompt: "Synthetic diary context",
+        }),
+    },
+    provider: {
+      reply: (_message, _context, _route, options) => {
+        calls.push(options?.openingInstruction ?? "");
+        return Promise.resolve({
+          message: "Tớ nghe bạn nè. Chuyện nào đang nặng lòng nhất?",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_JOURNAL" }));
+  assert.equal(created.context.sources.diary, true);
+  assert.equal(created.messages.length, 1);
+  assert.equal(created.messages[0]?.role, "ASSISTANT");
+  assert.match(calls[0] ?? "", /journal entry/i);
+  assert.equal([...repository.quota.values()][0]?.successes, 1);
+});
+
+void test("create opening with an empty authorized source uses a generic instruction", async () => {
+  let instruction = "";
+  const { service } = subject("FREE", {
+    context: {
+      assemble: () => Promise.resolve({ kinds: [], prompt: "" }),
+    },
+    provider: {
+      reply: (_message, _context, _route, options) => {
+        instruction = options?.openingInstruction ?? "";
+        return Promise.resolve({
+          message: "Tớ nghe bạn nè.",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_JOURNAL" }));
+  assert.equal(created.messages.length, 1);
+  assert.doesNotMatch(instruction, /journal|diary|screening|result/i);
+});
+
+void test("create FROM_RESULT with effective L2 selects screening", async () => {
+  const { service } = subject();
+  const created = await service.create(request({ opening: "FROM_RESULT" }));
+  assert.equal(created.context.sources.screening, true);
+  assert.equal(created.context.sources.diary, false);
+  assert.equal(created.messages.length, 1);
+});
+
+void test("the first user reply sends the persisted opener back as authorized history", async () => {
+  const histories: FriendInput["history"][] = [];
+  const { service } = subject("FREE", {
+    context: {
+      assemble: () =>
+        Promise.resolve({
+          kinds: ["REASSESSMENT"],
+          prompt: "Synthetic result context",
+        }),
+    },
+    provider: {
+      reply: (_message, _context, _route, options) => {
+        histories.push(options?.friend?.history ?? []);
+        return Promise.resolve({
+          message: "Tớ nghe bạn nè.",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_RESULT" }));
+  await service.send(
+    request({ message: "Tớ thấy mệt" }),
+    created.conversationId,
+  );
+  assert.deepEqual(histories[0], []);
+  assert.deepEqual(histories[1], [
+    { role: "ASSISTANT", text: "Tớ nghe bạn nè." },
+  ]);
+});
+
+void test("the first real user reply after an opener can initialize the encrypted title", async () => {
+  const { service } = subject("FREE", {
+    provider: titleProvider("Chuyện của mình"),
+  });
+  const created = await service.create(request({ opening: "FROM_RESULT" }));
+  assert.equal(created.title, neutralTitle);
+  await service.send(
+    request({ message: "Tớ thấy mệt" }),
+    created.conversationId,
+  );
+  const current = await service.get(request({}), created.conversationId);
+  assert.equal(current.title, "Chuyện của mình");
+});
+
+void test("a personal opener is not replayed into history after L2 withdrawal", async () => {
+  let contextGranted = true;
+  const histories: FriendInput["history"][] = [];
+  const { service } = subject("FREE", {
+    consent: consentClient(() => authorizations(true, contextGranted)),
+    context: {
+      assemble: () =>
+        Promise.resolve({
+          kinds: ["JOURNAL"],
+          prompt: "Synthetic journal context",
+        }),
+    },
+    provider: {
+      reply: (_message, _context, _route, options) => {
+        histories.push(options?.friend?.history ?? []);
+        return Promise.resolve({
+          message: "Tớ nghe bạn nè.",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_JOURNAL" }));
+  contextGranted = false;
+  await service.send(
+    request({ message: "Tớ muốn kể tiếp" }),
+    created.conversationId,
+  );
+  assert.deepEqual(histories[1], []);
+});
+
+void test("create opening without effective L2 uses no personal sources", async () => {
+  let kinds: string[] = ["unexpected"];
+  let openingInstruction = "";
+  const { service } = subject("FREE", {
+    consent: consentClient(() => authorizations(true, false)),
+    provider: {
+      reply: (_message, context, _route, options) => {
+        openingInstruction = options?.openingInstruction ?? "";
+        kinds = context.kinds;
+        return Promise.resolve({
+          message: "Tớ nghe bạn nè.",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_JOURNAL" }));
+  assert.deepEqual(created.context.sources, {
+    plan: false,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  });
+  assert.deepEqual(kinds, []);
+  assert.doesNotMatch(openingInstruction, /journal|diary|screening|result/i);
+  assert.equal(created.messages.length, 1);
+});
+
+void test("create opening with L1 unavailable leaves the conversation empty", async () => {
+  const { service, repository } = subject("FREE", {
+    consent: consentClient(() => authorizations(false, false)),
+  });
+  const created = await service.create(request({ opening: "FROM_RESULT" }));
+  assert.equal(created.messages.length, 0);
+  assert.deepEqual(created.context.sources, {
+    plan: false,
+    diary: false,
+    screening: false,
+    resourceIds: [],
+  });
+  assert.equal([...repository.quota.values()][0]?.successes ?? 0, 0);
+});
+
+void test("create opening drops journal input if L2 disappears before provider dispatch", async () => {
+  let reads = 0;
+  let deliveredContext: string[] = ["unexpected"];
+  let deliveredInstruction = "";
+  const { service } = subject("FREE", {
+    consent: consentClient(() => {
+      reads++;
+      return authorizations(true, reads < 5);
+    }),
+    context: {
+      assemble: () =>
+        Promise.resolve({ kinds: ["JOURNAL"], prompt: "private sentinel" }),
+    },
+    provider: {
+      reply: (_message, context, _route, options) => {
+        deliveredContext = context.kinds;
+        deliveredInstruction = options?.openingInstruction ?? "";
+        return Promise.resolve({
+          message: "Tớ nghe bạn nè.",
+          inputTokens: 20,
+          outputTokens: 10,
+        });
+      },
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_JOURNAL" }));
+  assert.deepEqual(deliveredContext, []);
+  assert.doesNotMatch(deliveredInstruction, /journal|diary|screening|result/i);
+  assert.deepEqual(created.messages[0]?.contextKinds, []);
+});
+
+void test("create opening at the reply quota limit keeps the empty conversation", async () => {
+  const { service, repository } = subject(
+    "FREE",
+    {},
+    { ...configuration, CHAT_FREE_DAILY_ANSWERS: 1 },
+  );
+  const first = await create(service);
+  await service.send(request({ message: "Chào Mầm" }), first.conversationId);
+  const created = await service.create(request({ opening: "FROM_RESULT" }));
+  assert.equal(created.messages.length, 0);
+  assert.equal(repository.conversations.length, 2);
+  assert.equal([...repository.quota.values()][0]?.successes, 1);
+});
+
+void test("create opening after provider failure keeps the empty conversation", async () => {
+  const { service, repository } = subject("FREE", {
+    provider: {
+      reply: () => Promise.reject(new Error("synthetic provider failure")),
+    },
+  });
+  const created = await service.create(request({ opening: "FROM_RESULT" }));
+  assert.equal(created.messages.length, 0);
+  assert.equal(repository.conversations.length, 1);
+  assert.equal([...repository.quota.values()][0]?.successes, 0);
+});
+
+void test("create rejects an unknown opening value", async () => {
+  const { service } = subject();
+  await assert.rejects(
+    () => service.create(request({ opening: "OTHER" })),
+    chatProblem(400),
+  );
+});
 
 void test("creates encrypted owner-scoped conversations and hard deletes their content", async () => {
   const { repository, service } = subject();
@@ -733,13 +982,20 @@ const recordingProvider = (
   suggestion: { destination: string; resourceRef: string | null } | null,
   message = "Ừ, mình mở bài thở cho bạn nha.",
 ) => {
-  const calls: { friend?: FriendInput; responseMode?: ResponseMode }[] = [];
+  const calls: {
+    friend?: FriendInput;
+    responseMode?: ResponseMode;
+    assistantReplyNumber?: number;
+  }[] = [];
   const value: ChatProvider = {
     reply: (_message, _context, _route, options) => {
       calls.push({
         ...(options?.friend ? { friend: options.friend } : {}),
         ...(options?.responseMode
           ? { responseMode: options.responseMode }
+          : {}),
+        ...(options?.assistantReplyNumber
+          ? { assistantReplyNumber: options.assistantReplyNumber }
           : {}),
       });
       return Promise.resolve({
@@ -810,13 +1066,28 @@ void test("Mầm TEXT v3 flag enables friend history and mode binding without en
   );
   assert.deepEqual(
     recorder.calls.map((call) => call.responseMode),
-    ["LISTEN", "LISTEN"],
+    ["CLARIFY", "CLARIFY"],
+  );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.assistantReplyNumber),
+    [1, 2],
   );
   assert.deepEqual(recorder.calls[0]?.friend?.history, []);
   assert.equal(
     recorder.calls[1]?.friend?.history[0]?.text,
     "Ba deadline dí cùng lúc.",
   );
+});
+
+void test("an early request to pause stays in LISTEN and does not force a question", async () => {
+  const recorder = recordingProvider(null, "Tớ ở đây khi bạn muốn nói tiếp.");
+  const { service } = subject("FREE", { provider: recorder.value });
+  const conversation = await create(service);
+  await service.send(
+    request({ message: "Để sau nha" }),
+    conversation.conversationId,
+  );
+  assert.equal(recorder.calls[0]?.responseMode, "LISTEN");
 });
 
 void test("Mầm TEXT v3 counts the arc on all recent messages, so long turns still wrap up", async () => {
@@ -845,7 +1116,7 @@ void test("Mầm TEXT v3 counts the arc on all recent messages, so long turns st
   assert.equal(recorder.calls[2]?.friend?.history.length, 4);
   assert.deepEqual(
     recorder.calls.map((call) => call.responseMode),
-    ["LISTEN", "LISTEN", "SUPPORT_AND_WRAP_UP"],
+    ["CLARIFY", "CLARIFY", "SUPPORT_AND_WRAP_UP"],
   );
 });
 
@@ -1768,6 +2039,7 @@ void test("L1-only chat sends the whole plain provider payload and never decrypt
         input: JSON.stringify({
           message: "Nói chuyện tiếp",
           context: { kinds: [], data: "" },
+          assistant_reply_number: 6,
           history: [
             { role: "USER", text: "Chào" },
             { role: "ASSISTANT", text: "Mình nghe bạn." },

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfiguration } from "../configuration/configuration.js";
-import { RoutedChatProvider } from "../companion-chat/companion-chat.js";
+import {
+  RoutedChatProvider,
+  type ChatProvider,
+} from "../companion-chat/companion-chat.js";
 import { spawnSync } from "node:child_process";
 import {
   arcPassRates,
@@ -76,6 +79,59 @@ void test("a warm, bounded conversation passes", () => {
     ]),
     [],
   );
+});
+
+void test("the checker flags crude language and early suggestions in Mầm v3", () => {
+  assert.ok(checkScenario([turn("Nghe vcl luôn á.")]).includes("CRUDE_WORD"));
+  assert.ok(
+    checkScenario([
+      turn("Bạn thử mở Nhật ký nha.", { responseMode: "CLARIFY" }),
+    ]).includes("EARLY_SUGGESTION"),
+  );
+  assert.ok(
+    checkScenario([
+      turn("Tớ nghe nè.", { suggestion: resource, responseMode: "CLARIFY" }),
+    ]).includes("EARLY_SUGGESTION"),
+  );
+  assert.ok(
+    checkScenario([
+      turn("Gọi cho Mầm nha.", { responseMode: "CLARIFY" }),
+    ]).includes("EARLY_SUGGESTION"),
+  );
+});
+
+void test("the eval uses the runtime's early phase and reply-number hints", async () => {
+  const hints: { mode: string | undefined; number: number | undefined }[] = [];
+  const provider: ChatProvider = {
+    reply: (_message, _context, _route, options) => {
+      hints.push({
+        mode: options?.responseMode,
+        number: options?.assistantReplyNumber,
+      });
+      return Promise.resolve({
+        message: "Tớ nghe nè.",
+        inputTokens: 20,
+        outputTokens: 10,
+      });
+    },
+  };
+  await runScenario(
+    {
+      id: "phase-hints",
+      turns: ["Đầu tớ đau quá", "Tớ lo bài thi", "Tớ kể thêm nè"].map(
+        (user) => ({ user, expectSuggestion: false }),
+      ),
+    },
+    provider,
+    { provider: "DETERMINISTIC_FAKE", model: "synthetic" },
+    [],
+    true,
+  );
+  assert.deepEqual(hints, [
+    { mode: "CLARIFY", number: 1 },
+    { mode: "CLARIFY", number: 2 },
+    { mode: "SUPPORT_AND_WRAP_UP", number: 3 },
+  ]);
 });
 
 void test("the checker flags every deterministic failure", () => {
