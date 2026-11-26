@@ -577,6 +577,8 @@ const captureBodies = async (
     replyStyle?: "BRIEF" | "SUPPORTIVE";
     plan?: ServicePlan;
     responseMode?: ResponseMode;
+    openingInstruction?: string;
+    assistantReplyNumber?: number;
   },
 ) => {
   const original = globalThis.fetch;
@@ -607,6 +609,12 @@ const captureBodies = async (
         ...(options.friend ? { friend: options.friend } : {}),
         ...(options.responseMode ? { responseMode: options.responseMode } : {}),
         ...(options.plan ? { plan: options.plan } : {}),
+        ...(options.openingInstruction
+          ? { openingInstruction: options.openingInstruction }
+          : {}),
+        ...(options.assistantReplyNumber
+          ? { assistantReplyNumber: options.assistantReplyNumber }
+          : {}),
       },
     );
     return { bodies, result };
@@ -811,7 +819,7 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
         /Example (?:LISTEN|CLARIFY|SUPPORT_AND_WRAP_UP|BOUNDARY)/gu,
       ) ?? []
     ).length,
-    7,
+    10,
   );
   assert.match(
     prompt,
@@ -820,6 +828,45 @@ void test("Mầm TEXT v3 selects a server mode for every turn and preserves the 
   assert.equal(
     prompt.includes("Guidance policy: companion-guidance-v2"),
     false,
+  );
+});
+
+void test("Mầm v3 spans its three moves across the conversation and keeps early turns gentle", () => {
+  const prompt = companionGuidanceSystem({
+    channel: "TEXT",
+    friend: true,
+    mamTextV3: true,
+    responseMode: "CLARIFY",
+  });
+  for (const word of ["vãi", "vcl", "đm", "cc", "vl", "đéo"])
+    assert.match(prompt, new RegExp(`ban[^\\n]*${word}`, "iu"));
+  assert.match(prompt, /three moves span the whole conversation/iu);
+  assert.match(prompt, /no suggestion[^\n]*before assistant reply 3/iu);
+  assert.match(prompt, /X thì Y[^\n]*at most once per conversation/iu);
+  assert.match(prompt, /thôi[^\n]*để sau[^\n]*stop asking/iu);
+  for (const scene of ["headache", "mẹ", "2h sáng"])
+    assert.match(prompt, new RegExp(scene, "iu"));
+});
+
+void test("the opener instruction is trusted system text and the reply number stays in JSON", async () => {
+  const instruction =
+    "Open with a warm question about the selected journal context.";
+  const capturedReply = await captureBodies("BEDROCK", plainReply, {
+    friend: friendInput,
+    responseMode: "CLARIFY",
+    openingInstruction: instruction,
+    assistantReplyNumber: 1,
+  });
+  const wire = captured("BEDROCK", capturedReply.bodies[0] ?? "{}");
+  assert.match(
+    wire.system,
+    /Open with a warm question about the selected journal context/u,
+  );
+  assert.equal(wire.user.includes(instruction), false);
+  assert.equal(
+    (JSON.parse(wire.user) as { assistant_reply_number: number })
+      .assistant_reply_number,
+    1,
   );
 });
 

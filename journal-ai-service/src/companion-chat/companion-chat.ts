@@ -123,8 +123,23 @@ const conversationTitleSchema = z
     return length >= 1 && length <= 80;
   });
 const createConversationSchema = z
-  .object({ title: conversationTitleSchema.optional() })
+  .object({
+    title: conversationTitleSchema.optional(),
+    opening: z.enum(["FROM_JOURNAL", "FROM_RESULT"]).optional(),
+  })
   .strict();
+type ConversationOpening = NonNullable<
+  z.infer<typeof createConversationSchema>["opening"]
+>;
+const openingInstruction: Record<ConversationOpening, string> = {
+  FROM_JOURNAL:
+    "Open the conversation: the user just finished a journal entry; in 2–4 short sentences reflect one feeling that recurs in it without quoting it, then ask one specific question about it; no advice, no feature.",
+  FROM_RESULT:
+    "Open the conversation after a mild screening result; greet warmly, ask one open question about what has been weighing on them lately; no score, no diagnosis, no advice.",
+};
+const plainOpeningInstruction =
+  "Open the conversation warmly in 2–4 short sentences and ask one open question about what has been weighing on the user lately; no advice, feature, score, diagnosis or claim about their private records.";
+const openingSignal = "The user has opened this conversation.";
 const renameTitleSchema = z.object({ title: conversationTitleSchema }).strict();
 const titleVersionSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 const renameTitleResultSchema = z
@@ -148,7 +163,9 @@ const normalizedProviderTitle = (value: unknown): string | undefined => {
 };
 
 const canInitializeTitle = (conversation: Conversation): boolean =>
-  conversation.messages.length === 0 &&
+  (conversation.messages.length === 0 ||
+    (conversation.messages.length === 1 &&
+      conversation.messages[0]?.role === "ASSISTANT")) &&
   !Object.hasOwn(conversation, "encryptedTitle") &&
   conversation.title === defaultConversationTitle;
 const sendMessageSchema = z
@@ -560,6 +577,8 @@ export interface ChatProvider {
       responseMode?: ResponseMode;
       plan?: ServicePlan;
       requestTitle?: boolean;
+      assistantReplyNumber?: number;
+      openingInstruction?: string;
       /** MB-846c: userMessage is an earlier conversation; return its memory note as message. */
       memoryNote?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
@@ -675,7 +694,7 @@ export interface ChatRepository {
   settleAttempt(command: ChatCommand, difference: number): Promise<number>;
   complete(
     command: ChatCommand,
-    userMessage: ChatMessage,
+    userMessage: ChatMessage | null,
     assistantMessage: ChatMessage,
     result: SendResult,
     deadline: number,
@@ -1284,7 +1303,7 @@ export class MongoChatRepository
 
   async complete(
     command: ChatCommand,
-    userMessage: ChatMessage,
+    userMessage: ChatMessage | null,
     assistantMessage: ChatMessage,
     result: SendResult,
     deadline: number,
@@ -1305,7 +1324,13 @@ export class MongoChatRepository
             {
               _id: command.conversationId,
               ownerAccountId: command.ownerAccountId,
-              messages: { $size: 0 },
+              $or: [
+                { messages: { $size: 0 } },
+                {
+                  messages: { $size: 1 },
+                  "messages.0.role": "ASSISTANT",
+                },
+              ],
               encryptedTitle: { $exists: false },
               title: defaultConversationTitle,
             },
@@ -1317,10 +1342,16 @@ export class MongoChatRepository
             _id: command.conversationId,
             ownerAccountId: command.ownerAccountId,
             "messages.messageId": { $ne: assistantMessage.messageId },
-            $expr: { $lte: [{ $size: "$messages" }, 398] },
+            $expr: { $lte: [{ $size: "$messages" }, userMessage ? 398 : 399] },
           },
           {
-            $push: { messages: { $each: [userMessage, assistantMessage] } },
+            $push: {
+              messages: {
+                $each: userMessage
+                  ? [userMessage, assistantMessage]
+                  : [assistantMessage],
+              },
+            },
             $set: { updatedAt: new Date(result.createdAt) },
           },
           { session },
@@ -1933,6 +1964,8 @@ export class RoutedChatProvider implements ChatProvider {
       responseMode?: ResponseMode;
       plan?: ServicePlan;
       requestTitle?: boolean;
+      assistantReplyNumber?: number;
+      openingInstruction?: string;
       memoryNote?: boolean;
       onUsage?: (inputTokens: number, outputTokens: number) => void;
     },
@@ -1984,6 +2017,8 @@ export class RoutedChatProvider implements ChatProvider {
           ...(plan ? { plan } : {}),
         });
     const requestTitle = options?.requestTitle === true && !options.voice;
+    if (options?.openingInstruction && !options.voice)
+      system += `\n${options.openingInstruction}`;
     if (speechUnits)
       system += `\nVoice speech units v1: return a JSON array of one or two independently complete JSON objects using the supplied item schema. Each object must contain an independently safe, complete Vietnamese sentence ending with sentence punctuation. Do not split a clause, word, safety instruction or clinical guidance between objects. Keep the first object at most about 400 characters so a long reply never stops halfway. All messages combined must fit ${String(VOICE_REPLY_MAX_CHARACTERS)} characters. These objects replace the single reply object format only; retain every knowledge, guidance, safety and authority restriction above. Do not promise or defer a necessary safety qualification to a later object. No prose or Markdown outside the array.`;
     if (requestTitle) system += `\n${providerTitleInstruction}`;
@@ -1991,6 +2026,9 @@ export class RoutedChatProvider implements ChatProvider {
       message: userMessage,
       context,
       ...(friend ? { friend } : {}),
+      ...(options?.assistantReplyNumber === undefined
+        ? {}
+        : { assistantReplyNumber: options.assistantReplyNumber }),
     });
     const coreOutputJsonSchema = options?.voice
       ? voiceProviderOutputJsonSchema
@@ -2636,7 +2674,49 @@ export class CompanionChatService {
         body.data.title,
       );
     await this.repository.createConversation(conversation);
-    return publicConversation(this.crypto, conversation);
+    if (!body.data.opening)
+      return publicConversation(this.crypto, conversation);
+    try {
+      const authorization = await this.consent.snapshot(
+        bearer(request),
+        request.id ?? randomUUID(),
+      );
+      if (authorization.context.authorized) {
+        const sources = {
+          ...emptySources(),
+          [body.data.opening === "FROM_JOURNAL" ? "diary" : "screening"]: true,
+        };
+        await this.context.assemble(
+          owner,
+          bearer(request),
+          request.id ?? randomUUID(),
+          sources,
+        );
+        await this.repository.updateConversationContext(
+          owner,
+          conversation._id,
+          {
+            sources,
+            updatedAt: this.clock.now(),
+          },
+        );
+      }
+      await this.send(
+        {
+          ...request,
+          headers: { ...request.headers, "idempotency-key": randomUUID() },
+          body: { message: openingSignal },
+        },
+        conversation._id,
+        body.data.opening,
+      );
+    } catch {
+      this.logger.warn("CHAT_OPENING_FAILED");
+    }
+    const current = await this.repository
+      .findConversation(owner, conversation._id)
+      .catch(() => null);
+    return publicConversation(this.crypto, current ?? conversation);
   }
 
   async list(request: ChatRequest) {
@@ -2707,6 +2787,7 @@ export class CompanionChatService {
   async send(
     request: ChatRequest,
     conversationId: string,
+    opening?: ConversationOpening,
   ): Promise<SendResult> {
     const owner = requestOwner(request);
     if (!uuid.safeParse(conversationId).success)
@@ -2937,18 +3018,51 @@ export class CompanionChatService {
           ).history,
         };
       }
-      const requestTitle = canInitializeTitle(conversation);
+      const requestTitle = !opening && canInitializeTitle(conversation);
+      const openingKind =
+        opening === "FROM_JOURNAL"
+          ? "JOURNAL"
+          : opening === "FROM_RESULT"
+            ? "REASSESSMENT"
+            : null;
+      const trustedOpeningInstruction = opening
+        ? finalAuthorization.context.authorized &&
+          openingKind !== null &&
+          minimized.kinds.includes(openingKind)
+          ? openingInstruction[opening]
+          : plainOpeningInstruction
+        : undefined;
+      const providerMessage = parsed.data.message;
+      const assistantReplyNumber =
+        conversation.messages.filter((message) => message.role === "ASSISTANT")
+          .length + 1;
       // Count the arc on every recent message, not the byte-capped provider history; only the mode leaves the server.
       // A message that used personal context the owner no longer allows is counted but never decrypted (ADR 0050).
       const modeSources = finalAuthorization.context.authorized
         ? sources
         : emptySources();
-      const responseMode = selectResponseMode(
-        parsed.data.message,
-        readableTurns(conversation.messages.slice(-8), modeSources, (message) =>
-          this.crypto.decrypt(owner, conversationId, message),
-        ),
-      );
+      const selectedMode = opening
+        ? "CLARIFY"
+        : selectResponseMode(
+            providerMessage,
+            readableTurns(
+              conversation.messages.slice(-8),
+              modeSources,
+              (message) => this.crypto.decrypt(owner, conversationId, message),
+            ),
+          );
+      const pauseRequested =
+        /^(?:thôi|để sau|không muốn nói nữa)(?:\s|[.!?]|$)/iu.test(
+          parsed.data.message,
+        );
+      const responseMode =
+        selectedMode === "SAFETY" || selectedMode === "BOUNDARY"
+          ? selectedMode
+          : pauseRequested
+            ? "LISTEN"
+            : assistantReplyNumber < 3
+              ? "CLARIFY"
+              : selectedMode;
       const replyEstimate = () =>
         estimateInputTokens(
           companionGuidanceSystem({
@@ -2957,11 +3071,14 @@ export class CompanionChatService {
             mamTextV3: true,
             responseMode,
             plan: decision.packageCode,
-          }) + (requestTitle ? `\n${providerTitleInstruction}` : ""),
+          }) +
+            (requestTitle ? `\n${providerTitleInstruction}` : "") +
+            (trustedOpeningInstruction ? `\n${trustedOpeningInstruction}` : ""),
           companionUserInput({
-            message: parsed.data.message,
+            message: providerMessage,
             context: minimized,
             friend,
+            assistantReplyNumber,
           }),
         );
       // MB-846c: notes need effective L2 at the final check (without it they are purged) and never delay a SAFETY turn.
@@ -3007,9 +3124,13 @@ export class CompanionChatService {
         let attemptError: unknown;
         try {
           attemptedReply = await Promise.race([
-            this.provider.reply(parsed.data.message, minimized, route, {
+            this.provider.reply(providerMessage, minimized, route, {
               friend,
               responseMode,
+              assistantReplyNumber,
+              ...(trustedOpeningInstruction
+                ? { openingInstruction: trustedOpeningInstruction }
+                : {}),
               ...(requestTitle ? { requestTitle: true } : {}),
               plan: decision.packageCode,
               signal,
@@ -3072,7 +3193,7 @@ export class CompanionChatService {
       if (!reply || !assistant) throw deadlineFailure();
       // A SAFETY turn never shows a suggestion button, whatever the model returned.
       const suggestion =
-        responseMode !== "SAFETY"
+        !opening && responseMode !== "SAFETY"
           ? resolveSuggestion(reply.suggestion, friend.catalog)
           : null;
       const createdAt = this.clock.now();
@@ -3138,7 +3259,7 @@ export class CompanionChatService {
       if (Date.now() >= sendDeadline) throw deadlineFailure();
       await this.repository.complete(
         command,
-        userMessage,
+        opening ? null : userMessage,
         assistantMessage,
         { ...result, suggestion: null },
         sendDeadline,

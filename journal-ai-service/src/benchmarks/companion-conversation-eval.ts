@@ -109,10 +109,14 @@ const featureNames = [
   "Check-in cảm xúc",
   "Kế hoạch hỗ trợ",
   "Chuyên gia",
+  "AI Chat",
+  "AI Call",
+  "Gọi cho Mầm",
 ];
 // Spoken advice markers for the wrap-up turn ("thử…", "nên…", "hay là…").
 const advice =
   /(?:^|[\s,(])(?:thử|nên|có thể|hay là|hãy|nhớ|đừng|nếu được|nếu muốn|biết đâu|cứ để|bước đầu tiên|cho phép mình)(?=[\s.,!?…]|$)/iu;
+const crudeWords = new Set(["vãi", "vcl", "đm", "cc", "vl", "đéo"]);
 // Function and check-in syllables that never make a follow-up specific on their own.
 const stopSyllables = new Set(
   "mình bạn tui tôi cậu nó họ có không là thì mà và cũng đã đang sẽ rồi nữa quá lắm gì sao nào này đó vậy thế cái những các một với của cho được bị ra vào lên đi hả à ạ nha nè hông nhé chưa hay hoặc thấy cảm muốn chuyện lúc khi ai ở giờ bây trời ơi ổn kể thêm nghe làm thật ghê".split(
@@ -346,7 +350,17 @@ export const checkScenario = (
     names.some((name) => reply.toLowerCase().includes(name.toLowerCase()));
   const seen = new Set<string>();
   let previousEmoji = 0;
-  for (const turn of turns) {
+  for (const [index, turn] of turns.entries()) {
+    if (words(turn.reply).some((word) => crudeWords.has(word)))
+      failures.add("CRUDE_WORD");
+    if (
+      turn.responseMode &&
+      index < 2 &&
+      !turn.crisis &&
+      turn.responseMode !== "SAFETY" &&
+      (turn.suggestion || offers(turn.reply) || advice.test(turn.reply))
+    )
+      failures.add("EARLY_SUGGESTION");
     const emoji = turn.reply.match(/\p{Extended_Pictographic}/gu)?.length ?? 0;
     if (emoji > 1 || (emoji > 0 && previousEmoji > 0))
       failures.add("EMOJI_OVERUSE");
@@ -694,9 +708,19 @@ export const runScenario = async (
   const history: HistoryTurn[] = [];
   const turns: EvaluatedTurn[] = [];
   for (const turn of scenario.turns) {
-    const responseMode = mamTextV3
+    const selectedMode = mamTextV3
       ? selectResponseMode(turn.user, history.slice(-8))
       : undefined;
+    const pauseRequested =
+      /^(?:thôi|để sau|không muốn nói nữa)(?:\s|[.!?]|$)/iu.test(turn.user);
+    const responseMode =
+      selectedMode === "SAFETY" || selectedMode === "BOUNDARY"
+        ? selectedMode
+        : pauseRequested && selectedMode
+          ? "LISTEN"
+          : selectedMode && turns.length < 2
+            ? "CLARIFY"
+            : selectedMode;
     const reply = await provider.reply(
       turn.user,
       { kinds: [], prompt: "" },
@@ -708,22 +732,30 @@ export const runScenario = async (
           catalog,
         },
         ...(responseMode ? { responseMode } : {}),
+        ...(mamTextV3 ? { assistantReplyNumber: turns.length + 1 } : {}),
       },
     );
+    const earlyClarify =
+      mamTextV3 && responseMode === "CLARIFY" && turns.length < 2;
     turns.push({
       reply: reply.message,
       suggestion: resolveSuggestion(reply.suggestion, catalog),
-      expectSuggestion: turn.expectSuggestion,
+      expectSuggestion: earlyClarify ? false : turn.expectSuggestion,
       user: turn.user,
       ...(turn.crisis ? { crisis: true } : {}),
       ...(turn.allowOffer ? { allowOffer: true } : {}),
       ...(turn.allowedDestinations
         ? { allowedDestinations: turn.allowedDestinations }
         : {}),
-      ...(turn.phase ? { phase: turn.phase } : {}),
+      ...(turn.phase
+        ? {
+            phase:
+              earlyClarify && turn.phase === "wrapUp" ? "explore" : turn.phase,
+          }
+        : {}),
       ...(responseMode ? { responseMode } : {}),
       ...(turn.detailTerms ? { detailTerms: turn.detailTerms } : {}),
-      ...(turn.infoMissing ? { infoMissing: true } : {}),
+      ...(turn.infoMissing || earlyClarify ? { infoMissing: true } : {}),
     });
     history.push(
       { role: "USER", text: turn.user },

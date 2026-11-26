@@ -20,10 +20,14 @@ export const companionUserInput = (payload: {
   message: string;
   context: MinimizedContext;
   friend?: FriendInput;
+  assistantReplyNumber?: number;
 }): string =>
   JSON.stringify({
     message: payload.message,
     context: { kinds: payload.context.kinds, data: payload.context.prompt },
+    ...(payload.assistantReplyNumber === undefined
+      ? {}
+      : { assistant_reply_number: payload.assistantReplyNumber }),
     ...(payload.friend
       ? {
           ...(payload.friend.previousConversations?.length
