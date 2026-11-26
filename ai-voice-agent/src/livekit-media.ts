@@ -9,6 +9,7 @@ import {
   inference,
   type JobContext,
 } from "@livekit/agents";
+import * as elevenlabs from "@livekit/agents-plugin-elevenlabs";
 import { VAD } from "@livekit/agents-plugin-silero";
 import { RoomServiceClient } from "livekit-server-sdk";
 import {
@@ -111,6 +112,41 @@ export const sttModelOptions = {
   punctuate: true,
 };
 export const ttsModelOptions = { speed: 0.9 };
+// A little below default stability for warmer, more varied delivery; speed close to Cartesia's 0.9.
+export const elevenLabsVoiceSettings = {
+  stability: 0.4,
+  similarity_boost: 0.75,
+  speed: 0.95,
+};
+
+/** The speech model: ElevenLabs Flash v2.5 when configured, else LiveKit Inference Cartesia. */
+export function speechTts(
+  configuration: AgentConfiguration,
+  livekit: { apiKey: string; apiSecret: string },
+) {
+  if (configuration.elevenLabs)
+    return new elevenlabs.TTS({
+      apiKey: configuration.elevenLabs.apiKey,
+      voiceId: configuration.elevenLabs.voiceId,
+      model: "eleven_flash_v2_5",
+      language: "vi",
+      voiceSettings: elevenLabsVoiceSettings,
+      // Mầm's reply arrives whole: one generation (chunks up to 500 characters) keeps the intonation
+      // across sentences instead of restarting it at every full stop.
+      autoMode: false,
+      chunkLengthSchedule: [500],
+    });
+  if (!configuration.voiceId) throw new AgentFailure("CONFIGURATION_INVALID");
+  return new inference.TTS({
+    model: configuration.ttsModel,
+    language: "vi",
+    voice: configuration.voiceId,
+    apiKey: livekit.apiKey,
+    apiSecret: livekit.apiSecret,
+    modelOptions: ttsModelOptions,
+    connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
+  });
+}
 export const sentencePauseMs = 200;
 export function sentenceChunks(text: string): string[] {
   return text
@@ -242,6 +278,8 @@ export async function approvedPlayback(
   interrupt: () => void,
   failed: () => void,
   pause: (ms: number, signal: AbortSignal) => Promise<void> = silence,
+  // ElevenLabs speaks the reply in one generation (see speechTts); Cartesia keeps its paced sentences.
+  chunk: (text: string) => string[] = sentenceChunks,
 ) {
   if (signal.aborted) throw new AgentFailure("AUTHORITY_EXPIRED");
   let publication: Promise<void> | undefined;
@@ -255,7 +293,7 @@ export async function approvedPlayback(
   output.once(voice.AudioOutput.EVENT_PLAYBACK_STARTED, onStart);
   signal.addEventListener("abort", interrupt, { once: true });
   try {
-    const chunks = sentenceChunks(text);
+    const chunks = chunk(text);
     const stopped = () => signal.aborted;
     for (const [index, chunk] of (chunks.length ? chunks : [text]).entries()) {
       if (index) await pause(sentencePauseMs, signal);
@@ -401,9 +439,8 @@ export class LiveKitMedia implements MediaPort {
       forceCPU: true,
     });
     if (this.isClosed()) throw new AgentFailure("AUTHORITY_EXPIRED");
-    const { apiKey, apiSecret, voiceId } = this.configuration;
-    if (!apiKey || !apiSecret || !voiceId)
-      throw new AgentFailure("CONFIGURATION_INVALID");
+    const { apiKey, apiSecret } = this.configuration;
+    if (!apiKey || !apiSecret) throw new AgentFailure("CONFIGURATION_INVALID");
     const sttModel = new inference.STT({
       model: this.configuration.sttModel,
       language: "vi",
@@ -412,15 +449,7 @@ export class LiveKitMedia implements MediaPort {
       modelOptions: sttModelOptions,
       connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
     });
-    const ttsModel = new inference.TTS({
-      model: this.configuration.ttsModel,
-      language: "vi",
-      voice: voiceId,
-      apiKey,
-      apiSecret,
-      modelOptions: ttsModelOptions,
-      connOptions: { maxRetry: 0, timeoutMs: 3000, retryIntervalMs: 0 },
-    });
+    const ttsModel = speechTts(this.configuration, { apiKey, apiSecret });
     this.session = new voice.AgentSession({
       ...sessionOptions,
       vad,
@@ -556,6 +585,7 @@ export class LiveKitMedia implements MediaPort {
           this.callbacks?.failed(mediaFailure("PLAYBACK_PUBLICATION"));
         },
         this.pause,
+        this.configuration.elevenLabs ? (whole) => [whole] : sentenceChunks,
       );
     } finally {
       this.speech = undefined;
