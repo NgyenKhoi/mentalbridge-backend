@@ -112,14 +112,15 @@ export const sttModelOptions = {
   punctuate: true,
 };
 export const ttsModelOptions = { speed: 0.9 };
-// A little below default stability for warmer, more varied delivery; speed close to Cartesia's 0.9.
+// v4 models accept only stability 0.0, 0.5 or 1.0 (and drop the other fields): 0.5 "Natural" matches
+// the ElevenLabs playground default; Flash also reads similarity and speed (close to Cartesia's 0.9).
 export const elevenLabsVoiceSettings = {
-  stability: 0.4,
+  stability: 0.5,
   similarity_boost: 0.75,
   speed: 0.95,
 };
 
-/** The speech model: ElevenLabs Flash v2.5 when configured, else LiveKit Inference Cartesia. */
+/** The speech model: ElevenLabs (v4 Turbo by default) when configured, else LiveKit Inference Cartesia. */
 export function speechTts(
   configuration: AgentConfiguration,
   livekit: { apiKey: string; apiSecret: string },
@@ -128,7 +129,7 @@ export function speechTts(
     return new elevenlabs.TTS({
       apiKey: configuration.elevenLabs.apiKey,
       voiceId: configuration.elevenLabs.voiceId,
-      model: "eleven_flash_v2_5",
+      model: configuration.elevenLabs.model,
       language: "vi",
       voiceSettings: elevenLabsVoiceSettings,
       // Mầm's reply arrives whole: one generation (chunks up to 500 characters) keeps the intonation
@@ -568,7 +569,8 @@ export class LiveKitMedia implements MediaPort {
     try {
       await approvedPlayback(
         output,
-        text,
+        // Composed Vietnamese (one code point per toned vowel): TTS models misread decomposed diacritics.
+        text.normalize("NFC"),
         (chunk) => {
           this.speech = session.say(chunk, {
             allowInterruptions: true,

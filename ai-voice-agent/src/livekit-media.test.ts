@@ -842,12 +842,13 @@ void test("ElevenLabs speaks a whole unit in one Flash v2.5 generation; without 
       elevenLabs: {
         apiKey: "sk_synthetic_elevenlabs_key_0001",
         voiceId: "Abc123Def456Ghi789Jk",
+        model: "eleven_v4_turbo",
       },
     },
     livekit,
   );
   assert.ok(eleven instanceof elevenlabs.TTS);
-  assert.equal(eleven.model, "eleven_flash_v2_5");
+  assert.equal(eleven.model, "eleven_v4_turbo");
   await eleven.close();
   const cartesia = speechTts(base, livekit);
   assert.ok(cartesia instanceof inference.TTS);
