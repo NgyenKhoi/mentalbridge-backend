@@ -202,8 +202,8 @@ void test("Voice HTTP boundary isolates JWT/USER checks, no-store and current-ow
     const eligibility = result.body as VoiceEligibility;
     assert.equal(eligibility.state, "ELIGIBLE");
     assert.equal(eligibility.packageCode, "PLUS");
-    assert.equal(eligibility.maxSessionSeconds, 300);
-    assert.equal(eligibility.availableSessionSeconds, 300);
+    assert.equal(eligibility.maxSessionSeconds, 600);
+    assert.equal(eligibility.availableSessionSeconds, 600);
     assert.deepEqual(checkedOwners, [ownerId]);
     voiceGranted = false;
     const denied = await get()

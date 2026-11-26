@@ -6,14 +6,20 @@ export const VOICE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const VOICE_LEASE_MS = 10_000;
 export const VOICE_LEASE_RENEWAL_MS = 5_000;
 
+// Minutes are the budget (owner 2026-11-27): a call may use whatever is left of the day; the session count only
+// matches the 10-starts-per-day fair-use cap, so short calls never forfeit the remaining minutes.
 export const voiceLimits = (plan: VoicePlan) => {
   switch (plan) {
     case "FREE":
       return { sessionsPerDay: 0, dailySeconds: 0, perSessionSeconds: 0 };
     case "PLUS":
-      return { sessionsPerDay: 2, dailySeconds: 600, perSessionSeconds: 300 };
+      return { sessionsPerDay: 10, dailySeconds: 600, perSessionSeconds: 600 };
     case "PREMIUM":
-      return { sessionsPerDay: 3, dailySeconds: 1800, perSessionSeconds: 600 };
+      return {
+        sessionsPerDay: 10,
+        dailySeconds: 1800,
+        perSessionSeconds: 1800,
+      };
   }
 };
 

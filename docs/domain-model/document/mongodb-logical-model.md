@@ -247,7 +247,9 @@ Authority renewal uses current owner decisions without rewriting admission
 provenance. The first trusted connected-owner publication consumes one session;
 settlement rounds summed ACTIVE time once and refunds unused reservations. An
 undelivered session consumes no quota. Midnight or upgrade never extends a live
-session.
+session. Migration 025 (2026-11-27, minutes are the budget) raises the stored
+`admittedSeconds`/`chargedSeconds` ceiling to 1,800 so one call may use a whole
+PREMIUM day.
 
 Relationships:
 
@@ -279,7 +281,9 @@ the matching expiry fence, so stale work cannot reserve or release a replacement
 claim. Failed cleanup releases the identity without refunding the attempt count,
 so later denied-key retries are counted again. Package upgrades raise ceilings
 without resetting use. This ledger is independent of text Companion quotas. Its
-TTL removes metadata only and never releases capacity.
+TTL removes metadata only and never releases capacity. Since migration 025 the
+stored ceilings are 10 used sessions (the fair-use start cap) and 1,800 reserved
+seconds: a day allows short calls without forfeiting the remaining minutes.
 
 ### AI Companion Voice Capacity — ACTIVE
 

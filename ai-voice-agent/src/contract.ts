@@ -64,7 +64,7 @@ export const controlSchema = z.discriminatedUnion("action", [
               leaseId: uuid,
               validUntil: z.iso.datetime({ offset: true }),
               hardStopAt: z.iso.datetime({ offset: true }),
-              admittedSeconds: z.number().int().min(1).max(600),
+              admittedSeconds: z.number().int().min(1).max(1800),
             })
             .strict(),
         })

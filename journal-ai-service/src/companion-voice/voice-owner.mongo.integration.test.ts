@@ -68,6 +68,7 @@ const require = createRequire(import.meta.url);
 const migrations = [
   require("../../migrations/010_ai_companion_chat_quotas.cjs"),
   require("../../migrations/013_companion_voice_quota.cjs"),
+  require("../../migrations/025_companion_voice_minutes_quota.cjs"),
 ] as { up(database: Db): Promise<void> }[];
 const carePath = "/internal/v1/ai-companion/voice-consent-authorizations";
 const consultationPath =
@@ -527,7 +528,7 @@ void test("contract-backed synthetic owner HTTP decisions govern the real Mongo 
         assert.equal(
           (await f.ledger.snapshot(f.ownerId, "PLUS", f.clock()))
             .reservedSeconds,
-          300,
+          600,
         );
       },
     );
