@@ -889,3 +889,9 @@ void test("Journal consumer authenticates purpose, validates bindings/expiry and
     );
   }
 });
+
+void test("a speech-unit turn may stay open while both units play", async () => {
+  const { speechUnitsTimeoutMs } = await import("./journal-client.js");
+  // Two units of a long spoken reply run well past 30 s; the lease still bounds the turn.
+  assert.equal(speechUnitsTimeoutMs, 90_000);
+});
