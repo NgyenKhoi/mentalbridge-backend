@@ -177,6 +177,10 @@ const implementedOperations = new Set([
   "DELETE /api/v1/emotion-check-ins/{localDate}",
   "GET /api/v1/emotion-check-in-progress",
   "GET /api/v1/emotion-check-in-context",
+  "GET /api/v1/companion-state",
+  "PATCH /api/v1/companion-state",
+  "POST /api/v1/companion-state/commitments",
+  "PATCH /api/v1/companion-state/commitments/{commitmentId}",
   "GET /api/v1/notification-activity",
   "POST /internal/v1/notification-activity",
   "POST /api/v1/ai-companion/conversations",
@@ -337,6 +341,19 @@ const implementedResponses = new Map([
   [
     "GET /api/v1/emotion-check-in-context",
     new Set(["200", "400", "401", "403", "503"]),
+  ],
+  ["GET /api/v1/companion-state", new Set(["200", "401", "503"])],
+  [
+    "PATCH /api/v1/companion-state",
+    new Set(["200", "400", "401", "409", "503"]),
+  ],
+  [
+    "POST /api/v1/companion-state/commitments",
+    new Set(["201", "400", "401", "409", "503"]),
+  ],
+  [
+    "PATCH /api/v1/companion-state/commitments/{commitmentId}",
+    new Set(["200", "400", "401", "404", "409", "503"]),
   ],
   ["GET /api/v1/notification-activity", new Set(["200", "400", "401", "503"])],
   [
@@ -563,7 +580,7 @@ const careContractPath = fileURLToPath(
 const care = await SwaggerParser.validate(careContractPath);
 const careSchemas = care.components.schemas;
 assert.equal(care.info.version, "1.12.0");
-assert.equal(contract.info.version, "1.22.0");
+assert.equal(contract.info.version, "1.23.0");
 assert.deepEqual(careSchemas.ConsentType.enum, [
   "PRIVACY_POLICY",
   "AI_PROCESSING",

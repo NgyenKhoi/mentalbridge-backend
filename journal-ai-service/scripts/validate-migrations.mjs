@@ -423,6 +423,36 @@ assert.deepEqual(titleCommands, [
     validationAction: "error",
   },
 ]);
+const companionStateMigration = require("../migrations/026_companion_states.cjs");
+assert.equal(companionStateMigration.collectionName, "companion_states");
+assert.equal(typeof companionStateMigration.up, "function");
+assert.equal(typeof companionStateMigration.down, "function");
+assert.equal(
+  companionStateMigration.validator.$jsonSchema.additionalProperties,
+  false,
+);
+assert.deepEqual(
+  Object.keys(companionStateMigration.validator.$jsonSchema.properties).sort(),
+  [
+    "_id",
+    "encryptedPayload",
+    "iv",
+    "keyId",
+    "ownerAccountId",
+    "revision",
+    "tag",
+    "updatedAt",
+  ],
+);
+await assert.rejects(
+  companionStateMigration.down({
+    collection(name) {
+      assert.equal(name, "companion_states");
+      return { estimatedDocumentCount: () => Promise.resolve(1) };
+    },
+  }),
+  /Cannot remove/u,
+);
 console.log(
-  "Validated Mongo migrations: 001 through 021, including voice measurement and benchmark execution governance",
+  "Validated Mongo migrations: 001 through 026, including voice measurement, benchmark execution governance and companion state",
 );
