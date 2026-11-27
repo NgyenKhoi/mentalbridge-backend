@@ -106,6 +106,17 @@ Key fields: owner/local date/timezone, optimistic revision, encrypted bounded
 revisions containing required emotion/intensity plus optional factor codes and
 private note, idempotent command records, deletion tombstone, and purge time.
 
+### Mầm Companion State — ACTIVE
+
+Collection: `companion_states` (ADR 0053, migration 026)
+
+Key fields: one document per owner (unique owner ID, external Identity
+reference), optimistic revision, update time, and one AES-256-GCM payload
+holding the 14-day focus, up to 12 chặng records keyed by local start date,
+up to 30 commitments (at most three OPEN; OPEN resolves once) and the client
+guide string plus seen-moment keys. Payload values are enums, dates and UI
+keys only; no journal or chat text and no AI processing.
+
 ### Benchmark Dataset — ACTIVE
 
 Collection: `benchmark_datasets`

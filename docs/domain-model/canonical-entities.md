@@ -172,6 +172,7 @@ settle or release credit. Historical chat policy remains unchanged.
 | Analysis Job | journal-ai-service | MongoDB `analysis_jobs` | ACTIVE | Logical same-owner reference to exact Journal Entry revision; owner ID is external Identity. |
 | Journal Analysis Result | journal-ai-service | MongoDB `journal_analysis_results` | ACTIVE | Logical one-to-one result for job and exact Journal revision; MongoDB has no FK. |
 | Emotion Check-In | journal-ai-service | MongoDB `emotion_check_ins` | ACTIVE | Owner ID is external Identity; embeds bounded encrypted revisions and replay commands. |
+| Mầm Companion State | journal-ai-service | MongoDB `companion_states` | ACTIVE | One per owner (external Identity ID); one encrypted payload of focus, chặng answers, commitments and guide UI keys (ADR 0053). |
 | Benchmark Dataset | journal-ai-service | MongoDB `benchmark_datasets` | ACTIVE | Metadata root for synthetic, versioned benchmark input. |
 | Benchmark Run | journal-ai-service | MongoDB `benchmark_runs` | ACTIVE | Logical reference to exact benchmark dataset version/digest. |
 | Benchmark Case Result | journal-ai-service | MongoDB `benchmark_case_results` | ACTIVE | Logical child of run, unique per case/provider/model. |

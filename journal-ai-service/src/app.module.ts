@@ -35,6 +35,10 @@ import {
   type EmotionCheckInDependencies,
 } from "./emotion-check-ins/emotion-check-in.js";
 import {
+  registerCompanionStateModule,
+  type CompanionStateDependencies,
+} from "./companion-state/companion-state.js";
+import {
   registerLongitudinalAnalysisModule,
   type LongitudinalAnalysisDependencies,
 } from "./longitudinal-analysis/longitudinal-analysis.js";
@@ -71,6 +75,7 @@ export interface ApplicationDependencies {
   readonly readinessProbe?: ReadinessProbe;
   readonly analysis?: AnalysisDependencies;
   readonly emotionCheckIns?: EmotionCheckInDependencies;
+  readonly companionState?: CompanionStateDependencies;
   readonly longitudinalAnalysis?: LongitudinalAnalysisDependencies;
   readonly companionChat?: CompanionChatDependencies;
   readonly companionVoice?: CompanionVoiceDependencies;
@@ -105,6 +110,10 @@ export class AppModule implements NestModule {
         registerEmotionCheckInModule(
           configuration,
           dependencies.emotionCheckIns,
+        ),
+        registerCompanionStateModule(
+          configuration,
+          dependencies.companionState,
         ),
         registerLongitudinalAnalysisModule(
           configuration,
