@@ -148,6 +148,31 @@ current and longest streaks, then decrypts only the bounded current 30-day
 window to count self-reported labels. It persists no derived counter and
 returns no note. No reminder projection or Kafka event exists in v1.
 
+## `companion_states`
+
+One Journal/AI-owned document per owner (ADR 0053):
+`{ _id (UUID), ownerAccountId (UUID, unique), revision (int ≥ 1),
+encryptedPayload, iv, tag (binData), keyId (string), updatedAt (date) }`, where
+`keyId` records the `JOURNAL_ENCRYPTION_KEY_ID` used. The strict validator
+allows no other field. Migration `026_companion_states.cjs` is the executable
+validator and index source: unique `companion_states_owner_unique_idx` on
+`ownerAccountId`. Its down migration refuses to drop a non-empty collection.
+
+The whole state is one AES-256-GCM payload under `JOURNAL_ENCRYPTION_KEY` with
+AAD `${owner}:${revision}:companion-state`, so focus, chapters, commitments and
+UI keys are never plaintext or indexed. The decrypted payload is
+`{ focus, chapters[≤12], commitments[≤30], ui: { guide (≤6,144 chars, opaque
+client state), seen[≤300] } }`, validated strictly on read; an undecryptable or
+invalid payload is 503, never a silent reset. Enum values and limits are in the
+`CompanionState` OpenAPI schema (Journal/AI 1.23.0).
+
+Writes read the document, apply the change, re-encrypt under `revision + 1`
+and replace it only if the stored revision is unchanged (the first write
+inserts; a duplicate-key race counts as a conflict). One retry, then 409
+`CONFLICT`. No TTL: the state is retained until an account-erasure consumer
+exists (named follow-up shared with companion conversations). No Kafka event
+or AI projection reads it.
+
 ## AI Companion conversation and quota collections
 
 Migration `010_ai_companion_chat_quotas.cjs` owns the executable validators and

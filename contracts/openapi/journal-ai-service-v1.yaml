@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: MentalBridge Journal AI Service API
-  version: 1.22.0
-  description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, and quota-governed AI Companion conversations.
+  version: 1.23.0
+  description: Private journal CRUD, daily self-reported emotion check-ins with optional encrypted context and factual progress, a service-authorized content-free notification activity projection, consent-gated analysis, bounded Support Guide phrasing, bounded SupportPlan Companion orchestration, quota-governed AI Companion conversations, and the owner-scoped encrypted Mầm companion state (focus, chặng answers, commitments, guide UI).
 servers:
   - url: http://localhost:3000
 security:
@@ -24,6 +24,8 @@ tags:
     description: Consent-gated rephrasing of exact Care-approved Support Guide copy without decision authority.
   - name: SupportPlan Companion
     description: User-initiated phrasing for one deterministic intent and one exact minimized Care-approved context, with local fallback and no mutation authority.
+  - name: Companion state
+    description: Owner-scoped encrypted Mầm companion state of self-reported enums and client UI keys; no AI processing.
   - name: Operations
     description: Service health and metrics endpoints.
 paths:
@@ -991,6 +993,130 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/companion-state:
+    x-mentalbridge-status: implemented
+    get:
+      tags: [Companion state]
+      summary: Read the authenticated owner's Mầm companion state.
+      description: Returns defaults (focus null, empty lists, ui guide null and seen empty) with revision 0 when nothing was stored. Self-reported enums and client UI state only; no AI processing reads it.
+      operationId: getCompanionState
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: The owner's current state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionState"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+    patch:
+      tags: [Companion state]
+      summary: Merge focus, one chapter, the guide state or seen keys into the owner's state.
+      description: |
+        Every section is optional but at least one is required. `focus` replaces
+        the focus (null clears it). `chapter` upserts by `startedOn` and merges
+        the supplied fields; only the 12 most recent chapters are kept.
+        `guide` replaces the opaque client guide state. `seenAdd` adds keys with
+        set semantics; only the 300 most recently added keys are kept. The
+        server retries once on a concurrent write, then returns 409 CONFLICT.
+      operationId: updateCompanionState
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanionStateRequest"
+      responses:
+        "200":
+          description: The merged state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionState"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: "CONFLICT: a concurrent write won twice; reload and retry."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/companion-state/commitments:
+    x-mentalbridge-status: implemented
+    post:
+      tags: [Companion state]
+      summary: Make one small commitment with Mầm ("lời hẹn").
+      description: |
+        Creates an OPEN commitment. `dueOn` must lie between two days before and
+        eight days after the server's current UTC date. At most three
+        commitments may be OPEN. Only the 30 most recent commitments are kept;
+        the oldest resolved one is dropped first.
+      operationId: createCompanionCommitment
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompanionCommitmentRequest"
+      responses:
+        "201":
+          description: The new OPEN commitment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionCommitment"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: "COMMITMENT_LIMIT: three commitments are already OPEN. CONFLICT: a concurrent write won twice."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503": { $ref: "#/components/responses/DependencyUnavailable" }
+  /api/v1/companion-state/commitments/{commitmentId}:
+    x-mentalbridge-status: implemented
+    patch:
+      tags: [Companion state]
+      summary: Resolve one OPEN commitment.
+      description: Allowed transitions are OPEN to DONE, NOT_YET or SWAPPED. A missing or foreign ID is 404.
+      operationId: resolveCompanionCommitment
+      parameters:
+        - name: commitmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveCompanionCommitmentRequest"
+      responses:
+        "200":
+          description: The resolved commitment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionCommitment"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "COMMITMENT_RESOLVED: the commitment is no longer OPEN. CONFLICT: a concurrent write won twice."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "503": { $ref: "#/components/responses/DependencyUnavailable" }
   /api/v1/notification-activity:
     x-mentalbridge-status: implemented
@@ -4069,6 +4195,168 @@ components:
           type: array
           maxItems: 30
           items: { $ref: "#/components/schemas/EmotionCheckInConsumerItem" }
+    CompanionFocusGoal:
+      type: string
+      description: The user's self-chosen 14-day focus; not a diagnosis.
+      enum:
+        [
+          SLEEP,
+          STUDY_WORK_PRESSURE,
+          LONELINESS,
+          FAMILY,
+          RELATIONSHIPS,
+          SELF_WORTH,
+          NOT_SURE,
+        ]
+    CompanionFocus:
+      type: object
+      additionalProperties: false
+      required: [goal, chosenOn]
+      properties:
+        goal: { $ref: "#/components/schemas/CompanionFocusGoal" }
+        chosenOn:
+          type: string
+          format: date
+          description: The user's local date when the focus was chosen; on write it must lie between 400 days before and 2 days after the server's current UTC date (otherwise 400 VALIDATION_FAILED).
+    CompanionChapterRating:
+      type: string
+      description: Self-reported answer to "Điều đó nhẹ đi chưa?"; not a recovery score.
+      enum: [LIGHTER, SAME, HEAVIER, UNSURE]
+    CompanionChapterObstacle:
+      type: string
+      enum: [BUSY, FORGOT, LOW_ENERGY, NOT_A_FIT, OTHER]
+    CompanionChapterConnected:
+      type: string
+      enum: [YES, NOT_YET, PREFER_NOT_SAY]
+    CompanionChapterInput:
+      type: object
+      additionalProperties: false
+      required: [startedOn]
+      properties:
+        startedOn:
+          type: string
+          format: date
+          description: Local start date of the 14-day chặng; the chapter key. It must lie between 400 days before and 2 days after the server's current UTC date (otherwise 400 VALIDATION_FAILED).
+        goal: { $ref: "#/components/schemas/CompanionFocusGoal" }
+        rating: { $ref: "#/components/schemas/CompanionChapterRating" }
+        obstacle: { $ref: "#/components/schemas/CompanionChapterObstacle" }
+        connected: { $ref: "#/components/schemas/CompanionChapterConnected" }
+    CompanionChapter:
+      type: object
+      additionalProperties: false
+      required: [startedOn, updatedAt]
+      properties:
+        startedOn: { type: string, format: date }
+        goal: { $ref: "#/components/schemas/CompanionFocusGoal" }
+        rating: { $ref: "#/components/schemas/CompanionChapterRating" }
+        obstacle: { $ref: "#/components/schemas/CompanionChapterObstacle" }
+        connected: { $ref: "#/components/schemas/CompanionChapterConnected" }
+        updatedAt: { type: string, format: date-time }
+    CompanionCommitmentKind:
+      type: string
+      enum:
+        [
+          STUDY_WORK_STEP,
+          REST,
+          MOVE,
+          CONNECT_PERSON,
+          JOURNAL,
+          RELAX,
+          PLAN_ACTIVITY,
+          SPECIALIST_STEP,
+        ]
+    CompanionCommitmentMinutes:
+      type: [integer, "null"]
+      enum: [5, 10, 15, 25, 30, null]
+    CompanionCommitmentSource:
+      type: string
+      enum: [CHAT, PLAN_SKIP, SESSION, LOOK_BACK, GUIDE, HOME]
+    CompanionCommitmentStatus:
+      type: string
+      enum: [OPEN, DONE, NOT_YET, SWAPPED]
+    CompanionCommitment:
+      type: object
+      additionalProperties: false
+      required:
+        [id, kind, minutes, dueOn, source, status, createdAt, resolvedAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/CompanionCommitmentKind" }
+        minutes: { $ref: "#/components/schemas/CompanionCommitmentMinutes" }
+        dueOn: { type: string, format: date }
+        source: { $ref: "#/components/schemas/CompanionCommitmentSource" }
+        status: { $ref: "#/components/schemas/CompanionCommitmentStatus" }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: [string, "null"], format: date-time }
+    CompanionSeenKey:
+      type: string
+      pattern: "^[a-z0-9:_-]{1,80}$"
+    CompanionState:
+      type: object
+      additionalProperties: false
+      required: [focus, chapters, commitments, ui, revision]
+      properties:
+        focus:
+          oneOf:
+            - $ref: "#/components/schemas/CompanionFocus"
+            - type: "null"
+        chapters:
+          type: array
+          maxItems: 12
+          items: { $ref: "#/components/schemas/CompanionChapter" }
+        commitments:
+          type: array
+          maxItems: 30
+          items: { $ref: "#/components/schemas/CompanionCommitment" }
+        ui:
+          type: object
+          additionalProperties: false
+          required: [guide, seen]
+          properties:
+            guide:
+              type: [string, "null"]
+              maxLength: 6144
+              description: Client-serialized guide state; opaque to the server.
+            seen:
+              type: array
+              maxItems: 300
+              uniqueItems: true
+              items: { $ref: "#/components/schemas/CompanionSeenKey" }
+        revision:
+          type: integer
+          minimum: 0
+          description: Server write counter; 0 means nothing is stored yet.
+    UpdateCompanionStateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        focus:
+          oneOf:
+            - $ref: "#/components/schemas/CompanionFocus"
+            - type: "null"
+        chapter: { $ref: "#/components/schemas/CompanionChapterInput" }
+        guide: { type: [string, "null"], maxLength: 6144 }
+        seenAdd:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/CompanionSeenKey" }
+    CreateCompanionCommitmentRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, minutes, dueOn, source]
+      properties:
+        kind: { $ref: "#/components/schemas/CompanionCommitmentKind" }
+        minutes: { $ref: "#/components/schemas/CompanionCommitmentMinutes" }
+        dueOn: { type: string, format: date }
+        source: { $ref: "#/components/schemas/CompanionCommitmentSource" }
+    ResolveCompanionCommitmentRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [DONE, NOT_YET, SWAPPED] }
     HealthResponse:
       type: object
       additionalProperties: false

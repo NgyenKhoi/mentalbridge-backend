@@ -307,3 +307,19 @@ draft. The frontend retains a draft in memory after validation, dependency, or
 revision-conflict failures and warns before closing the editor or navigating
 away with unsaved changes. Prompt selection is presentation-only and is not
 persisted.
+
+## Mầm companion state (ADR 0053)
+
+[ADR 0053](../adr/0053-mam-companion-state-and-daily-decisions.md) adds the
+owner-scoped `companion-state` module (`src/companion-state/`). One encrypted
+`companion_states` document per owner holds the 14-day focus, the 12 most
+recent chặng answers, the 30 most recent commitments (at most three OPEN) and
+the client guide/seen-moment UI state. `GET`/`PATCH /api/v1/companion-state`
+read and merge it; `POST /api/v1/companion-state/commitments` and
+`PATCH /api/v1/companion-state/commitments/{commitmentId}` create and resolve
+commitments with the ProblemDetails codes `COMMITMENT_LIMIT` and
+`COMMITMENT_RESOLVED`. Writes use an optimistic revision with one retry, then
+409 `CONFLICT`. The state carries enums, dates and UI keys only; no provider
+reads it, so it needs no AI consent. Migration `026_companion_states.cjs` must
+run before this backend deploys. There is no account-erasure consumer yet
+(same named follow-up as companion conversations).
