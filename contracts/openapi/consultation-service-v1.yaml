@@ -1161,7 +1161,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: discoverApprovedSpecialists
-      description: Returns only current APPROVED profiles and their unexpired selectable exact 60-minute online slots, including currently active windows without advance booking delay. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
+      description: Returns current APPROVED profiles even when they have no selectable slots. Slots contain only unexpired selectable exact 60-minute online windows, including currently active windows without advance booking delay. Profiles without a matching slot return an empty selectableSlots array, hasSelectableSlot=false and NO_SELECTABLE_SLOT; booking still requires an eligible exact slot. FREE, PLUS, and PREMIUM may browse. Optional personalization reads one exact owned Care SupportEvaluation server-to-server; its health content is never returned or persisted, and unavailable context degrades to a neutral explained rank.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: supportEvaluationId, in: query, schema: { type: string, format: uuid } }
@@ -1187,7 +1187,7 @@ paths:
     x-mentalbridge-status: implemented
     get:
       operationId: getApprovedSpecialistDetail
-      description: Rechecks current approval and slot selectability and returns one approved public profile only when at least one selectable slot remains. A profile that is suspended, rejected, pending, missing, or has no selectable slot is indistinguishable as SPECIALIST_NOT_DISCOVERABLE.
+      description: Rechecks current approval and returns the approved public profile even when no selectable slot remains. In that case selectableSlots is empty and hasSelectableSlot is false; booking remains unavailable. A profile that is suspended, rejected, pending or missing is indistinguishable as SPECIALIST_NOT_DISCOVERABLE.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/SpecialistAccountId'
@@ -7166,8 +7166,9 @@ components:
         explanation: { $ref: '#/components/schemas/DiscoveryExplanation' }
         selectableSlots:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 20
+          description: Currently selectable slots; empty when the approved specialist has not published a selectable schedule. The public profile remains browsable.
           items: { $ref: '#/components/schemas/DiscoverySlot' }
     SpecialistDiscoveryPage:
       type: object
