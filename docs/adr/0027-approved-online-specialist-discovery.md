@@ -8,6 +8,24 @@
 - Current scope: [ADR 0017](0017-product-scope-v2.md), amended by [ADR 0022](0022-current-product-blueprint-amendments.md)
 - Availability dependency: [ADR 0019](0019-online-specialist-availability.md)
 
+## Owner amendment: approved profiles remain visible (2026-11-28)
+
+The owner explicitly approved keeping specialist profiles and detail accessible
+when no selectable appointment slot remains. This supersedes the original
+slot-required discovery and detail rules below, prospectively. Those original
+paragraphs remain a record of the 2026-09-27 decision.
+
+Current `APPROVED` state remains mandatory. A profile with no matching selectable
+slot returns `selectableSlots: []`, `hasSelectableSlot: false`, a null earliest
+slot and `NO_SELECTABLE_SLOT`. Availability retains its existing position in the
+ranking order. `PENDING`, `REJECTED`, `SUSPENDED` and missing profiles remain
+hidden. Slot filtering, exact-slot booking, entitlement, credits and reservation
+capacity remain authoritative; browsing never enables a booking without a slot.
+
+The existing response shape and `specialist-discovery-v2` factor order already
+represent absent availability. No data migration or historic outcome rewrite is
+required.
+
 ## Context
 
 The user-facing specialist page currently contains static profiles, unsupported

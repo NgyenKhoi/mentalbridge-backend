@@ -1,5 +1,12 @@
 # MB-363 approved online specialist discovery evidence
 
+The slot-required catalogue and detail expectations below record MB-363's
+original delivery. The owner's 2026-11-28
+[ADR 0027 amendment](adr/0027-approved-online-specialist-discovery.md#owner-amendment-approved-profiles-remain-visible-2026-11-28)
+supersedes those expectations: approved profiles remain visible with an empty
+slot list. The current focused regression checks live in
+`DiscoveryFlowIntegrationTests` and `SpecialistDiscovery.test.tsx`.
+
 ## Delivery status
 
 The decision/actor-flow, Consultation owner capability, frontend/BFF consumer,

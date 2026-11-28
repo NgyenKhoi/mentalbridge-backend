@@ -140,7 +140,7 @@ public class DiscoveryService {
 				 rating.rating_count, rating.rating_sum
 				from specialist_profile p
 				left join specialist_rating_aggregate rating on rating.specialist_account_id=p.account_id
-				join lateral (
+				left join lateral (
 				 select s.id, s.start_at, s.end_at, s.timezone, s.modality, s.version
 				 from availability_slot s
 				 where s.specialist_account_id=p.account_id and s.status='ACTIVE'

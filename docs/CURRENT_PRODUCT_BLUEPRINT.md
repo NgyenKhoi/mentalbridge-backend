@@ -4,6 +4,11 @@ This file is the **navigation and authority map** for current MentalBridge produ
 
 ## 1. Source-of-truth order
 
+The owner's 2026-11-28 [specialist discovery amendment](adr/0027-approved-online-specialist-discovery.md#owner-amendment-approved-profiles-remain-visible-2026-11-28)
+keeps approved specialist profiles and detail visible without available slots.
+The [Consultation policy](policies/consultation-specialist-policy-v2.md) retains
+exact-slot, entitlement and credit checks for booking.
+
 The owner additionally approved [private Community sharing groups](adr/0052-private-community-sharing-groups.md), invitation-only text feeds separate from chat groups.
 
 The owner's accepted [Community friendship amendment](adr/0051-community-friendships-and-member-pages.md)
