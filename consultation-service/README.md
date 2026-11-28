@@ -1,5 +1,14 @@
 # Consultation Service
 
+## Approved profiles without available appointments
+
+Specialist discovery and detail retain APPROVED profiles when all slots are
+past, withdrawn, reserved or absent. These profiles expose an empty
+`selectableSlots` array and `NO_SELECTABLE_SLOT`; selectable profiles retain
+their availability ranking priority. Approval checks and booking eligibility
+remain enforced. The existing response fields are unchanged; the contract now
+permits zero selectable slots. No migration is required.
+
 ## MB-891 appointment notification actor fact
 
 The v2 appointment-status event now includes an optional `cancellationActorRole`

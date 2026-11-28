@@ -14,6 +14,7 @@
 | Current amendment | [ADR 0022](../adr/0022-current-product-blueprint-amendments.md) |
 | Staging funded-demo amendment | [ADR 0032 MB-812](../adr/0032-payment-and-specialist-payout-baseline.md#mb-812-funded-staging-demo-amendment-2026-11-04), `MB-STAGING-DEMO-PAYOUT-001`, accepted 2026-11-04; production and historical earnings unchanged |
 | Discovery decision | [ADR 0027](../adr/0027-approved-online-specialist-discovery.md) (`MB-SPECIALIST-DISCOVERY-001`) |
+| Approved-profile browse amendment | [ADR 0027 owner amendment](../adr/0027-approved-online-specialist-discovery.md#owner-amendment-approved-profiles-remain-visible-2026-11-28), accepted 2026-11-28 |
 | Appointment email reminder decision | [ADR 0030](../adr/0030-one-appointment-email-reminder.md) (`MB-APPOINTMENT-EMAIL-REMINDER-001`) |
 | Historical credit implementation | [ADR 0020 consultation-credit v1](../adr/0020-service-plan-consultation-credits.md) |
 | Amends | [Consultation and specialist policy v1](consultation-specialist-policy-v1.md) |
@@ -36,11 +37,13 @@ credit policy.
 Discovery follows `MB-SPECIALIST-DISCOVERY-001`. It rechecks the current
 Consultation-owned profile and availability state on every request. Only
 `APPROVED` profiles may appear, and only active, unheld, future, exact
-60-minute `IN_APP_CHAT` or enabled `IN_APP_VIDEO` slots may be returned. An
-approved profile appears only while at least one such selectable slot remains.
-A suspension, withdrawal, started slot, active appointment hold, or disabled
-video capability must fail closed rather than be hidden behind stale cached
-eligibility.
+60-minute `IN_APP_CHAT` or enabled `IN_APP_VIDEO` slots may be returned. Under the
+2026-11-28 owner amendment, an approved profile and its detail remain visible
+when no matching selectable slot remains, with an empty `selectableSlots` array,
+`hasSelectableSlot=false` and `NO_SELECTABLE_SLOT`. Suspension hides the profile;
+withdrawal, expiry, an active appointment hold or disabled video removes the
+affected slot without hiding an otherwise approved profile. Booking still
+requires an eligible exact slot and never uses stale cached eligibility.
 
 When an exact owned SupportEvaluation is supplied, Consultation may use only
 Care's versioned domain, instrument-specific screening level, and domain-local

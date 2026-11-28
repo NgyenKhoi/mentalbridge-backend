@@ -65,12 +65,41 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 
 		var response = discover(UUID.randomUUID());
 
-		response.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
+		response.andExpect(status().isOk()).andExpect(jsonPath("$.count").value(2))
 				.andExpect(jsonPath("$.items[0].specialistAccountId").value(approved.toString()))
 				.andExpect(jsonPath("$.items[0].selectableSlots.length()").value(1))
 				.andExpect(jsonPath("$.items[0].selectableSlots[0].id").value(selectable.toString()))
 				.andExpect(jsonPath("$.items[0].selectableSlots[0].modality").value("IN_APP_CHAT"))
+				.andExpect(jsonPath("$.items[1].specialistAccountId").value(videoOnly.toString()))
+				.andExpect(jsonPath("$.items[1].selectableSlots").isEmpty())
+				.andExpect(jsonPath("$.items[1].explanation.hasSelectableSlot").value(false))
 				.andExpect(jsonPath("$.videoEnabled").value(false));
+	}
+
+	@Test
+	void approvedProfilesWithoutAvailabilityRemainBrowsableAndDetailsOpen() throws Exception {
+		var noSlots = profile("APPROVED", "No schedule yet", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		var pastOnly = profile("APPROVED", "Past schedule", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(pastOnly, Instant.now().minusSeconds(7_200), "IN_APP_CHAT", "ACTIVE");
+		var withdrawnOnly = profile("APPROVED", "Withdrawn schedule", "Asia/Ho_Chi_Minh",
+				SupportArea.ANXIETY_SYMPTOMS, "vi");
+		slot(withdrawnOnly, Instant.now().plusSeconds(86_400), "IN_APP_CHAT", "WITHDRAWN");
+
+		discover(UUID.randomUUID()).andExpect(status().isOk())
+				.andExpect(jsonPath("$.count").value(3))
+				.andExpect(jsonPath("$.items[*].explanation.hasSelectableSlot")
+						.value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(false))));
+		for (var specialist : java.util.List.of(noSlots, pastOnly, withdrawnOnly)) {
+			mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.specialistAccountId").value(specialist.toString()))
+					.andExpect(jsonPath("$.selectableSlots").isEmpty())
+					.andExpect(jsonPath("$.explanation.hasSelectableSlot").value(false))
+					.andExpect(jsonPath("$.explanation.earliestSelectableStartAt").isEmpty())
+					.andExpect(jsonPath("$.explanation.codes").value(org.hamcrest.Matchers.hasItem("NO_SELECTABLE_SLOT")));
+		}
 	}
 
 	@Test
@@ -95,9 +124,10 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 				.with(admin(admin)).header("If-Match", suspended.getResponse().getHeader("ETag")))
 				.andExpect(status().isOk()).andReturn();
 		assertThat(restored.getResponse().getHeader("ETag")).isNotBlank();
-		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+		discover(UUID.randomUUID()).andExpect(status().isOk()).andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.items[0].selectableSlots").isEmpty());
 		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
-				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SPECIALIST_NOT_DISCOVERABLE"));
+				.andExpect(status().isOk()).andExpect(jsonPath("$.selectableSlots").isEmpty());
 		assertThat(jdbc.sql("select status from availability_slot where id=:id").param("id", originalSlot)
 				.query(String.class).single()).isEqualTo("WITHDRAWN");
 
@@ -211,11 +241,12 @@ class DiscoveryFlowIntegrationTests extends ConsultationTestProperties {
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID()))
 				.param("supportEvaluationId", evaluation.toString()))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.contextState").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.count").value(1))
+				.andExpect(jsonPath("$.count").value(2))
 				.andExpect(jsonPath("$.items[0].specialistAccountId").value(available.toString()))
 				.andExpect(jsonPath("$.items[0].explanation.compatibility").value("UNAVAILABLE"));
 		mvc.perform(get("/api/v1/specialists/{id}", specialist).with(user(UUID.randomUUID())))
-				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SPECIALIST_NOT_DISCOVERABLE"));
+				.andExpect(status().isOk()).andExpect(jsonPath("$.selectableSlots").isEmpty())
+				.andExpect(jsonPath("$.explanation.hasSelectableSlot").value(false));
 		mvc.perform(get("/api/v1/specialists").with(user(UUID.randomUUID())).param("cursor", "not-a-cursor"))
 				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DISCOVERY_CURSOR_STALE"));
 	}
